@@ -118,7 +118,7 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     await Reject(()=>game.CreateAsync(first,draft with {Name="Changed"}),"request_conflict");
     await Reject(()=>game.CreateAsync(disabled,draft),"account_unavailable");
     await Reject(()=>game.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),ProfileId="absent"}),"profile_unavailable");
-    await Reject(()=>game.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),WorldId=1205}),"wrong_world");
+    await Reject(()=>game.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),WorldId=1299}),"wrong_world");
     await Reject(()=>game.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),Name="GM_Impostor",LobbySlot=5}),"reserved_name");
     var gmChar=await game.CreateAsync(second,draft with {RequestId=Guid.NewGuid(),Name="[GM]Staff",LobbySlot=6});
     Check(gmChar!=Guid.Empty,"staff accounts may use GM names");

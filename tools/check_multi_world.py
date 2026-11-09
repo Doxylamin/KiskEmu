@@ -190,7 +190,10 @@ def main():
         sql(f'REVOKE ALL ON DATABASE {name} FROM PUBLIC; GRANT CONNECT ON DATABASE {name} TO aion_app,aion_auth;', database=name)
         sql(migration_script(sorted((ROOT / 'database/migrations').glob('*.sql'))), database=name)
         if args.catalog:
-            import_catalog(args.catalog, database=name)
+            # Character creation needs the catalogue and the starter profiles (as install.sh sets them up).
+            from tools.configure_starters import statements
+            build = import_catalog(args.catalog, database=name)['build_id']
+            sql(statements(build, json.loads((ROOT / 'tools/data/starter-skills.json').read_text())), database=name)
         with log_path.open('w', encoding='utf-8') as log:
             host = subprocess.Popen(['dotnet', args.host_dll], cwd=ROOT / 'server/Aion.Host', env=env, stdout=log, stderr=subprocess.STDOUT)
 

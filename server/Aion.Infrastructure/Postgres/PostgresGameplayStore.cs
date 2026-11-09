@@ -108,15 +108,22 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
             if (!await r.ReadAsync(ct)) throw new GameplayException("profile_unavailable");
             build=r.GetString(0); creation=r.GetInt32(1); race=r.GetInt32(2); gender=r.GetInt32(3); p=JsonSerializer.Deserialize<JsonElement>(r.GetString(4));
         }
-        if(input.WorldId is int requiredWorld && p.GetProperty("worldId").GetInt32()!=requiredWorld)
-            throw new GameplayException("wrong_world");
+        // The character lives on the world it is created on (multi-world: any registered world, migration 090); the
+        // starter profile's world is the default.
+        var world=p.GetProperty("worldId").GetInt32();
+        if(input.WorldId is int requiredWorld && requiredWorld!=world)
+        {
+            if(await Scalar(c,t,"SELECT world_id FROM game.worlds WHERE world_id=$1",ct,requiredWorld) is not int)
+                throw new GameplayException("wrong_world");
+            world=requiredWorld;
+        }
         Guid character;
         try
         {
             character=(Guid)(await Scalar(c,t,"""
                 INSERT INTO game.characters(account_id,world_id,name,creation_id,race,gender,appearance,map_id,position,resources,voice_type,lobby_slot)
                 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULLIF($12,-1)) RETURNING character_id
-                """,ct,account.AccountId,p.GetProperty("worldId").GetInt32(),input.Name,creation,race,gender,input.Appearance,
+                """,ct,account.AccountId,world,input.Name,creation,race,gender,input.Appearance,
                 p.GetProperty("mapId").GetInt32(),p.GetProperty("position"),p.GetProperty("resources"),input.VoiceType,input.LobbySlot??-1))!;
         }
         catch(PostgresException e) when(e.SqlState==PostgresErrorCodes.UniqueViolation)
