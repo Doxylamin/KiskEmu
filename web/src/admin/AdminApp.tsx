@@ -16,6 +16,7 @@ import { Events } from './Events';
 import { Moderation } from './Moderation';
 import { Overview } from './Overview';
 import { Rewards } from './Rewards';
+import { Shop } from './Shop';
 import { ServerView } from './Server';
 import { Worlds } from './Worlds';
 import { ERRORS, ROLE_LABEL, type StaffProfile, type WorldList } from './types';
@@ -34,7 +35,7 @@ export type Call = <T>(path: string, options?: { method?: string; body?: unknown
 // The staff endpoints a world server answers for its own world: its live state and the data in its own database
 // (characters, inventories, GM commands, rewards, gameplay audit). Accounts, sanctions, tickets and the catalogue stay
 // the realm's (server/DATABASES.md).
-const WORLD_TOOLS = /^\/api\/admin\/(live|server|restart|maintenance|announce|economy|players\/|maps\/\d+\/monsters|characters|commands|rewards|audit)/;
+const WORLD_TOOLS = /^\/api\/admin\/(live|server|restart|maintenance|announce|economy|players\/|maps\/\d+\/monsters|characters|commands|rewards|audit|shop\/orders)/;
 const WORLD_KEY = 'aion-staff-world';
 function withWorld(path: string, world: number | null): string {
   if (world === null || !WORLD_TOOLS.test(path)) return path;
@@ -43,7 +44,7 @@ function withWorld(path: string, world: number | null): string {
 function readWorld(): number | null {
   try { const v = Number(window.localStorage.getItem(WORLD_KEY)); return Number.isInteger(v) && v > 0 ? v : null; } catch { return null; }
 }
-type View = 'overview' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'economy' | 'activity' | 'worlds' | 'server';
+type View = 'overview' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'shop' | 'economy' | 'activity' | 'worlds' | 'server';
 
 const STORE_KEY = 'aion-staff-session';
 interface Saved { token: string; username: string }
@@ -75,6 +76,7 @@ const NAV: { id: View; label: string; icon: string }[] = [
   { id: 'moderation', label: 'Moderation', icon: 'shield' },
   { id: 'broadcast', label: 'Announcements', icon: 'broadcast' },
   { id: 'rewards', label: 'Rewards', icon: 'gift' },
+  { id: 'shop', label: 'Shop', icon: 'shop' },
   { id: 'economy', label: 'Economy', icon: 'coins' },
   { id: 'activity', label: 'Activity log', icon: 'activity' },
   { id: 'worlds', label: 'Worlds', icon: 'globe' },
@@ -193,6 +195,9 @@ export function AdminApp() {
           <div className="page-stack"><Broadcast call={call} active={view === 'broadcast'} worldName={worlds.find(w => w.worldId === world)?.name ?? null} /><div className="page page-tail"><Events call={call} active={view === 'broadcast'} /></div></div>
         </div>
         <div className="view" hidden={view !== 'rewards'}><Rewards call={call} isAdmin={isAdmin} /></div>
+        <div className="view" hidden={view !== 'shop'}>
+          <Shop call={call} active={view === 'shop'} isAdmin={isAdmin} worldName={worlds.find(w => w.worldId === world)?.name ?? null} />
+        </div>
         <div className="view" hidden={view !== 'economy'}><Economy call={call} active={view === 'economy'} onOpen={openCharacter} /></div>
         <div className="view" hidden={view !== 'activity'}><Activity call={call} active={view === 'activity'} onOpen={openCharacter} /></div>
         <div className="view" hidden={view !== 'worlds'}><Worlds call={call} active={view === 'worlds'} /></div>

@@ -40,7 +40,8 @@ public static class PlatformApiGateResponses
     public static byte[] EmptyGameProfileImages() =>
         JsonSerializer.SerializeToUtf8Bytes(new { game_profile_images = Array.Empty<object>() }, PlatformResponses.Plain);
 
-    public static bool TryReply(string method, string path, IQueryCollection query, ILogger? log, out byte[] body)
+    public static bool TryReply(string method, string path, IQueryCollection query, ILogger? log, out byte[] body,
+        IReadOnlyList<Aion.Application.Gameplay.CustomShopGoods>? custom = null)
     {
         body = [];
         if (EmptyReplies.TryGetValue((method, path), out var empty))
@@ -63,13 +64,13 @@ public static class PlatformApiGateResponses
         if (path.StartsWith("/local-api-gate/goods/v2.0/me/goods", StringComparison.Ordinal))
         {
             body = path.EndsWith("/policy", StringComparison.Ordinal)
-                ? OfficialShopCatalog.Policy(query["goods_ids"].FirstOrDefault(), query["pg_goods_keys"].FirstOrDefault(), query["currency_group_id"].FirstOrDefault(), DateTimeOffset.UtcNow)
+                ? OfficialShopCatalog.Policy(query["goods_ids"].FirstOrDefault(), query["pg_goods_keys"].FirstOrDefault(), query["currency_group_id"].FirstOrDefault(), DateTimeOffset.UtcNow, custom)
                 : OfficialShopCatalog.MeGoods(query["pg_goods_keys"].FirstOrDefault(), DateTimeOffset.UtcNow);
             return true;
         }
         if (path == "/local-api-gate/goods/v2.0/goods")
         {
-            body = GoodsList(query, log);
+            body = GoodsList(query, log, custom);
             return true;
         }
         if (path.StartsWith("/local-api-gate/campaigns/v1.0/", StringComparison.Ordinal) && path.EndsWith("/placements", StringComparison.Ordinal))
@@ -160,12 +161,13 @@ public static class PlatformApiGateResponses
         }
         return false;
     }
-    static byte[] GoodsList(IQueryCollection query, ILogger? log)
+    static byte[] GoodsList(IQueryCollection query, ILogger? log, IReadOnlyList<Aion.Application.Gameplay.CustomShopGoods>? custom)
     {
         _ = int.TryParse(query["page_index"].FirstOrDefault(), out var pageIndex);
         _ = int.TryParse(query["page_size"].FirstOrDefault(), out var pageSize);
-        var body = OfficialShopCatalog.Goods(pageIndex, pageSize, DateTimeOffset.UtcNow);
-        log?.LogInformation("Shop goods: official catalog {Total} goods, page {Page}, {Bytes} bytes", OfficialShopCatalog.GoodsCount, Math.Max(1, pageIndex), body.Length);
+        var body = OfficialShopCatalog.Goods(pageIndex, pageSize, DateTimeOffset.UtcNow, custom);
+        log?.LogInformation("Shop goods: official catalog {Total} goods and {Custom} custom, page {Page}, {Bytes} bytes",
+            OfficialShopCatalog.GoodsCount, custom?.Count ?? 0, Math.Max(1, pageIndex), body.Length);
         return body;
     }
 

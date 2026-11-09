@@ -7,8 +7,8 @@ own PostgreSQL, and no world can read another world's characters or the accounts
 
 | Database | Name | Holds | Used by |
 | --- | --- | --- | --- |
-| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`; the catalogue (dashboard) | auth host |
-| World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
+| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`); the catalogue (dashboard) | auth host |
+| World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests, shop purchases and limits, the purchase ledger `game.shop_orders`, memberships), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
 
 ## Migrations
 
@@ -70,6 +70,7 @@ Every request carries `X-World-Id: <id>` and `Authorization: Bearer <token>`:
 | `GET state`, `POST maintenance` | maintenance and active sanctions (cached 2 s) |
 | `POST tickets`, `POST chat` | `//report` tickets; announcements and staff chat |
 | `POST characters` | the character index sync |
+| `GET shop/goods` | the custom shop goods the world sells (cached 30 s by the world) |
 
 The world server's settings: `Aion:Role=world`, `Aion:Native:WorldId`, `ConnectionStrings:World`,
 `Aion:Realm:Url` (the account site, e.g. `https://203.0.113.5:8780`), `Aion:Realm:Token`, optionally

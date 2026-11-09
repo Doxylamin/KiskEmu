@@ -11,7 +11,8 @@ namespace Aion.World;
 // benefit types from the window's benefit list (Subscribe.dat SubscribeTypeList is not extracted), data_id 4 (the
 // item's _04 suffix; Subscribe.dat IDs are not extracted), 30 days (the window's "Membership Benefits for 30 days").
 // Local policy (OURS): every account holds it by default (Aion:World:MembershipByDefault), renewed when it lapses; the
-// GM command "Membership on|off" overrides it per account until the host restarts; buying the Pass Shop goods adds 30 days.
+// GM command "Membership on|off" overrides it per account; buying the Pass Shop goods adds 30 days. A GM change or a
+// purchase is stored in the world database (game.account_memberships) and read back at the account's next world entry.
 public sealed partial class GameSession
 {
     public const ushort SubscribeListNt = SocialOpcodes.E3Base + 1485, SubscribeUpdateNt = SocialOpcodes.E3Base + 1486;
@@ -54,21 +55,40 @@ public sealed partial class GameSession
         return memberships[key] = new Membership(start, start + MembershipDurationMs, false);
     }
 
-    /// <summary>GM toggle: on grants 30 days from today, off revokes it until turned on again.</summary>
+    bool membershipLoaded;
+
+    /// <summary>The account's stored membership (a GM change or a purchase), once per session at the first inventory load.</summary>
+    async Task LoadMembershipAsync(CancellationToken ct)
+    {
+        if (membershipLoaded || Store is not { } store) return;
+        membershipLoaded = true;
+        if (await store.MembershipAsync(ct) is { } stored)
+            memberships[MembershipKey] = new Membership(stored.StartsAt.ToUnixTimeMilliseconds(), stored.EndsAt.ToUnixTimeMilliseconds(), stored.Revoked);
+    }
+
+    static Aion.Application.Gameplay.StoredMembership ToStored(Membership m) =>
+        new(DateTimeOffset.FromUnixTimeMilliseconds(m.StartMs), DateTimeOffset.FromUnixTimeMilliseconds(m.EndMs), m.Revoked);
+
+    /// <summary>GM toggle: on grants 30 days from today, off revokes it until turned on again (stored in the background).</summary>
     public List<byte[]> SetMembership(bool on, long now)
     {
         var start = CycleStart(1, now);
-        memberships[MembershipKey] = on ? new Membership(start, start + MembershipDurationMs, false) : new Membership(0, 0, true);
+        var membership = memberships[MembershipKey] = on ? new Membership(start, start + MembershipDurationMs, false) : new Membership(0, 0, true);
+        if (Store is { } store)
+            _ = Task.Run(async () =>
+            {
+                try { await store.SaveMembershipAsync(ToStored(membership), CancellationToken.None); }
+                catch (Exception error) { DebugShop($"Membership save failed: {error.Message}"); }
+            });
         return [SubscribeInfos(SubscribeUpdateNt, now)];
     }
 
     /// <summary>A purchase: 30 more days from the current end (or from now).</summary>
-    List<byte[]> ExtendMembership(long now)
+    Membership ExtendedMembership(long now)
     {
         var current = CurrentMembership(now);
         var from = current is null ? now : current.EndMs;
-        memberships[MembershipKey] = new Membership(current?.StartMs ?? now, from + MembershipDurationMs, false);
-        return [SubscribeInfos(SubscribeUpdateNt, now)];
+        return new Membership(current?.StartMs ?? now, from + MembershipDurationMs, false);
     }
 
     byte[] SubscribeInfos(ushort opcode, long now)
@@ -100,21 +120,26 @@ public sealed partial class GameSession
             _ => goods.Price,
         };
         if (price < 0) return [reply(1)];
+        var currency = shopOptions.PremiumMode == ShopPremiumMode.Kina ? KinaItemId : PlatformGoodsTables.Embedded.QunaItemId;
+        var extended = ExtendedMembership(now);
         var changes = new List<byte[]>();
-        if (price > 0)
+        if (Store is { } store && CharacterId is { } character)
         {
-            if (Store is not { } store || CharacterId is not { } character) return [reply(1)];
-            var currency = shopOptions.PremiumMode switch
+            var costs = new List<(Guid, long, int)>();
+            if (price > 0)
             {
-                ShopPremiumMode.Kina => KinaItemId,
-                _ => PlatformGoodsTables.Embedded.QunaItemId,
-            };
-            if (CostStacks(currency, price) is not { } stacks) return [reply(2)];
-            var done = await Stored(async () => await store.ShopBuyAsync(character, stacks, [], [], ct) ? [[]] : []);
+                if (CostStacks(currency, price) is not { } stacks) return [reply(2)];
+                costs = stacks;
+            }
+            var order = new Aion.Application.Gameplay.ShopOrderLine("membership", goodsId, 1, currency, price);
+            var done = await Stored(async () => await store.ShopBuyAsync(character, costs, [], [], [order], ct) ? [[]] : []);
             if (done.Count == 0) return [reply(1)];
-            changes.AddRange(await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy));
+            if (price > 0) changes.AddRange(await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy));
+            await Stored(async () => await store.SaveMembershipAsync(ToStored(extended), ct) ? [[]] : []);
         }
-        DebugShop($"Membership bought: goods {goodsId}, {price} {(shopOptions.PremiumMode == ShopPremiumMode.Kina ? "Kina" : "Quna")}");
-        return [reply(0), .. changes, .. ExtendMembership(now)];
+        else if (price > 0) return [reply(1)];
+        memberships[MembershipKey] = extended;
+        DebugShop($"Membership bought: goods {goodsId}, {price} {(currency == KinaItemId ? "Kina" : "Quna")}");
+        return [reply(0), .. changes, SubscribeInfos(SubscribeUpdateNt, now)];
     }
 }

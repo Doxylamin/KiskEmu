@@ -174,7 +174,11 @@ public interface IGameplayStore
     /// limited goods' count raised within its limit (target 1 character, 2 account, 3 the character's world/server; period key).
     /// </summary>
     Task<bool> ShopBuyAsync(VerifiedAccount account, Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs,
-        IReadOnlyList<(int TemplateId, long Count)> goods, IReadOnlyList<(int Target, int GoodsId, string Period, int Count, int Limit)> limits, CancellationToken ct = default);
+        IReadOnlyList<(int TemplateId, long Count)> goods, IReadOnlyList<(int Target, int GoodsId, string Period, int Count, int Limit)> limits,
+        IReadOnlyList<ShopOrderLine>? orders, CancellationToken ct = default);
+    /// <summary>The account's membership stored on this world (game.account_memberships), null without a row.</summary>
+    Task<StoredMembership?> MembershipAsync(VerifiedAccount account, CancellationToken ct = default);
+    Task SaveMembershipAsync(VerifiedAccount account, StoredMembership membership, CancellationToken ct = default);
     Task<IReadOnlyList<(int Target, int RecipeId, string Period, int Count)>> ConversionCountsAsync(VerifiedAccount account, Guid character, int worldId, CancellationToken ct = default);
     Task<bool> ConversionAsync(VerifiedAccount account, Guid character, int worldId, IReadOnlyList<(Guid Item, long Revision, int Count)> costs,
         IReadOnlyList<(int TemplateId, long Count)> goods, IReadOnlyList<(int Target, int RecipeId, string Period, int Count, int Limit)> limits, CancellationToken ct = default);

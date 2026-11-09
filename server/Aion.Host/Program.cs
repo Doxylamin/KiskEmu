@@ -50,7 +50,11 @@ builder.Services.AddSingleton<IItemStatRoller>(sp => new ItemStatRollerService(s
 if (builder.Configuration["Aion:Debug:ShopFile"] is { Length: > 0 } shopDebug)
     Aion.World.GameSession.ConfigureShopDebug(shopDebug);
 var shopPremium = Aion.World.ShopOptions.Parse(builder.Configuration["Aion:Shop:PremiumMode"]);
-Aion.World.GameSession.ConfigureShopOptions(new Aion.World.ShopOptions { PremiumMode = shopPremium });
+Aion.World.GameSession.ConfigureShopOptions(new Aion.World.ShopOptions
+{
+    PremiumMode = shopPremium,
+    PassUnlockPrice = Math.Clamp(builder.Configuration.GetValue("Aion:Shop:PassUnlockPrice", Aion.World.GameSession.PaidPassUnlockQunaCost), 0, 1_000_000),
+});
 Aion.World.GameSession.ConfigureMembership(builder.Configuration.GetValue("Aion:World:MembershipByDefault", true));
 // Databases (server/DATABASES.md). The auth host (and every non-world host) uses the realm database: accounts, staff
 // tools, the world registry and the character index (ConnectionStrings:Aion for the game role, :Auth for accounts). A
@@ -108,6 +112,10 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddHostedService<AuthenticationCleanup>();
     // Staff tools: maintenance, sanctions, chat log, tickets, events, population, economy (migration 028).
     builder.Services.AddSingleton<IStaffTools, PostgresStaffTools>();
+    // Custom shop goods (migration 094): edited on the dashboard, listed in the shop catalogue, read by the worlds.
+    builder.Services.AddSingleton<PostgresCustomShop>();
+    builder.Services.AddSingleton<ICustomShopAdmin>(provider => provider.GetRequiredService<PostgresCustomShop>());
+    builder.Services.AddSingleton<ICustomShopCatalog>(provider => provider.GetRequiredService<PostgresCustomShop>());
     builder.Services.AddSingleton<Aion.Host.Authentication.ServerControl>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Authentication.ServerControl>());
 }
@@ -127,6 +135,8 @@ else if (accountsReady)
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Authentication.ServerControl>());
     builder.Services.AddSingleton<Aion.Host.Realm.RealmLinkService>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Realm.RealmLinkService>());
+    builder.Services.AddSingleton<ICustomShopCatalog, Aion.Host.Realm.LinkedCustomShopCatalog>();
+    builder.Services.AddSingleton<IShopLedger>(provider => new PostgresShopLedger(provider.GetRequiredService<NpgsqlDataSource>()));
 }
 // Optional Lime chat API for the dev client (policy ChatServerURL), on its own loopback port.
 var chatPort = worldProcess is null ? builder.Configuration.GetValue<int?>("Aion:ChatPort") : null;
@@ -362,6 +372,7 @@ var app = builder.Build();
 if (worldProcess is not null)
 {
     app.Logger.LogInformation("World server for world {World} ({Name}) on game port {Port}", native.WorldId, worldProcess.Name, native.GamePort);
+    Aion.World.GameSession.ConfigureCustomShop(app.Services.GetService<ICustomShopCatalog>());
     Aion.Host.Worlds.WorldEndpoints.MapWorldProcessEndpoints(app, worldProcess, native.WorldId);
     // The staff dashboard's world tools (maintenance, announcements, players, live map, restart) for this world, reached
     // through the auth host (?world=…); every request still needs a staff sign-in.

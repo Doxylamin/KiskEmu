@@ -66,7 +66,7 @@ public sealed class BuilderCommands(WorldPresence presence, GmPolicy policy, Act
         ["QuestDelete"] = "QuestDelete [quest code or id]",
         ["RevealMap"] = "RevealMap (uncovers every world-map area for this character)",
         ["GrantShopCurrency"] = "GrantShopCurrency kina|quna|<currency item id> [count] (dev BM shop wallet)",
-        ["Membership"] = "Membership on|off (the account's Special Quai Membership until the host restarts)",
+        ["Membership"] = "Membership on|off (the account's Special Quai Membership on this world)",
         ["BattlePassExp"] = "BattlePassExp <exp> (Daeva Pass exp to every active pass)",
     };
 

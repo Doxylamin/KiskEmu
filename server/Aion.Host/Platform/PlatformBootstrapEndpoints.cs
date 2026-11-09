@@ -379,6 +379,17 @@ public static partial class PlatformBootstrapEndpoints
     [GeneratedRegex(@"^/c/([0-9a-fA-F]{64})(/.*)?$")]
     private static partial Regex CodePrefix();
 
+    /// <summary>The staff-defined shop goods for the catalogue; none when the realm cannot be read (the official goods still load).</summary>
+    static async Task<IReadOnlyList<Aion.Application.Gameplay.CustomShopGoods>?> CustomGoodsAsync(Aion.Application.Gameplay.ICustomShopCatalog shop, ILogger log, CancellationToken ct)
+    {
+        try { return await shop.GoodsAsync(ct); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            log.LogWarning("Custom shop goods unavailable: {Error}", error.Message);
+            return null;
+        }
+    }
+
     /// <summary>Answers every request on the bootstrap port in its own branch (no static files or other routes there).</summary>
     public static void UsePlatformBootstrap(this WebApplication app, int port, PlatformResponses responses, string? requestLog, NetworkOptions network, string accountPageBase)
     {
@@ -405,6 +416,7 @@ public static partial class PlatformBootstrapEndpoints
         var pairing = app.Services.GetService<LaunchPairing>();
         var platformAuth = app.Services.GetService<IPlatformSecondaryAuth>();
         var qunaBalance = app.Services.GetService<ShopQunaBalanceService>();
+        var customShop = app.Services.GetService<Aion.Application.Gameplay.ICustomShopCatalog>();
         var logLock = new object();
         app.MapWhen(context => context.Connection.LocalPort == port, branch => branch.Run(async context =>
         {
@@ -524,7 +536,10 @@ public static partial class PlatformBootstrapEndpoints
                 reply = (200, PlatformApiGateResponses.Warehouse(await ReadJson(request), responses.GameAccountId));
             else if (path.StartsWith(PlatformApiGateResponses.StoragePrefix, StringComparison.Ordinal)
                 && PlatformApiGateResponses.TryStorage(method, path, method == "GET" ? null : await ReadJson(request), out var storageBody))
-                reply = (200, storageBody);            else if (PlatformApiGateResponses.TryReply(method, path, request.Query, platformLog, out var gateBody)) reply = (200, gateBody);
+                reply = (200, storageBody);
+            else if (PlatformApiGateResponses.TryReply(method, path, request.Query, platformLog, out var gateBody,
+                customShop is not null && path.StartsWith("/local-api-gate/goods/", StringComparison.Ordinal) ? await CustomGoodsAsync(customShop, platformLog, context.RequestAborted) : null))
+                reply = (200, gateBody);
             else if (PlatformLoginApiResponses.TryReply(method, path, out var loginApiBody)) reply = loginApiBody;
             if (reply.Status == 503 && reply.Body.AsSpan().SequenceEqual(NotReady))
                 platformLog.LogWarning("Unhandled platform bootstrap request {Method} {Path}", method, path);
