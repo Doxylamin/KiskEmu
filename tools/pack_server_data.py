@@ -6,6 +6,8 @@ Contents (server layout, see deploy/linux/README.md):
   ncguard/fixture.json NCGuard sink responses
   terrain/, navmesh/   extracted ground grids and navigation meshes (optional, large)
   game-catalog-v2/     item/skill catalogue for the database import
+  map-images/          the game's world-map paintings for the dashboard's live map (tools/MapImageExport:
+                       <map id>.webp and maps.json; optional, a few MB)
   wardrobe/            with --wardrobe: icons, meshes, textures and three.js for the staff
                        dashboard (served to signed-in staff only; about 2.5 GB)
 
@@ -26,6 +28,7 @@ DEFAULTS = {
     'terrain': LOCAL / 'terrain',
     'navmesh': LOCAL / 'navmesh',
     'catalog': LOCAL / 'game-catalog-v2',
+    'map-images': LOCAL / 'map-images',
     'wardrobe-dir': LOCAL / 'wardrobe',
 }
 # What the host serves from the wardrobe export (Program.cs wardrobe content types), by folder.
@@ -73,6 +76,11 @@ def members(paths, include_maps=True):
         if not (catalog / name).exists():
             raise FileNotFoundError(catalog / name)
         out.append((catalog / name, f'game-catalog-v2/{name}'))
+    images = Path(paths['map-images']) if paths.get('map-images') else None
+    if images and (images / 'maps.json').exists():
+        # The served files only: <map id>.webp and the index (not the export's _full/ check images).
+        out.append((images / 'maps.json', 'map-images/maps.json'))
+        out.extend((path, f'map-images/{path.name}') for path in sorted(images.glob('*.webp')))
     if include_maps:
         for kind in ('terrain', 'navmesh'):
             root = Path(paths[kind])

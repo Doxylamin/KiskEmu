@@ -14,7 +14,8 @@ def server_data(root):
     for name, body in [('bootstrap/keys/app-key.json', '{}'), ('bootstrap/keys/local-test-key.json', '{}'),
                        ('bootstrap/policy/app-policy.json', '{}'), ('ncguard/fixture.json', '{"rules": []}'),
                        ('terrain/1000/terrain.bin', 'x'), ('navmesh/1000/nav.bin', 'x'),
-                       ('game-catalog-v2/manifest.json', '{}'), ('game-catalog-v2/entries.jsonl', '')]:
+                       ('game-catalog-v2/manifest.json', '{}'), ('game-catalog-v2/entries.jsonl', ''),
+                       ('map-images/maps.json', '{}'), ('map-images/1000.webp', 'x'), ('map-images/_full/1000.png', 'x')]:
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding='utf-8')
@@ -74,7 +75,7 @@ class PackServerDataTests(unittest.TestCase):
             server_data(source)
             paths = {'keys': source / 'bootstrap/keys', 'policy': source / 'bootstrap/policy',
                      'ncguard': source / 'ncguard/fixture.json', 'terrain': source / 'terrain',
-                     'navmesh': source / 'navmesh', 'catalog': source / 'game-catalog-v2'}
+                     'navmesh': source / 'navmesh', 'catalog': source / 'game-catalog-v2', 'map-images': source / 'map-images'}
             args = ['--' + name + '=' + str(path) for name, path in paths.items()]
             with contextlib.redirect_stdout(io.StringIO()):
                 pack_server_data.main([str(root / 'out.tar.gz'), *args])
@@ -83,7 +84,8 @@ class PackServerDataTests(unittest.TestCase):
             self.assertEqual(names, {'bootstrap/keys/app-key.json', 'bootstrap/keys/local-test-key.json',
                                      'bootstrap/policy/app-policy.json', 'ncguard/fixture.json',
                                      'game-catalog-v2/manifest.json', 'game-catalog-v2/entries.jsonl',
-                                     'terrain/1000/terrain.bin', 'navmesh/1000/nav.bin'})
+                                     'terrain/1000/terrain.bin', 'navmesh/1000/nav.bin',
+                                     'map-images/maps.json', 'map-images/1000.webp'})
             # The packed layout is what server_env expects.
             unpacked = root / 'data'
             with tarfile.open(root / 'out.tar.gz') as archive:
@@ -92,6 +94,7 @@ class PackServerDataTests(unittest.TestCase):
                 public_address='203.0.113.5', bind='0.0.0.0', data=unpacked, state=root / 'state', proxy=True,
                 certificate=None, key=None, max_connections=10, preload=[], geolocation='off'), {'aion_app': 'a', 'aion_auth': 'b'})
             self.assertEqual(Path(env['Aion__Native__TerrainDirectory']), (unpacked / 'terrain').resolve())
+            self.assertEqual(Path(env['Aion__MapImagesPath']), (unpacked / 'map-images').resolve())
 
     def test_wardrobe_members(self):
         with tempfile.TemporaryDirectory() as temp:
