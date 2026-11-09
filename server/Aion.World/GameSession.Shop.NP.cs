@@ -45,13 +45,16 @@ public sealed partial class GameSession
         {
             var rows = await store.ShopPurchasesAsync(character, ct);
             var at = DateTimeOffset.FromUnixTimeMilliseconds(now);
+            var custom = goodsIds.Any(Aion.Application.Gameplay.CustomShopRules.IsCustom) ? await CustomGoodsAsync(ct) : [];
             foreach (var goodsId in goodsIds)
             {
-                if (Shops.RowByGoodsId(goodsId) is not { Limit: > 0 } row) continue;
-                var period = ShopTables.Period(row.LimitPeriod, at);
-                var bought = rows.FirstOrDefault(r => r.GoodsId == goodsId && r.Target == row.LimitTarget && r.Period == period).Count;
+                (int Target, int Period)? limit = Shops.RowByGoodsId(goodsId) is { Limit: > 0 } row ? (row.LimitTarget, row.LimitPeriod)
+                    : custom.FirstOrDefault(g => g.GoodsId == goodsId) is { LimitCount: > 0 } goods ? (goods.LimitTarget, goods.LimitPeriod) : null;
+                if (limit is not { } l) continue;
+                var period = ShopTables.Period(l.Period, at);
+                var bought = rows.FirstOrDefault(r => r.GoodsId == goodsId && r.Target == l.Target && r.Period == period).Count;
                 if (bought <= 0) continue;
-                var expire = row.LimitPeriod > 0 ? ContentResetSchedule.NextBoundaryMs(row.LimitPeriod, now) : 0L;
+                var expire = l.Period > 0 ? ContentResetSchedule.NextBoundaryMs(l.Period, now) : 0L;
                 limits.Add((goodsId, bought, expire));
             }
         }
@@ -83,6 +86,7 @@ public sealed partial class GameSession
 
         DebugShop($"NPShopPurchase_RQ goods={goodsId} qty={quantity} (platform/catalog id)");
         if (IsMembershipGoods(goodsId)) return await BuyMembershipAsync(goodsId, quantity, now, Reply, ct);
+        if (Aion.Application.Gameplay.CustomShopRules.IsCustom(goodsId)) return await BuyCustomGoodsAsync(goodsId, quantity, now, Reply, ct);
         if (ResolveExportedGoods(goodsId) is not { } row)
         {
             DebugShop($"NPShopPurchase rejected: goods {goodsId} not in dat export (billing or omitted SKU)");
@@ -95,7 +99,7 @@ public sealed partial class GameSession
 
         var gameGoodsId = PlatformGoodsTables.Embedded.ResolveGameGoodsId(goodsId) ?? goodsId;
         var entries = new List<(int Goods, int Count)> { (gameGoodsId, quantity) };
-        var replies = await BuyCatalogGoodsAsync(entries, now, ct, Reply, store, character);
+        var replies = await BuyCatalogGoodsAsync("bm", entries, now, ct, Reply, store, character);
         DebugShop($"NPShopPurchase_RS result={(replies.Count > 0 ? replies[0][2] : -1)}");
         return replies;
     }

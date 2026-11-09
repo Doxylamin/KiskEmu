@@ -70,7 +70,7 @@ public sealed partial class GameSession
         var shop = Shops.CoinShopName(dataId) ?? Shops.CoinShopName(openCoinShop ?? -1);
         if (shop is null || Store is not { } store || CharacterId is not { } character || entries.Count == 0) return [Reply(1)];
         DebugShop($"CoinShopBuy_RQ dataId={dataId} lines={string.Join(',', entries.Select(e => $"{e.Goods}x{e.Count}"))}");
-        return await BuyShopEntriesAsync(shop, entries, now, ct, Reply, store, character);
+        return await BuyShopEntriesAsync("coin", shop, entries, now, ct, Reply, store, character);
     }
 
     async Task<List<byte[]>> BuyGuildShopAsync(byte[] plain, long now, CancellationToken ct)
@@ -90,7 +90,7 @@ public sealed partial class GameSession
         var shop = Shops.ShopName(npc.NpcId);
         if (shop is null) return [Reply(1, npcKey)];
         var bought = entries.Select(e => ((int)e.A, (int)e.B)).ToList();
-        var replies = await BuyShopEntriesAsync(shop, bought, now, ct, r => Reply(r, npcKey), store, character);
+        var replies = await BuyShopEntriesAsync("guild", shop, bought, now, ct, r => Reply(r, npcKey), store, character);
         if (replies.Count > 0 && replies[0][2] == 0)
             replies.Add(GuildShopOpenNotice(npcKey, now, store, character));
         return replies;
@@ -106,13 +106,15 @@ public sealed partial class GameSession
         return w.ToArray();
     }
 
-    async Task<List<byte[]>> BuyShopEntriesAsync(string shop, List<(int Goods, int Count)> entries, long now, CancellationToken ct,
+    async Task<List<byte[]>> BuyShopEntriesAsync(string kind, string shop, List<(int Goods, int Count)> entries, long now, CancellationToken ct,
         Func<int, byte[]> reply, INativeCharacterStore store, Guid character) =>
-        await BuyCatalogGoodsAsync(entries, now, ct, reply, store, character, goodsId => Shops.GoodsInShop(shop, profileRace, goodsId));
+        await BuyCatalogGoodsAsync(kind, entries, now, ct, reply, store, character, goodsId => Shops.GoodsInShop(shop, profileRace, goodsId));
 
-    async Task<List<byte[]>> BuyCatalogGoodsAsync(List<(int Goods, int Count)> entries, long now, CancellationToken ct,
-        Func<int, byte[]> reply, INativeCharacterStore store, Guid character,         Func<int, ShopTables.GoodsRow?>? resolve = null)
+    /// <summary>Goods lines paid from the bag in their (repriced) currencies, each a ledger line of the kind (coin, guild, bm).</summary>
+    async Task<List<byte[]>> BuyCatalogGoodsAsync(string kind, List<(int Goods, int Count)> entries, long now, CancellationToken ct,
+        Func<int, byte[]> reply, INativeCharacterStore store, Guid character, Func<int, ShopTables.GoodsRow?>? resolve = null)
     {
+        var orders = new List<Aion.Application.Gameplay.ShopOrderLine>();
         resolve ??= ResolveExportedGoods;
         var rewards = new List<(int, long)>();
         var prices = new Dictionary<int, long>();
@@ -125,6 +127,7 @@ public sealed partial class GameSession
             var priced = ApplyPremiumPrice(g.Currency, linePrice);
             if (priced is null) return [reply(1)];
             rewards.Add((g.ItemId, bundleTotal));
+            orders.Add(new(kind, goodsId, count, priced.Value.Currency, priced.Value.Price));
             if (!PacketSecurity.TryAdd(prices.GetValueOrDefault(priced.Value.Currency), priced.Value.Price, out var sum)) return [reply(1)];
             prices[priced.Value.Currency] = sum;
             if (g.Limit > 0) limits.Add((g.LimitTarget, goodsId, ShopTables.Period(g.LimitPeriod, at), count, g.Limit));
@@ -136,7 +139,7 @@ public sealed partial class GameSession
             if (CostStacks(currency, price) is not { } stacks) return [reply(2)];
             costs.AddRange(stacks);
         }
-        var done = await Stored(async () => await store.ShopBuyAsync(character, costs, rewards, limits, ct) ? [[]] : []);
+        var done = await Stored(async () => await store.ShopBuyAsync(character, costs, rewards, limits, orders, ct) ? [[]] : []);
         if (done.Count == 0) return [reply(limits.Count > 0 ? 3 : 1)];
         return [reply(0), .. await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy)];
     }

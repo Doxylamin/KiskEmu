@@ -212,12 +212,14 @@ public sealed partial class GameSession
         var rewards = new List<(int, long)>();
         var prices = new Dictionary<int, long>();
         var limits = new List<(int, int, string, int, int)>();
+        var orders = new List<ShopOrderLine>();
         var at = DateTimeOffset.FromUnixTimeMilliseconds(now);
         foreach (var (goodsId, count) in entries)
         {
             if (count < 1 || count > PacketSecurity.MaxShopLineCount || Shops.Goods(npc!.NpcId, profileRace, (int)goodsId) is not { } g || level < g.Level) return [Reply(1, npcKey)];
             if (!PacketSecurity.TryMultiply(g.Bundle, count, out var bundleTotal) || !PacketSecurity.TryMultiply(g.Price, count, out var linePrice)) return [Reply(1, npcKey)];
             rewards.Add((g.ItemId, bundleTotal));
+            orders.Add(new("npc", (int)goodsId, (int)count, g.Currency, linePrice));
             if (!PacketSecurity.TryAdd(prices.GetValueOrDefault(g.Currency), linePrice, out var sum)) return [Reply(1, npcKey)];
             prices[g.Currency] = sum;
             if (g.Limit > 0) limits.Add((g.LimitTarget, (int)goodsId, ShopTables.Period(g.LimitPeriod, at), (int)count, g.Limit));
@@ -229,7 +231,7 @@ public sealed partial class GameSession
             if (CostStacks(currency, price) is not { } stacks) return [Reply(2, npcKey)];
             costs.AddRange(stacks);
         }
-        var done = await Stored(async () => await store.ShopBuyAsync(character, costs, rewards, limits, ct) ? [[]] : []);
+        var done = await Stored(async () => await store.ShopBuyAsync(character, costs, rewards, limits, orders, ct) ? [[]] : []);
         if (done.Count == 0)
         {
             DebugShop($"ShopBuy_RS npcKey={npcKey} result={(limits.Count > 0 ? 3 : 1)} (failed)");

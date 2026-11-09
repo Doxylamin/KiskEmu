@@ -15,6 +15,9 @@ public sealed class ShopOptions
 {
     public ShopPremiumMode PremiumMode { get; init; } = ShopPremiumMode.Quna;
 
+    /// <summary>Quna for the Daeva Pass paid track (Aion:Shop:PassUnlockPrice; official 1500), repriced by PremiumMode.</summary>
+    public long PassUnlockPrice { get; init; } = GameSession.PaidPassUnlockQunaCost;
+
     public static ShopPremiumMode Parse(string? value) => value?.Trim().ToLowerInvariant() switch
     {
         "kina" => ShopPremiumMode.Kina,

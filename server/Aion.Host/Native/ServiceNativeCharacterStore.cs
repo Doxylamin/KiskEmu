@@ -570,7 +570,27 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         IReadOnlyList<(int Target, int GoodsId, string Period, int Count, int Limit)> limits, CancellationToken ct)
     {
         await ValidateAsync(ct);
-        return await game.ShopBuyAsync(identity.Account, character, costs, goods, limits, ct);
+        return await game.ShopBuyAsync(identity.Account, character, costs, goods, limits, null, ct);
+    }
+
+    public async Task<bool> ShopBuyAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, IReadOnlyList<(int TemplateId, long Count)> goods,
+        IReadOnlyList<(int Target, int GoodsId, string Period, int Count, int Limit)> limits, IReadOnlyList<ShopOrderLine> orders, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.ShopBuyAsync(identity.Account, character, costs, goods, limits, orders, ct);
+    }
+
+    public async Task<StoredMembership?> MembershipAsync(CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.MembershipAsync(identity.Account, ct);
+    }
+
+    public async Task<bool> SaveMembershipAsync(StoredMembership membership, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        await game.SaveMembershipAsync(identity.Account, membership, ct);
+        return true;
     }
 
     public async Task<IReadOnlyList<(int Target, int RecipeId, string Period, int Count)>> ConversionCountsAsync(Guid character, CancellationToken ct)
