@@ -27,6 +27,26 @@ public sealed class ItemUseHandlerTests
     }
 
     [Fact]
+    public async Task Using_several_kina_chests_by_item_id_grants_kina_for_each()
+    {
+        const int chest = 516160001;   // GetKina 50000
+        Assert.Equal("GetKina", RewardBoxes.Embedded.Use(chest)!.Effect);
+        var store = new FakeCharacterStore();
+        store.Items.Add(FakeCharacterStore.BagItem(chest, 5, 882));
+        var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
+        await GameSessionTestHelpers.LoadInventoryAsync(session, Now);
+        var before = FakeCharacterStore.KinaIn(store);
+
+        // 0x5614: uid, item id, use count 3 (live 22 bytes).
+        var replies = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseByIdRq).I64(882).I32(chest).I64(3).ToArray(), Now + 1);
+        var rs = replies.First(p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseByIdRs);
+        Assert.Equal((ushort)0, BitConverter.ToUInt16(rs, 2));
+        Assert.Equal(3L, BitConverter.ToInt64(rs, 16));
+        Assert.Equal(before + 150_000, FakeCharacterStore.KinaIn(store));
+        Assert.Equal(2, store.Items.Where(i => i.TemplateId == chest).Sum(i => i.Quantity));
+    }
+
+    [Fact]
     public async Task Missing_use_data_replies_with_failure_result()
     {
         const int unknownUsable = 999_999_001;

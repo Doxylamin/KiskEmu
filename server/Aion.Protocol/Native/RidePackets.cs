@@ -36,6 +36,8 @@ public static class RidePackets
     public const byte RespawnKisk = 1, RespawnAuto = 2, RespawnItem = 3;
     /// <summary>ESoulCrystalIncreaseReason.</summary>
     public const byte CrystallizeReason = 1, ItemReason = 2;
+    /// <summary>0x5614/0x5615 ItemUseByItemID_RQ/RS (usmap index after ItemUse_RS): "use N" of a stack (live 22 bytes, 2026-11-09).</summary>
+    public const ushort ItemUseByIdRq = 0x5614, ItemUseByIdRs = 0x5615;
     public const ushort ItemUseRq = 0x5612, ItemUseRs = 0x5613, ItemUseNt = 0x5616, ItemUseStartedNt = 0x5617, ItemUseInterruptedNt = 0x5618,
         ItemUseCompletedNt = 0x5619, OpenBoxRq = 0x5646, OpenBoxRs = 0x5647;
 
@@ -221,6 +223,10 @@ public static class RidePackets
 
     /// <summary>0x5613 ItemUse_RS: result | item uid i64 | item id i32.</summary>
     public static byte[] ItemUseReply(int result, long uid, int itemId) => PacketWriter.Opcode(ItemUseRs).U16(result).I64(uid).I32(itemId).ToArray();
+
+    /// <summary>0x5615 ItemUseByItemID_RS: result (u16, as 0x5613) | item uid i64 | item id i32 | use count i64.</summary>
+    public static byte[] ItemUseByIdReply(int result, long uid, int itemId, long useCount) =>
+        PacketWriter.Opcode(ItemUseByIdRs).U16(result).I64(uid).I32(itemId).I64(useCount).ToArray();
 
     /// <summary>0x5616 ItemUse_NT: item uid i64 | item id i32 (OBSERVED: Life Potion 530126003).</summary>
     public static byte[] ItemUsed(long uid, int itemId) => PacketWriter.Opcode(ItemUseNt).I64(uid).I32(itemId).ToArray();
