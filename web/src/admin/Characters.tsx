@@ -5,6 +5,7 @@ import { describe } from './AdminApp';
 import type { Tools } from './Dashboard';
 import { ROLE_LABEL, type AdminCharacter, type CharacterDetail } from './types';
 import { iconUrl, type Wardrobe } from './useWardrobe';
+import { useWorldNames } from '../ui/worlds';
 
 const GENDER_NAME: Record<number, string> = { 1: 'Male', 2: 'Female' };
 
@@ -12,6 +13,7 @@ export function CharacterPanel({ tools, results, query, onQuery, onSearch, detai
   tools: Tools; results: AdminCharacter[]; query: string; onQuery: (q: string) => void; onSearch: (q: string) => void;
   detail: CharacterDetail | null; onOpen: (id: string) => void; onRefresh: () => Promise<void>; wardrobe: Wardrobe | null;
 }) {
+  const worldName = useWorldNames();
   return (
     <section className="card panel characters-panel" aria-label="Characters">
       <div className="panel-head stack-sm">
@@ -28,7 +30,7 @@ export function CharacterPanel({ tools, results, query, onQuery, onSearch, detai
             <button type="button" className="result" aria-current={row.characterId === detail?.character.characterId}
               onClick={() => onOpen(row.characterId)}>
               <span className="result-name">{row.name}{row.accountDisabled && <Badge tone="danger">disabled</Badge>}</span>
-              <span className="result-meta">Lv {row.level} · {row.accountName}</span>
+              <span className="result-meta">Lv {row.level} · {worldName(row.worldId)} · {row.accountName}</span>
             </button>
           </li>
         ))}
@@ -45,6 +47,7 @@ function CharacterDetailView({ tools, detail, onRefresh, wardrobe }:
   { tools: Tools; detail: CharacterDetail; onRefresh: () => Promise<void>; wardrobe: Wardrobe | null }) {
   const [tab, setTab] = useState<Tab>('overview');
   const c = detail.character;
+  const worldName = useWorldNames();
   const learned = [...new Map(detail.inventory.skills.map(s => [s.skillId, s])).values()];
   return (
     <div className="detail">
@@ -54,7 +57,7 @@ function CharacterDetailView({ tools, detail, onRefresh, wardrobe }:
           <Button size="sm" variant="ghost" onClick={() => onRefresh()}>Refresh</Button>
         </div>
         <p className="muted small">
-          Level {c.level} · {detail.className ?? `Class ${c.creationId}`} · {GENDER_NAME[c.gender] ?? `Gender ${c.gender}`} · Race {c.race} · Account {c.accountName}
+          Level {c.level} · {detail.className ?? `Class ${c.creationId}`} · {GENDER_NAME[c.gender] ?? `Gender ${c.gender}`} · Race {c.race} · World {worldName(c.worldId)} · Account {c.accountName}
         </p>
       </div>
       <Tabs label="Character" value={tab} onChange={setTab} tabs={[

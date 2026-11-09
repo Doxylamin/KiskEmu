@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useWorldNames } from '../ui/worlds';
 import { api, ApiError } from '../api';
 import { Button, Status, type StatusMessage } from '../ui/components';
 
-interface Character { name: string; level: number }
+interface Character { name: string; level: number; worldId: number }
 
 function describe(error: unknown, signingIn = false): string {
   if (!(error instanceof ApiError)) return 'Something went wrong.';
@@ -255,6 +256,7 @@ function TotpSettings({ token, onMessage }: { token: string; onMessage: (m: Stat
 function Signed({ token, characters, onSignedOut, onMessage }:
   { token: string; characters: Character[]; onSignedOut: (text: string, kind?: StatusMessage['kind']) => void; onMessage: (m: StatusMessage) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const worldName = useWorldNames();
 
   async function run(name: string, action: () => Promise<void>) {
     setBusy(name);
@@ -279,7 +281,8 @@ function Signed({ token, characters, onSignedOut, onMessage }:
       <section className="stack-sm">
         <h4>Characters</h4>
         {characters.length
-          ? <ul className="character-list">{characters.map(c => <li key={c.name}><span>{c.name}</span><span className="badge">Level {c.level}</span></li>)}</ul>
+          ? <ul className="character-list">{characters.map(c => <li key={`${c.worldId}:${c.name}`}><span>{c.name}</span>
+              <span className="character-meta"><span className="world-name">{worldName(c.worldId)}</span><span className="badge">Level {c.level}</span></span></li>)}</ul>
           : <p className="empty">No characters yet. Create one in the game.</p>}
       </section>
       <hr className="divider" />
@@ -352,7 +355,7 @@ function ContactStaff({ token, characters }: { token: string; characters: Charac
           </select>
           {characters.length > 0 && (
             <select name="character" className="select" defaultValue={characters[0].name} aria-label="Character">
-              {characters.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+              {characters.map(c => <option key={`${c.worldId}:${c.name}`} value={c.name}>{c.name}</option>)}
             </select>
           )}
         </div>

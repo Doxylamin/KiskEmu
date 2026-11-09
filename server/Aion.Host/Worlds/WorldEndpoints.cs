@@ -34,6 +34,14 @@ public static class WorldEndpoints
 
     public static void MapWorldEndpoints(WebApplication app)
     {
+        // World names for the account page and the dashboard (what the game's server list shows; no addresses).
+        app.MapGet("/api/worlds", async (IServiceProvider services, CancellationToken ct) =>
+        {
+            if (services.GetService<IWorldRegistry>() is not { } registry) return Results.Ok(Array.Empty<object>());
+            var native = services.GetService<NativeOptions>();
+            var worlds = await registry.ListAsync(ct);
+            return Results.Ok(worlds.Select(w => new { WorldId = w.IsPrimary && native is not null ? native.WorldId : w.WorldId, w.Name }));
+        });
         var staff = app.MapGroup("/api/admin/worlds").RequireRateLimiting("admin");
         staff.AddEndpointFilter(async (context, next) =>
         {
