@@ -22,7 +22,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 HOME = Path(os.environ['AION_PG_HOME']) if os.environ.get('AION_PG_HOME') else ROOT / 'research/local/postgres'
-PORT = 55432
+# AION_PG_PORT: a second, throwaway cluster beside the server's own (tools/check_multi_world.py on a host).
+PORT = int(os.environ.get('AION_PG_PORT') or 55432)
 WINDOWS = os.name == 'nt'
 
 
@@ -260,7 +261,7 @@ def main():
     args = parser.parse_args()
     if args.command == 'setup':
         setup()
-        print('PostgreSQL configured at 127.0.0.1:55432, database aion; migrations applied.')
+        print(f'PostgreSQL configured at 127.0.0.1:{PORT}, database aion; migrations applied.')
     elif args.command == 'start':
         start()
     elif args.command == 'stop':
