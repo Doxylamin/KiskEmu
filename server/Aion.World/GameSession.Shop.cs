@@ -224,15 +224,11 @@ public sealed partial class GameSession
             prices[g.Currency] = sum;
             if (g.Limit > 0) limits.Add((g.LimitTarget, (int)goodsId, ShopTables.Period(g.LimitPeriod, at), (int)count, g.Limit));
         }
-        var costs = new List<(Guid, long, int)>();
-        foreach (var (currency, price) in prices)
-        {
-            if (price <= 0) continue;
-            if (CostStacks(currency, price) is not { } stacks) return [Reply(2, npcKey)];
-            costs.AddRange(stacks);
-        }
-        var done = await Stored(async () => await store.ShopBuyAsync(character, costs, rewards, limits, orders, ct) ? [[]] : []);
-        if (done.Count == 0)
+        if (PurchaseCosts(prices.Select(p => (p.Key, p.Value))) is not { } paid) return [Reply(2, npcKey)];
+        var pay = await PayQunaAsync(paid.Quna, new { kind = "npc", npc = npc!.NpcId, lines = orders.Count },
+            () => StoredOk(() => store.ShopBuyAsync(character, paid.Costs, rewards, limits, orders, ct)), ct);
+        if (pay == QunaPay.NotEnough) return [Reply(2, npcKey)];
+        if (pay != QunaPay.Done)
         {
             DebugShop($"ShopBuy_RS npcKey={npcKey} result={(limits.Count > 0 ? 3 : 1)} (failed)");
             return [Reply(limits.Count > 0 ? 3 : 1, npcKey)];

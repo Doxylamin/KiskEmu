@@ -47,6 +47,10 @@ public sealed record LinkMaintenance(Guid Actor, bool Enabled, string Message);
 public sealed record LinkCharacters(bool Full, IReadOnlyList<IndexedCharacter> Upserts, IReadOnlyList<Guid> Removed);
 public sealed record LinkText(string Text);
 public sealed record LinkCount(int Value);
+/// <summary>A Quna spend or grant from a world (the realm sets the world from the caller's sign-in).</summary>
+public sealed record LinkQunaChange(Guid Account, string RequestId, long Amount, string Reason, Guid? CharacterId = null,
+    System.Text.Json.JsonElement? Details = null);
+public sealed record LinkQunaRefund(Guid Account, string RequestId);
 
 /// <summary>The auth host's side of the realm link (/internal/realm/...).</summary>
 public static class RealmLinkEndpoints
@@ -135,12 +139,37 @@ public static class RealmLinkEndpoints
             return Results.Ok(new LinkCount(await Authentication.StaffEndpoints.ChatAnnounceAsync(services, text, worldKey)));
         });
 
+        MapQuna(link, ctx => World(ctx).WorldId);
+
         // The realm socket (server/REALM_LINK.md): the same sign-in, then one WebSocket for both directions.
         if (app.Services.GetService<RealmSocketHub>() is { } hub)
             app.Map(RealmSocketHub.Path, (HttpContext ctx) => hub.AcceptAsync(ctx, async http => (await CallerAsync(http))?.WorldId));
     }
 
     static WorldRecord World(HttpContext context) => (WorldRecord)context.Items[WorldKey]!;
+
+    /// <summary>
+    /// The account Quna wallet (server/DATABASES.md): balance, spend, grant and refund, each repeatable with the same request
+    /// id. A world names the account and the request; the realm records the calling world. Refusals are answered 200 with
+    /// ok=false (insufficient, request_conflict, ...), so a world tells "not enough Quna" from "realm unreachable".
+    /// </summary>
+    public static void MapQuna(IEndpointRouteBuilder link, Func<HttpContext, int> worldOf)
+    {
+        link.MapGet("/quna/{account:guid}", async (Guid account, IQunaWallet wallet, CancellationToken ct) =>
+            Results.Ok(await wallet.BalanceAsync(account, ct)));
+        link.MapPost("/quna/spend", async (LinkQunaChange input, HttpContext ctx, IQunaWallet wallet, CancellationToken ct) =>
+            Results.Ok(await wallet.SpendAsync(Request(input, worldOf(ctx)), ct)));
+        link.MapPost("/quna/grant", async (LinkQunaChange input, HttpContext ctx, IQunaWallet wallet, CancellationToken ct) =>
+            // A world grants (a GM command, the staff dashboard's grant on that world); the opening balances are the realm's.
+            input.Reason == QunaWalletRules.Migration
+                ? Results.Ok(new QunaResult(false, 0, Error: QunaWalletRules.InvalidReason))
+                : Results.Ok(await wallet.GrantAsync(Request(input, worldOf(ctx)), ct)));
+        link.MapPost("/quna/refund", async (LinkQunaRefund input, HttpContext ctx, IQunaWallet wallet, CancellationToken ct) =>
+            Results.Ok(await wallet.RefundAsync(input.Account, input.RequestId ?? "", worldOf(ctx), ct)));
+    }
+
+    static QunaRequest Request(LinkQunaChange input, int world) =>
+        new(input.Account, input.RequestId ?? "", input.Amount, input.Reason ?? "", world, input.CharacterId, input.Details);
 
     static bool? Address(string? text) => text is null ? null : System.Net.IPAddress.TryParse(text, out var a) && a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
 
@@ -222,6 +251,11 @@ public sealed class RealmLinkClient
     public Task<LinkCount?> TicketAsync(LinkTicket input, CancellationToken ct) => Send<LinkCount>(HttpMethod.Post, "tickets", input, ct);
     public Task SyncCharactersAsync(LinkCharacters input, CancellationToken ct) => Send<bool>(HttpMethod.Post, "characters", input, ct, repeatable: true);
     public async Task<int> ChatAsync(string text, CancellationToken ct) => (await Send<LinkCount>(HttpMethod.Post, "chat", new LinkText(text), ct))?.Value ?? 0;
+    // The account Quna wallet: every call is repeatable (the request id makes a repeat return the first result).
+    public Task<QunaResult?> QunaBalanceAsync(Guid account, CancellationToken ct) => Send<QunaResult>(HttpMethod.Get, $"quna/{account:D}", null, ct, repeatable: true);
+    public Task<QunaResult?> QunaSpendAsync(LinkQunaChange input, CancellationToken ct) => Send<QunaResult>(HttpMethod.Post, "quna/spend", input, ct, repeatable: true);
+    public Task<QunaResult?> QunaGrantAsync(LinkQunaChange input, CancellationToken ct) => Send<QunaResult>(HttpMethod.Post, "quna/grant", input, ct, repeatable: true);
+    public Task<QunaResult?> QunaRefundAsync(LinkQunaRefund input, CancellationToken ct) => Send<QunaResult>(HttpMethod.Post, "quna/refund", input, ct, repeatable: true);
     public async Task<IReadOnlyList<CustomShopGoods>> ShopGoodsAsync(CancellationToken ct) =>
         await Send<List<CustomShopGoods>>(HttpMethod.Get, "shop/goods", null, ct) ?? throw new RealmLinkException("The realm sent no shop goods.");
 }
@@ -257,6 +291,41 @@ public sealed class LinkedCustomShopCatalog(RealmLinkClient link, ILogger<Linked
             return goods;
         }
         finally { gate.Release(); }
+    }
+}
+
+/// <summary>
+/// A world server's Quna wallet: the realm's, over the realm link (the socket while it is open, else HTTP). Calls are
+/// retried once when the realm cannot be reached (they are repeatable by request id); after that the error goes to the
+/// caller, which refuses the purchase.
+/// </summary>
+public sealed class LinkedQunaWallet(RealmLinkClient link, ILogger<LinkedQunaWallet> logger) : IQunaWallet
+{
+    public async Task<QunaResult> BalanceAsync(Guid account, CancellationToken ct = default) =>
+        await CallAsync(() => link.QunaBalanceAsync(account, ct), "balance");
+
+    public async Task<QunaResult> SpendAsync(QunaRequest request, CancellationToken ct = default) =>
+        await CallAsync(() => link.QunaSpendAsync(Change(request), ct), "spend");
+
+    public async Task<QunaResult> GrantAsync(QunaRequest request, CancellationToken ct = default) =>
+        await CallAsync(() => link.QunaGrantAsync(Change(request), ct), "grant");
+
+    public async Task<QunaResult> RefundAsync(Guid account, string spendRequestId, int? worldId = null, CancellationToken ct = default) =>
+        await CallAsync(() => link.QunaRefundAsync(new LinkQunaRefund(account, spendRequestId), ct), "refund");
+
+    static LinkQunaChange Change(QunaRequest request) =>
+        new(request.AccountId, request.RequestId, request.Amount, request.Reason, request.CharacterId, request.Details);
+
+    async Task<QunaResult> CallAsync(Func<Task<QunaResult?>> call, string what)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try { return await call() ?? throw new RealmLinkException($"The realm sent no Quna {what} answer."); }
+            catch (Exception error) when (attempt == 1 && error is HttpRequestException or RealmLinkException or TaskCanceledException)
+            {
+                logger.LogWarning("Quna {What} over the realm link failed ({Error}); trying once more", what, error.Message);
+            }
+        }
     }
 }
 

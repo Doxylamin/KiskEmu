@@ -150,16 +150,13 @@ public sealed partial class GameSession
             return [Reply(1)];
         var (currency, price) = priced;
         if (Store is not { } store || CharacterId is not { } character) return price > 0 ? [Reply(1)] : await UnlockPassesAsync(passes, now, [], Reply, ct);
-        var costs = new List<(Guid, long, int)>();
-        if (price > 0)
-        {
-            if (CostStacks(currency, price) is not { } stacks) return [Reply(2)];
-            costs = stacks;
-        }
+        // Quna comes from the account wallet (taken first, given back when the unlock fails); other currencies from the bag.
+        if (PurchaseCosts([(currency, price)]) is not { } paid) return [Reply(2)];
         // The unlock is the ledger's "pass" line (goods: the pass id), paid in one transaction with its record.
         var orders = passes.Select((p, i) => new Aion.Application.Gameplay.ShopOrderLine("pass", (int)p[0], 1, currency, i == 0 ? price : 0)).ToList();
-        var done = await Stored(async () => await store.ShopBuyAsync(character, costs, [], [], orders, ct) ? [[]] : []);
-        if (done.Count == 0) return [Reply(1)];
+        var pay = await PayQunaAsync(paid.Quna, new { kind = "pass", passes = passes.Select(p => p[0]).ToArray() },
+            () => StoredOk(() => store.ShopBuyAsync(character, paid.Costs, [], [], orders, ct)), ct);
+        if (pay != QunaPay.Done) return [Reply(pay == QunaPay.NotEnough ? 2 : 1)];
         var changes = price > 0 ? await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy) : [];
         return await UnlockPassesAsync(passes, now, changes, Reply, ct);
     }

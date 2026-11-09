@@ -183,8 +183,16 @@ public sealed class FakeCharacterStore : INativeCharacterStore
     public Task<IReadOnlyList<ItemState>> InventoryAsync(Guid character, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ItemState>>(Items.ToList());
 
-    public Task<long> AccountQunaBalanceAsync(CancellationToken ct) =>
-        Task.FromResult(Items.Where(i => i.TemplateId == PlatformGoodsTables.Embedded.QunaItemId && i.Location is "bag" or "storage").Sum(i => i.Quantity));
+    /// <summary>The account's Quna wallet (the realm's); Quna items in <see cref="Items"/> are swept into it on the first load.</summary>
+    public MemoryQunaWallet Quna { get; } = new();
+    /// <summary>False: no wallet (Quna stays a bag item, as with development logins).</summary>
+    public bool UseQunaWallet { get; set; } = true;
+    /// <summary>Another wallet in place of <see cref="Quna"/> (the realm's over the realm link).</summary>
+    public IQunaWallet? WalletOverride { get; set; }
+    public IQunaWallet? QunaWallet => UseQunaWallet ? WalletOverride ?? Quna : null;
+    /// <summary>Every shop purchase transaction fails (a database error after the Quna was taken).</summary>
+    public bool FailShopBuy { get; set; }
+    public long QunaBalance => Quna.BalanceAsync(AccountId).Result.Balance;
 
     public Task<bool> MoveItemAsync(Guid character, Guid item, long revision, int? equipmentSlot, CancellationToken ct)
     {
@@ -631,6 +639,7 @@ public sealed class FakeCharacterStore : INativeCharacterStore
     public Task<bool> ShopBuyAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, IReadOnlyList<(int TemplateId, long Count)> goods,
         IReadOnlyList<(int Target, int GoodsId, string Period, int Count, int Limit)> limits, CancellationToken ct)
     {
+        if (FailShopBuy) return Task.FromResult(false);
         foreach (var l in limits)
             if (Purchases.Where(p => p.GoodsId == l.GoodsId && p.Target == l.Target && p.Period == l.Period).Sum(p => p.Count) + l.Count > l.Limit)
                 return Task.FromResult(false);

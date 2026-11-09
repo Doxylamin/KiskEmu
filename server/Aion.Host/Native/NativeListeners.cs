@@ -566,6 +566,6 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         }
         return new ServiceNativeCharacterStore(opened.Token, who, sessions, services.GetRequiredService<IWireCharacterRepository>(),
             services.GetRequiredService<IGameplayStore>(), services.GetRequiredService<CharacterPersistenceService>(),
-            services.GetRequiredService<IAccountQunaBalance>());
+            services.GetService<IQunaWallet>());
     }
 }

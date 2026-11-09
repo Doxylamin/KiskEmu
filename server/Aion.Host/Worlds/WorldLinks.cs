@@ -117,38 +117,13 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
         await RunningAsync(worldId, ct) is { } world
         && (await SendAsync<Blocked>(world, HttpMethod.Get, $"/internal/world/blocked?from={from:D}&to={to:D}", null, ct))?.Value == true;
 
-    sealed record Balance(long Value);
-
     /// <summary>
-    /// The account's Quna over every running world (each world database holds its own characters and account storage).
-    /// A world that does not answer counts as 0 and is logged.
+    /// The account's new Quna balance to the world one of its characters is in (the realm's wallet changed): the world
+    /// updates the virtual Quna stack of that account's session. Nothing when the account is in no running world.
     /// </summary>
-    public async Task<long> QunaAsync(Guid account, CancellationToken ct) => await QunaAsync(account, null, ct);
-
-    /// <summary>
-    /// The account's Quna as the in-game shop sees it: while one of its characters is in a world, only that world's
-    /// (the shop spends from the world the player is on); otherwise the sum over every running world.
-    /// </summary>
-    public async Task<long> QunaAsync(Guid account, int? playingOn, CancellationToken ct) =>
-        await SumOverAsync(QunaWorlds(await RunningAsync(ct), playingOn),
-            async world => (await SendAsync<Balance>(world, HttpMethod.Get, $"/internal/world/quna?account={account:D}", null, ct))?.Value,
-            world => logger.LogWarning("Quna of account {Account} on world {World} unknown; counted as 0", account, world.WorldId));
-
-    /// <summary>The worlds whose Quna counts: the one the account plays on when it is running, else every running world.</summary>
-    public static IReadOnlyList<WorldRecord> QunaWorlds(IReadOnlyList<WorldRecord> running, int? playingOn) =>
-        playingOn is { } on && running.Where(w => w.WorldId == on).ToList() is [_] here ? here : running;
-
-    /// <summary>The sum of each world's answer; a world without one (null) counts as 0 and is reported to <paramref name="missing"/>.</summary>
-    public static async Task<long> SumOverAsync(IEnumerable<WorldRecord> worlds, Func<WorldRecord, Task<long?>> ask, Action<WorldRecord> missing)
-    {
-        var sum = 0L;
-        foreach (var world in worlds)
-        {
-            if (await ask(world) is { } value) sum += value;
-            else missing(world);
-        }
-        return sum;
-    }
+    public async Task<bool> QunaBalanceAsync(int worldId, QunaBalancePush push, CancellationToken ct) =>
+        await RunningAsync(worldId, ct) is { } world
+        && await SendAsync<Count>(world, HttpMethod.Post, "/internal/world/quna/balance", push, ct, repeatable: true) is not null;
 
     /// <summary>Every running world reloads its sanctions; a banned account is disconnected there. The number kicked.</summary>
     public async Task<int> SanctionsChangedAsync(Guid? kickAccount, string? reason, CancellationToken ct)
@@ -204,15 +179,8 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
     }
 }
 
-/// <summary>
-/// The auth host's account Quna: the realm database has no item tables, so each running world server sums its own
-/// (<see cref="WorldLinks.QunaAsync"/>).
-/// </summary>
-public sealed class LinkedAccountQunaBalance(WorldLinks links, WorldPresenceMirror? presence = null) : IAccountQunaBalance
-{
-    public Task<long> SumAsync(Guid accountId, CancellationToken ct = default) =>
-        links.QunaAsync(accountId, presence?.WorldOfAccount(accountId), ct);
-}
+/// <summary>The realm's push of an account's Quna balance (/internal/world/quna/balance); <see cref="EntryId"/> orders pushes.</summary>
+public sealed record QunaBalancePush(Guid AccountId, long Balance, long EntryId);
 
 /// <summary>
 /// The characters in the world on each running world process, polled every 2 s (and on demand at a chat login) for the
