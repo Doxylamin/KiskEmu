@@ -276,6 +276,7 @@ if (native.LoginPort is not null || native.GamePort is not null)
         builder.Services.AddSingleton(provider => new Aion.Host.Worlds.LoginWorldList(provider.GetRequiredService<IWorldRegistry>(), native,
             provider.GetService<Aion.Host.Worlds.WorldSupervisor>(), provider.GetRequiredService<ILogger<Aion.Host.Worlds.LoginWorldList>>()));
         builder.Services.AddSingleton<Aion.Host.Worlds.WorldLinks>();
+        builder.Services.AddSingleton<IAccountQunaBalance, Aion.Host.Worlds.LinkedAccountQunaBalance>();
         builder.Services.AddSingleton<Aion.Host.Worlds.WorldPresenceMirror>();
         builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Worlds.WorldPresenceMirror>());
     }
