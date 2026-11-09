@@ -84,7 +84,13 @@ static partial class MapEventScenarioHelpers
         return run.Finished || run.Status == MapEventRun.Complete || q is { Status: >= QuestLog.Complete };
     }
 
-    /// <summary>Poeta brigade base (HQ1101070): walk into the instance trigger, kill the boss, flush ClearMapEvent.</summary>
+    const string StarterLayer2Event = "World_L_Starter_InstanceLayer_2_MapEvent";
+
+    /// <summary>
+    /// Poeta brigade base (HQ1101070): walk into the instance trigger, break the three communication towers with the bomb boxes,
+    /// then play the script (cutscene, commander, cliff waves with DrakanElite_01) to its DungeonClear and the way out.
+    /// The Elite is the layer's boss in the instance table, but the script starts it; killing it alone does not clear the layer.
+    /// </summary>
     public static async Task<bool> PlayStarterInstanceLayer2Async(GameSession session, long now, List<byte[]>? capture = null)
     {
         var inst = InstanceTables.Embedded.Of(100002);
@@ -92,18 +98,14 @@ static partial class MapEventScenarioHelpers
         var layerMap = inst.MapId;
         var center = new Vector3d(inst.Entry.Center[0], inst.Entry.Center[1], inst.Entry.Center[2]);
         var approach = center with { Y = center.Y - 300 };
-        var bossId = inst.Boss.Length > 0 ? inst.Boss[0] : 2701128;
         var brigadeOpen = session.Quests!.Get("HQ1101070") is { Status: QuestLog.Incomplete };
 
-        if (session.MapId == layerMap && brigadeOpen)
+        // Inside already, but the script is gone (finished or never started): leave and walk in again for a fresh copy.
+        if (session.MapId == layerMap && brigadeOpen && !session.MapEventRuns.Any(r => r.Name == StarterLayer2Event && !r.Finished))
         {
-            var existing = session.Targets!.Values.FirstOrDefault(t => t.NpcId == bossId);
-            if (existing is null or { Dead: true })
-            {
-                await session.HandleAsync(new PacketWriter().U16(0x4004).ToArray(), now);
-                await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), now + 100);
-                await session.TickAsync(now + 200);
-            }
+            await session.HandleAsync(new PacketWriter().U16(0x4004).ToArray(), now);
+            await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), now + 100);
+            await session.TickAsync(now + 200);
         }
 
         for (var attempt = 0; attempt < 3 && session.MapId != layerMap; attempt++)
@@ -117,26 +119,42 @@ static partial class MapEventScenarioHelpers
         }
 
         if (session.MapId != layerMap) return false;
+        var run = await WaitForMapEventRunAsync(session, StarterLayer2Event, now + 40_000, attempts: 24);
+        if (run is null) return session.Quests!.Get("HQ1101070") is { Status: >= QuestLog.Complete };
 
-        Target? boss = null;
-        for (var wait = 0; wait < 8 && boss is null; wait++)
+        var t = now + 60_000;
+        if (run.StepOrder == 1) t = await BreakStarterLayer2TowersAsync(session, t);
+        await PlayMapEventScriptAsync(session, run, t, maxSeconds: 300, capture);
+        t += 301_000;
+        // DungeonClear, then the closing PCTeleport to the recovery room (or the instance exit).
+        for (var i = 0; i < 20 && session.MapId == layerMap; i++)
         {
-            boss = session.Targets!.Values.FirstOrDefault(t => t.NpcId == bossId && !t.Dead);
-            if (boss is not null) break;
-            await session.TickAsync(now + 8000 + wait * 500);
+            var out1 = await session.TickAsync(t + i * 500);
+            capture?.AddRange(out1);
         }
+        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 11_000);
+        await FlushQuestMapEventClearsAsync(session, t + 12_000);
+        return run.Finished && session.Quests!.Get("HQ1101070") is { Status: >= QuestLog.Complete };
+    }
 
-        if (boss is null)
-            return session.Quests!.Get("HQ1101070") is { Status: >= QuestLog.Complete };
-
-        var skillId = BasicAttackSkill(session);
-        boss.Immune = false;
-        boss.Relationship = 6;
-        boss.Hp = 1;
-        await CombatCastAsync(session, skillId, boss.Key, boss.Position, now + 7000);
-        await FlushQuestMapEventClearsAsync(session, now + 7200);
-
-        return session.Quests!.Get("HQ1101070") is { Status: >= QuestLog.Complete };
+    /// <summary>Step 1 of the brigade layer: carry a bomb from the nearest Bomb Chest (1400823) to each tower (1400824) and plant it with F.</summary>
+    public static async Task<long> BreakStarterLayer2TowersAsync(GameSession session, long now)
+    {
+        static byte[] Use(int key) => new PacketWriter().U16(0x3636).U8(1).Varint(key).I64(0).I32(0).ToArray();
+        var objects = WorldObjects.ObjectsOn(100002);
+        var boxes = objects.Select((o, i) => (o, i)).Where(x => x.o.Env == 1400823).ToList();
+        foreach (var tower in objects.Select((o, i) => (o, i)).Where(x => x.o.Env == 1400824).ToList())
+        {
+            now += 20_000;
+            var box = boxes.OrderBy(b => b.o.At.DistanceSquared(tower.o.At)).First();
+            await SyncPositionAsync(session, box.o.At, now);
+            await session.HandleAsync(Use(WorldObjects.FirstKey + box.i), now + 100);
+            await session.TickAsync(now + 100 + GameSession.CarryPickupMs);
+            await SyncPositionAsync(session, tower.o.At, now + 1_000);
+            await session.HandleAsync(Use(WorldObjects.FirstKey + tower.i), now + 1_100);
+            await session.TickAsync(now + 1_500);
+        }
+        return now + 2_000;
     }
 
     /// <summary>Sealed dungeon map events (lake cave HQ2101050): kill hostiles, flush ClearMapEvent credit.</summary>

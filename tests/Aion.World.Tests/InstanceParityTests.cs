@@ -254,21 +254,8 @@ public sealed class InstanceParityTests
         var session = await GameSessionTestHelpers.EnterFreshSharedWorldAsync(store, Now, race: 1, level: 10);
         await session.QuestCommandAsync("QuestAdd", "HQ1101070", default);
 
-        var inst = InstanceTables.Embedded.Of(100002)!;
-        var center = new Vector3d(inst.Entry.Center[0], inst.Entry.Center[1], inst.Entry.Center[2]);
-        session.Teleport(1000, center with { Y = center.Y - 300 }, Now + 10);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 20);
-        await session.HandleAsync(MapEventScenarioHelpers.MoveUpdate(center), Now + 5000);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 5100);
-        Assert.Equal(100002, session.MapId);
-        Assert.NotEqual(0, session.InstanceKey);
-
-        var boss = session.Targets!.Values.First(t => t.NpcId == 2701128);
-        boss.Hp = 1;
-        var skillId = MapEventScenarioHelpers.BasicAttackSkill(session);
-        await MapEventScenarioHelpers.CombatCastAsync(session, skillId, boss.Key, boss.Position, Now + 7000);
-        await session.TickAsync(Now + 7000 + MapEventScenarioHelpers.SkillHitsLandMs(skillId) + GameSession.InstanceExitDelayMs + 500);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 20_000);
+        Assert.True(await MapEventScenarioHelpers.PlayStarterInstanceLayer2Async(session, Now + 10));
+        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 2_000_000);
 
         // HQ1101070's CompleteTeleportName (DawnLegionBase_Indoor_Recovery_Start) sends the player to the recovery room on map 1010.
         Assert.Equal(1010, session.MapId);
@@ -276,8 +263,12 @@ public sealed class InstanceParityTests
         Assert.True(session.Targets!.Count > 10, "shared NPCs should be visible after leaving the private layer");
     }
 
+    /// <summary>
+    /// The open-ClearMapEvent respawn brings a dead boss back on entry, but not one the layer's script starts later:
+    /// HQ1101070's DrakanElite_01 waits for Multi_Cliff_Drakan_Module_2 (step 6), also when the player walks in again.
+    /// </summary>
     [Fact]
-    public async Task Instance_layer_respawns_boss_while_ClearMapEvent_step_is_open()
+    public async Task Instance_layer_leaves_a_script_started_boss_for_its_spawner_on_every_entry()
     {
         const long Now = 1_760_000_400_000;
         var store = new FakeCharacterStore();
@@ -286,22 +277,20 @@ public sealed class InstanceParityTests
 
         var inst = InstanceTables.Embedded.Of(100002)!;
         var center = new Vector3d(inst.Entry.Center[0], inst.Entry.Center[1], inst.Entry.Center[2]);
-        session.Teleport(1000, center with { Y = center.Y - 300 }, Now + 10);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 20);
-        await session.HandleAsync(MapEventScenarioHelpers.MoveUpdate(center), Now + 5000);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 5100);
-        var boss = session.Targets!.Values.First(t => t.NpcId == 2701128);
-        boss.Hp = 0;
-        await session.TickAsync(Now + 5200);
-
-        await session.HandleAsync(new PacketWriter().U16(0x4004).ToArray(), Now + 6000);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 6100);
-        session.Teleport(1000, center with { Y = center.Y - 300 }, Now + 6200);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 6210);
-        await session.HandleAsync(MapEventScenarioHelpers.MoveUpdate(center), Now + 11_000);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 11_100);
-
-        boss = session.Targets!.Values.First(t => t.NpcId == 2701128);
-        Assert.False(boss.Dead);
+        for (var entry = 0; entry < 2; entry++)
+        {
+            var at = Now + entry * 20_000L;
+            if (entry > 0)
+            {
+                await session.HandleAsync(new PacketWriter().U16(0x4004).ToArray(), at);
+                await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), at + 100);
+            }
+            session.Teleport(1000, center with { Y = center.Y - 300 }, at + 200);
+            await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), at + 210);
+            await session.HandleAsync(MapEventScenarioHelpers.MoveUpdate(center), at + 5000);
+            await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), at + 5100);
+            Assert.Equal(100002, session.MapId);
+            Assert.All(session.Targets!.Values.Where(t => t.NpcId == 2701128), boss => Assert.True(boss.Dead, $"entry {entry}: the Elite is up before its spawner"));
+        }
     }
 }

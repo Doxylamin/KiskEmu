@@ -1111,6 +1111,7 @@ public sealed partial class GameSession : IMapEventHost
     void IMapEventHost.MoveNpc(string spawner, string route)
     {
         if (data.Route(worldMap, route) is not { } path) { Note($"map event route {route} is not on map {worldMap}"); return; }
+        DebugMapEvent($"NpcMoveToWayPoint {spawner} {route}: {SpawnerState(spawner)}");
         foreach (var t in SpawnerNpcs(spawner).Where(t => !t.Dead)) mapEventOut.AddRange(ai.Walk(t, path, mapEventNow));
     }
 
