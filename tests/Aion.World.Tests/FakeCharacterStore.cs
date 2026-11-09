@@ -760,16 +760,20 @@ public sealed class FakeCharacterStore : INativeCharacterStore
     public Task ApplyWeeklyLegionResetsAsync(long weeklyBoundaryMs, CancellationToken ct) => Task.CompletedTask;
     public List<RewardLimitRecord> RewardLimits { get; } = [];
     public Task<IReadOnlyList<RewardLimitRecord>> RewardLimitsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<RewardLimitRecord>>(RewardLimits.ToList());
+    public int RewardLimitSaves { get; private set; }
     public Task<bool> SaveRewardLimitsAsync(Guid character, IReadOnlyList<RewardLimitRecord> rows, CancellationToken ct)
     {
+        RewardLimitSaves++;
         RewardLimits.Clear();
         RewardLimits.AddRange(rows);
         return Task.FromResult(true);
     }
     public List<DungeonCooltimeRecord> DungeonCooltimes { get; } = [];
     public Task<IReadOnlyList<DungeonCooltimeRecord>> DungeonCooltimesAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<DungeonCooltimeRecord>>(DungeonCooltimes.ToList());
+    public int DungeonCooltimeSaves { get; private set; }
     public Task<bool> SaveDungeonCooltimesAsync(Guid character, IReadOnlyList<DungeonCooltimeRecord> rows, CancellationToken ct)
     {
+        DungeonCooltimeSaves++;
         DungeonCooltimes.Clear();
         DungeonCooltimes.AddRange(rows);
         return Task.FromResult(true);

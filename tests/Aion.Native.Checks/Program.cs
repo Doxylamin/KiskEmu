@@ -2512,9 +2512,9 @@ Check(otherRan && tx.Held, "a storage call runs outside the turn (others run mea
 var turnStore = new FakeStore();
 var wrapped = TurnStore.Wrap(turnStore, tx);
 Check(TurnStore.Unwrap(wrapped) == turnStore && (await wrapped.WingsAsync(Guid.Empty, default)).Count == 0 && tx.Held
-      && lockWorld.Lock.Stats.Read().Since(outsideBefore).StoreCallsOutside == 2, "store calls through the wrapper run outside a held turn");
+      && lockWorld.Lock.Stats.Read().Since(outsideBefore).StoreCallsOutside == 1, "a store call that finished at once keeps the held turn");
 tx.Exit();
-Check((await wrapped.WingsAsync(Guid.Empty, default)).Count == 0 && lockWorld.Lock.Stats.Read().Since(outsideBefore).StoreCallsOutside == 2,
+Check((await wrapped.WingsAsync(Guid.Empty, default)).Count == 0 && lockWorld.Lock.Stats.Read().Since(outsideBefore).StoreCallsOutside == 1,
     "without a held turn the wrapper calls straight through");
 
 var grid = new SpatialGrid();

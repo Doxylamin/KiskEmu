@@ -2810,8 +2810,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         await FlushAirspaceAsync(ct);
         await FlushBossChallengeAsync(ct);
         await FlushExpeditionTicketsAsync(ct);
-        await FlushRewardLimitsAsync(ct);
-        await FlushDungeonCooltimesAsync(ct);
+        await FlushRewardLimitsAsync(now, ct);
+        await FlushDungeonCooltimesAsync(now, ct);
         await FlushBuffSettingsAsync(now, ct);
         // Play time: a minute at a time to the ElapsedTime achievements without a movement state (steps are minutes:
         // "Accumulate 3 hours of playtime" = 180). The ones naming states (Glide, Flying, Swimming) count their own minutes below.
@@ -2892,8 +2892,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         await FlushAirspaceAsync(ct);
         await FlushBossChallengeAsync(ct);
         await FlushExpeditionTicketsAsync(ct);
-        await FlushRewardLimitsAsync(ct);
-        await FlushDungeonCooltimesAsync(ct);
+        await FlushRewardLimitsAsync(now, ct, force: true);
+        await FlushDungeonCooltimesAsync(now, ct, force: true);
         await FlushContentResetWorkAsync(ct);
         await FlushBuffSettingsAsync(now, ct, force: true);
         await FlushPendingInstanceReturnAsync(ct);

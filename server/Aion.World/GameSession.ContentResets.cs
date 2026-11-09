@@ -11,32 +11,48 @@ public sealed partial class GameSession
     readonly Dictionary<int, (string Period, int Count)> rewardLimits = [];
     readonly Dictionary<int, long> dungeonCoolUntilMs = [];
     bool rewardLimitsLoaded;
+    // Saved only when changed (each save is a whole transaction: delete and re-insert every row), at most once a
+    // second from the tick; logout and disconnect force the last one. Set the flag at every change to the two maps.
+    bool rewardLimitsDirty, dungeonCooltimesDirty;
+    long rewardLimitsFlushAt, dungeonCooltimesFlushAt;
+    public const int ContentLimitsFlushMs = 1000;
 
     void LoadRewardLimits(IReadOnlyList<RewardLimitRecord> rows)
     {
         rewardLimits.Clear();
         foreach (var row in rows) rewardLimits[row.LimitType] = (row.Period, row.Count);
         rewardLimitsLoaded = true;
+        rewardLimitsDirty = false;
     }
 
-    async Task FlushRewardLimitsAsync(CancellationToken ct)
+    async Task FlushRewardLimitsAsync(long now, CancellationToken ct, bool force = false)
     {
+        if (!rewardLimitsDirty || (!force && now < rewardLimitsFlushAt)) return;
         if (!rewardLimitsLoaded || Store is not { } store || CharacterId is not { } character) return;
+        rewardLimitsFlushAt = now + ContentLimitsFlushMs;
+        // Cleared before the save so a change made while it runs (the turn is released for it) is saved next time.
+        rewardLimitsDirty = false;
         var rows = rewardLimits.Select(kv => new RewardLimitRecord(kv.Key, kv.Value.Period, kv.Value.Count)).ToList();
-        await Stored(async () => await store.SaveRewardLimitsAsync(character, rows, ct) ? [[]] : []);
+        if ((await Stored(async () => await store.SaveRewardLimitsAsync(character, rows, ct) ? [[]] : [])).Count == 0)
+            rewardLimitsDirty = true;
     }
 
     void LoadDungeonCooltimes(IReadOnlyList<DungeonCooltimeRecord> rows)
     {
         dungeonCoolUntilMs.Clear();
         foreach (var row in rows) dungeonCoolUntilMs[row.DungeonId] = row.UntilMs;
+        dungeonCooltimesDirty = false;
     }
 
-    async Task FlushDungeonCooltimesAsync(CancellationToken ct)
+    async Task FlushDungeonCooltimesAsync(long now, CancellationToken ct, bool force = false)
     {
+        if (!dungeonCooltimesDirty || (!force && now < dungeonCooltimesFlushAt)) return;
         if (Store is not { } store || CharacterId is not { } character) return;
+        dungeonCooltimesFlushAt = now + ContentLimitsFlushMs;
+        dungeonCooltimesDirty = false;
         var rows = dungeonCoolUntilMs.Select(kv => new DungeonCooltimeRecord(kv.Key, kv.Value)).ToList();
-        await Stored(async () => await store.SaveDungeonCooltimesAsync(character, rows, ct) ? [[]] : []);
+        if ((await Stored(async () => await store.SaveDungeonCooltimesAsync(character, rows, ct) ? [[]] : [])).Count == 0)
+            dungeonCooltimesDirty = true;
     }
 
     /// <summary>Lazy resets on login / after a missed world tick while offline.</summary>
@@ -89,10 +105,10 @@ public sealed partial class GameSession
         return touched.Count == 0 ? [] : [AchievementUpdate(touched)];
     }
 
-    void PruneExpiredDungeonCooltimes(long now)
+    internal void PruneExpiredDungeonCooltimes(long now)
     {
         foreach (var id in dungeonCoolUntilMs.Keys.Where(k => dungeonCoolUntilMs[k] <= now).ToList())
-            dungeonCoolUntilMs.Remove(id);
+            if (dungeonCoolUntilMs.Remove(id)) dungeonCooltimesDirty = true;
     }
 
     static byte[] RewardLimitResetPacket(IReadOnlyList<int> types)
