@@ -279,8 +279,8 @@ code { padding: 1px 5px; border-radius: 4px; background: var(--panel-2); font-si
 .server-cards .restart-card { max-width: none; }
 /* World Management */
 .worlds-table td { vertical-align: middle; }
-.worlds-table td.actions { text-align: right; }
-.worlds-table td.actions > * + * { margin-left: 6px; }
+.worlds-table td.actions { width: 1%; }
+.world-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
 .worlds-table .badge { margin-right: 6px; }
 .danger-text { color: var(--danger); }
 .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }

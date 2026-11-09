@@ -143,6 +143,8 @@ const ICONS: Record<string, string> = {
   teleport: 'M4 16 16 4M9 4h7v7',
   kick: 'M8 3H4v14h4M13 6l4 4-4 4M17 10H8',
   open: 'M8 4H4v12h12v-4M11 3h6v6M17 3l-8 8',
+  edit: 'M13.5 3.5l3 3L7 16H4v-3zM11.5 5.5l3 3',
+  trash: 'M3.5 5.5h13M8 5.5V3.5h4v2M5.5 5.5l.8 11h7.4l.8-11M8.5 8.5v5M11.5 8.5v5',
   refresh: 'M16 6a7 7 0 1 0 1.5 5M16 2v4h-4',
   logout: 'M8 3H4v14h4M13 6l4 4-4 4M17 10H8',
   plus: 'M10 4v12M4 10h12',

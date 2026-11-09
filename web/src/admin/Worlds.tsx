@@ -93,8 +93,9 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
                     <td data-label="Game port" className="mono">{(w.host ?? list?.publicAddress ?? '') + (w.gamePort ? `:${w.gamePort}` : '')}</td>
                     <td data-label="Server list rows" className="mono small">Light {w.lightServerId} · Dark {w.darkServerId}</td>
                     <td data-label="Level cap" className="mono">{w.levelCap ?? <span className="faint">default</span>}</td>
-                    <td className="actions nowrap">
-                      {manage && (running
+                    <td className="actions">
+                      {manage && <div className="world-actions">
+                      {running
                         ? <>
                             {w.kind === 'managed' && <Button size="sm" busy={busy === w.worldId} onClick={() => setConfirm({ title: `Restart ${w.name}?`,
                               body: 'Players in this world are disconnected and saved; the world comes back in about 30 seconds.', confirmLabel: 'Restart', danger: true,
@@ -104,13 +105,14 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
                                 : 'Players in this world are disconnected and saved, and the world leaves the server list.',
                               confirmLabel: 'Stop world', danger: true, onConfirm: () => act(w, 'stop') })}>Stop</Button>
                           </>
-                        : <Button size="sm" variant="primary" busy={busy === w.worldId} onClick={() => act(w, 'start')}>Start</Button>)}
-                      {manage && <button type="button" className="icon-btn" title="Settings" aria-label={`Settings of ${w.name}`} onClick={() => setEditing(w)}><Icon name="open" size={16} /></button>}
-                      {manage && !w.enabled && <button type="button" className="icon-btn" title="Remove" aria-label={`Remove ${w.name}`}
+                        : <Button size="sm" variant="primary" busy={busy === w.worldId} onClick={() => act(w, 'start')}>Start</Button>}
+                      <button type="button" className="icon-btn" title="Settings" aria-label={`Settings of ${w.name}`} onClick={() => setEditing(w)}><Icon name="edit" size={16} /></button>
+                      {!w.enabled && <button type="button" className="icon-btn" title="Remove" aria-label={`Remove ${w.name}`}
                         onClick={() => setConfirm({ title: `Remove ${w.name}?`, body: w.characters > 0
                           ? `This world still has ${w.characters} character${w.characters === 1 ? '' : 's'}; it cannot be removed while they exist.`
                           : 'The world is removed from the registry. Its game port is freed.', confirmLabel: 'Remove world', danger: true, onConfirm: () => act(w, 'remove') })}>
-                        <Icon name="kick" size={16} /></button>}
+                        <Icon name="trash" size={16} /></button>}
+                      </div>}
                     </td>
                   </tr>
                 );
