@@ -531,8 +531,9 @@ def main():
     sub.add_parser('migrate-quna', help="move the Quna item stacks of every world database here into the realm's wallets (idempotent)")
     load = sub.add_parser('import-catalog')
     load.add_argument('--directory', type=Path, default=ROOT / 'research/local/game-catalog-v2')
-    backup = sub.add_parser('backup')
-    backup.add_argument('output', type=Path)
+    # Not named "backup": that would shadow backup() below and the command would call the parser.
+    backup_parser = sub.add_parser('backup')
+    backup_parser.add_argument('output', type=Path)
     verify = sub.add_parser('verify-backup')
     verify.add_argument('path', type=Path)
     staff = sub.add_parser('role', help='grant or revoke a gamemaster/admin role (operator only)')

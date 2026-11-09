@@ -227,6 +227,21 @@ class PostgreSQLTests(unittest.TestCase):
         self.assertIn('Applied migration changed', result.stderr)
 
 
+class CommandLineTests(unittest.TestCase):
+    def test_backup_command_calls_the_backup_function(self):
+        # update.sh runs "postgres_dev.py backup <file>" before every deploy; a parser variable named "backup" once
+        # shadowed the function and the command crashed before anything was backed up.
+        import sys
+        from unittest import mock
+        import tools.postgres_dev as pg
+        with tempfile.TemporaryDirectory() as scratch:
+            target = Path(scratch) / 'out.dump'
+            with mock.patch.object(pg, 'backup', return_value=[target]) as called, \
+                 mock.patch.object(sys, 'argv', ['postgres_dev.py', 'backup', str(target)]):
+                pg.main()
+            called.assert_called_once_with(target)
+
+
 class RoleStatementTests(unittest.TestCase):
     def test_role_statement_targets_one_local_account(self):
         grant = role_statement('staffuser', 'admin')
