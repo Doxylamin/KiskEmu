@@ -17,8 +17,11 @@ public sealed partial class GameSession : IMapEventHost
     static MapEventTables MapEventData => MapEventTables.Embedded;
     /// <summary>Where unsupported directives and timed-out objectives are reported (the host logs them); also kept in MapEventNotes.</summary>
     public static Action<string>? MapEventLog { get; set; }
-    /// <summary>Set by the Windows test host (AION_MAP_EVENT_DEBUG): a dedicated trace of spawns and aggro, separate from the host log.</summary>
-    static readonly string? MapEventDebugPath = Environment.GetEnvironmentVariable("AION_MAP_EVENT_DEBUG");
+    /// <summary>
+    /// A dedicated trace of spawns and aggro, separate from the host log: AION_MAP_EVENT_DEBUG at startup, switched on and off
+    /// on the staff dashboard (<see cref="WorldDebug"/>).
+    /// </summary>
+    static string? MapEventDebugPath => WorldDebug.MapEventLog;
     static readonly object MapEventDebugGate = new();
 
     readonly List<MapEventRun> mapEventRuns = [];

@@ -34,7 +34,7 @@ export type Call = <T>(path: string, options?: { method?: string; body?: unknown
 // The staff endpoints a world server answers for its own world: its live state and the data in its own database
 // (characters, inventories, GM commands, rewards, gameplay audit). Accounts, sanctions, tickets and the catalogue stay
 // the realm's (server/DATABASES.md).
-const WORLD_TOOLS = /^\/api\/admin\/(live|server|restart|maintenance|announce|economy|players\/|maps\/\d+\/monsters|characters|commands|rewards|audit)/;
+const WORLD_TOOLS = /^\/api\/admin\/(live|server|restart|maintenance|announce|economy|players\/|maps\/\d+\/monsters|characters|commands|rewards|audit|debug)/;
 const WORLD_KEY = 'aion-staff-world';
 function withWorld(path: string, world: number | null): string {
   if (world === null || !WORLD_TOOLS.test(path)) return path;
@@ -196,7 +196,7 @@ export function AdminApp() {
         <div className="view" hidden={view !== 'economy'}><Economy call={call} active={view === 'economy'} onOpen={openCharacter} /></div>
         <div className="view" hidden={view !== 'activity'}><Activity call={call} active={view === 'activity'} onOpen={openCharacter} /></div>
         <div className="view" hidden={view !== 'worlds'}><Worlds call={call} active={view === 'worlds'} /></div>
-        <div className="view" hidden={view !== 'server'}><ServerView call={call} token={session.token} active={view === 'server'} isAdmin={isAdmin} /></div>
+        <div className="view" hidden={view !== 'server'}><ServerView call={call} token={session.token} world={world} active={view === 'server'} isAdmin={isAdmin} /></div>
       </div>
       <NewAccountDialog open={creating} call={call} onClose={() => setCreating(false)} />
     </div>

@@ -117,6 +117,13 @@ export interface Economy {
   suspects: { name: string; characterId: string | null; level: number; mapId: number | null; speedRejects: number }[];
 }
 export interface Backups { configured: boolean; files: { name: string; length: number; at: string }[] }
+/** A world server's debug logging (GET/POST /api/admin/debug): the folder, what is being written now, and the files. */
+export interface DebugState {
+  directory: string | null;
+  mapEventLog: string | null;
+  traces: boolean;
+  files: { name: string; length: number; at: string; kind: 'trace' | 'map-events' }[];
+}
 
 Object.assign(ERRORS, {
   invalid_sanction: 'Choose ban or mute, a reason of up to 200 characters and a valid duration.',
@@ -132,6 +139,7 @@ Object.assign(ERRORS, {
   invalid_spawn: 'Spawn between 1 and 20 monsters.',
   unknown_npc: 'That NPC is not placed on any map, so it has no template.',
   backups_not_configured: 'Backups are not configured on this host.',
+  debug_not_configured: 'This world server has no debug folder (Aion:Native:DebugDirectory).',
   backup_failed: 'The backup failed; see the server log.',
 });
 

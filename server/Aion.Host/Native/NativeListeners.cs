@@ -40,8 +40,10 @@ public sealed record NativeOptions
     public string? NavMeshDirectory { get; init; }
     /// <summary>Maps whose terrain and navmesh load in the background at startup (world maps take seconds).</summary>
     public int[] PreloadMaps { get; init; } = [1000];
-    /// <summary>Research: write each game connection's client message trace here (ClientTrace); unset: off.</summary>
+    /// <summary>Research: write each game connection's client message trace here (ClientTrace); unset: off (the staff dashboard can switch it on, see WorldDebug).</summary>
     public string? TraceDirectory { get; init; }
+    /// <summary>The writable folder the staff dashboard's debug switches use (map-event log, client traces); unset: derived from the two settings above.</summary>
+    public string? DebugDirectory { get; init; }
     public int MaxConnections { get; init; } = 16;
     /// <summary>
     /// A connection without client data for this long is closed. Dead peers are found by TCP keepalive (ServeAsync) well
@@ -294,6 +296,13 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
     /// <summary>Extra client frames in one TCP read are dropped (logged on the session) instead of starving the tick loop.</summary>
     const int MaxClientFramesPerTick = 64;
     protected override string Name => "Native game";
+
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        // The debug switches (staff dashboard, Server page) start from the configured map-event log and trace folder.
+        Aion.World.WorldDebug.Configure(Options.DebugDirectory, Environment.GetEnvironmentVariable("AION_MAP_EVENT_DEBUG"), Options.TraceDirectory);
+        return base.StartAsync(cancellationToken);
+    }
     protected override byte[] HandshakeReply(RsaPublicKey key, byte[] sessionKey) => NativeHandshake.GameReply(key, sessionKey);
 
     protected override async Task RunAsync(NetworkStream stream, Rc4 cipher, FrameBuffer buffer, IPAddress? clientAddress, CancellationToken ct)
@@ -350,7 +359,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         var lastData = DateTimeOffset.UtcNow;
         string? present = null;
         var unanswered = new HashSet<int>();
-        var trace = Options.TraceDirectory is { Length: > 0 } traceDir ? new ClientTrace(traceDir) : null;
+        var trace = Aion.World.WorldDebug.TraceDirectory is { Length: > 0 } traceDir ? new ClientTrace(traceDir) : null;
         var traceWrittenAt = Environment.TickCount64;
         // The server frame clock 0x3600 (i64 ms): OBSERVED every 50 ms for the whole official session (26,964 in 1,348 s, map loads
         // included). It went out here only while the connection was idle, which a client pinging every 50 ms never is; live
