@@ -40,7 +40,7 @@ def free_port():
 
 
 class Native:
-    """One encrypted native connection (login or game port)."""
+    """One native connection (login or game port): client bodies RC4-encrypted, server bodies plaintext."""
 
     def __init__(self, port, game, keys):
         self.sock = socket.create_connection(('127.0.0.1', port), timeout=15)
@@ -87,7 +87,7 @@ class Native:
             raw = self._raw(max(0.1, deadline - time.time()))
             if raw is None:
                 return None
-            body = self.rc4.crypt(raw)
+            body = raw   # the server answers in plaintext; only client bodies are encrypted
             if len(body) >= 2 and body[0] | body[1] << 8 == opcode:
                 return body
 
