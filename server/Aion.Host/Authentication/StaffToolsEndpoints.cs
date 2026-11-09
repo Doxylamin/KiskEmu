@@ -25,6 +25,7 @@ public static partial class StaffToolsEndpoints
     sealed record RewardRequest(string? Target, string? Character, RewardItem[]? Items, long Kina, string? Message);
     sealed record AreaRequest(double X, double Y, double Radius);
     sealed record SpawnRequest(int NpcId, double X, double Y, double? Z, int Count = 1);
+    sealed record DebugRequest(bool? MapEvents, bool? Traces);
 
     const int KinaItemId = GameSession.KinaItemId;
 
@@ -287,6 +288,54 @@ public static partial class StaffToolsEndpoints
             if (!File.Exists(path)) return Results.NotFound();
             await game.AdminRecordAsync(a, "staff_backup_downloaded", null, new { name }, ct);
             return Results.File(path, "application/octet-stream", name);
+        });
+
+        MapDebugEndpoints(staff);
+    }
+
+    /// <summary>
+    /// Debug logging on this world server (admins; the auth host forwards ?world=…): switch the map-event log and the client
+    /// traces on or off while it runs, list, download and delete their files. A switch lasts until the world server restarts.
+    /// </summary>
+    static void MapDebugEndpoints(RouteGroupBuilder staff)
+    {
+        static object State() => new
+        {
+            directory = WorldDebug.Directory,
+            mapEventLog = WorldDebug.MapEventLog is { } log ? Path.GetFileName(log) : null,
+            traces = WorldDebug.TraceDirectory is not null,
+            files = WorldDebug.Files().Take(200).Select(f => new
+            {
+                f.Name, f.Length, At = new DateTimeOffset(f.LastWriteTimeUtc, TimeSpan.Zero),
+                Kind = f.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ? "trace" : "map-events",
+            }),
+        };
+        staff.MapGet("/debug", async (HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, CancellationToken ct) =>
+            await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is null ? Results.Unauthorized() : Results.Ok(State()));
+        staff.MapPost("/debug", async (DebugRequest input, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, CancellationToken ct) =>
+        {
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is not { } a) return Results.Unauthorized();
+            if (input.MapEvents is { } mapEvents && !WorldDebug.SetMapEventLog(mapEvents)) return Results.BadRequest(new { error = "debug_not_configured" });
+            if (input.Traces is { } traces && !WorldDebug.SetTraces(traces)) return Results.BadRequest(new { error = "debug_not_configured" });
+            await game.AdminRecordAsync(a, "staff_debug_changed", null, new { input.MapEvents, input.Traces }, ct);
+            return Results.Ok(State());
+        });
+        staff.MapGet("/debug/files/{name}", async (string name, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, CancellationToken ct) =>
+        {
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is not { } a) return Results.Unauthorized();
+            if (WorldDebug.File(name) is not { } file) return Results.NotFound();
+            await game.AdminRecordAsync(a, "staff_debug_downloaded", null, new { name }, ct);
+            // Read through a shared handle: the game may be appending to the file right now.
+            var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return Results.File(stream, file.Extension == ".json" ? "application/json" : "text/plain", file.Name);
+        });
+        staff.MapDelete("/debug/files/{name}", async (string name, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, CancellationToken ct) =>
+        {
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is not { } a) return Results.Unauthorized();
+            if (WorldDebug.File(name) is not { } file) return Results.NotFound();
+            file.Delete();
+            await game.AdminRecordAsync(a, "staff_debug_deleted", null, new { name }, ct);
+            return Results.Ok(State());
         });
     }
 

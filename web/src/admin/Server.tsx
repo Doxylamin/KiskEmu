@@ -1,18 +1,18 @@
 // Server health (CPU, memory, players, how busy the world is) with a short history, and (admins) a scheduled restart
-// with countdown notices to the players. Polls /api/admin/server every 5 s while shown.
+// with countdown notices to the players, backups and the world's debug logging. Polls /api/admin/server every 5 s while shown.
 import { useCallback, useEffect, useState } from 'react';
 import { Button, ConfirmDialog, Icon, Status, type ConfirmRequest, type StatusMessage } from '../ui/components';
 import { apiBlobUrl } from '../api';
 import { describe, type Call } from './AdminApp';
 import { duration } from './Overview';
-import type { Backups, Maintenance, PopulationPoint, ServerHealth } from './types';
+import type { Backups, DebugState, Maintenance, PopulationPoint, ServerHealth } from './types';
 
 const POLL_MS = 5000;
 const HISTORY = 72;   // 6 minutes
 
 interface Sample { cpu: number; players: number; memory: number; busy: number }
 
-export function ServerView({ call, token, active, isAdmin }: { call: Call; token: string; active: boolean; isAdmin: boolean }) {
+export function ServerView({ call, token, world, active, isAdmin }: { call: Call; token: string; world: number | null; active: boolean; isAdmin: boolean }) {
   const [health, setHealth] = useState<ServerHealth | null>(null);
   const [history, setHistory] = useState<Sample[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +61,7 @@ export function ServerView({ call, token, active, isAdmin }: { call: Call; token
         <MaintenanceCard call={call} active={active} isAdmin={isAdmin} />
         {isAdmin && <RestartCard call={call} pending={health?.restartAt ?? null} now={now} onChange={load} />}
         {isAdmin && <BackupsCard call={call} token={token} active={active} />}
+        {isAdmin && <DebugCard call={call} token={token} world={world} active={active} />}
       </div>
     </main>
   );
@@ -243,4 +244,69 @@ function BackupsCard({ call, token, active }: { call: Call; token: string; activ
   );
 }
 
+// Research logging on this world server, switched while it runs (a restart goes back to the host's settings): the
+// map-event log (every quest-script spawn, objective and step) and a trace of each new game connection's messages.
+function DebugCard({ call, token, world, active }: { call: Call; token: string; world: number | null; active: boolean }) {
+  const [data, setData] = useState<DebugState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<StatusMessage | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const load = useCallback(async () => { try { setData(await call<DebugState>('/api/admin/debug')); } catch { setData(null); } }, [call]);
+  useEffect(() => { if (active) load(); }, [active, load]);
+  async function set(body: { mapEvents?: boolean; traces?: boolean }) {
+    setBusy(true);
+    try { setData(await call<DebugState>('/api/admin/debug', { method: 'POST', body })); setMessage(null); }
+    catch (e) { setMessage({ text: describe(e), kind: 'error' }); }
+    finally { setBusy(false); }
+  }
+  async function remove(name: string) {
+    try { setData(await call<DebugState>('/api/admin/debug/files/' + encodeURIComponent(name), { method: 'DELETE' })); }
+    catch (e) { setMessage({ text: describe(e), kind: 'error' }); }
+  }
+  async function download(name: string) {
+    // Downloads skip `call` (they are files, not JSON), so the world is added here.
+    const path = '/api/admin/debug/files/' + encodeURIComponent(name) + (world !== null ? '?world=' + world : '');
+    const url = await apiBlobUrl(path, token);
+    if (!url) { setMessage({ text: 'The download failed.', kind: 'error' }); return; }
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+  const configured = !!data?.directory;
+  return (
+    <section className="card card-body stack">
+      <div className="row-between">
+        <h2>Debug logging</h2>
+        <Button size="sm" onClick={load}><Icon name="refresh" size={16} /> Refresh</Button>
+      </div>
+      <p className="muted small">For tracking down quest and map problems on this world. A switch lasts until the world server restarts.
+        Traces start with a connection: players have to log in again to be traced.</p>
+      {data && !configured && <p className="faint small">No debug folder is configured on this world server (Aion:Native:DebugDirectory).</p>}
+      <label className="check">
+        <input type="checkbox" disabled={!configured || busy} checked={!!data?.mapEventLog} onChange={e => set({ mapEvents: e.target.checked })} />
+        <span>Quest script log{data?.mapEventLog ? <> (<span className="mono">{data.mapEventLog}</span>)</> : ''}: every spawn, objective and step of the map events</span>
+      </label>
+      <label className="check">
+        <input type="checkbox" disabled={!configured || busy} checked={!!data?.traces} onChange={e => set({ traces: e.target.checked })} />
+        <span>Connection traces: each game connection's messages, written every minute and at logout</span>
+      </label>
+      <ul className="backup-list">
+        {data?.files.map(f => (
+          <li key={f.name}>
+            <span className="grow truncate mono">{f.name}</span>
+            <span className="faint small">{f.kind === 'trace' ? 'trace' : 'quest log'} · {kb(f.length)} · {new Date(f.at).toLocaleString()}</span>
+            <button type="button" className="link small" onClick={() => download(f.name)}>Download</button>
+            <button type="button" className="link small" onClick={() => setConfirm({ title: `Delete ${f.name}?`, body: 'The file is removed from the server.',
+              confirmLabel: 'Delete', danger: true, onConfirm: () => remove(f.name) })}>Delete</button>
+          </li>
+        ))}
+        {configured && data?.files.length === 0 && <li className="empty">No debug files yet.</li>}
+      </ul>
+      <Status message={message} />
+      <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
+    </section>
+  );
+}
+
 const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
+const kb = (bytes: number) => bytes < 1048576 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : mb(bytes);

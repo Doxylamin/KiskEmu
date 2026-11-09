@@ -98,6 +98,8 @@ def environment(args, credentials):
     env['Aion__Backups__Directory'] = args.state / 'backups'
     env['Aion__Backups__Tool'] = Path(__file__).resolve().parent / 'postgres_dev.py'
     env['Aion__Backups__PgHome'] = args.state / 'postgres'
+    # Dashboard debug switches (Server page: quest script log, connection traces); managed world servers inherit it.
+    env['Aion__Native__DebugDirectory'] = args.state / 'debug'
     # A managed world added on the dashboard gets its own database, seeded from this catalogue (postgres_dev create-world).
     if (data / 'game-catalog-v2').is_dir():
         env['Aion__Worlds__Catalog'] = data / 'game-catalog-v2'
@@ -147,6 +149,8 @@ def world_environment(args, credentials):
         env['Aion__Native__NavMeshDirectory'] = data / 'navmesh'
     for index, map_id in enumerate(args.preload):
         env[f'Aion__Native__PreloadMaps__{index}'] = map_id
+    # Dashboard debug switches (Server page) on this world server.
+    env['Aion__Native__DebugDirectory'] = args.state / 'debug'
     return env
 
 
