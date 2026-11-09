@@ -80,7 +80,9 @@ The world server's settings: `Aion:Role=world`, `Aion:Native:WorldId`, `Connecti
 
 Chat stays on the auth host: the client learns the chat address from the bootstrap policy before it picks
 a world. Whisper blocks are world data, so the auth host asks the sender's world server
-(`/internal/world/blocked`).
+(`/internal/world/blocked`). The platform's Quna balance (`virtual_currency/v2.0/me/balances`) is item data
+too: the auth host asks every running world server (`/internal/world/quna`) and adds the answers; a world
+that does not answer counts as 0.
 
 ## Not covered
 

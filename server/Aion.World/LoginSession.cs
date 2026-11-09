@@ -31,7 +31,20 @@ public sealed record LoginSessionOptions
     /// redirects to the picked row's world; otherwise the <see cref="Worlds"/> rows all redirect to RedirectHost:RedirectPort.
     /// </summary>
     public IReadOnlyList<LoginWorld>? Directory { get; init; }
-    public IReadOnlyList<WorldRow> Worlds { get => Directory is { Count: > 0 } d ? LoginWorld.Rows(d) : worlds; init => worlds = value; }
+    /// <summary>
+    /// The rows shown while no registered world is up (multi-world, empty directory): one per race, named so; picking one
+    /// closes the connection (0x390e). The client needs a row per race for the account body, so the list is never empty.
+    /// </summary>
+    public static readonly IReadOnlyList<WorldRow> NoWorlds =
+    [
+        new(LoginPackets.DefaultWorlds[0].Id, 1, "No worlds available", 1, 0),
+        new(LoginPackets.DefaultWorlds[1].Id, 2, "No worlds available", 1, 0),
+    ];
+    public IReadOnlyList<WorldRow> Worlds
+    {
+        get => Directory is { } d ? d.Count > 0 ? LoginWorld.Rows(d) : NoWorlds : worlds;
+        init => worlds = value;
+    }
     public string AccountId { get; init; } = DevelopmentDefaults.AccountSid;
     public IReadOnlyList<LoginCharacterRow> Characters { get; init; } = [];
     public string RedirectHost { get; init; } = "127.0.0.1";
@@ -93,9 +106,9 @@ public sealed class LoginSession(LoginSessionOptions options, Func<ClientIdentit
                 if (grant is null) return SessionStep.Closed(Authentication = "rejected");
                 (accountId, guid) = (grant.WireAccountId, grant.Grant);
                 // Each stored character is listed on its world's row of its race (else the first listed row of its race);
-                // characters of worlds not listed now (stopped) are left out.
+                // characters of worlds not listed now (stopped, or none up at all) are left out.
                 var listed = grant.Characters
-                    .Where(c => c.WorldId == 0 || options.Directory is not { Count: > 0 } directory || directory.Any(w => w.WorldId == c.WorldId)).ToList();
+                    .Where(c => options.Directory is not { } directory || (directory.Count > 0 && (c.WorldId == 0 || directory.Any(w => w.WorldId == c.WorldId)))).ToList();
                 characters = listed.Take(255)
                     .Select(c => new LoginCharacterRow(RowOf(c.WorldId, c.Race), c.Name, (uint)Math.Max(1, c.Level), LastPlayedUnixMs: c.LastPlayedUnixMs)).ToList();
                 races = listed.Select(c => c.Race).Where(r => r is 1 or 2).Distinct().ToList();
@@ -135,8 +148,9 @@ public sealed class LoginSession(LoginSessionOptions options, Func<ClientIdentit
                 return SessionStep.Of(LoginPackets.SelectResult(picked));
             case 0x390e when plain.Length >= 4:
                 var target = BitConverter.ToUInt16(plain, 2);
-                if (options.Directory is not { Count: > 0 } worlds)
+                if (options.Directory is not { } worlds)
                     return SessionStep.Of(LoginPackets.Redirect(target, options.RedirectHost, options.RedirectPort));
+                if (worlds.Count == 0) return SessionStep.Closed("no_world");
                 // Only listed rows are served: the redirect names the picked world's game port, and the login's grant is
                 // rebound to that world first (a game port accepts grants for its own world only).
                 if (worlds.FirstOrDefault(w => w.LightServerId == target || w.DarkServerId == target) is not { } destination)

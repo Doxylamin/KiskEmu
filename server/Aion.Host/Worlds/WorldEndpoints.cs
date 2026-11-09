@@ -227,6 +227,9 @@ public static class WorldEndpoints
         });
         control.MapGet("/blocked", async (Guid from, Guid to, IGameplayStore game, CancellationToken ct) =>
             Results.Ok(new { value = await game.AnyBlockBetweenAsync(from, to, ct) }));
+        // The account's Quna on this world (its characters and account storage live in this world's database).
+        control.MapGet("/quna", async (Guid account, IAccountQunaBalance quna, CancellationToken ct) =>
+            Results.Ok(new { value = await quna.SumAsync(account, ct) }));
     }
 
     static async Task<VerifiedAccount?> Signed(HttpContext ctx, IAccountAuthentication auth, CancellationToken ct)

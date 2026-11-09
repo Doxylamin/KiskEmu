@@ -472,6 +472,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case QuickSlotContextSkillResetRq when plain.Length == 2: return await ResetQuickSlotContextAsync(ct);
             case RidePackets.OpenBoxRq when plain.Length == 15: return await OpenBoxRequestAsync(plain, now, ct);
             case RidePackets.ItemUseRq when plain.Length == 10: return await UseItemAsync(BitConverter.ToInt64(plain, 2), now, ct);
+            case RidePackets.ItemUseByIdRq when plain.Length == 22:
+                return await UseItemByIdAsync(BitConverter.ToInt64(plain, 2), BitConverter.ToInt32(plain, 10), BitConverter.ToInt64(plain, 14), now, ct);
             case RidePackets.AcquireRq when plain.Length == 6: return await AcquireRideAsync(BitConverter.ToInt32(plain, 2), ct);
             case RidePackets.CrystallizeRq when plain.Length >= 3: return await CrystallizeAsync(plain, ct);
             case RidePackets.BoardRollRq when plain.Length >= 5: return await RollBoardAsync(plain, ct);

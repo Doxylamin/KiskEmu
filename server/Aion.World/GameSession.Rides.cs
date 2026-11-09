@@ -232,8 +232,9 @@ public sealed partial class GameSession
     /// 0x5612 ItemUse_RQ {i64 uid}. Refused (result 1) for an unknown or cooling item, or an effect
     /// that is not implemented; always answers 0x5613 (never leaves the request unanswered).
     /// </summary>
-    async Task<List<byte[]>> UseItemAsync(long uid, long now, CancellationToken ct, bool reply = true)
+    async Task<List<byte[]>> UseItemAsync(long uid, long now, CancellationToken ct, bool reply = true, int count = 1)
     {
+        usedCountApplied = false;
         storedItems.TryGetValue(uid, out var row);
         var itemId = row?.TemplateId ?? 0;
         var use = row is null ? null : Boxes.Use(row.TemplateId);
@@ -259,7 +260,7 @@ public sealed partial class GameSession
             "Skill" => await UseSkillItemAsync(store, character, row, use, reply, now, ct),
             "Telpo_Home" when itemCast is null => StartItemCast(row, cooldown, reply, now),
             "GetKina" or "GetNonBindingKina" when use.Values is [var amount, ..] && long.TryParse(amount, out var kina) && kina > 0 =>
-                await UseKinaItemAsync(store, character, row, kina, reply, ct),
+                await UseKinaItemAsync(store, character, row, kina, Math.Clamp(count, 1, (int)Math.Min(int.MaxValue, row.Quantity)), reply, ct),
             "GetTitle" when use.Values is [var titleText, ..] && int.TryParse(titleText, out var titleId) => await UseTitleItemAsync(store, character, row, titleId, reply, ct),
             "GetSkin" or "GetSkinSet" when use.Values is [{ Length: > 0 }, ..] => await UseSkinItemAsync(store, character, row, use, reply, ct),
             "GetSocialAction" when use.Values is [var emoteText, ..] && int.TryParse(emoteText, out var emote) => await UseSocialActionItemAsync(store, character, row, emote, reply, ct),
@@ -285,6 +286,35 @@ public sealed partial class GameSession
         LogItemUse(itemId, use.Effect);
         return replies;
     }
+
+    /// <summary>
+    /// 0x5614 ItemUseByItemID_RQ {i64 uid, i32 item id, i64 use count}: the client's "use N" of a stack (Kina chests).
+    /// Kina chests and reward boxes use the count at once; other effects are used once. Always answers 0x5615.
+    /// </summary>
+    async Task<List<byte[]>> UseItemByIdAsync(long uid, int itemId, long useCount, long now, CancellationToken ct)
+    {
+        // The uid names the stack; when it is gone (stale client view), any bag stack of the item.
+        if (!storedItems.TryGetValue(uid, out var row) || row.TemplateId != itemId)
+        {
+            var other = storedItems.FirstOrDefault(s => s.Value.Location == "bag" && s.Value.TemplateId == itemId);
+            (uid, row) = (other.Key, other.Value);
+        }
+        var count = (int)Math.Clamp(useCount, 1, Math.Max(1, row?.Quantity ?? 1));
+        List<byte[]> Answer(bool ok, List<byte[]> replies) => [RidePackets.ItemUseByIdReply(ok ? 0 : 1, uid, itemId, ok ? count : 0), .. replies];
+        if (row is null) return Answer(false, []);
+        if (Boxes.Use(row.TemplateId) is { Effect: "RewardBox" })
+        {
+            var opened = await OpenBoxAsync(uid, 0, count, now, ct);
+            return Answer(opened.Count > 0 && opened[0].Length > 3 && opened[0][2] == 0 && opened[0][3] == 0, opened);
+        }
+        var used = await UseItemAsync(uid, now, ct, reply: false, count: count);
+        if (used.Count == 0) return Answer(false, []);
+        if (!usedCountApplied) count = 1;
+        return Answer(true, used);
+    }
+
+    /// <summary>Whether the last UseItemAsync applied its count (Kina chests); other effects use one.</summary>
+    bool usedCountApplied;
 
     List<byte[]> Used(ItemState row, bool reply) =>
         reply ? [RidePackets.ItemUseReply(0, WireKey(row), row.TemplateId), RidePackets.ItemUsed(WireKey(row), row.TemplateId)] : [RidePackets.ItemUsed(WireKey(row), row.TemplateId)];
@@ -409,11 +439,12 @@ public sealed partial class GameSession
         return replies;
     }
 
-    /// <summary>A Kina chest [amount]: the Kina currency item is granted.</summary>
-    async Task<List<byte[]>?> UseKinaItemAsync(INativeCharacterStore store, Guid character, ItemState row, long kina, bool reply, CancellationToken ct)
+    /// <summary>Kina chests [amount] × count: the chests are consumed and the Kina currency item granted in one step.</summary>
+    async Task<List<byte[]>?> UseKinaItemAsync(INativeCharacterStore store, Guid character, ItemState row, long kina, int count, bool reply, CancellationToken ct)
     {
-        var done = await Stored(async () => await store.ConsumeAndGrantAsync(character, row.InstanceId, row.Revision, 1, [(KinaItemId, kina)], ct) ? [[]] : []);
+        var done = await Stored(async () => await store.ConsumeAndGrantAsync(character, row.InstanceId, row.Revision, count, [(KinaItemId, checked(kina * count))], ct) ? [[]] : []);
         if (done.Count == 0) return null;
+        usedCountApplied = true;
         return [.. Used(row, reply), .. await InventoryChangesAsync(ct, IncreaseItemUse, DecreaseItemUse)];
     }
 

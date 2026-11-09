@@ -110,6 +110,29 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
         await RunningAsync(worldId, ct) is { } world
         && (await SendAsync<Blocked>(world, HttpMethod.Get, $"/internal/world/blocked?from={from:D}&to={to:D}", null, ct))?.Value == true;
 
+    sealed record Balance(long Value);
+
+    /// <summary>
+    /// The account's Quna over every running world (each world database holds its own characters and account storage).
+    /// A world that does not answer counts as 0 and is logged.
+    /// </summary>
+    public async Task<long> QunaAsync(Guid account, CancellationToken ct) =>
+        await SumOverAsync(await RunningAsync(ct),
+            async world => (await SendAsync<Balance>(world, HttpMethod.Get, $"/internal/world/quna?account={account:D}", null, ct))?.Value,
+            world => logger.LogWarning("Quna of account {Account} on world {World} unknown; counted as 0", account, world.WorldId));
+
+    /// <summary>The sum of each world's answer; a world without one (null) counts as 0 and is reported to <paramref name="missing"/>.</summary>
+    public static async Task<long> SumOverAsync(IEnumerable<WorldRecord> worlds, Func<WorldRecord, Task<long?>> ask, Action<WorldRecord> missing)
+    {
+        var sum = 0L;
+        foreach (var world in worlds)
+        {
+            if (await ask(world) is { } value) sum += value;
+            else missing(world);
+        }
+        return sum;
+    }
+
     /// <summary>Every running world reloads its sanctions; a banned account is disconnected there. The number kicked.</summary>
     public async Task<int> SanctionsChangedAsync(Guid? kickAccount, string? reason, CancellationToken ct)
     {
@@ -162,6 +185,15 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
             }
         }
     }
+}
+
+/// <summary>
+/// The auth host's account Quna: the realm database has no item tables, so each running world server sums its own
+/// (<see cref="WorldLinks.QunaAsync"/>).
+/// </summary>
+public sealed class LinkedAccountQunaBalance(WorldLinks links) : IAccountQunaBalance
+{
+    public Task<long> SumAsync(Guid accountId, CancellationToken ct = default) => links.QunaAsync(accountId, ct);
 }
 
 /// <summary>
