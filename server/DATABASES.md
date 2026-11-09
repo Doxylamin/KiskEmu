@@ -81,8 +81,11 @@ The world server's settings: `Aion:Role=world`, `Aion:Native:WorldId`, `Connecti
 Chat stays on the auth host: the client learns the chat address from the bootstrap policy before it picks
 a world. Whisper blocks are world data, so the auth host asks the sender's world server
 (`/internal/world/blocked`). The platform's Quna balance (`virtual_currency/v2.0/me/balances`) is item data
-too: the auth host asks every running world server (`/internal/world/quna`) and adds the answers; a world
-that does not answer counts as 0.
+too: while one of the account's characters is in a world, the auth host asks only that world server
+(`/internal/world/quna`), because the in-game shop spends that world's Quna; otherwise it asks every
+running world server and adds the answers, and a world that does not answer counts as 0. Shop purchases,
+the purchase ledger (`game.shop_orders`), stored memberships and the pass unlock all run on the player's
+world server against its own database; the auth host only lists the custom goods.
 
 ## Not covered
 

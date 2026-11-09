@@ -116,10 +116,20 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
     /// The account's Quna over every running world (each world database holds its own characters and account storage).
     /// A world that does not answer counts as 0 and is logged.
     /// </summary>
-    public async Task<long> QunaAsync(Guid account, CancellationToken ct) =>
-        await SumOverAsync(await RunningAsync(ct),
+    public async Task<long> QunaAsync(Guid account, CancellationToken ct) => await QunaAsync(account, null, ct);
+
+    /// <summary>
+    /// The account's Quna as the in-game shop sees it: while one of its characters is in a world, only that world's
+    /// (the shop spends from the world the player is on); otherwise the sum over every running world.
+    /// </summary>
+    public async Task<long> QunaAsync(Guid account, int? playingOn, CancellationToken ct) =>
+        await SumOverAsync(QunaWorlds(await RunningAsync(ct), playingOn),
             async world => (await SendAsync<Balance>(world, HttpMethod.Get, $"/internal/world/quna?account={account:D}", null, ct))?.Value,
             world => logger.LogWarning("Quna of account {Account} on world {World} unknown; counted as 0", account, world.WorldId));
+
+    /// <summary>The worlds whose Quna counts: the one the account plays on when it is running, else every running world.</summary>
+    public static IReadOnlyList<WorldRecord> QunaWorlds(IReadOnlyList<WorldRecord> running, int? playingOn) =>
+        playingOn is { } on && running.Where(w => w.WorldId == on).ToList() is [_] here ? here : running;
 
     /// <summary>The sum of each world's answer; a world without one (null) counts as 0 and is reported to <paramref name="missing"/>.</summary>
     public static async Task<long> SumOverAsync(IEnumerable<WorldRecord> worlds, Func<WorldRecord, Task<long?>> ask, Action<WorldRecord> missing)
@@ -191,9 +201,10 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
 /// The auth host's account Quna: the realm database has no item tables, so each running world server sums its own
 /// (<see cref="WorldLinks.QunaAsync"/>).
 /// </summary>
-public sealed class LinkedAccountQunaBalance(WorldLinks links) : IAccountQunaBalance
+public sealed class LinkedAccountQunaBalance(WorldLinks links, WorldPresenceMirror? presence = null) : IAccountQunaBalance
 {
-    public Task<long> SumAsync(Guid accountId, CancellationToken ct = default) => links.QunaAsync(accountId, ct);
+    public Task<long> SumAsync(Guid accountId, CancellationToken ct = default) =>
+        links.QunaAsync(accountId, presence?.WorldOfAccount(accountId), ct);
 }
 
 /// <summary>
@@ -218,6 +229,14 @@ public sealed class WorldPresenceMirror(WorldLinks links, ILogger<WorldPresenceM
     {
         foreach (var world in worlds.Values)
             if (world.TryGetValue(character, out var entry)) return entry;
+        return null;
+    }
+
+    /// <summary>The world one of the account's characters is in now, or null.</summary>
+    public int? WorldOfAccount(Guid account)
+    {
+        foreach (var (worldId, world) in worlds)
+            if (world.Values.Any(e => e.AccountId == account)) return worldId;
         return null;
     }
 
