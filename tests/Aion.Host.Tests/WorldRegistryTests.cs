@@ -51,8 +51,10 @@ public sealed class WorldRegistryTests
         Assert.Equal("server_id_in_use", WorldInput.Problem(World(1206, "Gamma", 2362, 2363, WorldRecord.Managed, 13330, 18782), others));
         Assert.Equal("port_in_use", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Managed, 13329, 18782), others));
         Assert.Equal("internal_port_required", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Managed, 13330), others));
-        Assert.Equal("remote_needs_host", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Remote, 13330), others));
+        // A remote world reports its address and ports when it signs in to the realm link.
+        Assert.Null(WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Remote), others));
         Assert.Equal("invalid_host", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Remote, 13330, host: "example.com"), others));
+        Assert.Equal("invalid_host", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Remote, 13330, host: "10.9.9.9") with { ControlHost = "far" }, others));
         // A remote world on another machine may reuse a port of this host.
         Assert.Null(WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Remote, 13329, host: "10.9.9.9"), others));
         Assert.Equal("game_port_required", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Managed, null, 18782), others));
@@ -83,6 +85,20 @@ public sealed class WorldRegistryTests
         Assert.Equal(WorldProcessOptions.Token(WorldProcessOptions.ControlKey(auth)!, 1207), derived.ControlToken);
         Assert.NotEqual(WorldProcessOptions.Token(WorldProcessOptions.ControlKey(auth)!, 1208), derived.ControlToken);
         Assert.Equal("0.0.0.0", derived.ListenAddress);
+        // Without a shared secret a world server makes its own control token (reported when it signs in).
+        var alone = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Aion:Role"] = "world", ["Aion:Native:WorldId"] = "1300" }).Build();
+        Assert.Equal(64, WorldProcessOptions.From(alone)!.ControlToken.Length);
+        Assert.NotEqual(WorldProcessOptions.From(alone)!.ControlToken, WorldProcessOptions.From(alone)!.ControlToken);
+    }
+
+    [Fact]
+    public void Managed_link_tokens_are_per_world()
+    {
+        var key = WorldProcessOptions.ControlKey(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["Aion:BridgeSecret"] = new string('s', 64) }).Build())!;
+        Assert.NotEqual(WorldProcessOptions.LinkToken(key, 1204), WorldProcessOptions.LinkToken(key, 1205));
+        // The realm-link token is not the control token of the same world.
+        Assert.NotEqual(WorldProcessOptions.Token(key, 1204), WorldProcessOptions.LinkToken(key, 1204));
     }
 
     [Fact]

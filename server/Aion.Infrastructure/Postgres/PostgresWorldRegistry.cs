@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Aion.Application.Gameplay;
 using Aion.Core.Accounts;
@@ -6,14 +8,16 @@ using NpgsqlTypes;
 
 namespace Aion.Infrastructure.Postgres;
 
-/// <summary>World registry (migration 090) on the gameplay role. Staff changes need the admin role and are audited.</summary>
+/// <summary>World registry (migrations 090–092) on the realm's gameplay role. Staff changes need the admin role and are audited.</summary>
 public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegistry
 {
-    const string Columns = "world_id,name,light_server_id,dark_server_id,kind,host,game_port,internal_port,enabled,level_cap,created_at,updated_at";
+    const string Columns = "world_id,name,light_server_id,dark_server_id,kind,host,game_port,internal_port,enabled,level_cap,created_at,updated_at,"
+        + "control_host,last_seen_at,version,token_hash IS NOT NULL";
 
     static WorldRecord Read(NpgsqlDataReader r) => new(r.GetInt32(0), r.GetString(1), r.GetInt32(2), r.GetInt32(3), r.GetString(4),
         r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetInt32(6), r.IsDBNull(7) ? null : r.GetInt32(7), r.GetBoolean(8),
-        r.IsDBNull(9) ? null : r.GetInt32(9), Utc(r.GetDateTime(10)), Utc(r.GetDateTime(11)));
+        r.IsDBNull(9) ? null : r.GetInt32(9), Utc(r.GetDateTime(10)), Utc(r.GetDateTime(11)),
+        r.IsDBNull(12) ? null : r.GetString(12), r.IsDBNull(13) ? null : Utc(r.GetDateTime(13)), r.IsDBNull(14) ? null : r.GetString(14), r.GetBoolean(15));
     static DateTimeOffset Utc(DateTime value) => new(DateTime.SpecifyKind(value, DateTimeKind.Utc));
     static NpgsqlParameter Int(int? value) => new() { Value = (object?)value ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer };
     static NpgsqlParameter Text(string? value) => new() { Value = (object?)value ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text };
@@ -62,17 +66,17 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
     {
         var sql = insert
             ? $"""
-               INSERT INTO game.worlds(world_id,name,light_server_id,dark_server_id,kind,host,game_port,internal_port,enabled,level_cap)
-               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING {Columns}
+               INSERT INTO game.worlds(world_id,name,light_server_id,dark_server_id,kind,host,game_port,internal_port,enabled,level_cap,control_host)
+               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING {Columns}
                """
             : $"""
                UPDATE game.worlds SET name=$2,light_server_id=$3,dark_server_id=$4,kind=$5,host=$6,game_port=$7,internal_port=$8,
-                   enabled=$9,level_cap=$10,updated_at=now() WHERE world_id=$1 RETURNING {Columns}
+                   enabled=$9,level_cap=$10,control_host=$11,updated_at=now() WHERE world_id=$1 RETURNING {Columns}
                """;
         await using var q = new NpgsqlCommand(sql, c, t);
         q.Parameters.Add(Int(w.WorldId)); q.Parameters.Add(Text(w.Name)); q.Parameters.Add(Int(w.LightServerId)); q.Parameters.Add(Int(w.DarkServerId));
         q.Parameters.Add(Text(w.Kind)); q.Parameters.Add(Text(w.Host)); q.Parameters.Add(Int(w.GamePort)); q.Parameters.Add(Int(w.InternalPort));
-        q.Parameters.AddWithValue(w.Enabled); q.Parameters.Add(Int(w.LevelCap));
+        q.Parameters.AddWithValue(w.Enabled); q.Parameters.Add(Int(w.LevelCap)); q.Parameters.Add(Text(w.ControlHost));
         await using var r = await q.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) throw new GameplayException("unknown_world");
         return Read(r);
@@ -93,7 +97,8 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
         int? gamePort = input.GamePort ?? (kind == WorldRecord.Managed ? Math.Max(13328, all.Select(w => w.GamePort ?? 0).DefaultIfEmpty(0).Max() + 1) : null);
         int? internalPort = input.InternalPort ?? (kind == WorldRecord.Managed ? Math.Max(18781, all.Select(w => w.InternalPort ?? 0).DefaultIfEmpty(0).Max() + 1) : null);
         var now = DateTimeOffset.UtcNow;
-        var world = new WorldRecord(id, Clean(input.Name) ?? "", light, dark, kind, Clean(input.Host), gamePort, internalPort, false, input.LevelCap, now, now);
+        var world = new WorldRecord(id, Clean(input.Name) ?? "", light, dark, kind, kind == WorldRecord.Managed ? Clean(input.Host) : null,
+            gamePort, internalPort, false, input.LevelCap, now, now);
         if (WorldInput.Problem(world, all) is { } problem) throw new GameplayException(problem);
         var saved = await Save(c, t, world, insert: true, ct);
         await Audit(c, t, actor, "world.create", saved, ct);
@@ -106,6 +111,8 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
         var current = all.FirstOrDefault(w => w.WorldId == worldId) ?? throw new GameplayException("unknown_world");
         var kind = Clean(input.Kind) ?? current.Kind;
         if (input.WorldId is { } newId && newId != worldId) throw new GameplayException("invalid_world_id");
+        // A remote world's addresses and ports are what it reports when it signs in, not staff input.
+        if (kind == WorldRecord.Remote) input = input with { Host = null, GamePort = null, InternalPort = null };
         // The login rows and the ports of a running world change only while it is stopped (clients hold them).
         var moved = input.LightServerId is { } l && l != current.LightServerId || input.DarkServerId is { } d && d != current.DarkServerId
             || input.GamePort is { } g && g != current.GamePort || input.InternalPort is { } i && i != current.InternalPort
@@ -173,5 +180,51 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
         var counts = new Dictionary<int, int>();
         while (await r.ReadAsync(ct)) counts[r.GetInt32(0)] = r.GetInt32(1);
         return counts;
+    }
+
+    static byte[] Hash(string token) => SHA256.HashData(Encoding.UTF8.GetBytes(token));
+
+    public Task<string> IssueTokenAsync(VerifiedAccount actor, int worldId, CancellationToken ct = default) => AsAdmin(actor, async (c, t) =>
+    {
+        var all = await All(c, t, ct, forUpdate: true);
+        var current = all.FirstOrDefault(w => w.WorldId == worldId) ?? throw new GameplayException("unknown_world");
+        if (current.IsManaged) throw new GameplayException("not_remote");
+        // aw_<world>_<secret>: the world id is only a hint for the operator; the secret is checked against the hash.
+        var token = $"aw_{worldId}_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        await using (var q = new NpgsqlCommand("UPDATE game.worlds SET token_hash=$2,updated_at=now() WHERE world_id=$1", c, t))
+        {
+            q.Parameters.Add(Int(worldId)); q.Parameters.AddWithValue(Hash(token));
+            await q.ExecuteNonQueryAsync(ct);
+        }
+        await Audit(c, t, actor, "world.token", new { worldId, current.Name }, ct);
+        return token;
+    }, ct);
+
+    public async Task<bool> TokenMatchesAsync(int worldId, string token, CancellationToken ct = default)
+    {
+        if (token.Length is < 16 or > 200) return false;
+        await using var c = await source.OpenConnectionAsync(ct);
+        await using var q = new NpgsqlCommand("SELECT token_hash FROM game.worlds WHERE world_id=$1 AND kind='remote'", c);
+        q.Parameters.Add(Int(worldId));
+        return await q.ExecuteScalarAsync(ct) is byte[] stored && CryptographicOperations.FixedTimeEquals(stored, Hash(token));
+    }
+
+    public async Task<WorldRecord?> RegisterAsync(int worldId, WorldRegistration registration, CancellationToken ct = default)
+    {
+        await using var c = await source.OpenConnectionAsync(ct);
+        // A remote world's addresses and ports are its own report; a managed one's stay as staff set them.
+        await using var q = new NpgsqlCommand($"""
+            UPDATE game.worlds SET last_seen_at=now(), registered_at=COALESCE(registered_at,now()), version=$2,
+                host=CASE WHEN kind='remote' THEN $3 ELSE host END,
+                game_port=CASE WHEN kind='remote' THEN $4 ELSE game_port END,
+                control_host=CASE WHEN kind='remote' THEN $5 ELSE control_host END,
+                internal_port=CASE WHEN kind='remote' THEN $6 ELSE internal_port END
+            WHERE world_id=$1 RETURNING {Columns}
+            """, c);
+        q.Parameters.Add(Int(worldId)); q.Parameters.Add(Text(registration.Version));
+        q.Parameters.Add(Text(registration.GameHost)); q.Parameters.Add(Int(registration.GamePort));
+        q.Parameters.Add(Text(registration.ControlHost)); q.Parameters.Add(Int(registration.ControlPort));
+        await using var r = await q.ExecuteReaderAsync(ct);
+        return await r.ReadAsync(ct) ? Read(r) : null;
     }
 }

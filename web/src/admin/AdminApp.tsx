@@ -2,7 +2,7 @@
 // the activity log and server health, through the audited /api/admin endpoints. The server checks roles on every
 // request; this page only hides controls. "Keep me signed in" keeps the session token in localStorage (a 30-day
 // session); otherwise it lives in sessionStorage until the tab closes. The world picker chooses the world server the
-// world tools act on (live map, players, maintenance, announcements, server health, restart): the auth host forwards
+// world tools act on (live map, players, characters, rewards, maintenance, announcements, server health, restart): the auth host forwards
 // those requests (?world=…) to that world server; everything else is the realm's.
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api';
@@ -31,8 +31,10 @@ export interface Session { token: string; username: string; profile: StaffProfil
 /** world: 'all' sends a world tool to the auth host instead (every world, e.g. an announcement). */
 export type Call = <T>(path: string, options?: { method?: string; body?: unknown; world?: 'all' }) => Promise<T>;
 
-// The staff endpoints a world server answers for its own world.
-const WORLD_TOOLS = /^\/api\/admin\/(live|server|restart|maintenance|announce|economy|players\/|maps\/\d+\/monsters)/;
+// The staff endpoints a world server answers for its own world: its live state and the data in its own database
+// (characters, inventories, GM commands, rewards, gameplay audit). Accounts, sanctions, tickets and the catalogue stay
+// the realm's (server/DATABASES.md).
+const WORLD_TOOLS = /^\/api\/admin\/(live|server|restart|maintenance|announce|economy|players\/|maps\/\d+\/monsters|characters|commands|rewards|audit)/;
 const WORLD_KEY = 'aion-staff-world';
 function withWorld(path: string, world: number | null): string {
   if (world === null || !WORLD_TOOLS.test(path)) return path;

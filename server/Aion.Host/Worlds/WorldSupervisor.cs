@@ -48,14 +48,27 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
     }
 
     readonly ConcurrentDictionary<int, Child> children = new();
+    readonly HashSet<int> databases = [];
     readonly SemaphoreSlim wake = new(0);
     readonly SemaphoreSlim reconcile = new(1, 1);
     // Control tokens: derived from the bridge secret when set (a restarted auth host can still reach the world servers it did
     // not start, and a remote world server with the same secret derives its own), else random per auth host process.
     readonly byte[] controlKey = WorldProcessOptions.ControlKey(configuration) ?? RandomNumberGenerator.GetBytes(32);
 
+    // Control tokens remote world servers reported when they signed in (they make their own; managed ones use the derived one).
+    readonly ConcurrentDictionary<int, string> reported = new();
+
     /// <summary>The token a world server accepts on its control endpoints (/internal/world/...).</summary>
-    public string ControlToken(int worldId) => WorldProcessOptions.Token(controlKey, worldId);
+    public string ControlToken(int worldId) => reported.TryGetValue(worldId, out var token) ? token : WorldProcessOptions.Token(controlKey, worldId);
+
+    /// <summary>The token a managed world server signs in to the realm link with (/internal/realm/...).</summary>
+    public string LinkToken(int worldId) => WorldProcessOptions.LinkToken(controlKey, worldId);
+
+    /// <summary>A remote world server signed in with the control token it accepts.</summary>
+    public void Registered(WorldRecord world, string controlToken)
+    {
+        if (!world.IsManaged && controlToken.Length is >= 32 and <= 200) reported[world.WorldId] = controlToken;
+    }
 
     public WorldRuntime Runtime(int worldId) => children.TryGetValue(worldId, out var c)
         ? new(c.State, c.Process is { HasExited: false } p ? p.Id : null, c.Since, c.Status?.Players, c.Status?.Connections, c.LastError, c.Restarts)
@@ -120,10 +133,11 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
                     child.Status = await StatusAsync(world, ct);
                     child.State = child.Status is { } status && status.WorldId == world.WorldId ? WorldRuntime.Online : WorldRuntime.Offline;
                 }
+                else if (world.Host is null || world.GamePort is null) child.State = WorldRuntime.Offline;   // not signed in yet
                 else if (now - child.ProbedAt >= TimeSpan.FromSeconds(30) || child.State == WorldRuntime.Stopped || previous != world)
                 {
                     child.ProbedAt = now;
-                    child.State = await ProbeAsync(world.Host!, world.GamePort!.Value, ct) ? WorldRuntime.Online : WorldRuntime.Offline;
+                    child.State = await ProbeAsync(world.Host, world.GamePort.Value, ct) ? WorldRuntime.Online : WorldRuntime.Offline;
                 }
                 continue;
             }
@@ -159,7 +173,7 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
                     child.Since ??= DateTimeOffset.FromUnixTimeMilliseconds(leftover.StartedAtMs);
                     continue;
                 }
-                if (now >= child.NextStart) Start(child);
+                if (now >= child.NextStart && await DatabaseReadyAsync(child, ct)) Start(child);
                 continue;
             }
             child.Status = await StatusAsync(world, ct);
@@ -175,6 +189,60 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
                 child.State = WorldRuntime.Crashed;
             }
         }
+    }
+
+    /// <summary>
+    /// The world's own database (server/DATABASES.md): created, migrated and seeded by tools/postgres_dev.py create-world
+    /// before the first start in this process (Aion:Backups:Tool and :PgHome name the tool and cluster, Aion:Worlds:Catalog
+    /// the catalogue to seed a new one with). Without the tool configured the database is assumed to exist.
+    /// </summary>
+    async Task<bool> DatabaseReadyAsync(Child child, CancellationToken ct)
+    {
+        var world = child.World;
+        if (databases.Contains(world.WorldId)) return true;
+        if (configuration["Aion:Backups:Tool"] is not { Length: > 0 } tool) { databases.Add(world.WorldId); return true; }
+        var start = new ProcessStartInfo(OperatingSystem.IsWindows() ? "python" : "python3")
+        { RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false };
+        start.ArgumentList.Add(tool);
+        start.ArgumentList.Add("create-world");
+        start.ArgumentList.Add(world.WorldId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (configuration["Aion:Worlds:Catalog"] is { Length: > 0 } catalog) { start.ArgumentList.Add("--catalog"); start.ArgumentList.Add(catalog); }
+        if (configuration["Aion:Backups:PgHome"] is { Length: > 0 } home) start.Environment["AION_PG_HOME"] = home;
+        logger.LogInformation("World {World}: preparing its database", world.WorldId);
+        try
+        {
+            using var process = Process.Start(start) ?? throw new InvalidOperationException("create-world did not start");
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(20));
+            var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var errors = process.StandardError.ReadToEndAsync(timeout.Token);
+            await process.WaitForExitAsync(timeout.Token);
+            if (process.ExitCode == 0)
+            {
+                databases.Add(world.WorldId);
+                logger.LogInformation("World {World}: database {Database} ready", world.WorldId, (await output).Trim());
+                return true;
+            }
+            child.LastError = "database: " + ((await errors).Split('\n').LastOrDefault(l => l.Trim().Length > 0)?.Trim() ?? $"exit {process.ExitCode}");
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            child.LastError = "database: " + error.Message;
+        }
+        child.State = WorldRuntime.Crashed;
+        child.Failures++;
+        child.NextStart = DateTimeOffset.UtcNow + MaxBackoff;
+        logger.LogWarning("World {World}: its database could not be prepared: {Error}", world.WorldId, child.LastError);
+        return false;
+    }
+
+    /// <summary>A world's connection string: the realm's (ConnectionStrings:Aion) on the database <c>&lt;realm&gt;_world_&lt;id&gt;</c>.</summary>
+    public string? WorldConnectionString(int worldId)
+    {
+        if (configuration.GetConnectionString("Aion") is not { Length: > 0 } realm) return null;
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(realm);
+        builder.Database = $"{builder.Database ?? "aion"}_world_{worldId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        return builder.ConnectionString;
     }
 
     void Start(Child child)
@@ -199,9 +267,15 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
         env["Aion__LocalPort"] = world.InternalPort!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         env["Aion__WorldProcess__ControlToken"] = ControlToken(world.WorldId);
         env["Aion__WorldProcess__Name"] = world.Name;
-        // Its chat announcements go to this host's chat server (the realm's one).
+        // Its own database only; the realm (accounts, bans, maintenance, the character index, chat) over the realm link.
+        env["ConnectionStrings__World"] = WorldConnectionString(world.WorldId) ?? "";
+        env["ConnectionStrings__Aion"] = "";
+        env["ConnectionStrings__Auth"] = "";
+        env.Remove("Aion__BridgeSecret");
+        env.Remove("Aion__Totp__EncryptionKey");
         if (configuration.GetValue<int?>("Aion:ChatPort") is { } chatPort)
-            env["Aion__WorldProcess__RealmUrl"] = $"http://127.0.0.1:{chatPort.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            env["Aion__Realm__Url"] = $"http://127.0.0.1:{chatPort.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        env["Aion__Realm__Token"] = LinkToken(world.WorldId);
         // The child's console goes to this host's log (with the world id); it writes no log file of its own.
         env["Aion__ServerLog__Enabled"] = "false";
         // Its HTTP port answers the auth host every few seconds (status, presence): no request logging.
@@ -283,7 +357,7 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
     }
 
     /// <summary>Where a world server's status and control port is: loopback for a managed one, its host for a remote one.</summary>
-    public static string StatusHost(WorldRecord world) => world.IsManaged ? "127.0.0.1" : world.Host ?? "127.0.0.1";
+    public static string StatusHost(WorldRecord world) => world.IsManaged ? "127.0.0.1" : world.ControlHost ?? world.Host ?? "127.0.0.1";
 
     static async Task<WorldProcessStatus?> StatusAsync(WorldRecord world, CancellationToken ct)
     {

@@ -14,10 +14,10 @@ import uuid
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 try:
-    from .postgres_dev import ROOT, HOME, sql, migration_script
+    from .postgres_dev import ROOT, HOME, sql, migration_script, migration_files
     from .run_account_server import host_environment, connection_string
 except ImportError:
-    from postgres_dev import ROOT, HOME, sql, migration_script
+    from postgres_dev import ROOT, HOME, sql, migration_script, migration_files
     from run_account_server import host_environment, connection_string
 
 
@@ -42,7 +42,7 @@ def main():
     sql(f'CREATE DATABASE {name} OWNER aion_owner;', database='postgres')
     try:
         sql(f'REVOKE ALL ON DATABASE {name} FROM PUBLIC; GRANT CONNECT ON DATABASE {name} TO aion_app,aion_auth;', database=name)
-        sql(migration_script(sorted((ROOT / 'database/migrations').glob('*.sql'))), database=name)
+        sql(migration_script(migration_files('realm')), database=name)
         assembly = ROOT / 'tests/Aion.Authentication.Checks/bin/Debug/net10.0/Aion.Authentication.Checks.dll'
         host_assembly = ROOT / 'server/Aion.Host/bin/Debug/net10.0/Aion.Host.dll'
         if os.environ.get('AION_ARTIFACTS_PATH'):

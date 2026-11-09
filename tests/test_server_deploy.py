@@ -57,6 +57,35 @@ class ServerEnvTests(unittest.TestCase):
         self.assertEqual(env['Aion__Https__Proxy'], 'true')
         self.assertNotIn('Aion__Https__CertificateFile', env)
 
+    def test_world_environment(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            server_data(root / 'data')
+            env = server_env.world_environment(self.args(root, world=1300, realm_url='https://203.0.113.5:8780/',
+                                                         realm_token='aw_1300_' + 'a' * 64, realm_cert_sha256=None,
+                                                         game_port=13328, control_port=13400), {'aion_app': 'app-secret'})
+            self.assertEqual(env['Aion__Native__TerrainDirectory'], (root / 'data/terrain').resolve())
+        self.assertEqual(env['Aion__Role'], 'world')
+        self.assertIn('Database=aion_world_1300;', env['ConnectionStrings__World'])
+        self.assertEqual(env['Aion__Realm__Url'], 'https://203.0.113.5:8780')
+        self.assertEqual(env['Aion__LocalPort'], 13400)
+        self.assertEqual(env['Aion__WorldProcess__ControlHost'], '203.0.113.5')
+        # No realm database, account site, chat or login port on a world server.
+        for key in ('ConnectionStrings__Aion', 'ConnectionStrings__Auth', 'Aion__ChatPort', 'Aion__Platform__Port', 'Aion__Https__CertificateFile'):
+            self.assertNotIn(key, env)
+        self.assertEqual(env['Aion__Native__LoginPort'], '')
+
+    def test_world_arguments(self):
+        base = ['--public-address', '203.0.113.9', '--data', '.', '--state', '.', '--world', '1300']
+        for extra in ([], ['--realm-url', 'https://a:8780'], ['--realm-url', 'https://a:8780', '--realm-token', 'aw_1301_x'],
+                      ['--realm-url', 'ftp://a', '--realm-token', 'aw_1300_x'],
+                      ['--realm-url', 'https://a', '--realm-token', 'aw_1300_x', '--realm-cert-sha256', 'zz'],
+                      ['--realm-url', 'https://a', '--realm-token', 'aw_1300_x', '--game-port', '13400']):
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                server_env.main(base + extra)
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            server_env.main(['--public-address', '203.0.113.9', '--data', '.', '--state', '.'])  # auth host needs TLS
+
     def test_public_address_checks(self):
         for address in ('127.0.0.1', '2001:db8::1', 'example.com'):
             with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):

@@ -1,5 +1,6 @@
 // Activity log: the audit events (staff actions, GM commands, item grants, trades, shop, loot, characters) newest
-// first, filtered by kind, with paging. Character names open the character view.
+// first, filtered by kind, with paging. Character names open the character view. Gameplay events are the chosen world's
+// (its own database); the realm's log holds accounts, sanctions and staff actions taken on the auth host.
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Icon, Status } from '../ui/components';
 import { describe, type Call } from './AdminApp';
@@ -28,6 +29,7 @@ const tone = (action: string) => action.startsWith('staff_') ? 'tag-staff' : act
 
 export function Activity({ call, active, onOpen }: { call: Call; active: boolean; onOpen: (characterId: string) => void }) {
   const [filter, setFilter] = useState('');
+  const [scope, setScope] = useState<'world' | 'realm'>('world');
   const [rows, setRows] = useState<AuditEntry[]>([]);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -36,13 +38,14 @@ export function Activity({ call, active, onOpen }: { call: Call; active: boolean
   const load = useCallback(async (before?: number) => {
     setBusy(true);
     try {
-      const page = await call<AuditEntry[]>('/api/admin/audit?' + new URLSearchParams({ action: filter, limit: String(PAGE), ...(before ? { before: String(before) } : {}) }));
+      const path = '/api/admin/audit?' + new URLSearchParams({ action: filter, limit: String(PAGE), ...(before ? { before: String(before) } : {}) });
+      const page = await call<AuditEntry[]>(path, scope === 'realm' ? { world: 'all' } : undefined);
       setRows(r => before ? [...r, ...page] : page);
       setMore(page.length === PAGE);
       setError(null);
     } catch (e) { setError(describe(e)); }
     finally { setBusy(false); }
-  }, [call, filter]);
+  }, [call, filter, scope]);
   useEffect(() => { if (active) load(); }, [active, load]);
 
   return (
@@ -54,6 +57,10 @@ export function Activity({ call, active, onOpen }: { call: Call; active: boolean
         </div>
         <Button size="sm" onClick={() => load()} busy={busy}><Icon name="refresh" size={16} /> Refresh</Button>
       </header>
+      <div className="chips" role="tablist" aria-label="Log">
+        <button type="button" role="tab" className="chip" aria-selected={scope === 'world'} onClick={() => setScope('world')}>This world</button>
+        <button type="button" role="tab" className="chip" aria-selected={scope === 'realm'} onClick={() => setScope('realm')}>Realm (accounts, staff)</button>
+      </div>
       <div className="chips" role="tablist" aria-label="Filter">
         {FILTERS.map(f => <button key={f.id} type="button" role="tab" className="chip" aria-selected={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}
       </div>

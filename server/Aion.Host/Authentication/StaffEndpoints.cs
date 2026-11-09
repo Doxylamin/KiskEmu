@@ -274,32 +274,16 @@ public static class StaffEndpoints
     /// </summary>
     public static async Task<int> ChatAnnounceAsync(IServiceProvider services, string text, string? serverKey = null)
     {
-        if (services.GetService<Aion.Host.Worlds.WorldProcessOptions>() is { } process)
-            return await ForwardChatAsync(process, services.GetService<NativeOptions>()?.WorldId ?? DevelopmentDefaults.WorldId, text);
+        if (services.GetService<Aion.Host.Worlds.WorldProcessOptions>() is not null)
+        {
+            if (services.GetService<Aion.Host.Realm.RealmLinkClient>() is not { } link) return 0;
+            try { return await link.ChatAsync(text, CancellationToken.None); }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or Aion.Host.Realm.RealmLinkException) { return 0; }
+        }
         if (services.GetService<ChatRelay>() is not { } relay || services.GetService<StompHub>() is not { } hub) return 0;
         var deliveries = relay.Announce(text, serverKey: serverKey);
         await hub.DeliverAsync(deliveries);
         return deliveries.Count;
-    }
-
-    static readonly HttpClient RealmHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
-    sealed record Delivered(int Value);
-
-    static async Task<int> ForwardChatAsync(Aion.Host.Worlds.WorldProcessOptions process, int worldId, string text)
-    {
-        if (process.RealmUrl is not { Length: > 0 } realm) return 0;
-        using var request = new HttpRequestMessage(HttpMethod.Post, realm.TrimEnd('/') + "/internal/world/chat")
-        {
-            Content = System.Net.Http.Json.JsonContent.Create(new Aion.Host.Worlds.WorldText(worldId, text)),
-        };
-        request.Headers.Add(Aion.Host.Worlds.WorldLinks.ControlHeader, process.ControlToken);
-        try
-        {
-            using var response = await RealmHttp.SendAsync(request);
-            return response.IsSuccessStatusCode
-                ? (await System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsync<Delivered>(response.Content))?.Value ?? 0 : 0;
-        }
-        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { return 0; }
     }
 
     static string Bearer(HttpContext context)

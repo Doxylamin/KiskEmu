@@ -105,7 +105,8 @@ address, `User root`, a dedicated key `~/.ssh/id_ed25519_aion` whose public half
 A2Core Launcher and copies the exe and its version file to `/var/lib/aion/downloads`; `-Status` shows the
 services and the last log lines.
 
-It backs up the database (`/var/lib/aion/backups`, newest 10 kept), pulls, then repeats install.sh
+It backs up the databases (`/var/lib/aion/backups`, newest 10 kept: the realm's `<name>.dump` and one
+`<name>.world-<id>.dump` per world database on the machine), pulls, then repeats install.sh
 with the options of the last install: rebuilds the host, applies new migrations, restarts.
 New server data (re-extracted terrain etc.): copy a new archive and run install.sh with `--data`.
 
@@ -114,7 +115,12 @@ Restore a backup if an update goes wrong:
 ```bash
 sudo systemctl stop aion-host
 sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres /usr/lib/postgresql/*/bin/pg_restore --clean --if-exists -h 127.0.0.1 -p 55432 -U aion_admin -d aion /var/lib/aion/backups/<file>.dump
+# and each world database from its own file:
+sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres /usr/lib/postgresql/*/bin/pg_restore --clean --if-exists -h 127.0.0.1 -p 55432 -U aion_admin -d aion_world_<id> /var/lib/aion/backups/<file>.world-<id>.dump
 ```
+
+A backup from before the split (one file) restores the old single database; the next update splits it
+again. Drop the world databases first (`DROP DATABASE aion_world_<id>`), or the split keeps them.
 
 (pg_restore asks for the aion_admin password from `/var/lib/aion/postgres/credentials.json`.)
 
@@ -147,28 +153,47 @@ launcher signs in there.
 
 As with an authserver and its worldservers, the `aion-host` service is the **auth host**: login port,
 world list, account site, chat (8091) and staff dashboard. It runs no world itself. Every world is a
-**world server**, an `aion-host` process in world role on its own game port, using the same database.
-Migration 091 turns the world the host used to run itself (1204) into a world server on 13328.
+**world server**, an `aion-host` process in world role on its own game port. Migration 091 turns the
+world the host used to run itself (1204) into a world server on 13328.
+
+Each world has **its own database** (`aion_world_<id>`: its characters, legions, market and gameplay
+log); the auth host keeps the **realm database** `aion` (accounts, staff roles, sanctions, tickets, chat
+log, the world registry and an index of every world's characters). A world server never opens the realm
+database: it signs in to the auth host over the **realm link** (`/internal/realm/...` on the account
+site) and asks it for logins, bans and maintenance there. See `server/DATABASES.md`. The first update
+past migration 092 splits an existing database: each registered world gets a copy cut down to its own
+characters, then the realm drops them.
 
 The staff dashboard's **Worlds** page (admins) adds, changes, starts, stops and removes worlds. A world
 "on this host" is started by the auth host (game port 13328 upwards; its control port 18781 upwards
-stays on loopback); Start and Stop on the page start and stop it gracefully (its players are saved),
-and it is restarted by itself if it exits. Its output goes to `journalctl -u aion-host` as
-`[world <id>]` lines. Restarting the service restarts every world on this host.
+stays on loopback); its database is made the first time it starts. Start and Stop on the page start and
+stop it gracefully (its players are saved), and it is restarted by itself if it exits. Its output goes
+to `journalctl -u aion-host` as `[world <id>]` lines. Restarting the service restarts every world on
+this host.
 
-A world "on another machine" runs there as
-`Aion__Role=world Aion__Native__WorldId=<id> Aion__Native__GamePort=<port> Aion__LocalPort=<control port>`
-`Aion__WorldProcess__ListenAddress=<its address> Aion__WorldProcess__RealmUrl=http://<auth host>:8091`
-with the same connection strings and the same `Aion__BridgeSecret` (its control token derives from it);
-give the world its control port on the Worlds page and let the auth host reach that port. It is listed
-while it answers. Characters belong to the world they were created on. Open the game ports in the
-provider's firewall as well.
+A world "on another machine" is added on the Worlds page as remote, without addresses: it reports them
+when it signs in. Issue its **sign-in token** there (shield icon; shown once, a new one replaces it),
+then install the world server on its machine with the same repository and server data:
+
+```bash
+sudo deploy/linux/install.sh --public-address <its address> --data aion-server-data.tar.gz --world <id> \
+  --realm-url https://<auth host>:8780 --realm-token aw_<id>_...
+```
+
+It gets its own PostgreSQL cluster with only its world's database, game port 13328 and control port 13400
+(`--game-port`, `--control-port`); ufw opens the control port to the auth host's address only. With a
+self-signed account-site certificate, pin it: `--realm-cert-sha256 <hex>` (`openssl x509 -in
+/etc/aion/tls/cert.pem -noout -fingerprint -sha256` on the auth host). The world signs in within a
+minute; the Worlds page then shows its addresses, version and last sign-in, and lists it while it
+answers. `update.sh` on that machine updates it the same way. Open the game ports in the provider's
+firewall as well.
 
 One chat server (8091) serves every world: a player chats with the players of their own world, and
 chat commands are answered by their world server. On the staff dashboard, the **world server** picker
-chooses the world the world tools act on: live map and players, maintenance, announcements, server
-health and restart. Maintenance turns players away from that world only. Bans, mutes, tickets, the
-chat log and scheduled events are the realm's.
+chooses the world the world tools act on: live map and players, characters, rewards, GM commands,
+maintenance, announcements, server health and restart. Maintenance turns players away from that world
+only. Bans, mutes, tickets, the chat log, accounts and scheduled events are the realm's; the Activity
+page switches between the world's log and the realm's.
 
 ## How clients reach this server
 

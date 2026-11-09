@@ -108,13 +108,12 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
             if (!await r.ReadAsync(ct)) throw new GameplayException("profile_unavailable");
             build=r.GetString(0); creation=r.GetInt32(1); race=r.GetInt32(2); gender=r.GetInt32(3); p=JsonSerializer.Deserialize<JsonElement>(r.GetString(4));
         }
-        // The character lives on the world it is created on (multi-world: any registered world, migration 090); the
-        // starter profile's world is the default.
+        // The character lives on the world it is created on: the world server's own (each world has its own database,
+        // server/DATABASES.md); the starter profile's world is the default.
         var world=p.GetProperty("worldId").GetInt32();
-        if(input.WorldId is int requiredWorld && requiredWorld!=world)
+        if(input.WorldId is int requiredWorld)
         {
-            if(await Scalar(c,t,"SELECT world_id FROM game.worlds WHERE world_id=$1",ct,requiredWorld) is not int)
-                throw new GameplayException("wrong_world");
+            if(requiredWorld is < 1 or > 65535) throw new GameplayException("wrong_world");
             world=requiredWorld;
         }
         Guid character;

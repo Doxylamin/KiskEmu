@@ -5,6 +5,10 @@ server data directory unpacked from `pack_server_data.py`, and prints KEY=VALUE 
 database connections, bind/public addresses, HTTPS, the native ports, chat, the platform
 bootstrap and the NCGuard sink. Contains passwords: write it to a file only root and the
 service account can read.
+
+With --world ID it writes a world server's file instead (a world on its own machine,
+server/DATABASES.md): its own database aion_world_<ID>, the game port, the control port the
+auth host reaches, and the realm link (--realm-url, --realm-token from the staff dashboard).
 """
 import argparse
 import ipaddress
@@ -15,16 +19,16 @@ from pathlib import Path
 import sys
 
 try:
-    from .postgres_dev import HOME, PORT
+    from .postgres_dev import HOME, PORT, world_database
 except ImportError:
-    from postgres_dev import HOME, PORT
+    from postgres_dev import HOME, PORT, world_database
 
-PORTS = {'account': 8780, 'bootstrap': 8087, 'login': 3700, 'game': 13328, 'chat': 8091, 'ncguard': 443}
+PORTS = {'account': 8780, 'bootstrap': 8087, 'login': 3700, 'game': 13328, 'chat': 8091, 'ncguard': 443, 'control': 13400}
 
 
-def connection(role, password, pool):
+def connection(role, password, pool, database='aion'):
     # Generated passwords are URL-safe, so the value needs no quoting (EnvironmentFile is not a shell).
-    return (f'Host=127.0.0.1;Port={PORT};Database=aion;Username={role};Password={password};'
+    return (f'Host=127.0.0.1;Port={PORT};Database={database};Username={role};Password={password};'
             f'Maximum Pool Size={pool};Timeout=5;Command Timeout=15')
 
 
@@ -94,6 +98,9 @@ def environment(args, credentials):
     env['Aion__Backups__Directory'] = args.state / 'backups'
     env['Aion__Backups__Tool'] = Path(__file__).resolve().parent / 'postgres_dev.py'
     env['Aion__Backups__PgHome'] = args.state / 'postgres'
+    # A managed world added on the dashboard gets its own database, seeded from this catalogue (postgres_dev create-world).
+    if (data / 'game-catalog-v2').is_dir():
+        env['Aion__Worlds__Catalog'] = data / 'game-catalog-v2'
     if args.geolocation != 'off':
         env['Aion__Platform__GeolocationFile'] = args.state / 'geolocation-response.json'
     if args.proxy:
@@ -108,13 +115,48 @@ def environment(args, credentials):
     return env
 
 
+def world_environment(args, credentials):
+    """A world server on its own machine: its database, game and control ports, and the realm link."""
+    data = args.data.resolve()
+    env = {
+        'ASPNETCORE_ENVIRONMENT': 'Production',
+        'Aion__Role': 'world',
+        'Aion__Native__WorldId': args.world,
+        'ConnectionStrings__World': connection('aion_app', credentials['aion_app'], 32, world_database(args.world)),
+        'Aion__Realm__Url': args.realm_url.rstrip('/'),
+        'Aion__Realm__Token': args.realm_token,
+        'Aion__Network__BindAddress': args.bind,
+        'Aion__Network__PublicAddress': args.public_address,
+        'Aion__Native__GamePort': args.game_port,
+        'Aion__Native__LoginPort': '',
+        'Aion__Native__MaxConnections': args.max_connections,
+        'Aion__Progression__LevelCap': '45',
+        # The control port (status, presence, staff tools, chat delivery): the auth host reaches it with the control
+        # token this world reports when it signs in. Open it to the auth host only.
+        'Aion__LocalPort': args.control_port,
+        'Aion__WorldProcess__ListenAddress': args.bind,
+        'Aion__WorldProcess__ControlHost': args.public_address,
+        'Aion__ServerLog__Enabled': 'false',
+        'Logging__LogLevel__Microsoft.AspNetCore': 'Warning',
+    }
+    if args.realm_cert_sha256:
+        env['Aion__Realm__CertificateSha256'] = args.realm_cert_sha256
+    if (data / 'terrain').is_dir():
+        env['Aion__Native__TerrainDirectory'] = data / 'terrain'
+    if (data / 'navmesh').is_dir():
+        env['Aion__Native__NavMeshDirectory'] = data / 'navmesh'
+    for index, map_id in enumerate(args.preload):
+        env[f'Aion__Native__PreloadMaps__{index}'] = map_id
+    return env
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--public-address', required=True, help='IPv4 address players connect to')
     parser.add_argument('--bind', default='0.0.0.0', help='listen address (default every interface)')
     parser.add_argument('--data', type=Path, required=True, help='unpacked server data (pack_server_data.py)')
     parser.add_argument('--state', type=Path, required=True, help='writable service directory (NCGuard state, geolocation)')
-    tls = parser.add_mutually_exclusive_group(required=True)
+    tls = parser.add_mutually_exclusive_group()  # one is required, except with --world
     tls.add_argument('--proxy', action='store_true', help='a TLS proxy on this machine serves the account site')
     tls.add_argument('--certificate', type=Path, help='PEM certificate for the account port (with --key)')
     parser.add_argument('--key', type=Path, help='PEM private key for --certificate')
@@ -124,6 +166,13 @@ def main(argv=None):
     parser.add_argument('--preload', type=int, nargs='*', default=[1000], help='maps loaded at startup')
     parser.add_argument('--geolocation', default='59.9139,10.7522,NO', metavar='LAT,LON,CC',
                         help="server location for the region screen ('off' to omit)")
+    world = parser.add_argument_group('world server on its own machine')
+    world.add_argument('--world', type=int, help='write a world server\'s file for this world id (no TLS options)')
+    world.add_argument('--realm-url', help="the auth host's account site, e.g. https://203.0.113.5:8780")
+    world.add_argument('--realm-token', help='the sign-in token the staff dashboard issued for this world')
+    world.add_argument('--realm-cert-sha256', help="SHA-256 of the account site's certificate (self-signed: pin it)")
+    world.add_argument('--game-port', type=int, default=PORTS['game'])
+    world.add_argument('--control-port', type=int, default=PORTS['control'])
     args = parser.parse_args(argv)
     try:
         address = ipaddress.ip_address(args.public_address)
@@ -131,6 +180,24 @@ def main(argv=None):
         parser.error('--public-address must be an IPv4 address')
     if address.version != 4 or address.is_loopback:
         parser.error('--public-address must be a non-loopback IPv4 address')
+    if args.world is not None:
+        if not 1 <= args.world <= 65535:
+            parser.error('--world must be 1-65535')
+        if not args.realm_url or not args.realm_url.startswith(('https://', 'http://')):
+            parser.error('--world needs --realm-url (https://...)')
+        if not args.realm_token or not args.realm_token.startswith(f'aw_{args.world}_'):
+            parser.error(f'--world needs --realm-token (aw_{args.world}_..., issued on the staff dashboard)')
+        if args.realm_cert_sha256 and (len(args.realm_cert_sha256.replace(':', '')) != 64
+                                       or not all(c in string.hexdigits for c in args.realm_cert_sha256.replace(':', ''))):
+            parser.error('--realm-cert-sha256 must be 64 hex digits')
+        if args.game_port == args.control_port:
+            parser.error('--game-port and --control-port must differ')
+        credentials = json.loads((HOME / 'credentials.json').read_text(encoding='utf-8'))
+        env = world_environment(args, credentials)
+        sys.stdout.write(''.join(f'{key}={value}\n' for key, value in env.items()))
+        return 0
+    if not args.certificate and not args.proxy:
+        parser.error('choose --certificate/--key or --proxy')
     if args.certificate and not args.key:
         parser.error('--certificate needs --key')
     if args.staff_path is not None and (len(args.staff_path) < 9 or not args.staff_path.startswith('/')

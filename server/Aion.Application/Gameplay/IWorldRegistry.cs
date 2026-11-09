@@ -4,17 +4,22 @@ using Aion.Core.Accounts;
 namespace Aion.Application.Gameplay;
 
 /// <summary>
-/// A registered world server (migrations 090, 091): a world_id (characters, tickets and world sessions are scoped by it)
-/// with one login-list row per race. The auth host (login port) runs no world itself. Kind: "managed" (a world server
-/// process the auth host starts and stops) or "remote" (a world server run elsewhere on the same database, which the auth
-/// host lists while it answers).
+/// A registered world server (migrations 090–092): a world_id (its characters live in that world's own database) with one
+/// login-list row per race. The auth host (login port) runs no world itself. Kind: "managed" (a world server process the
+/// auth host starts and stops) or "remote" (a world server run elsewhere with its own database; it signs in to the realm
+/// with its world token and reports its addresses, and is listed while it answers). Host: the game port's advertised
+/// address (null: the auth host's); ControlHost: where the realm reaches its control port, when not Host.
 /// </summary>
 public sealed record WorldRecord(int WorldId, string Name, int LightServerId, int DarkServerId, string Kind, string? Host,
-    int? GamePort, int? InternalPort, bool Enabled, int? LevelCap, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+    int? GamePort, int? InternalPort, bool Enabled, int? LevelCap, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    string? ControlHost = null, DateTimeOffset? LastSeenAt = null, string? Version = null, bool HasToken = false)
 {
     public const string Managed = "managed", Remote = "remote";
     public bool IsManaged => Kind == Managed;
 }
+
+/// <summary>What a world server reports when it signs in to the realm (and again every minute).</summary>
+public sealed record WorldRegistration(string? GameHost, int GamePort, string? ControlHost, int ControlPort, string? Version);
 
 /// <summary>Staff input for a new or changed world (null fields of an update keep their value).</summary>
 public sealed record WorldInput(int? WorldId, string? Name, int? LightServerId, int? DarkServerId, string? Kind, string? Host,
@@ -32,8 +37,9 @@ public sealed record WorldInput(int? WorldId, string? Name, int? LightServerId, 
             return "invalid_server_ids";
         if (world.Kind is not (WorldRecord.Managed or WorldRecord.Remote)) return "invalid_kind";
         if (world.Host is { } host && !Ipv4.IsMatch(host)) return "invalid_host";
-        if (world.Kind == WorldRecord.Remote && world.Host is null) return "remote_needs_host";
-        if (world.GamePort is null) return "game_port_required";
+        if (world.ControlHost is { } control && !Ipv4.IsMatch(control)) return "invalid_host";
+        // A remote world reports its ports when it signs in.
+        if (world.Kind == WorldRecord.Managed && world.GamePort is null) return "game_port_required";
         if (world.GamePort is < 1 or > 65535 || world.InternalPort is < 1 or > 65535) return "invalid_port";
         if (world.Kind == WorldRecord.Managed && world.InternalPort is null) return "internal_port_required";
         if (world.GamePort is not null && world.GamePort == world.InternalPort) return "port_in_use";
@@ -43,8 +49,8 @@ public sealed record WorldInput(int? WorldId, string? Name, int? LightServerId, 
             if (other.Name.Equals(world.Name, StringComparison.OrdinalIgnoreCase)) return "name_in_use";
             int[] rows = [other.LightServerId, other.DarkServerId];
             if (rows.Contains(world.LightServerId) || rows.Contains(world.DarkServerId)) return "server_id_in_use";
-            // Ports clash only on the same machine (null host: the auth host's address).
-            if (other.Host == world.Host || other.Kind != WorldRecord.Remote && world.Kind != WorldRecord.Remote)
+            // Ports clash only on the same machine: the managed worlds (remote ones report their own).
+            if (other.Kind == WorldRecord.Managed && world.Kind == WorldRecord.Managed)
             {
                 int?[] ports = [other.GamePort, other.InternalPort];
                 if (world.GamePort is { } gp && ports.Contains(gp) || world.InternalPort is { } ip && ports.Contains(ip)) return "port_in_use";
@@ -67,4 +73,11 @@ public interface IWorldRegistry
     Task DeleteAsync(VerifiedAccount actor, int worldId, CancellationToken ct = default);
     /// <summary>Characters per world (dashboard), staff only.</summary>
     Task<IReadOnlyDictionary<int, int>> CharacterCountsAsync(VerifiedAccount actor, CancellationToken ct = default);
+
+    /// <summary>A new world token for a remote world (admin, audited): returned once, only its hash is kept.</summary>
+    Task<string> IssueTokenAsync(VerifiedAccount actor, int worldId, CancellationToken ct = default);
+    /// <summary>Whether the token is the remote world's current one.</summary>
+    Task<bool> TokenMatchesAsync(int worldId, string token, CancellationToken ct = default);
+    /// <summary>A world server signed in (or checked in): its addresses and ports as it reports them; the stored row.</summary>
+    Task<WorldRecord?> RegisterAsync(int worldId, WorldRegistration registration, CancellationToken ct = default);
 }

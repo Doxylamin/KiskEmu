@@ -103,6 +103,13 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
         return (players, connections);
     }
 
+    sealed record Blocked(bool Value);
+
+    /// <summary>Whether either character blocks the other (a whisper between them on their world), asked of that world.</summary>
+    public async Task<bool> BlockedAsync(int worldId, Guid from, Guid to, CancellationToken ct) =>
+        await RunningAsync(worldId, ct) is { } world
+        && (await SendAsync<Blocked>(world, HttpMethod.Get, $"/internal/world/blocked?from={from:D}&to={to:D}", null, ct))?.Value == true;
+
     /// <summary>Every running world reloads its sanctions; a banned account is disconnected there. The number kicked.</summary>
     public async Task<int> SanctionsChangedAsync(Guid? kickAccount, string? reason, CancellationToken ct)
     {
@@ -167,6 +174,14 @@ public sealed class WorldPresenceMirror(WorldLinks links, ILogger<WorldPresenceM
     readonly ConcurrentDictionary<int, IReadOnlyDictionary<Guid, WorldPresenceEntry>> worlds = new();
     readonly ConcurrentDictionary<int, DateTimeOffset> polledAt = new();
 
+    /// <summary>The world a character is in now, or null.</summary>
+    public int? WorldOf(Guid character)
+    {
+        foreach (var (worldId, world) in worlds)
+            if (world.ContainsKey(character)) return worldId;
+        return null;
+    }
+
     public WorldPresenceEntry? Find(Guid character)
     {
         foreach (var world in worlds.Values)
@@ -216,18 +231,19 @@ public sealed class WorldPresenceMirror(WorldLinks links, ILogger<WorldPresenceM
 /// Chat's view of every world of the realm: the characters the world servers report (and a local world when this host
 /// runs one) (<see cref="WorldPresenceMirror"/>). Character ids are unique across worlds.
 /// </summary>
-public sealed class RealmChatDirectory(WorldChatDirectory? local, WorldPresenceMirror mirror, IWireCharacterRepository characters) : IChatDirectory
+public sealed class RealmChatDirectory(WorldChatDirectory? local, WorldPresenceMirror mirror, Aion.Application.Authentication.IRealmAccounts characters) : IChatDirectory
 {
     public async Task<IReadOnlyList<(ChatCharacter Character, string WireId)>> InWorldAsync(Guid account, int worldId, CancellationToken cancellationToken)
     {
         if (local is not null && worldId == local.WorldId) return await local.InWorldAsync(account, worldId, cancellationToken);
         await mirror.RefreshAsync(worldId, cancellationToken);
         var present = mirror.In(worldId);
-        var stored = await characters.ListWorldAsync(account, worldId, cancellationToken);
+        // Wire ids from the realm's character index (each world database numbers its own characters).
+        var stored = await characters.WireIdsAsync(account, worldId, cancellationToken);
         var found = new List<(ChatCharacter, string)>();
-        foreach (var state in stored)
-            if (present.TryGetValue(state.Summary.CharacterId, out var entry) && entry.AccountId == account)
-                found.Add((Character(entry), state.WireId.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        foreach (var (id, wire) in stored)
+            if (present.TryGetValue(id, out var entry) && entry.AccountId == account)
+                found.Add((Character(entry), wire.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         return found;
     }
 

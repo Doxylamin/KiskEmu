@@ -1,7 +1,8 @@
 // World Management: the world servers the auth host's login port lists. The auth host runs no world itself: managed
-// world servers run as processes it starts and stops; remote ones run on other machines against the same database and
-// are listed while they answer (their control port, when set, also carries chat and the staff tools). Admins add, change, start, stop, restart and remove
-// worlds; Game Masters see the list. Polls /api/admin/worlds every 5 s while shown.
+// world servers run as processes it starts and stops; remote ones run on other machines with their own database and sign
+// in to the realm link with a token issued here, reporting their addresses and ports (server/DATABASES.md). Admins add,
+// change, start, stop, restart and remove worlds and issue remote tokens; Game Masters see the list. Polls
+// /api/admin/worlds every 5 s while shown.
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Badge, Button, ConfirmDialog, Icon, Status, type ConfirmRequest, type StatusMessage } from '../ui/components';
 import { describe, type Call } from './AdminApp';
@@ -28,6 +29,7 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
   const [editing, setEditing] = useState<WorldEntry | 'new' | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  const [token, setToken] = useState<{ world: WorldEntry; token: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
@@ -48,6 +50,16 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
       else await call(`/api/admin/worlds/${world.worldId}/${action}`, { method: 'POST' });
       const done = { start: 'is starting', stop: 'is stopping; its players are saved', restart: 'is restarting', remove: 'was removed' }[action];
       setMessage({ text: `${world.name} ${done}.`, kind: 'ok' });
+      await load();
+    } catch (e) { setMessage({ text: describe(e), kind: 'error' }); }
+    finally { setBusy(null); }
+  }
+
+  async function issueToken(world: WorldEntry) {
+    setBusy(world.worldId);
+    try {
+      const result = await call<{ token: string }>(`/api/admin/worlds/${world.worldId}/token`, { method: 'POST' });
+      setToken({ world, token: result.token });
       await load();
     } catch (e) { setMessage({ text: describe(e), kind: 'error' }); }
     finally { setBusy(null); }
@@ -86,6 +98,9 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
                       <Badge tone={state.tone}>{state.label}</Badge>
                       {(w.runtime.state === 'running' || w.runtime.state === 'online') && <span className="faint small">{since}</span>}
                       {w.runtime.lastError && w.runtime.state !== 'running' && <span className="block small danger-text">{w.runtime.lastError}</span>}
+                      {w.kind === 'remote' && <span className="block faint small">{w.lastSeenAt
+                        ? `signed in ${duration(Math.max(0, now - Date.parse(w.lastSeenAt)))} ago${w.version ? ` · ${w.version}` : ''}`
+                        : w.hasToken ? 'has not signed in yet' : 'no token issued'}</span>}
                       {w.runtime.restarts > 0 && <span className="block faint small">{w.runtime.restarts} restart{w.runtime.restarts === 1 ? '' : 's'}</span>}
                     </td>
                     <td data-label="Players" className="mono">{w.runtime.players ?? <span className="faint">–</span>}</td>
@@ -106,6 +121,11 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
                               confirmLabel: 'Stop world', danger: true, onConfirm: () => act(w, 'stop') })}>Stop</Button>
                           </>
                         : <Button size="sm" variant="primary" busy={busy === w.worldId} onClick={() => act(w, 'start')}>Start</Button>}
+                      {w.kind === 'remote' && <button type="button" className="icon-btn" title={w.hasToken ? 'New sign-in token' : 'Issue sign-in token'}
+                        aria-label={`Sign-in token of ${w.name}`} disabled={busy === w.worldId}
+                        onClick={() => w.hasToken ? setConfirm({ title: `New token for ${w.name}?`,
+                          body: "The world's current token stops working; set the new one on its machine and restart it there.", confirmLabel: 'Issue new token', danger: true,
+                          onConfirm: () => issueToken(w) }) : issueToken(w)}><Icon name="shield" size={16} /></button>}
                       <button type="button" className="icon-btn" title="Settings" aria-label={`Settings of ${w.name}`} onClick={() => setEditing(w)}><Icon name="edit" size={16} /></button>
                       {!w.enabled && <button type="button" className="icon-btn" title="Remove" aria-label={`Remove ${w.name}`}
                         onClick={() => setConfirm({ title: `Remove ${w.name}?`, body: w.characters > 0
@@ -128,6 +148,7 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
       </p>
       <WorldDialog editing={editing} call={call} onClose={() => setEditing(null)}
         onSaved={(text) => { setMessage({ text, kind: 'ok' }); setEditing(null); load(); }} />
+      <TokenDialog issued={token} onClose={() => setToken(null)} />
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
     </main>
   );
@@ -153,14 +174,17 @@ function WorldDialog({ editing, call, onClose, onSaved }: { editing: WorldEntry 
     const number = (name: string) => { const v = text(name); return v === '' ? null : Number(v); };
     const body = {
       worldId: world ? null : number('worldId'), name: text('name'), kind,
-      host: text('host'), gamePort: number('gamePort'), internalPort: number('internalPort'),
+      host: kind === 'remote' ? null : text('host') || null, gamePort: kind === 'remote' ? null : number('gamePort'),
+      internalPort: kind === 'remote' ? null : number('internalPort'),
       lightServerId: number('lightServerId'), darkServerId: number('darkServerId'), levelCap: number('levelCap') ?? (world ? 0 : null),
     };
     setBusy(true);
     try {
       if (world) await call(`/api/admin/worlds/${world.worldId}`, { method: 'PUT', body });
       else await call('/api/admin/worlds', { method: 'POST', body });
-      onSaved(world ? `${body.name || world.name} was saved.` : `${body.name} was added. Start it to list it in the game.`);
+      onSaved(world ? `${body.name || world.name} was saved.` : kind === 'remote'
+        ? `${body.name} was added. Issue its sign-in token (shield icon) and set it on the world's machine.`
+        : `${body.name} was added. Start it to list it in the game.`);
     } catch (e) { setError(describe(e)); }
     finally { setBusy(false); }
   }
@@ -190,17 +214,20 @@ function WorldDialog({ editing, call, onClose, onSaved }: { editing: WorldEntry 
               <div className="field"><label htmlFor="world-cap">Level cap</label>
                 <input id="world-cap" name="levelCap" className="input" type="number" min={1} max={100} placeholder="default" defaultValue={world?.levelCap ?? ''} /></div>
             </div>
-            <div className="form-row">
+            {kind === 'managed' ? <div className="form-row">
               <div className="field"><label htmlFor="world-host">Address players connect to</label>
-                <input id="world-host" name="host" className="input" placeholder={kind === 'remote' ? '203.0.113.7' : 'this host'} disabled={locked}
-                  required={kind === 'remote'} defaultValue={world?.host ?? ''} /></div>
+                <input id="world-host" name="host" className="input" placeholder="this host" disabled={locked} defaultValue={world?.host ?? ''} /></div>
               <div className="field"><label htmlFor="world-port">Game port</label>
                 <input id="world-port" name="gamePort" className="input" type="number" min={1} max={65535} placeholder="next free" disabled={locked}
-                  required={kind === 'remote'} defaultValue={world?.gamePort ?? ''} /></div>
-              <div className="field"><label htmlFor="world-internal">{kind === 'managed' ? 'Control port (loopback)' : 'Control port (chat, staff tools)'}</label>
+                  defaultValue={world?.gamePort ?? ''} /></div>
+              <div className="field"><label htmlFor="world-internal">Control port (loopback)</label>
                 <input id="world-internal" name="internalPort" className="input" type="number" min={1} max={65535}
-                  placeholder={kind === 'managed' ? 'next free' : 'none'} disabled={locked} defaultValue={world?.internalPort ?? ''} /></div>
-            </div>
+                  placeholder="next free" disabled={locked} defaultValue={world?.internalPort ?? ''} /></div>
+            </div> : <p className="muted small">
+              A remote world reports where players and this host reach it when it signs in{world?.lastSeenAt
+                ? `: players connect to ${world.host ?? '?'}:${world.gamePort ?? '?'}, its control port is ${world.controlHost ?? world.host ?? '?'}:${world.internalPort ?? '?'}.`
+                : '. It has not signed in yet.'}
+            </p>}
             <div className="form-row">
               <div className="field"><label htmlFor="world-light">Light row id</label>
                 <input id="world-light" name="lightServerId" className="input" type="number" min={1} max={65535} placeholder="next free" disabled={locked}
@@ -209,7 +236,7 @@ function WorldDialog({ editing, call, onClose, onSaved }: { editing: WorldEntry 
                 <input id="world-dark" name="darkServerId" className="input" type="number" min={1} max={65535} placeholder="next free" disabled={locked}
                   defaultValue={world?.darkServerId ?? ''} /></div>
             </div>
-            <p className="faint small">Open the game port in the firewall. Row ids 1361–1399 and 2361–2399 have no name in the client, so it shows the name above.
+            <p className="faint small">Open the game port in the firewall{kind === 'remote' ? ', and its control port to this host only' : ''}. Row ids 1361–1399 and 2361–2399 have no name in the client, so it shows the name above.
               {world && ' The level cap applies at the next start of the world.'}</p>
             <Status message={error ? { text: error, kind: 'error' } : null} />
           </div>
@@ -218,6 +245,45 @@ function WorldDialog({ editing, call, onClose, onSaved }: { editing: WorldEntry 
             <Button type="submit" variant="primary" busy={busy}>{world ? 'Save' : 'Add world'}</Button>
           </div>
         </form>
+      )}
+    </dialog>
+  );
+}
+
+/** A remote world's new sign-in token, shown once, with the settings its machine needs. */
+function TokenDialog({ issued, onClose }: { issued: { world: WorldEntry; token: string } | null; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (issued && !dialog.open) { setCopied(false); dialog.showModal(); }
+    if (!issued && dialog.open) dialog.close();
+  }, [issued]);
+  const settings = issued ? [
+    'Aion__Role=world',
+    `Aion__Native__WorldId=${issued.world.worldId}`,
+    `Aion__Realm__Url=${window.location.origin}`,
+    `Aion__Realm__Token=${issued.token}`,
+  ].join('\n') : '';
+  async function copy() {
+    try { await navigator.clipboard.writeText(settings); setCopied(true); } catch { setCopied(false); }
+  }
+  return (
+    <dialog ref={ref} className="dialog" onClose={onClose} aria-labelledby="token-title">
+      {issued && (
+        <div>
+          <div className="dialog-body stack">
+            <h2 id="token-title">Sign-in token of {issued.world.name}</h2>
+            <p className="muted small">This token is shown only now. Put these settings in the world server's environment (aion.env), or
+              install it with <span className="mono">install.sh --world {issued.world.worldId}</span>, then restart it there. It signs in within a minute.</p>
+            <pre className="mono small" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', userSelect: 'all' }}>{settings}</pre>
+          </div>
+          <div className="dialog-actions">
+            <Button variant="ghost" onClick={copy}>{copied ? 'Copied' : 'Copy'}</Button>
+            <Button variant="primary" onClick={onClose}>Done</Button>
+          </div>
+        </div>
       )}
     </dialog>
   );

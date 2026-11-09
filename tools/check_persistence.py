@@ -3,7 +3,7 @@
 Uses the non-superuser application role for all repository operations. Admin
 credentials are used only to create/migrate/seed/drop the isolated test database.
 
-Applies every migration under database/migrations/ (070 post expiry + 080–084 resets on build 25767555),
+Applies the world database's migrations (server/DATABASES.md; 070 post expiry + 080–084 resets on build 25767555),
 then runs tests/Aion.Persistence.Checks: repository CRUD, core-loop Postgres checks
 (SaveProgress + position checkpoint, equip/unequip, quest progress on a fresh pool), and restart
 integrity (level/exp, enchant, quest gating, buffs/cooldowns, abyss, legion/union/wallet,
@@ -15,10 +15,10 @@ import subprocess
 import uuid
 
 try:
-    from .postgres_dev import ROOT, HOME, PORT, sql, migration_script, literal
+    from .postgres_dev import ROOT, HOME, PORT, sql, migration_script, migration_files, literal
     from .class_skills import starter_weapon
 except ImportError:
-    from postgres_dev import ROOT, HOME, PORT, sql, migration_script, literal
+    from postgres_dev import ROOT, HOME, PORT, sql, migration_script, migration_files, literal
     from class_skills import starter_weapon
 
 
@@ -35,7 +35,7 @@ def main():
     sql(f'CREATE DATABASE {name} OWNER aion_owner;', database='postgres')
     try:
         sql(f'REVOKE ALL ON DATABASE {name} FROM PUBLIC; GRANT CONNECT ON DATABASE {name} TO aion_app;', database=name)
-        sql(migration_script(sorted((ROOT / 'database/migrations').glob('*.sql'))), database=name)
+        sql(migration_script(migration_files('world')), database=name)
         for account in accounts:
             sql(f"INSERT INTO auth.accounts(account_id,provider,subject) VALUES('{account}','repository-test','{account}');", database=name)
         sql(f"INSERT INTO game.characters(character_id,account_id,world_id,name,creation_id,race,gender) VALUES('{disabled_character}','{accounts[2]}',1204,'PreviouslyOwned',1,1,1);", database=name)

@@ -141,10 +141,13 @@ export interface WorldEntry {
   worldId: number; name: string; lightServerId: number; darkServerId: number; kind: 'managed' | 'remote'; host: string | null;
   gamePort: number | null; internalPort: number | null; enabled: boolean; levelCap: number | null; createdAt: string; updatedAt: string;
   characters: number; listed: boolean; runtime: WorldRuntime;
+  /** Reported by the world when it signs in to the realm link (remote: its control address), its last sign-in and build. */
+  controlHost: string | null; lastSeenAt: string | null; version: string | null; hasToken: boolean;
 }
 export interface WorldList { canManage: boolean; supervised: boolean; publicAddress: string | null; worlds: WorldEntry[] }
 Object.assign(ERRORS, {
   unknown_world: 'That world no longer exists.',
+  not_remote: 'Only a remote world signs in with a token; this host gives managed worlds theirs.',
   world_required: 'Choose a world server first.',
   world_offline: 'That world server is not running. Start it on the Worlds page.',
   world_enabled: 'Stop the world first.',
@@ -157,7 +160,6 @@ Object.assign(ERRORS, {
   server_id_in_use: 'Another world already uses one of these server list rows.',
   invalid_kind: 'Choose where the world runs.',
   invalid_host: 'The address must be an IPv4 address such as 203.0.113.7.',
-  remote_needs_host: 'A world on another machine needs the address players connect to.',
   game_port_required: 'Give the world a game port.',
   internal_port_required: 'A world on this host needs a control port.',
   invalid_port: 'Ports are between 1 and 65535.',

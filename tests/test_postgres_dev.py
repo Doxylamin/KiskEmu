@@ -5,12 +5,42 @@ import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
-from tools.postgres_dev import literal, migration_script, sql, migrate, role_statement
+from tools.postgres_dev import (literal, migration_files, migration_role, migration_script, sql, migrate, role_statement,
+                                world_database)
 
 
 class MigrationTests(unittest.TestCase):
     def test_sql_literal(self):
         self.assertEqual(literal("O'Brien"), "'O''Brien'")
+
+    def test_migration_roles(self):
+        self.assertEqual(migration_role('092_database_split.realm.sql'), 'realm')
+        self.assertEqual(migration_role('092_database_split.world.sql'), 'world')
+        self.assertEqual(migration_role('090_worlds.sql'), 'both')
+        self.assertEqual(migration_role('001_init.sql'), 'both')
+
+    def test_migration_files_split_by_database(self):
+        realm = [f.name for f in migration_files('realm')]
+        world = [f.name for f in migration_files('world')]
+        self.assertIn('093_realm_without_characters.realm.sql', realm)
+        self.assertNotIn('093_realm_without_characters.realm.sql', world)
+        self.assertIn('092_database_split.world.sql', world)
+        self.assertNotIn('092_database_split.world.sql', realm)
+        self.assertEqual(realm, sorted(realm))
+        # Shared migrations run on both kinds of database.
+        self.assertIn('090_worlds.sql', realm)
+        self.assertIn('090_worlds.sql', world)
+        # The split happens between 092 and 093: the bounded ranges cover the realm list exactly once.
+        before = [f.name for f in migration_files('realm', before='093')]
+        after = [f.name for f in migration_files('realm', start='093')]
+        self.assertEqual(before + after, realm)
+        self.assertTrue(all(name < '093' for name in before))
+
+    def test_world_database_names(self):
+        self.assertEqual(world_database(1204), 'aion_world_1204')
+        for bad in (0, 65536, -1):
+            with self.assertRaises(ValueError):
+                world_database(bad)
 
     def test_migrations_are_checked_and_transactional(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -5,12 +5,16 @@
 #   sudo deploy/linux/install.sh --public-address 203.0.113.5 --self-signed
 #   sudo deploy/linux/install.sh --public-address 203.0.113.5 --certificate cert.pem --key key.pem
 #   sudo deploy/linux/install.sh --public-address 203.0.113.5 --proxy   (your own TLS proxy; see README)
+# A world server on its own machine (World Management issues the token; server/DATABASES.md):
+#   sudo deploy/linux/install.sh --public-address 198.51.100.9 --data aion-server-data.tar.gz --world 1300 \
+#     --realm-url https://203.0.113.5:8780 --realm-token aw_1300_... [--realm-cert-sha256 HEX] [--game-port 13328] [--control-port 13400]
 # --data is needed on the first install (pack_server_data.py makes it on the development PC);
 # later runs rebuild the host, apply new migrations and restart. See deploy/linux/README.md.
 set -euo pipefail
 
 ARGS=("$@")
 PUBLIC_ADDRESS="" DATA_ARCHIVE="" TLS="" CERT="" KEY="" DOMAIN="" EMAIL="" SKIP_PACKAGES=0
+WORLD="" REALM_URL="" REALM_TOKEN="" REALM_CERT="" GAME_PORT=13328 CONTROL_PORT=13400
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --public-address) PUBLIC_ADDRESS="$2"; shift 2 ;;
@@ -22,12 +26,23 @@ while [[ $# -gt 0 ]]; do
     --certificate) TLS=files; CERT="$(realpath "$2")"; shift 2 ;;
     --key) KEY="$(realpath "$2")"; shift 2 ;;
     --skip-packages) SKIP_PACKAGES=1; shift ;;
+    --world) WORLD="$2"; shift 2 ;;
+    --realm-url) REALM_URL="$2"; shift 2 ;;
+    --realm-token) REALM_TOKEN="$2"; shift 2 ;;
+    --realm-cert-sha256) REALM_CERT="$2"; shift 2 ;;
+    --game-port) GAME_PORT="$2"; shift 2 ;;
+    --control-port) CONTROL_PORT="$2"; shift 2 ;;
     *) echo "Unknown option $1" >&2; exit 2 ;;
   esac
 done
 [[ $EUID -eq 0 ]] || { echo "Run as root (sudo)." >&2; exit 2; }
 [[ -n "$PUBLIC_ADDRESS" ]] || { echo "--public-address is required" >&2; exit 2; }
-[[ -n "$TLS" ]] || { echo "Choose --domain/--email, --self-signed, --certificate/--key or --proxy" >&2; exit 2; }
+if [[ -n "$WORLD" ]]; then
+  [[ -z "$TLS" ]] || { echo "A world server has no account site: no TLS options with --world" >&2; exit 2; }
+  [[ -n "$REALM_URL" && -n "$REALM_TOKEN" ]] || { echo "--world needs --realm-url and --realm-token" >&2; exit 2; }
+else
+  [[ -n "$TLS" ]] || { echo "Choose --domain/--email, --self-signed, --certificate/--key or --proxy" >&2; exit 2; }
+fi
 [[ $TLS != letsencrypt || -n "$EMAIL" ]] || { echo "--domain needs --email" >&2; exit 2; }
 [[ $TLS != files || -n "$KEY" ]] || { echo "--certificate needs --key" >&2; exit 2; }
 
@@ -57,7 +72,11 @@ if [[ -n "$DATA_ARCHIVE" ]]; then
   tar -xzf "$DATA_ARCHIVE" -C $DATA --no-same-owner
   chown -R aion:aion $DATA
 fi
-[[ -f $DATA/bootstrap/keys/app-key.json ]] || { echo "No server data in $DATA; pass --data" >&2; exit 1; }
+if [[ -n "$WORLD" ]]; then
+  [[ -d $DATA/game-catalog-v2 ]] || { echo "No server data in $DATA; pass --data" >&2; exit 1; }
+else
+  [[ -f $DATA/bootstrap/keys/app-key.json ]] || { echo "No server data in $DATA; pass --data" >&2; exit 1; }
+fi
 
 # Database tools and migrations (the service account must read them), then the host.
 rm -rf $SRC && install -d -m 755 $SRC
@@ -71,21 +90,36 @@ as_aion() { cd / && runuser -u aion -- env AION_PG_HOME="$AION_PG_HOME" AION_PG_
 FIRST=0
 [[ -f $AION_PG_HOME/credentials.json ]] || FIRST=1
 systemctl stop aion-host 2>/dev/null || true
+# Databases (server/DATABASES.md): the auth host has the realm database and one per managed world (the first migration
+# past 092 splits an existing database into them); a world server on its own machine has only its world's. A new
+# world database gets the catalogue, starter profiles, class skills and equipment rules.
+databases() {
+  if [[ -n "$WORLD" ]]; then
+    as_aion python3 $SRC/tools/postgres_dev.py create-world "$WORLD" --catalog $DATA/game-catalog-v2
+  else
+    as_aion python3 $SRC/tools/postgres_dev.py migrate
+    # The realm keeps the catalogue for the dashboard (items, maps, NPCs).
+    [[ $FIRST -eq 0 ]] || as_aion python3 $SRC/tools/postgres_dev.py import-catalog --directory $DATA/game-catalog-v2
+    as_aion python3 $SRC/tools/postgres_dev.py ensure-worlds --catalog $DATA/game-catalog-v2
+  fi
+}
 if systemctl is-active --quiet aion-postgres; then
   # Running under systemd: apply new migrations in place.
-  as_aion python3 $SRC/tools/postgres_dev.py migrate
+  databases
 else
-  # setup creates the cluster (first run), starts it with pg_ctl and applies migrations.
-  as_aion python3 $SRC/tools/postgres_dev.py setup
-  if [[ $FIRST -eq 1 ]]; then
-    as_aion python3 $SRC/tools/postgres_dev.py import-catalog --directory $DATA/game-catalog-v2
-    as_aion python3 $SRC/tools/configure_starters.py
-    as_aion python3 $SRC/tools/class_skills.py install
-    as_aion python3 $SRC/tools/equipment_rules.py
-  fi
+  # setup creates the cluster (first run) and starts it with pg_ctl.
+  if [[ -n "$WORLD" ]]; then as_aion python3 $SRC/tools/postgres_dev.py setup --world-only
+  else as_aion python3 $SRC/tools/postgres_dev.py setup; fi
+  databases
   as_aion python3 $SRC/tools/postgres_dev.py stop
 fi
 
+if [[ -n "$WORLD" ]]; then
+  # A world server: its own database, game and control ports, and the realm link (no account site, chat or login).
+  WORLD_ARGS=(--world "$WORLD" --realm-url "$REALM_URL" --realm-token "$REALM_TOKEN" --game-port "$GAME_PORT" --control-port "$CONTROL_PORT")
+  [[ -z "$REALM_CERT" ]] || WORLD_ARGS+=(--realm-cert-sha256 "$REALM_CERT")
+  as_aion python3 $SRC/tools/server_env.py --public-address "$PUBLIC_ADDRESS" --data $DATA --state $STATE "${WORLD_ARGS[@]}" > $CONFIG/aion.env.new
+else
 # The account site's certificate, readable by the service: /etc/aion/tls/{cert,key}.pem.
 TLS_DIR=$CONFIG/tls
 install -d -o root -g aion -m 750 $TLS_DIR
@@ -117,6 +151,7 @@ if [[ $TLS == proxy ]]; then TLS_ARGS=(--proxy); else TLS_ARGS=(--certificate $T
 STAFF_PATH="$(grep -s '^Aion__Web__StaffPath=' $CONFIG/aion.env | cut -d= -f2- || true)"
 [[ -n "$STAFF_PATH" ]] && TLS_ARGS+=(--staff-path "$STAFF_PATH")
 as_aion python3 $SRC/tools/server_env.py --public-address "$PUBLIC_ADDRESS" --data $DATA --state $STATE "${TLS_ARGS[@]}" > $CONFIG/aion.env.new
+fi
 chown root:aion $CONFIG/aion.env.new && chmod 640 $CONFIG/aion.env.new && mv $CONFIG/aion.env.new $CONFIG/aion.env
 
 sed "s#@PG_BIN@#$PG_BIN#" "$REPO/deploy/linux/aion-postgres.service" > /etc/systemd/system/aion-postgres.service
@@ -126,7 +161,13 @@ systemctl enable --now aion-postgres
 systemctl enable aion-host
 systemctl restart aion-host
 
-if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+if [[ -n "$WORLD" ]] && command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+  ufw allow "$GAME_PORT"/tcp
+  # The control port answers the auth host only.
+  REALM_HOST="$(sed -E 's#^[a-z]+://([^/:]+).*#\1#' <<< "$REALM_URL")"
+  if [[ $REALM_HOST =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then ufw allow from "$REALM_HOST" to any port "$CONTROL_PORT" proto tcp
+  else echo "Open port $CONTROL_PORT to the auth host only (ufw allow from <its address> to any port $CONTROL_PORT proto tcp)." >&2; fi
+elif command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
   for port in 443 3700 8087 8091 13328; do ufw allow $port/tcp; done
   # Game ports of further worlds started from the staff dashboard (World Management picks 13329 upwards).
   ufw allow 13329:13340/tcp
@@ -141,4 +182,8 @@ for ((i = 0; i < ${#ARGS[@]}; i++)); do
 done
 printf '%q ' "${SAVED[@]}" > $CONFIG/install-args && chmod 640 $CONFIG/install-args
 echo "Installed. Status: systemctl status aion-host; logs: journalctl -u aion-host -f"
-echo "Staff dashboard: $(grep '^Aion__Web__StaffPath=' $CONFIG/aion.env | cut -d= -f2-) on the account site (port 8780)"
+if [[ -n "$WORLD" ]]; then
+  echo "World $WORLD signs in to $REALM_URL within a minute; World Management shows it."
+else
+  echo "Staff dashboard: $(grep '^Aion__Web__StaffPath=' $CONFIG/aion.env | cut -d= -f2-) on the account site (port 8780)"
+fi

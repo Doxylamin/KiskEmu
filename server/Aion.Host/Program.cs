@@ -52,8 +52,19 @@ if (builder.Configuration["Aion:Debug:ShopFile"] is { Length: > 0 } shopDebug)
 var shopPremium = Aion.World.ShopOptions.Parse(builder.Configuration["Aion:Shop:PremiumMode"]);
 Aion.World.GameSession.ConfigureShopOptions(new Aion.World.ShopOptions { PremiumMode = shopPremium });
 Aion.World.GameSession.ConfigureMembership(builder.Configuration.GetValue("Aion:World:MembershipByDefault", true));
+// Databases (server/DATABASES.md). The auth host (and every non-world host) uses the realm database: accounts, staff
+// tools, the world registry and the character index (ConnectionStrings:Aion for the game role, :Auth for accounts). A
+// world server uses its own world database only (ConnectionStrings:World) and reaches the realm over the realm link.
 var connectionString = builder.Configuration.GetConnectionString("Aion");
 var authConnectionString = builder.Configuration.GetConnectionString("Auth");
+var realmLink = Aion.Host.Realm.RealmLinkOptions.From(builder.Configuration, worldProcess);
+if (worldProcess is not null)
+{
+    connectionString = builder.Configuration.GetConnectionString("World");
+    authConnectionString = null;
+    if (string.IsNullOrWhiteSpace(connectionString) || realmLink is null)
+        throw new InvalidOperationException("World role needs ConnectionStrings:World (its own database) and Aion:Realm:Url and Aion:Realm:Token (the realm link).");
+}
 if (!string.IsNullOrWhiteSpace(connectionString))
 {
     builder.Services.AddSingleton<NpgsqlDataSource>(_ => NpgsqlDataSource.Create(connectionString));
@@ -66,13 +77,18 @@ if (!string.IsNullOrWhiteSpace(connectionString))
     builder.Services.AddSingleton<IGameplayStore>(sp => new PostgresGameplayStore(
         sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<ProgressionOptions>(), sp.GetService<IItemStatRoller>()));
     builder.Services.AddSingleton<IAccountQunaBalance, PostgresAccountQunaBalance>();
-    builder.Services.AddSingleton<IGameTicketRedeemer, PostgresGameTicketRedeemer>();
-    builder.Services.AddSingleton<IWorldRegistry, PostgresWorldRegistry>();
+    if (worldProcess is null)
+    {
+        builder.Services.AddSingleton<IGameTicketRedeemer, PostgresGameTicketRedeemer>();
+        builder.Services.AddSingleton<IWorldRegistry, PostgresWorldRegistry>();
+        builder.Services.AddSingleton<IRealmAccounts, PostgresRealmAccounts>();
+    }
+    else builder.Services.AddSingleton<IAccountMirror, PostgresAccountMirror>();
 }
 else
     builder.Services.AddSingleton<IAccountQunaBalance, NullAccountQunaBalance>();
-var accountsReady = !string.IsNullOrWhiteSpace(connectionString) && !string.IsNullOrWhiteSpace(authConnectionString);
-if (accountsReady)
+var accountsReady = !string.IsNullOrWhiteSpace(connectionString) && (!string.IsNullOrWhiteSpace(authConnectionString) || realmLink is not null);
+if (accountsReady && worldProcess is null)
 {
     builder.Services.AddSingleton<PostgresAccountAuthentication>(provider =>
     {
@@ -89,11 +105,28 @@ if (accountsReady)
     builder.Services.AddSingleton<ITotpAuthentication>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IPlatformSecondaryAuth>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IWorldSessions>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
-    if (worldProcess is null) builder.Services.AddHostedService<AuthenticationCleanup>();
+    builder.Services.AddHostedService<AuthenticationCleanup>();
     // Staff tools: maintenance, sanctions, chat log, tickets, events, population, economy (migration 028).
     builder.Services.AddSingleton<IStaffTools, PostgresStaffTools>();
     builder.Services.AddSingleton<Aion.Host.Authentication.ServerControl>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Authentication.ServerControl>());
+}
+else if (accountsReady)
+{
+    // World server: game logins, staff sign-ins, bans, maintenance and reports go through the realm link; it keeps its
+    // account mirror and the realm's character index current.
+    var linkWorldId = builder.Configuration.GetValue<int?>("Aion:Native:WorldId") ?? Aion.World.DevelopmentDefaults.WorldId;
+    builder.Services.AddSingleton(provider => new Aion.Host.Realm.RealmLinkClient(realmLink!, linkWorldId,
+        provider.GetRequiredService<ILogger<Aion.Host.Realm.RealmLinkClient>>()));
+    builder.Services.AddSingleton<Aion.Host.Realm.AccountMirrorService>();
+    builder.Services.AddSingleton<IAccountAuthentication, Aion.Host.Realm.LinkedAccountAuthentication>();
+    builder.Services.AddSingleton<IWorldSessions, Aion.Host.Realm.LinkedWorldSessions>();
+    builder.Services.AddSingleton<IStaffTools>(provider => new Aion.Host.Realm.LinkedStaffTools(
+        new PostgresStaffTools(provider.GetRequiredService<NpgsqlDataSource>()), provider.GetRequiredService<Aion.Host.Realm.RealmLinkClient>()));
+    builder.Services.AddSingleton<Aion.Host.Authentication.ServerControl>();
+    builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Authentication.ServerControl>());
+    builder.Services.AddSingleton<Aion.Host.Realm.RealmLinkService>();
+    builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Realm.RealmLinkService>());
 }
 // Optional Lime chat API for the dev client (policy ChatServerURL), on its own loopback port.
 var chatPort = worldProcess is null ? builder.Configuration.GetValue<int?>("Aion:ChatPort") : null;
@@ -107,9 +140,10 @@ var chatServerKey = builder.Configuration["Aion:ChatServerKey"] ?? Aion.World.De
 var chatWorldId = int.TryParse(chatServerKey, out var parsedChatWorld) ? parsedChatWorld : Aion.World.DevelopmentDefaults.WorldId;
 // On the auth host one chat server serves every world server: its directory is the characters the world servers report.
 static IChatDirectory? ChatDirectory(IServiceProvider provider, int world) =>
-    provider.GetService<IWireCharacterRepository>() is not { } characters ? null
-    : provider.GetService<Aion.Host.Worlds.WorldPresenceMirror>() is { } mirror ? new Aion.Host.Worlds.RealmChatDirectory(null, mirror, characters)
-    : provider.GetService<Aion.World.WorldPresence>() is { } presence ? new WorldChatDirectory(presence, characters, world) : null;
+    provider.GetService<Aion.Host.Worlds.WorldPresenceMirror>() is { } mirror && provider.GetService<IRealmAccounts>() is { } index
+        ? new Aion.Host.Worlds.RealmChatDirectory(null, mirror, index)
+    : provider.GetService<IWireCharacterRepository>() is { } characters && provider.GetService<Aion.World.WorldPresence>() is { } presence
+        ? new WorldChatDirectory(presence, characters, world) : null;
 builder.Services.AddSingleton(provider => new ChatRelay(provider.GetRequiredService<TimeProvider>(), ChatDirectory(provider, chatWorldId)));
 builder.Services.AddSingleton<StompHub>();
 if (builder.Configuration.GetValue<bool>("Aion:ChatDevelopmentLogins"))
@@ -140,7 +174,7 @@ var native = (builder.Configuration.GetSection(AionConfiguration.Native).Get<Nat
 if (worldProcess is not null)
 {
     if (native.GamePort is null || native.Development || !accountsReady)
-        throw new InvalidOperationException("World role needs Aion:Native:GamePort, account logins and the Aion and Auth connection strings.");
+        throw new InvalidOperationException("World role needs Aion:Native:GamePort, account logins (not development) and the realm link.");
     native = native with { LoginPort = null };
 }
 // The auth host runs no world: its game port setting is ignored (the world servers' ports are in the world registry).
@@ -336,6 +370,7 @@ if (worldProcess is not null)
         context.Response.StatusCode = 500;
         await context.Response.WriteAsJsonAsync(new { error = "The request could not be completed." });
     }));
+    app.MapGameplayEndpoints();
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
     app.MapGet("/health/live", () => Results.Ok(new { status = "alive" }));
@@ -355,8 +390,15 @@ if (app.Services.GetService<ServerFileLoggerProvider>() is { } serverLog)
 // Chat mutes and the chat log go through the staff tools when both exist.
 if (app.Services.GetService<Aion.Host.Authentication.ServerControl>() is { } serverControl && app.Services.GetService<ChatRelay>() is { } chatRelay)
     chatRelay.Moderation = serverControl;
-if (app.Services.GetService<ChatRelay>() is { } chatRelayBlocks && app.Services.GetService<IGameplayStore>() is { } gameplayStore)
-    chatRelayBlocks.WhisperBlocked = (from, to) => gameplayStore.AnyBlockBetweenAsync(from, to, default).GetAwaiter().GetResult();
+// Whisper blocks are world data: the auth host's chat asks the world both characters are on.
+if (app.Services.GetService<ChatRelay>() is { } chatRelayBlocks)
+{
+    if (app.Services.GetService<Aion.Host.Worlds.WorldPresenceMirror>() is { } presenceMirror && app.Services.GetService<Aion.Host.Worlds.WorldLinks>() is { } blockLinks)
+        chatRelayBlocks.WhisperBlocked = (from, to) => presenceMirror.WorldOf(from) is { } blockWorld
+            && blockLinks.BlockedAsync(blockWorld, from, to, default).GetAwaiter().GetResult();
+    else if (app.Services.GetService<IGameplayStore>() is { } gameplayStore)
+        chatRelayBlocks.WhisperBlocked = (from, to) => gameplayStore.AnyBlockBetweenAsync(from, to, default).GetAwaiter().GetResult();
+}
 // Behind the declared TLS proxy (loopback), client addresses for rate limits and launch pairing
 // come from X-Forwarded-For; only loopback proxies are trusted (the defaults).
 if (https.Proxy)
@@ -463,7 +505,7 @@ if (accountsReady)
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapTicketEndpoints(app);
     Aion.Host.Worlds.WorldEndpoints.MapWorldEndpoints(app);
-    Aion.Host.Worlds.WorldEndpoints.MapRealmChatEndpoints(app);
+    Aion.Host.Realm.RealmLinkEndpoints.Map(app);
     var bridgeSecret = builder.Configuration["Aion:BridgeSecret"];
     if (bridgeSecret is { Length: >= 64 })
     {

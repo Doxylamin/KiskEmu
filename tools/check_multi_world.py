@@ -8,6 +8,11 @@ that character's chat login for its world (another world's rooms refused, a "//r
 server), maintenance of one world turns players away from that world only, and stopping a world ends its process and
 drops it from the list.
 
+Databases as on a server (server/DATABASES.md): a disposable realm database aion_multiworld_<x>, split into one world
+database per world (<realm>_world_<id>) by the same migration path an update takes; the second world's database is made
+by the auth host's world supervisor (postgres_dev.py create-world) when it is first started. The world servers reach the
+realm over the realm link only.
+
 Needs a project cluster (tools/postgres_dev.py setup) and a built host (dotnet build server/Aion.Host). Beside a
 server's own cluster, use a throwaway one: AION_PG_HOME=<dir> AION_PG_PORT=<port> python3 tools/postgres_dev.py setup.
 """
@@ -29,7 +34,8 @@ from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.aion_protocol import encode_varint, split_frames  # noqa: E402
 from tools.load_test import _der, _oaep_decode, _strings, keypair  # noqa: E402
-from tools.postgres_dev import HOME, ROOT, import_catalog, migration_script, sql  # noqa: E402
+import tools.postgres_dev as postgres_dev  # noqa: E402
+from tools.postgres_dev import HOME, ROOT, create_world, import_catalog, migrate_realm, sql  # noqa: E402
 from tools.probe_login_reply import RC4  # noqa: E402
 from tools.run_account_server import connection_string  # noqa: E402
 
@@ -154,7 +160,16 @@ def main():
         'Aion__Native__LoginPort': str(login_port), 'Aion__Native__GamePort': str(alpha_port),
         'Aion__Native__Logins': 'accounts', 'Aion__Native__PreloadMaps__0': '0', 'Aion__ServerLog__Enabled': 'false',
         'ASPNETCORE_ENVIRONMENT': 'Production',
+        # The world supervisor makes a new world's database with postgres_dev.py create-world, named after this realm.
+        'AION_PG_REALM': name, 'Aion__Backups__Tool': str(ROOT / 'tools/postgres_dev.py'), 'Aion__Backups__PgHome': str(HOME),
     })
+    if args.catalog:
+        env['Aion__Worlds__Catalog'] = str(Path(args.catalog).resolve())
+    # This process's postgres_dev calls work on the disposable realm too.
+    postgres_dev.REALM = os.environ['AION_PG_REALM'] = name
+
+    def world_db(world):
+        return f'{name}_world_{world}'
     checks = 0
 
     def check(condition, label):
@@ -186,8 +201,8 @@ def main():
             time.sleep(0.5)
         raise AssertionError('timed out: ' + label)
 
-    def count(query):
-        return int(sql(query, database=name).stdout.split()[0])
+    def count(query, database=None):
+        return int(sql(query, database=database or name).stdout.split()[0])
 
     keys = keypair(random.randrange(1 << 30))
     log_path = HOME / 'multi-world-check-host.log'
@@ -195,16 +210,19 @@ def main():
     sql(f'CREATE DATABASE {name} OWNER aion_owner;', database='postgres')
     try:
         sql(f'REVOKE ALL ON DATABASE {name} FROM PUBLIC; GRANT CONNECT ON DATABASE {name} TO aion_app,aion_auth;', database=name)
-        sql(migration_script(sorted((ROOT / 'database/migrations').glob('*.sql'))), database=name)
+        # The update path: migrations up to 092, the split (world 1204's database cut from the realm), then 093.
+        check(migrate_realm() == [world_db(1204)], 'the realm migration splits world 1204 into its own database')
+        check(sql("SELECT relkind FROM pg_class WHERE oid='game.characters'::regclass;", database=name).stdout.strip() == 'v',
+              "the realm's game.characters is the character index's view")
         # Migration 091 made the former login-host world (1204) a managed world server on 13328; this check uses free ports.
         row = sql("SELECT kind||':'||enabled||':'||game_port FROM game.worlds;", database=name).stdout.split()
         check(row == ['managed:true:13328'], 'the former primary world is a managed world server (migration 091)')
         sql(f'UPDATE game.worlds SET game_port={alpha_port}, internal_port={alpha_control} WHERE world_id=1204;', database=name)
         if args.catalog:
-            # Character creation needs the catalogue and the starter profiles (as install.sh sets them up).
-            from tools.configure_starters import statements
-            build = import_catalog(args.catalog, database=name)['build_id']
-            sql(statements(build, json.loads((ROOT / 'tools/data/starter-skills.json').read_text())), database=name)
+            # Character creation needs the catalogue and the starter profiles (as install.sh sets them up): the realm
+            # keeps the catalogue for the dashboard, the world database is seeded.
+            import_catalog(args.catalog, database=name)
+        create_world(1204, args.catalog)
         with log_path.open('w', encoding='utf-8') as log:
             host = subprocess.Popen(['dotnet', args.host_dll], cwd=ROOT / 'server/Aion.Host', env=env, stdout=log, stderr=subprocess.STDOUT)
 
@@ -291,9 +309,14 @@ def main():
             game.recv(0x361a)
             game.send(_strings(0x361b, 'Betaling') + b'\x01' + struct.pack('<I', 1) + b'\x02\x0c\x64' + b'\x00\x00\x00')
             created = game.recv(0x361c)
-            stored = sql("SELECT world_id||':'||name FROM game.characters;", database=name).stdout.split()
-            check(stored == ['1205:Betaling'], f'character stored on world 1205 (create reply {created.hex()[:24]})')
-            character_wire = count("SELECT wire_id FROM game.characters WHERE name='Betaling';")
+            stored = sql("SELECT world_id||':'||name FROM game.characters;", database=world_db(1205)).stdout.split()
+            check(stored == ['1205:Betaling'], f"character stored in world 1205's database (create reply {created.hex()[:24]})")
+            check(count('SELECT count(*) FROM game.characters;', world_db(1204)) == 0, "world 1204's database has none")
+            character_wire = count("SELECT wire_id FROM game.characters WHERE name='Betaling';", world_db(1205))
+            wait(lambda: count("SELECT count(*) FROM game.character_index WHERE world_id=1205 AND name='Betaling';") == 1, 30, 'index')
+            check(True, "the realm's character index lists it (synced over the realm link)")
+            check(count("SELECT count(*) FROM auth.accounts WHERE subject='mw_admin';", world_db(1205)) == 1,
+                  "world 1205's database mirrors the account")
             game.send(b'\x1f\x36' + encode_varint(character_wire) + bytes(16))
             check(game.recv(0x3621, 30) is not None, 'the character is selected on Beta')
             game.send(b'\x22\x36' + struct.pack('<i', 1))
@@ -375,6 +398,8 @@ def main():
             except subprocess.TimeoutExpired:
                 host.kill()
         if not args.keep:
+            for world in postgres_dev.local_world_databases().values():
+                sql(f'DROP DATABASE {world} WITH (FORCE);', database='postgres')
             sql(f'DROP DATABASE {name} WITH (FORCE);', database='postgres')
 
 
