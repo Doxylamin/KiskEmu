@@ -26,7 +26,7 @@ from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.aion_protocol import encode_varint, split_frames  # noqa: E402
 from tools.load_test import _der, _oaep_decode, _strings, keypair  # noqa: E402
-from tools.postgres_dev import HOME, ROOT, migration_script, sql  # noqa: E402
+from tools.postgres_dev import HOME, ROOT, import_catalog, migration_script, sql  # noqa: E402
 from tools.probe_login_reply import RC4  # noqa: E402
 from tools.run_account_server import connection_string  # noqa: E402
 
@@ -134,6 +134,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--host-dll', default=str(ROOT / 'server/Aion.Host/bin/Debug/net10.0/Aion.Host.dll'))
     parser.add_argument('--keep', action='store_true', help='keep the database and the host log')
+    parser.add_argument('--catalog', help='game-catalog-v2 export to import (character creation needs the starter items)')
     args = parser.parse_args()
     credentials = json.loads((HOME / 'credentials.json').read_text())
     name = 'aion_multiworld_' + uuid.uuid4().hex[:12]
@@ -188,6 +189,8 @@ def main():
     try:
         sql(f'REVOKE ALL ON DATABASE {name} FROM PUBLIC; GRANT CONNECT ON DATABASE {name} TO aion_app,aion_auth;', database=name)
         sql(migration_script(sorted((ROOT / 'database/migrations').glob('*.sql'))), database=name)
+        if args.catalog:
+            import_catalog(args.catalog, database=name)
         with log_path.open('w', encoding='utf-8') as log:
             host = subprocess.Popen(['dotnet', args.host_dll], cwd=ROOT / 'server/Aion.Host', env=env, stdout=log, stderr=subprocess.STDOUT)
 

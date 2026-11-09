@@ -181,7 +181,7 @@ def migrate():
     sql(migration_script(sorted((ROOT / 'database/migrations').glob('*.sql'))))
 
 
-def import_catalog(directory):
+def import_catalog(directory, database='aion'):
     directory = Path(directory)
     manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
     canonical = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
@@ -208,7 +208,7 @@ def import_catalog(directory):
             stream.write(f"INSERT INTO catalog.{kind}(build_id,template_id,name,category,definition) SELECT {literal(build_id)},(document->>'id')::integer,document->>'name',document->>'category',document FROM incoming WHERE document->>'kind'='{kind}' ON CONFLICT DO NOTHING;\n")
         stream.write('COMMIT;\n')
     try:
-        run('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-f', path], timeout=1800)
+        run('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-f', path], database=database, timeout=1800)
     finally:
         path.unlink(missing_ok=True)
     return {'build_id': build_id, 'counts': counts}
