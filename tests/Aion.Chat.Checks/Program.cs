@@ -203,7 +203,7 @@ var ticketD = new string('1', 64);
 var ticketE = new string('2', 64);
 var ticketF = new string('3', 64);
 var realmHandoff = new FakeHandoff(new() { [ticketD] = accountD, [ticketE] = accountE, [ticketF] = accountF });
-var realmVerifier = new AccountChatLoginVerifier(realmHandoff, realmWorld, key => key is "1204" or "1205" ? int.Parse(key) : null, TimeSpan.Zero);
+var realmVerifier = new AccountChatLoginVerifier(realmHandoff, realmWorld, key => key is "1204" or "1205" ? int.Parse(key) : null, TimeSpan.Zero, ticketWorldId: 1204);
 var daraId = await realmVerifier.VerifyAsync(Login(ticketD, "31", "1204"), default);
 var eikoId = await realmVerifier.VerifyAsync(Login(ticketE, "32", "1205"), default);
 var twinId = await realmVerifier.VerifyAsync(Login(ticketF, "33", "1205"), default);
@@ -211,7 +211,7 @@ Check(daraId is { ServerKey: "1204", Character.Name: "Dara" } && eikoId is { Ser
     "one chat server: each login is bound to the world of its server key");
 Check(await realmVerifier.VerifyAsync(Login(ticketE, "32", "1204"), default) is null, "a character is found only in its own world");
 Check(await realmVerifier.VerifyAsync(Login(ticketD, "31", "1299"), default) is null, "a world this chat server does not serve is rejected");
-Check(realmHandoff.Worlds.Contains(1205), "the ticket is checked for the login's world");
+Check(realmHandoff.Worlds.Count > 0 && realmHandoff.Worlds.All(w => w == 1204), "tickets are checked for the realm, whatever world the login names");
 var realm = new ChatRelay(clock, realmWorld);
 var daraToken = realm.Login(daraId!);
 var eikoToken = realm.Login(eikoId!);

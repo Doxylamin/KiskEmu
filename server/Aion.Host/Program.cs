@@ -121,7 +121,8 @@ else
                 // Auth host: the server key is the world the client logged in to (its ticket was routed there).
                 ? new AccountChatLoginVerifier(handoff, directory, key =>
                     int.TryParse(key, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var world)
-                    && world is >= 1 and <= 65535 ? world : null)
+                    && world is >= 1 and <= 65535 ? world : null,
+                    ticketWorldId: builder.Configuration.GetValue<int?>("Aion:Native:WorldId") ?? Aion.World.DevelopmentDefaults.WorldId)
                 : new AccountChatLoginVerifier(handoff, directory, chatServerKey, chatWorldId)
             : new RejectingChatLoginVerifier());
 // --- end chat identity ---

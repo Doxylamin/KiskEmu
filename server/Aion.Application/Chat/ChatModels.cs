@@ -102,10 +102,11 @@ public sealed class DevelopmentChatLoginVerifier : IChatLoginVerifier
 /// verifier waits up to <c>settle</c> (default 5 s) for the character to appear.
 /// Several worlds (game servers) share one chat server: <c>worlds</c> maps the login's server key
 /// (the world ID as text, from Login_RS) to a world this chat server serves, else null (rejected).
-/// The game ticket was rebound to the picked world on the login port, so it resolves for that world.
+/// Game tickets belong to the realm (<c>ticketWorldId</c>, the login port's world ID), not to the world picked
+/// on the login port; the character must be in the world the server key names.
 /// </summary>
 public sealed class AccountChatLoginVerifier(IClientHandoff handoff, IChatDirectory directory, Func<string, int?> worlds,
-    TimeSpan? settle = null) : IChatLoginVerifier
+    TimeSpan? settle = null, int? ticketWorldId = null) : IChatLoginVerifier
 {
     readonly TimeSpan wait = settle ?? TimeSpan.FromSeconds(5);
 
@@ -119,7 +120,7 @@ public sealed class AccountChatLoginVerifier(IClientHandoff handoff, IChatDirect
         if (request.AuthnToken is not { Length: 64 } token || !token.All(char.IsAsciiHexDigit)) return null;
         if (request.CharacterId is not { Length: >= 1 and <= 20 } claimed || !claimed.All(char.IsAsciiDigit)) return null;
         // Read-only ticket lookup: the live game ticket's enabled account.
-        if (await handoff.ResolveTicketAsync(token, worldId, cancellationToken) is not { } accountId) return null;
+        if (await handoff.ResolveTicketAsync(token, ticketWorldId ?? worldId, cancellationToken) is not { } accountId) return null;
         var present = await directory.InWorldAsync(accountId, worldId, cancellationToken);
         for (var waited = TimeSpan.Zero; present.Count == 0 && waited < wait; waited += TimeSpan.FromMilliseconds(500))
         {

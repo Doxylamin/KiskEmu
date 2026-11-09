@@ -204,6 +204,8 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
             env["Aion__WorldProcess__RealmUrl"] = $"http://127.0.0.1:{chatPort.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
         // The child's console goes to this host's log (with the world id); it writes no log file of its own.
         env["Aion__ServerLog__Enabled"] = "false";
+        // Its HTTP port answers the auth host every few seconds (status, presence): no request logging.
+        env["Logging__LogLevel__Microsoft.AspNetCore"] = "Warning";
         if (world.LevelCap is { } cap) env["Aion__Progression__LevelCap"] = cap.ToString(System.Globalization.CultureInfo.InvariantCulture);
         try
         {
