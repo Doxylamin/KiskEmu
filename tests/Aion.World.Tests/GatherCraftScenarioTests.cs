@@ -162,7 +162,13 @@ public sealed class GatherCraftScenarioTests
         var won = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
         Assert.Equal(GameSession.GatherStartRs, GameSessionTestHelpers.Op(won[0]));
         Assert.Contains(won, b => GameSessionTestHelpers.Op(b) == 0x3638);
-        await session.TickAsync(Now + node.InteractTime + 10);
+        Assert.DoesNotContain(won, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt);
+        // The node's interaction ends only after the turns have played out on the client (one turn: 1.7 s).
+        var end = Math.Max(node.InteractTime, GameSession.GatherRaceMs(1));
+        var early = await session.TickAsync(Now + end - 50);
+        Assert.DoesNotContain(early, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt);
+        var done = await session.TickAsync(Now + end + 10);
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 0);
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![0]);
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![2]);
     }
@@ -205,7 +211,26 @@ public sealed class GatherCraftScenarioTests
         session.GatherRoll = () => 9999;
         var lost = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now + 1);
         Assert.Equal(1, lost.Count(b => GameSessionTestHelpers.Op(b) == GameSession.GatherStartRs));
-        Assert.Contains(lost, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 2);   // 2 failed (OBSERVED)
+        Assert.Contains(lost, b => GameSessionTestHelpers.Op(b) == 0x3638);
+        // OBSERVED: a lost attempt also ends only after its turns played out, not with the start.
+        Assert.DoesNotContain(lost, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt);
+        var lostEnd = await session.TickAsync(Now + 1 + GameSession.GatherRaceMs(12) + 10);
+        Assert.Contains(lostEnd, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 2);   // 2 failed (OBSERVED)
+    }
+
+    [Fact]
+    public async Task A_cancelled_lost_attempt_costs_nothing()
+    {
+        var (_, index, key) = FirstGatherNode();
+        var store = GatherStore();
+        var (session, _) = await OnMap1010NearGatherAsync(store, Now, index);
+        session.GatherRoll = () => 9999;   // every turn fails
+        await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
+        var stopped = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStopRq).Varint((uint)key).ToArray(), Now + 500);
+        Assert.Contains(stopped, b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(key)));
+        var later = await session.TickAsync(Now + GameSession.GatherRaceMs(12) + 10);
+        Assert.DoesNotContain(later, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt);
+        Assert.Equal(-1, session.GatherAttemptsLeft(index));
     }
 
     [Fact]

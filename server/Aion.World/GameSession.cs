@@ -591,6 +591,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             // InteractEnvObjStop_RQ {key}: a timed interaction cancelled (moved, or the client's cancel).
             case 0x363d when QuestKey(plain, 2) is { } stopKey:
                 if (pendingUse?.Key == stopKey) pendingUse = null;
+                if (pendingGatherLoss?.Key == stopKey) pendingGatherLoss = null;
                 return [GamePackets.InteractEnvObjStopReply(stopKey)];
             // The key as sent even when it is no longer among the targets (after a layer move): the failure reply below needs it
             // (NpcKeyFromBody only resolves present keys, which made that branch unreachable).
@@ -1680,6 +1681,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         usedObjects.Clear();
         ResetEnvObjHits();
         pendingUse = null;
+        pendingGatherLoss = null;
         if (!shortLoad)
             EnableMonolithNoticesAfterList();
         replies.AddRange(ObjectVisibility(at, now));
@@ -2671,6 +2673,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     public bool NeedsWorldTick(long now) =>
         !posted.IsEmpty
         || pendingUse is { } use && now >= use.DueMs
+        || pendingGatherLoss is { } gatherLoss && now >= gatherLoss.DueMs
         || dead && now >= reviveAt
         || itemCast is { } cast && now >= cast.DueMs
         || instanceExitAt is { } exit && now >= exit
@@ -2778,6 +2781,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             pendingUse = null;
             replies.AddRange(await WithMapEventClearsFlushedAsync(await CompleteUseAsync(use.Index, ct, now), ct));
         }
+        replies.AddRange(GatherLossTick(now));
         if (dead && now >= reviveAt) replies.AddRange(AutoRevive(now));
         WarnStuckReload(now);
         if (itemCast is { } cast && now >= cast.DueMs) replies.AddRange(await CompleteItemCastAsync(now, ct));

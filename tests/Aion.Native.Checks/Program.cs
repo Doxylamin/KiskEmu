@@ -1665,11 +1665,14 @@ staffSession.Teleport(1010, node2.At with { X = node2.At.X + 50 }, Now + 6000);
 await staffSession.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 6000);
 staffSession.GatherRoll = () => 9999;   // every turn fails
 var lostTurn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d30).Varint((uint)node2Key).ToArray(), Now + 6100);
-Check(lostTurn[0][0] == 0x31 && lostTurn[0][1] == 0x8d && lostTurn[0][2] == 0 && lostTurn.Any(b => b[0] == 0x33 && b[1] == 0x8d && b[2] == 2)
-      && lostTurn.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(node2Key))) && staffSession.GatherAttemptsLeft(node2Index) == (int)node2.Gather![6] - 1,
-      "a lost attempt: 0x8d31 with failing turns, 0x8d33 result 2, the node available again, one try fewer");
+// The end waits for the turns to play out on the client (OBSERVED ~1.3 s a turn), not the start.
+var lostEnd = await staffSession.TickAsync(Now + 6100 + GameSession.GatherRaceMs(12) + 10);
+Check(lostTurn[0][0] == 0x31 && lostTurn[0][1] == 0x8d && lostTurn[0][2] == 0 && !lostTurn.Any(b => b[0] == 0x33 && b[1] == 0x8d)
+      && lostEnd.Any(b => b[0] == 0x33 && b[1] == 0x8d && b[2] == 2)
+      && lostEnd.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(node2Key))) && staffSession.GatherAttemptsLeft(node2Index) == (int)node2.Gather![6] - 1,
+      "a lost attempt: 0x8d31 with failing turns; after they play out 0x8d33 result 2, the node available again, one try fewer");
 staffSession.GatherRoll = () => 0;   // every turn an epic success
-var wonTurn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d30).Varint((uint)node2Key).ToArray(), Now + 6200);
+var wonTurn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d30).Varint((uint)node2Key).ToArray(), Now + 6100 + GameSession.GatherRaceMs(12) + 100);
 Check(wonTurn[0][0] == 0x31 && wonTurn[0][1] == 0x8d && wonTurn[0][2] == 0 && wonTurn[0][4 + NativeVarint.Encode(node2Key).Length + 4] == 1
       && wonTurn.Any(b => b[0] == 0x38 && b[1] == 0x36), "a won attempt: 0x8d31 says success and the node's interaction starts (0x3638)");
 gatherLevelField.SetValue(staffSession, levelBeforeGather);

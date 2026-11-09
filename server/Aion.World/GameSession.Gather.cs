@@ -35,6 +35,16 @@ public sealed partial class GameSession
 
     public int GatherAttemptsLeft(int index) => gatherAttempts.GetValueOrDefault(index, -1);
 
+    /// <summary>
+    /// How long the client plays an attempt's turns before the server may end it (OBSERVED, ~80 official gathers: the end
+    /// packets came 1.7 s after the start for one turn, 12.7 s for ten; about 1.3 s a turn plus 0.4 s, for won and lost
+    /// attempts alike). Ending sooner closed the mini-game the moment it opened.
+    /// </summary>
+    public static long GatherRaceMs(int turns) => 400 + 1300L * Math.Max(1, turns);
+
+    /// <summary>A lost attempt whose end (0x8d33 result 2, the attempt spent) waits for the client's turns to play out.</summary>
+    (int Index, int Key, long DueMs)? pendingGatherLoss;
+
     /// <summary>One turn of the mini-game: EGatherTurnResult and the two gauges (percent) before and after it.</summary>
     public readonly record struct GatherTurn(byte Result, int SuccessBefore, int SuccessAfter, int FailBefore, int FailAfter);
 
@@ -188,11 +198,32 @@ public sealed partial class GameSession
         {
             var replies = await UseObjectAsync(new PacketWriter().U16(0x3636).Varint(key).ToArray(), now, ct);
             var refused = replies.Any(b => b[0] == 0x37 && b[1] == 0x36 && b.Length > 2 && b[2] != 0);
-            if (!refused) gatherAttempts.Remove(index);
+            if (!refused)
+            {
+                gatherAttempts.Remove(index);
+                // The node's timed interaction completes only once the turns have played out on the client.
+                if (pendingUse is { } use && use.Key == keyInt)
+                    pendingUse = use with { DueMs = Math.Max(use.DueMs, now + GatherRaceMs(turns.Count)) };
+            }
             return [Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies];
         }
-        attempts--;
-        var lost = new List<byte[]> { Reply(0, gatherNumber, false, turns), GatherCompleted(GatherFailed, key).I32((int)node[0]).I32(0).I32(0).I32(0).I32(0).ToArray() };
+        pendingUse = null;
+        pendingGatherLoss = (index, keyInt, now + GatherRaceMs(turns.Count));
+        return [Reply(0, gatherNumber, false, turns), GamePackets.InteractEnvObjStarted(keyInt, playerKey)];
+    }
+
+    /// <summary>A lost attempt's end once its turns have played out: 0x8d33 result 2; the attempt is spent and the last one uses the node up.</summary>
+    List<byte[]> GatherLossTick(long now)
+    {
+        if (pendingGatherLoss is not { } loss || now < loss.DueMs) return [];
+        pendingGatherLoss = null;
+        var objects = WorldObjects.ObjectsOn(worldMap);
+        if (loss.Index < 0 || loss.Index >= objects.Count || objects[loss.Index].Gather is not { } node) return [];
+        var index = loss.Index;
+        var key = loss.Key;
+        var total = node.Length >= 7 && node[6] > 0 ? (int)node[6] : 3;
+        var attempts = (gatherAttempts.TryGetValue(index, out var left) ? left : total) - 1;
+        var lost = new List<byte[]> { GatherCompleted(GatherFailed, key).I32((int)node[0]).I32(0).I32(0).I32(0).I32(0).ToArray() };
         if (attempts <= 0)
         {
             gatherAttempts.Remove(index);
@@ -213,6 +244,7 @@ public sealed partial class GameSession
         uint key;
         try { key = new PacketReader(plain) { Offset = 2 }.Varint(); } catch (ProtocolException) { return []; }
         if (pendingUse is { } use && use.Key == (int)key) pendingUse = null;
+        if (pendingGatherLoss is { } loss && loss.Key == (int)key) pendingGatherLoss = null;
         return [GamePackets.InteractEnvObjAvailableState((int)key)];
     }
 
