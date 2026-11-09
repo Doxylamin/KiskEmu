@@ -57,6 +57,24 @@ public sealed class MultiWorldLoginTests
     }
 
     [Fact]
+    public async Task With_no_world_up_the_list_says_so_and_a_pick_goes_nowhere()
+    {
+        var routed = new List<(int World, int Race)>();
+        var session = new LoginSession(new LoginSessionOptions
+        {
+            Directory = [],
+            Route = (_, _, world, race, _) => { routed.Add((world, race)); return Task.FromResult(true); },
+        }, (_, _) => Task.FromResult<LoginGrant?>(new LoginGrant("42", Grant, [("A", 10, 1, 1UL, 1204)])));
+        await session.HandleAsync(Login(), 0);
+        var directory = (await session.HandleAsync([0x08, 0x39], 0)).Replies.Single();
+        Assert.Equal(LoginPackets.WorldDirectory(LoginSessionOptions.NoWorlds), directory);
+        Assert.All(LoginSessionOptions.NoWorlds, r => Assert.Equal("No worlds available", r.Name));
+        Assert.Equal(LoginPackets.Characters([]), (await session.HandleAsync([0x0a, 0x39], 0)).Replies.Single());
+        Assert.Equal("no_world", (await session.HandleAsync(Pick(0x390e, 1361), 0)).Close);
+        Assert.Empty(routed);
+    }
+
+    [Fact]
     public async Task Without_a_directory_the_single_world_defaults_are_unchanged()
     {
         var session = new LoginSession(new LoginSessionOptions { RedirectHost = "10.1.1.1", RedirectPort = 13328 });
