@@ -71,6 +71,43 @@ public sealed class Hq1101050DrakanaHeistTests(ITestOutputHelper output)
         Assert.NotNull(run);
     }
 
+    /// <summary>
+    /// Step 14 sends Nania down Waypoints_Step2_4 and, in the same list, at MixSpawn2 (SetAggroNpc). The fight used to replace the
+    /// walk, so she stayed by the Draco instead of moving up to the depot exit (playtest 2026-11-09).
+    /// </summary>
+    [Fact]
+    public async Task Nania_walks_Step2_4_to_its_end_although_step_14_also_sets_her_on_MixSpawn2()
+    {
+        var session = await AcceptedAsync(new FakeCharacterStore());
+        session.NoCool = true;
+        await WalkIntoLayerAsync(session, Now + 10);
+        var run = await MapEventScenarioHelpers.WaitForMapEventRunAsync(session, Event, Now + 600, attempts: 24);
+        Assert.NotNull(run);
+
+        var end = GameSessionTestHelpers.LiveGameData.Route(100013, "N_L0_Starter_HQ004_Nania_Waypoints_Step2_4")!.Points[^1];
+        var closest = double.MaxValue;
+        var now = Now + 30_000;
+        for (var i = 0; i < 400 && !run!.Finished; i++, now += 1000)
+        {
+            for (var k = 1; k < 10; k++)
+            {
+                await session.TickAsync(now + k * 100);
+                Track();
+            }
+            await MapEventScenarioHelpers.PlayMapEventScriptAsync(session, run, now, maxSeconds: 1);
+            Track();
+        }
+        Assert.True(run!.Finished, $"stuck at step {run.StepOrder}");
+        Assert.True(closest < 50, $"Nania_02 came no nearer than {closest:F0} to the end of Waypoints_Step2_4");
+
+        void Track()
+        {
+            if (run!.StepOrder != 14) return;
+            foreach (var n in session.Targets!.Values.Where(t => t.Name == "N_L0_Starter_HQ004_Nania_02" && !t.Dead))
+                closest = Math.Min(closest, Math.Sqrt(Math.Pow(n.Position.X - end[0], 2) + Math.Pow(n.Position.Y - end[1], 2)));
+        }
+    }
+
     [Fact]
     public async Task Event_plays_to_DungeonClear_and_Kalid_rewards_and_offers_HQ1101070()
     {

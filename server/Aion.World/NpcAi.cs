@@ -114,6 +114,8 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         public bool VictimIsNpc { get; set; }
         /// <summary>Sent into the fight by a map event (SetAggroNpc): fights wherever it is, then stands there.</summary>
         public bool Directed { get; set; }
+        /// <summary>An NPC a map event set this one on (SetAggroNpc) while it walked its scripted route: fought once the route ends.</summary>
+        public int AfterWalkPreyKey { get; set; }
     }
 
     /// <summary>Scripted walks that reached their route's end since the last take: (NPC key, route name).</summary>
@@ -155,6 +157,7 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         if (route.Points.Length == 0 || target.Dead) return [];
         brain.Mode = Mode.Scripted;
         brain.Directed = false;
+        brain.AfterWalkPreyKey = 0;
         brain.Script = route;
         brain.RouteIndex = 0;
         brain.RouteStep = 1;
@@ -265,6 +268,14 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         var brain = BrainOf(target);
         if (target.Dead || victim.Dead || target.RunSpeed == 0 && target.WalkSpeed == 0) return [];
         brain.Hate[victim.Key] = brain.Hate.GetValueOrDefault(victim.Key) + 1;
+        // The scripts pair a walk with a fight for the same NPC (HQ004 step 5: NpcMoveToWayPoint Nania Waypoints_4, then SetAggroNpc
+        // on DracoWar_06; step 14: Step2_4, then MixSpawn2). Chasing at once dropped the walk: Nania never reached the route's end
+        // the next steps start from (playtest 2026-11-09). She finishes the walk and fights at its end.
+        if (brain.Mode == Mode.Scripted && brain.Script is not null)
+        {
+            brain.AfterWalkPreyKey = victim.Key;
+            return [];
+        }
         brain.CandidateKey = victim.Key;
         brain.VictimIsNpc = true;
         brain.Directed = true;
@@ -332,6 +343,11 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
                     brain.Script = null;
                     brain.WanderAtMs = long.MaxValue;
                     arrivals.Add((target.Key, route.Name));
+                    var preyKey = brain.AfterWalkPreyKey;
+                    brain.AfterWalkPreyKey = 0;
+                    if (preyKey != 0 && current?.GetValueOrDefault(preyKey) is { Dead: false, CorpseRemoved: false } prey)
+                        // A fresh engage sends its own stop (StartChase); one already in combat needs it here.
+                        return [.. SetBoost(target, brain, 0), .. brain.Engaged ? Stop(target, brain, brain.Heading, now) : [], .. ForceAggroNpc(target, prey, now)];
                     return [.. SetBoost(target, brain, 0), .. Stop(target, brain, brain.Heading, now)];
                 }
                 brain.RouteIndex++;

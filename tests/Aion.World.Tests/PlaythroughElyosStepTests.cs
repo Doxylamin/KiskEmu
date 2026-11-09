@@ -43,19 +43,7 @@ public sealed class PlaythroughElyosStepTests
         var store = new FakeCharacterStore();
         var session = await GameSessionTestHelpers.EnterFreshSharedWorldAsync(store, Now, race: 1, level: 10);
         await session.QuestCommandAsync("QuestAdd", "HQ1101070", default);
-        var inst = InstanceTables.Embedded.Of(100002)!;
-        var center = new Vector3d(inst.Entry.Center[0], inst.Entry.Center[1], inst.Entry.Center[2]);
-        session.Teleport(1000, center with { Y = center.Y - 300 }, Now);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 10);
-        await session.HandleAsync(MapEventScenarioHelpers.MoveUpdate(center), Now + 5000);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 5100);
-        var boss = session.Targets!.Values.First(t => t.NpcId == 2701128);
-        boss.Immune = false;
-        boss.Relationship = 6;
-        boss.Hp = 1;
-        var skillId = MapEventScenarioHelpers.BasicAttackSkill(session);
-        await MapEventScenarioHelpers.CombatCastAsync(session, skillId, boss.Key, boss.Position, Now + 7000);
-        await MapEventScenarioHelpers.FlushQuestMapEventClearsAsync(session, Now + 7200);
+        Assert.True(await MapEventScenarioHelpers.PlayStarterInstanceLayer2Async(session, Now + 10), $"step layer map={session.MapId}");
         Assert.True(session.Quests!.Get("HQ1101070")!.Status >= QuestLog.Complete);
     }
 

@@ -141,10 +141,15 @@ public sealed partial class GameSession
     /// <summary>A door's move out of its layer: SeamlessDoorTeleport_heavy_out.</summary>
     const byte DoorExitTeleportEffect = 41;
 
-    /// <summary>A kill in an instance: the boss clears its map event and starts the way out.</summary>
+    /// <summary>
+    /// A kill in an instance: the boss clears its map event and starts the way out, unless that event runs here. Then its script
+    /// clears it (DungeonClear) and moves the player on: HQ1101070's boss is one of step 6's eleven Drakan, and its kill ended
+    /// the layer before the last waves, step 7 and the recovery-room cutscene (playtest 2026-11-09).
+    /// </summary>
     void InstanceKill(Target target, long now)
     {
         if (instanceKey == 0 || Instances.Of(worldMap) is not { } instance || !instance.Boss.Contains(target.NpcId) || instanceExitAt is not null) return;
+        if ((CopyOwner ?? this).mapEventRuns.Any(r => r.Name == instance.MapEvent && !r.Finished)) return;
         clearExit ??= ClearExitOf(instance.MapEvent);
         clearedEvents.Add(instance.MapEvent);
         instanceExitAt = now + InstanceExitDelayMs;
