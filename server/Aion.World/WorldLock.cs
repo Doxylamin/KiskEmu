@@ -103,7 +103,7 @@ public sealed class WorldLockStats
 
 /// <summary>
 /// One game connection's turn in the shared world: exclusive, or shared plus its map's lock. Storage calls made
-/// while it is held run outside it (<see cref="OutsideAsync{T}"/>, used by <see cref="TurnStore"/>): the locks are
+/// while it is held run outside it (<see cref="OutsideAsync{T}(Func{Task{T}})"/>, used by <see cref="TurnStore"/>): the locks are
 /// released for the database round trip and taken again in the same mode afterwards, so one player's save no longer
 /// stalls everyone. Other connections may run in between; this connection's own state is only touched by its loop.
 /// </summary>
@@ -179,9 +179,15 @@ public sealed class WorldTurn(SharedWorld world)
             if (Interlocked.Decrement(ref outside) == 0) await ReacquireAsync();
         }
     }
+
+    /// <summary>
+    /// Waits for a storage call started while the turn was held, with the turn released (when it is held) until it ends.
+    /// <see cref="TurnStore"/> only hands over calls still pending: one that finished at once never leaves the turn.
+    /// </summary>
+    public Task<T> OutsideAsync<T>(Task<T> started) => OutsideAsync(() => started);
 }
 
-/// <summary>A connection's store whose calls run outside its <see cref="WorldTurn"/> (see <see cref="WorldTurn.OutsideAsync{T}"/>).</summary>
+/// <summary>A connection's store whose calls, when still pending once started, run outside its <see cref="WorldTurn"/> (see <see cref="WorldTurn.OutsideAsync{T}(Func{Task{T}})"/>).</summary>
 public class TurnStore : DispatchProxy
 {
     INativeCharacterStore inner = null!;
@@ -209,11 +215,44 @@ public class TurnStore : DispatchProxy
                 if (args[i] is TurnStore wrapped) args[i] = wrapped.inner;
         var result = method.ReturnType;
         if (!turn.Held || !typeof(Task).IsAssignableFrom(result)) return Call(method, args);
-        if (!result.IsGenericType) return turn.OutsideAsync(async () => { await (Task)Call(method, args)!; return true; });
+        if (!result.IsGenericType) return OutsideUntyped(method, args);
         return outsideByResult.GetOrAdd(result.GetGenericArguments()[0], t => OutsideOf.MakeGenericMethod(t)).Invoke(this, [method, args]);
     }
 
-    Task<T> OutsideTyped<T>(MethodInfo method, object?[]? args) => turn.OutsideAsync(() => (Task<T>)Call(method, args)!);
+    // The call starts while the turn is held. One that has already finished (an in-memory answer, a cache hit, an early
+    // return) is handed back as it is: releasing and retaking the world for it would only make the turn wait in line
+    // again. Only a call still pending runs outside the turn (and counts in WorldLockStats). A call that throws before
+    // returning its task gives a faulted (or cancelled) task, as it did when it ran inside the async wrapper.
+    Task<T> OutsideTyped<T>(MethodInfo method, object?[]? args)
+    {
+        Task<T> started;
+        try { started = (Task<T>)Call(method, args)!; }
+        catch (OperationCanceledException cancelled) { return Cancelled<T>(cancelled); }
+        catch (Exception error) { return Task.FromException<T>(error); }
+        return started.IsCompleted ? started : turn.OutsideAsync(started);
+    }
+
+    Task OutsideUntyped(MethodInfo method, object?[]? args)
+    {
+        Task started;
+        try { started = (Task)Call(method, args)!; }
+        catch (OperationCanceledException cancelled) { return Cancelled<bool>(cancelled); }
+        catch (Exception error) { return Task.FromException(error); }
+        return started.IsCompleted ? started : turn.OutsideAsync(Completion(started));
+    }
+
+    static async Task<bool> Completion(Task started)
+    {
+        await started;
+        return true;
+    }
+
+    static Task<T> Cancelled<T>(OperationCanceledException cancelled)
+    {
+        var source = new TaskCompletionSource<T>();
+        source.SetCanceled(cancelled.CancellationToken);
+        return source.Task;
+    }
 
     object? Call(MethodInfo method, object?[]? args)
     {
