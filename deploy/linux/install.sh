@@ -128,6 +128,8 @@ systemctl restart aion-host
 
 if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
   for port in 443 3700 8087 8091 13328; do ufw allow $port/tcp; done
+  # Game ports of further worlds started from the staff dashboard (World Management picks 13329 upwards).
+  ufw allow 13329:13340/tcp
   [[ $TLS == proxy ]] || ufw allow 8780/tcp
 fi
 # update.sh repeats this install with the same options (without --data: the data stays unpacked).

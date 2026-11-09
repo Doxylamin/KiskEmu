@@ -135,4 +135,13 @@ public sealed partial class PostgresAccountAuthentication
         var account = await command.ExecuteScalarAsync(ct);
         return account is Guid id ? new(id) : null;
     }
+
+    public async Task<bool> RouteLoginAsync(string grant, long wireAccountId, int worldId, int race, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(grant, "D", out var parsed) || race is not (1 or 2)) return false;
+        await using var command = source.CreateCommand("UPDATE auth.client_handoffs SET world_id=$3,race=$4 WHERE nonce_hash=$1 AND wire_id=$2 AND expires_at>now()");
+        command.Parameters.AddWithValue(Hash(parsed.ToString())); command.Parameters.AddWithValue(wireAccountId);
+        command.Parameters.AddWithValue(worldId); command.Parameters.AddWithValue((short)race);
+        return await command.ExecuteNonQueryAsync(ct) > 0;
+    }
 }

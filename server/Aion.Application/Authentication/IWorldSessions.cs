@@ -2,7 +2,8 @@ using Aion.Core.Accounts;
 
 namespace Aion.Application.Authentication;
 
-public sealed record WorldSession(string Token, Guid AccountId, int WorldId, DateTimeOffset ExpiresAt)
+/// <summary>A game-port session; Race is the login row's race the player picked (multi-world routing), if recorded.</summary>
+public sealed record WorldSession(string Token, Guid AccountId, int WorldId, DateTimeOffset ExpiresAt, int? Race = null)
 {
     public override string ToString() => "WorldSession [token redacted]";
 }

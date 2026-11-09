@@ -117,6 +117,9 @@ public sealed class ServerControl(IStaffTools tools, IServiceProvider services, 
         if (now - refreshedAt >= Refresh) await RefreshAsync(ct);
         ApplyBoosts(now);
         await FlushChatAsync(ct);
+        // A world process (multi-world) keeps the sanctions, maintenance and boosts; the scheduled announcements, the
+        // population samples and the cleanup are the primary host's.
+        if (services.GetService<Aion.Host.Worlds.WorldProcessOptions>() is not null) return;
         await RunAnnouncementsAsync(now, ct);
         if (now - sampledAt >= SampleEvery)
         {

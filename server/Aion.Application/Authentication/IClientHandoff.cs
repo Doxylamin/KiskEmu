@@ -19,4 +19,9 @@ public interface IClientHandoff
     // Read-only: the enabled account a live game ticket belongs to (chat login binding); no expiry change, no grant.
     Task<Guid?> ResolveTicketAsync(string ticket, int worldId, CancellationToken ct);
     Task<VerifiedAccount?> CompleteLoginAsync(string ticket, long wireAccountId, string grant, int worldId, CancellationToken ct);
+    /// <summary>
+    /// Multi-world: rebinds a login's unused handoff grant to the world the player picked (0x390e), with the picked login
+    /// row's race for that world's lobby. False when the grant is unknown, used or expired.
+    /// </summary>
+    Task<bool> RouteLoginAsync(string grant, long wireAccountId, int worldId, int race, CancellationToken ct) => Task.FromResult(false);
 }

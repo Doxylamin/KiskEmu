@@ -15,6 +15,7 @@ import { Moderation } from './Moderation';
 import { Overview } from './Overview';
 import { Rewards } from './Rewards';
 import { ServerView } from './Server';
+import { Worlds } from './Worlds';
 import { ERRORS, ROLE_LABEL, type StaffProfile } from './types';
 
 export function describe(error: unknown): string {
@@ -26,7 +27,7 @@ export function describe(error: unknown): string {
 
 export interface Session { token: string; username: string; profile: StaffProfile }
 export type Call = <T>(path: string, options?: { method?: string; body?: unknown }) => Promise<T>;
-type View = 'overview' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'economy' | 'activity' | 'server';
+type View = 'overview' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'economy' | 'activity' | 'worlds' | 'server';
 
 const STORE_KEY = 'aion-staff-session';
 interface Saved { token: string; username: string }
@@ -60,6 +61,7 @@ const NAV: { id: View; label: string; icon: string }[] = [
   { id: 'rewards', label: 'Rewards', icon: 'gift' },
   { id: 'economy', label: 'Economy', icon: 'coins' },
   { id: 'activity', label: 'Activity log', icon: 'activity' },
+  { id: 'worlds', label: 'Worlds', icon: 'globe' },
   { id: 'server', label: 'Server', icon: 'server' },
 ];
 
@@ -149,6 +151,7 @@ export function AdminApp() {
         <div className="view" hidden={view !== 'rewards'}><Rewards call={call} isAdmin={isAdmin} /></div>
         <div className="view" hidden={view !== 'economy'}><Economy call={call} active={view === 'economy'} onOpen={openCharacter} /></div>
         <div className="view" hidden={view !== 'activity'}><Activity call={call} active={view === 'activity'} onOpen={openCharacter} /></div>
+        <div className="view" hidden={view !== 'worlds'}><Worlds call={call} active={view === 'worlds'} /></div>
         <div className="view" hidden={view !== 'server'}><ServerView call={call} token={session.token} active={view === 'server'} isAdmin={isAdmin} /></div>
       </div>
       <NewAccountDialog open={creating} call={call} onClose={() => setCreating(false)} />

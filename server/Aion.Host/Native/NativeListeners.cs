@@ -206,8 +206,15 @@ public sealed class NativeLoginListener(NativeOptions options, IServiceProvider 
 
     protected override async Task RunAsync(NetworkStream stream, Rc4 cipher, FrameBuffer buffer, IPAddress? clientAddress, CancellationToken ct)
     {
+        // Multi-world: the registered worlds that are up now (null without a registry: the single world on GamePort).
+        var directory = services.GetService<Aion.Host.Worlds.LoginWorldList>() is { } worldList ? await worldList.DirectoryAsync(ct) : null;
+        var handoff = services.GetService<IClientHandoff>();
         var session = new LoginSession(new LoginSessionOptions
         {
+            Directory = directory,
+            Route = handoff is null || directory is null ? null : (wire, grant, world, race, token) =>
+                long.TryParse(wire, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var wireId)
+                    ? handoff.RouteLoginAsync(grant.ToString("D"), wireId, world, race, token) : Task.FromResult(false),
             RedirectHost = Options.Network.PublicAddress,
             RedirectPort = Options.GamePort ?? 13328,
             Characters = Options.Development && Options.IntroCharacter
@@ -229,6 +236,7 @@ public sealed class NativeLoginListener(NativeOptions options, IServiceProvider 
                 if (step.Close is { } reason)
                 {
                     Logger.LogInformation("Native login closed: {Reason}", reason);
+                    if (reason is "unknown_world" or "route_failed") Logger.LogWarning("Native login could not route a world pick: {Reason}", reason);
                     return;
                 }
             }
@@ -253,9 +261,10 @@ public sealed class NativeLoginListener(NativeOptions options, IServiceProvider 
             Logger.LogInformation("Native login refused: {Reason}", blocked);
             return null;
         }
-        // The login port's character list (0x390b) shows a per-server character count.
-        var owned = (await characters.ListAsync(new VerifiedAccount(grant.AccountId), ct)).Where(c => c.WorldId == grant.WorldId)
-            .Select(c => (c.Name, c.Level, c.Race, (ulong)Math.Max(0, c.LastPlayedUnixMs))).ToList();
+        // The login port's character list (0x390b) shows a per-server character count: each character on its own world
+        // (the login session leaves out worlds that are not listed now).
+        var owned = (await characters.ListAsync(new VerifiedAccount(grant.AccountId), ct))
+            .Select(c => (c.Name, c.Level, c.Race, (ulong)Math.Max(0, c.LastPlayedUnixMs), c.WorldId)).ToList();
         return new LoginGrant(grant.WireAccountId.ToString(System.Globalization.CultureInfo.InvariantCulture), grantId, owned);
     }
 }
@@ -523,6 +532,9 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         var (wireAccount, grant) = identity.Session();
         var opened = await sessions.OpenAsync(identity.AuthnToken, wireAccount, grant, Options.WorldId, ct);
         if (opened is null) return null;
+        // The login port (maybe another process) recorded the picked row's race for this world's lobby.
+        if (opened.Race is { } race && services.GetService<WorldChoices>() is { } choices)
+            choices.Pick(wireAccount.ToString(System.Globalization.CultureInfo.InvariantCulture), race);
         var who = await sessions.ValidateAsync(opened.Token, ct);
         if (who is null) return null;
         if (services.GetService<Aion.Host.Authentication.ServerControl>() is { } control && await control.LoginBlockedAsync(who.Account.AccountId, ct) is { } blocked)

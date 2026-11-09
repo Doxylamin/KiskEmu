@@ -274,6 +274,13 @@ code { padding: 1px 5px; border-radius: 4px; background: var(--panel-2); font-si
 .pop-line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .server-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; align-items: start; }
 .server-cards .restart-card { max-width: none; }
+/* World Management */
+.worlds-table td { vertical-align: middle; }
+.worlds-table td.actions { text-align: right; }
+.worlds-table td.actions > * + * { margin-left: 6px; }
+.worlds-table .badge { margin-right: 6px; }
+.danger-text { color: var(--danger); }
+.form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .maint-on { border-color: #6b2f48; background: linear-gradient(160deg, #2a1620, var(--panel) 60%); }
 .backup-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 @media (max-width: 1200px) {

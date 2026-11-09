@@ -643,7 +643,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 // instant game-login reply arrives, so the chat server key (Lime+0x80) stayed
                 // empty. Resending in the world dropped the connection (research/chat-and-gm.md).
                 lobbyLoginSent = true;
-                return [GamePackets.LoginCharacters([], $"{loginIdentity.AccountSid}:{loginIdentity.Guid}", DevelopmentDefaults.WorldIdString,
+                return [GamePackets.LoginCharacters([], $"{loginIdentity.AccountSid}:{loginIdentity.Guid}", options.WorldId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     GamePackets.CommServerKey, now, isBornServer: true, chatEnableLevel: 0)];
             case 0xe34f when Store is not null && !lobbyLoginSent:
                 lobbyLoginSent = true;

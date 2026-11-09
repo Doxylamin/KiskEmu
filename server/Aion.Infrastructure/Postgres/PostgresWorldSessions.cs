@@ -14,16 +14,16 @@ public sealed partial class PostgresAccountAuthentication : IWorldSessions
               WHERE h.nonce_hash=$1 AND h.ticket_hash=$2 AND h.wire_id=$3 AND h.world_id=$4
                 AND h.expires_at>now() AND s.token_hash=h.session_hash AND s.expires_at>now()
                 AND a.account_id=s.account_id AND a.disabled_at IS NULL
-              RETURNING s.token_hash,s.expires_at
+              RETURNING s.token_hash,s.expires_at,h.race
             ), inserted AS (
               INSERT INTO auth.world_sessions(token_hash,session_hash,world_id,expires_at)
               SELECT $5,token_hash,$4,expires_at FROM consumed RETURNING session_hash,expires_at
-            ) SELECT s.account_id,i.expires_at FROM inserted i JOIN auth.sessions s ON s.token_hash=i.session_hash
+            ) SELECT s.account_id,i.expires_at,(SELECT race FROM consumed) FROM inserted i JOIN auth.sessions s ON s.token_hash=i.session_hash
             """);
         q.Parameters.AddWithValue(Hash(parsed.ToString())); q.Parameters.AddWithValue(Hash(ticket));
         q.Parameters.AddWithValue(wireAccountId); q.Parameters.AddWithValue(worldId); q.Parameters.AddWithValue(Hash(token));
         await using var r=await q.ExecuteReaderAsync(ct);
-        return await r.ReadAsync(ct) ? new(token,r.GetGuid(0),worldId,new DateTimeOffset(r.GetDateTime(1))) : null;
+        return await r.ReadAsync(ct) ? new(token,r.GetGuid(0),worldId,new DateTimeOffset(r.GetDateTime(1)),r.IsDBNull(2) ? null : r.GetInt16(2)) : null;
     }
     public async Task<WorldIdentity?> ValidateAsync(string token,CancellationToken ct=default)
     {

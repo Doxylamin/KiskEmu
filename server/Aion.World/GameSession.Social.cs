@@ -11,7 +11,8 @@ namespace Aion.World;
 /// </summary>
 public sealed partial class GameSession
 {
-    const int ServerId = DevelopmentDefaults.WorldId;
+    /// <summary>The wire server id of this world (characters, friends and loot notices name it).</summary>
+    int ServerId => options.WorldId;
     const int Failed = 1;   // OURS: the client's failure codes are unknown; 0 is success
     /// <summary>Trade partners must stand within this distance (cm). OURS.</summary>
     public const double ExchangeRange = 1500;

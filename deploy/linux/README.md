@@ -16,6 +16,7 @@ carry the address as an IPv4 literal.
 | 8087 | platform bootstrap (GamePlatform.ini ConfigurationServerUrl) | game client |
 | 3700 | login | game client |
 | 13328 | game | game client |
+| 13329–13340 | game ports of further worlds (staff dashboard → Worlds) | game client |
 | 8091 | chat (HTTP + STOMP WebSocket) | game client |
 | 8780 | account site and API (HTTPS) | launcher, browser |
 | 80 | only for Let's Encrypt certificate requests (`--domain`) | Let's Encrypt |
@@ -141,6 +142,19 @@ sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres python3 /opt/aio
 
 The account site is `https://<domain or address>:8780`; players register there, and the
 launcher signs in there.
+
+## Several worlds
+
+The staff dashboard's **Worlds** page (admins) adds worlds to the game's server list. The host's own
+world (port 13328) is the primary one. A world added as "on this host" runs as a child `aion-host`
+process in world role on its own game port (13329 upwards; its control port 18781 upwards stays on
+loopback); Start and Stop on the page start it and stop it gracefully (its players are saved), and it
+is restarted by itself if it exits. Its output goes to `journalctl -u aion-host` as `[world <id>]`
+lines. A world added as "on another machine" runs there as
+`Aion__Role=world Aion__Native__WorldId=<id> Aion__Native__GamePort=<port> Aion__LocalPort=<port>`
+with the same connection strings (the database must be reachable from it); it is listed while its
+game port answers. Characters belong to the world they were created on. Open the extra game ports
+in the provider's firewall as well. Chat (port 8091) still serves the primary world only.
 
 ## How clients reach this server
 
