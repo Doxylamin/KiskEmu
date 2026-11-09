@@ -71,7 +71,7 @@ public sealed class PcSummonTests
         var waterIcon = session.ElementalActivateTick(Now + 201);
         Assert.Contains(waterIcon, p => p.SequenceEqual(GamePackets.ElementalSummonActivate(2, waterSpirit.Key)));
 
-        var leave = session.DismissAllSummons();
+        var leave = session.DismissAllSummons(Now + 300);
         Assert.Contains(leave, p => p.SequenceEqual(GamePackets.ElementalSummonDeactivate(2, waterSpirit.Key)));
     }
 
@@ -96,16 +96,16 @@ public sealed class PcSummonTests
         session.SummonFromSkillForTest(16110000, Combat.TrainingDummyKey, Now + 100);
         session.ElementalActivateTick(Now + 101);
         var water = Assert.Single(session.Targets!.Values, t => t.OwnerKey == session.PlayerKey);
-        Assert.Empty(session.DismissFromSkillForTest(16290000));   // Dismiss: Fire Spirit leaves the Water Spirit
+        Assert.Empty(session.DismissFromSkillForTest(16290000, Now + 102));   // Dismiss: Fire Spirit leaves the Water Spirit
         Assert.Single(session.Targets.Values, t => t.OwnerKey == session.PlayerKey);
-        var gone = session.DismissFromSkillForTest(16290001);       // Dismiss: Water Spirit
+        var gone = session.DismissFromSkillForTest(16290001, Now + 103);       // Dismiss: Water Spirit
         Assert.Contains(gone, p => p.SequenceEqual(GamePackets.ElementalSummonDeactivate(2, water.Key)));
         Assert.DoesNotContain(session.Targets.Values, t => t.OwnerKey == session.PlayerKey);
 
         session.SummonFromSkillForTest(16130000, Combat.TrainingDummyKey, Now + 200);
         session.ElementalActivateTick(Now + 201);
         var earth = Assert.Single(session.Targets.Values, t => t.OwnerKey == session.PlayerKey);
-        var all = session.DismissFromSkillForTest(GameSession.ReturnAllSpiritsSkill);
+        var all = session.DismissFromSkillForTest(GameSession.ReturnAllSpiritsSkill, Now + 202);
         Assert.Contains(all, p => p.SequenceEqual(GamePackets.ElementalSummonDeactivate(4, earth.Key)));
         Assert.DoesNotContain(session.Targets.Values, t => t.OwnerKey == session.PlayerKey);
     }

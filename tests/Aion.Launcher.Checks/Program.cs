@@ -38,14 +38,9 @@ try { (config with { ClientVersions = [new("x", "x", "other")] }).Validate(); Ch
     var steamVersion = ClientVersion.Defaults[1];
     Check(ClientVersions.SteamFolder(steamVersion, config, new SteamInstall(cvSteamRoot)) == Path.Combine(library, "steamapps", "common", "AION2"), "steam client found via libraryfolders.vdf");
     Check(ClientVersions.SteamFolder(steamVersion, config with { SteamClientPath = temp }, new SteamInstall(cvSteamRoot)) == temp, "steamClientPath overrides detection");
-    var json = Path.Combine(temp, "launcher.json");
-    File.WriteAllText(json, """{"name":"N","custom":1}""");
-    ClientVersions.SaveSelection(json, config, "steam-latest");
-    var saved = File.ReadAllText(json);
-    Check(saved.Contains("\"selectedClientVersion\": \"steam-latest\"") && saved.Contains("\"custom\": 1"), "selection persisted, other keys kept");
-    File.Delete(json);
-    ClientVersions.SaveSelection(json, config, "2.0.6.0");
-    Check(LauncherConfig.Load(json).SelectedClientVersion == "2.0.6.0", "new launcher.json loads with selection");
+    Check(ClientVersions.Selected(config, "steam-latest").IsSteam, "the player's saved choice selects a version");
+    Check(ClientVersions.Selected(config with { SelectedClientVersion = "steam-latest" }, "2.0.6.0").Id == ClientVersion.DefaultId, "the player's choice beats launcher.json");
+    Check(ClientVersions.Selected(config with { SelectedClientVersion = "steam-latest" }, "gone").IsSteam, "an unknown saved choice falls back to launcher.json");
     Directory.Delete(temp, true);
 }
 // ---------- Account API: kept session, launcher manifest and self-update ----------

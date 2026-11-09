@@ -269,7 +269,9 @@ public sealed partial class GameSession
             if (outcome.ComboSuccess) achieve.AddRange(Achieve("CraftComboSuccess", 1, e => e.Values.Length == 0 || e.Has(recipeId.ToString(System.Globalization.CultureInfo.InvariantCulture))));
         }
         return [Reply(0, outcome.Success, combo: outcome.ComboAttempt, comboSuccess: outcome.ComboSuccess), .. await InventoryChangesAsync(ct, IncreaseCraftItem, DecreaseCraftItem),
-            PacketWriter.Opcode(CraftCompletedNt).U16(0).Varint(worktable).Bool(outcome.GrantsProduct).ToArray(),
+            // 0x8d71 (OBSERVED, 19 official completions 2026-11-02..05, 8 bytes): result u8 (0 success, 1 combo success with two
+            // items, 2 failed; a failed combo yields nothing), worktable key i32, direct-completed bool.
+            PacketWriter.Opcode(CraftCompletedNt).U8(outcome.ComboSuccess ? 1 : outcome.GrantsProduct ? 0 : 2).U32(worktable).Bool(outcome.GrantsProduct).ToArray(),
             .. await CraftMasteryExpAsync(CraftCategories.GetValueOrDefault(recipe.Worktable), ct),
             .. achieve];
     }

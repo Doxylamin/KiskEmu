@@ -53,8 +53,12 @@ def decode_spawn(body):
     result['purchased'] = boolean()
     result['voice'] = r.uint(1)
     r.take(16)  # conqueror
+    r.take(13)  # rift_pvp_on u8, rift_pvp_set_time i64, polymorph_abnormal_uid i32
+    r.take(16)  # SuccessionCountInfo
     result['power'] = (r.uint(8), r.uint(8))
-    for _ in range(2):
-        r.take(r.varuint() * 3)
+    for _ in range(2):  # used/bonus daevanion point infos: u8 type, i32 point
+        r.take(r.varuint() * 5)
+    r.varuint()  # _trial_clear_info (empty list)
+    r.varuint()  # _rolevote_count
     assert r.offset == len(body), (r.offset, len(body))
     return result

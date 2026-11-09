@@ -7,8 +7,9 @@ namespace Aion.World;
 // (ProcessStateHoldingTime), the entry rules (MapEntrance.dat: level, equipment item level, member cap), the reward
 // cube (RewardOdEnergyCube.dat: the final boss's RewardCommon at the cube object, mid-boss rewards on their kill) and
 // the dungeon state messages. Opcodes: the 0x54ca run (index + 0x54ca, anchored by ItemUse 0x5612, TitleList 0x5679,
-// OpenSubzoneGroupIDs 0x56ac and AddSubzoneGroupID 0x56ad in the official recording): OdEnergyCubeRewardStart_NT 0x56cc,
-// OdEnergyCubeReward_RQ/RS 0x56cd/0x56ce. The dungeon state family is OBSERVED at 0x6100-0x610b (catalogue 573-584 at
+// OpenSubzoneGroupIDs 0x56ac and AddSubzoneGroupID 0x56ad in the official recording): OdEnergyCubeRewardStart_NT 0x5713
+// (OBSERVED, AVION2: the mid bosses whose shares are in the cube), OdEnergyCubeReward_RQ/RS 0x5714/0x5715 (RS OBSERVED,
+// RQ between them CANDIDATE). The dungeon state family is OBSERVED at 0x6100-0x610b (catalogue 573-584 at
 // 0x5ec3 + index): DungeonState_NT 0x6100, DungeonCompleteResult_NT 0x6101, DungeonClearKillNpc_NT 0x6108, DungeonDeathLimit_NT 0x6109.
 // Their bodies are the usmap fields (CANDIDATE: none observed). PartyDungeonClear_NT 0x3A69 and middle-boss 0x3829 on
 // clear/kill; ContentsTicket weekly cap via tools/data/expedition.json (stub until ContentsTicket.dat export); death
@@ -43,7 +44,7 @@ public sealed class DungeonCopy(GameSession host, int dungeonId, long now)
 public sealed partial class GameSession
 {
     // OBSERVED (HQ001 layer, capture 20261013 #9687-9689, #14161-14167): catalogue 573-584 live at 0x5ec3 + index, not in the 0x54ca run.
-    public const ushort DungeonStateNt = 0x6100, DungeonCompleteResultNt = 0x6101, DungeonClearKillNpcNt = 0x6108, DungeonDeathLimitNt = 0x6109, CubeRewardStartNt = 0x56cc, CubeRewardRq = 0x56cd, CubeRewardRs = 0x56ce;
+    public const ushort DungeonStateNt = 0x6100, DungeonCompleteResultNt = 0x6101, DungeonClearKillNpcNt = 0x6108, DungeonDeathLimitNt = 0x6109, CubeRewardStartNt = 0x5713, CubeRewardRq = 0x5714, CubeRewardRs = 0x5715;
     public const byte DungeonStateProcess = 2, DungeonStateComplete = 3, DungeonStateEnd = 4;
     /// <summary>After the time limit the copy empties this long after the fail message (OURS).</summary>
     public const long DungeonFailExitMs = 5_000;
@@ -201,7 +202,11 @@ public sealed partial class GameSession
         if (!cube.TryGetValue(target.NpcId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var table)) return;
         if (target.NpcId == room.CubeBoss)
         {
-            mapEventOut.Add(PacketWriter.Opcode(CubeRewardStartNt).Varint(1).I32(target.NpcId).ToArray());
+            // 0x5713 lists the mid bosses whose shares are in the cube (OBSERVED: the codes of the clear's 0x572e notices).
+            var mids = c.CubeBossesKilled.Where(id => id != room.CubeBoss).ToList();
+            var start = PacketWriter.Opcode(CubeRewardStartNt).Varint(mids.Count);
+            foreach (var id in mids) start.I32(id);
+            mapEventOut.Add(start.ToArray());
             return;
         }
         mapEventOut.Add(PartyDungeonMiddleBossKill(target.NpcId));
@@ -260,7 +265,9 @@ public sealed partial class GameSession
         }
         var replies = await GrantPendingRewardsAsync(now, ct);
         if (plain is null) return replies;
-        var writer = PacketWriter.Opcode(CubeRewardRs).U16(0).U8(1).Varint((uint)items.Count);
+        // _reward_count echoes the request's (OBSERVED 2 in all 9 official replies, 2026-11-02..05; 1 when the object was used).
+        var rewardCount = plain is { Length: >= 3 } ? plain[2] : (byte)1;
+        var writer = PacketWriter.Opcode(CubeRewardRs).U16(0).U8(rewardCount).Varint((uint)items.Count);
         foreach (var (item, count) in items) writer.I32(item).I32((int)Math.Min(count, int.MaxValue));
         return [.. replies, writer.ToArray()];
     }

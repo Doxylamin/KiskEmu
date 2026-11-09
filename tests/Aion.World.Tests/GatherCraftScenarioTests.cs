@@ -205,7 +205,7 @@ public sealed class GatherCraftScenarioTests
         session.GatherRoll = () => 9999;
         var lost = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now + 1);
         Assert.Equal(1, lost.Count(b => GameSessionTestHelpers.Op(b) == GameSession.GatherStartRs));
-        Assert.Contains(lost, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 1);
+        Assert.Contains(lost, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 2);   // 2 failed (OBSERVED)
     }
 
     [Fact]

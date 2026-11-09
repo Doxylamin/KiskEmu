@@ -594,6 +594,7 @@ def build_my_char_appear(key=1, name="", server_id=WORLD_ID, pc_id=1, race=1,
     body += struct.pack('<iiii', 0, 0, 0, 0)  # SuccessionCountInfo
     body += struct.pack('<qq', combat_power, combat_power)
     body += b'\x00\x00'  # used/bonus daevanion point arrays
+    body += b'\x00\x00'  # _trial_clear_info (empty), _rolevote_count (usmap tail, as GamePackets.MyCharAppear)
     return bytes(body)
 
 

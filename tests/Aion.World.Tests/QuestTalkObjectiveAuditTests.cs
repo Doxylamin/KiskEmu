@@ -18,13 +18,14 @@ public sealed class QuestTalkObjectiveAuditTests
 
     static string DataPath(string file)
     {
-        var candidates = new[]
-        {
-            Path.GetFullPath(Path.Combine("/workspace", "tools", "data", file)),
-            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "tools", "data", file)),
-            Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", "..", "tools", "data", file)),
-        };
-        return candidates.FirstOrDefault(File.Exists) ?? throw new FileNotFoundException($"Missing tools/data/{file}");
+        // Walk up from the test output (and the working directory) to the repository's tools/data.
+        foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
+            for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
+            {
+                var path = Path.Combine(dir.FullName, "tools", "data", file);
+                if (File.Exists(path)) return path;
+            }
+        throw new FileNotFoundException($"Missing tools/data/{file}");
     }
 
     [Fact]

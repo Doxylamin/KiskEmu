@@ -225,7 +225,7 @@ def build() -> dict:
                         entry['skill_name'] = skills[str(skill_id)]['n']
                 nodes[str(nid)] = entry
 
-    return {
+    table = {
         'source': src.get('source', 'daevanion-normalized.json') + '; tools/daevanion_data.py',
         'level_points': build_level_points(),
         'grid': {'rows': ROWS, 'cols': COLS, 'origin': {'r': ORIGIN[0], 'c': ORIGIN[1]}},
@@ -237,6 +237,10 @@ def build() -> dict:
         'boards': boards,
         'nodes': nodes,
     }
+    # The server trusts level_points only when they come from the client; the fallback above is a guess.
+    if EXP_DAEVANION_MAP.is_file():
+        table['level_points_source'] = 'Exp.dat'
+    return table
 
 
 def apply_daevanion_uses(uses: dict) -> None:

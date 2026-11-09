@@ -4,7 +4,7 @@ namespace Aion.World;
 
 // NPC visibility. Small maps (Poeta: 275 NPCs) send every NPC at world entry, as before. The levelling maps
 // have thousands of spawns (map 1110: 16113), so there NPCs are streamed by distance: 0x3641 when one comes
-// within NpcViewRange, 0x3642 flag 1 (the official out-of-view removal) past NpcForgetRange, checked on every
+// within NpcViewRange, 0x3642 flag 7 (the official out-of-view removal) past NpcForgetRange, checked on every
 // position report and once a second (NPCs move). Map-wide NPC messages (AI moves, skills, HP, respawns) only
 // reach players who see that NPC.
 public sealed partial class GameSession
@@ -86,7 +86,7 @@ public sealed partial class GameSession
                 // Quest objectives keep their NPCs streamed until done (kill credit, talk, layer entry on big maps).
                 if (QuestForcesNpcStream(t)) continue;
                 seenNpcs.Remove(t.Key);
-                replies.Add(GamePackets.Death(t.Key, 1));
+                replies.Add(GamePackets.Death(t.Key, GamePackets.DespawnOutOfView));
             }
             else if (!seen && !t.CorpseRemoved && QuestForcesNpcStream(t))
             {

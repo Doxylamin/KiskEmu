@@ -19,14 +19,14 @@ class SubzoneTests(unittest.TestCase):
         rows = subzones.subzone_rows({'Properties': {'Data': [
             {'ID': {'Value': 3011}, 'Priority': 5, 'WorldMapFogGroupId': 'ESubzoneGroupID::ESubzoneGroupID_65'},
             {'ID': {'Value': 3012}, 'Priority': 5, 'WorldMapFogGroupId': 'ESubzoneGroupID::ESubzoneGroupID_None'}]}})
-        self.assertEqual(rows, {3011: (65, 5), 3012: (0, 5)})
+        self.assertEqual(rows, {3011: (65, 5, True), 3012: (0, 5, True)})
         mapdata = {'Properties': {'Data': {'MapId': 1000, 'SubzoneVolumeInfoMap': [
             {'Key': 'L_Starter_Subzone_Base', 'Value': {'LabelName': 'L_Starter_Subzone_Base', 'SubzoneTableId': 3011,
              'HeightMin': 100.0, 'HeightMax': 200.0, 'Points': [{'X': 0, 'Y': 0}, {'X': 10, 'Y': 0}, {'X': 10, 'Y': 10}]}},
             {'Key': 'Other', 'Value': {'SubzoneTableId': 3012, 'Points': [{'X': 0, 'Y': 0}]}}]}}}
         map_id, areas = subzones.volumes(mapdata, rows)
         self.assertEqual(map_id, 1000)
-        self.assertEqual(areas[0], {'subzone': 3011, 'name': 'L_Starter_Subzone_Base', 'group': 65, 'priority': 5,
+        self.assertEqual(areas[0], {'subzone': 3011, 'name': 'L_Starter_Subzone_Base', 'group': 65, 'priority': 5, 'use_ride': True,
                                     'z': [100.0, 200.0], 'points': [[0, 0], [10, 0], [10, 10]]})
         self.assertEqual((areas[1]['name'], areas[1]['group']), ('Other', 0))   # no fog group: still an EnterSubZone target
 

@@ -110,8 +110,6 @@ def objective(goal, npc_ids, item_ids, env_ids):
         out['npc'] = npc_ids.get(v[0])
         out['npc_name'] = v[0]
         if _none(v[1]):
-            pass
-        elif v[1]:
             out['talk'] = v[1]
         out['count'] = 1
     elif kind == 'CollectItem':
@@ -349,7 +347,7 @@ def side_cap_unavailable_codes(data, cap=DEFAULT_LEVEL_CAP):
         race: _hero_level_gate_codes(chains, cap, key, gates[race])
         for race, key in (('Light', 'light'), ('Dark', 'dark'))
     }
-    by_id = {quest['id']: code for code, quest in quests.items()}
+    by_id = {quest['id']: code for code, quest in quests.items() if 'id' in quest}
 
     def race_matches(quest, race):
         qrace = quest.get('race', 'All')

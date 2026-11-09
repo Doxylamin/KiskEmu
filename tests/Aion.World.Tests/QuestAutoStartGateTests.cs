@@ -23,7 +23,8 @@ public sealed class QuestAutoStartGateTests
         var packets = await session.HandleAsync(new PacketWriter().U16(0x8d0e).I32(50).I32(-1).ToArray(), Now + 10);
         Assert.Equal(QuestLog.Rewarded, session.Quests.Get("HQ2101020")!.Status);
         Assert.Null(session.Quests.Get("HQ2101030"));
-        Assert.DoesNotContain(packets, p => GameSessionTestHelpers.Op(p) == 0x8d11);
+        // 0x8d11 may resend HQ2101020 itself as Rewarded (HUD part sync); it must not add HQ2101030.
+        Assert.DoesNotContain(packets, p => GameSessionTestHelpers.Op(p) == 0x8d11 && BitConverter.ToInt32(p, 2) == 2101030);
     }
 
     [Fact]

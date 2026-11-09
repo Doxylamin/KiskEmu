@@ -42,7 +42,7 @@ public sealed class DaevanionPointsTests
         var store = new FakeCharacterStore();
         var session = await EnterSpiritmasterAsync(store, 16);
         var tables = DaevanionTables.Embedded;
-        var boardId = 61;
+        var boardId = 51;   // the Elementalist (creation 6) board slot is 5
         var start = tables.StartNodeId(boardId);
         var startNode = tables.NodeOf(start)!;
         var neighborId = tables.NodesOfBoard(boardId)

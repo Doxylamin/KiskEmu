@@ -96,8 +96,8 @@ public sealed class SkillPointGrantTests
         Assert.Equal(GameSession.SkillAcquireNotFoundData, BitConverter.ToUInt16(unknown[0], 2));
 
         var truncated = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).ToArray(), Now);
-        Assert.Equal(2, truncated.Count);
         Assert.Equal(1, BitConverter.ToUInt16(truncated[0], 2));
+        Assert.True(IsPoints(truncated[^1]));   // after the 0x5100 resync
 
         var first = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(Gladiator).ToArray(), Now);
         Assert.Equal(0, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(first), 2));

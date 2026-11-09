@@ -32,8 +32,8 @@ public class DeathResurrectTests
         var ours = GamePackets.Kill(1, 11010000, 2001, 0, "", dieType: 2, npcCasterDataId: 55_001, npcDieActId: 0, reason: 1);
         Assert.Equal(0x8d04, ours[0] | (ours[1] << 8));
         Assert.Equal(2, ours[^1]);
-        Assert.Equal(0u, BitConverter.ToUInt32(ours, ours.Length - 9));
-        Assert.Equal(1u, BitConverter.ToUInt32(ours, ours.Length - 5));
+        Assert.Equal(0u, BitConverter.ToUInt32(ours, ours.Length - 6));   // die act u32
+        Assert.Equal(1, ours[^2]);                                          // reason u8: a hit
     }
 
     [Fact]
@@ -43,8 +43,8 @@ public class DeathResurrectTests
         var session = await EnterAscendedAsync(new FakeCharacterStore(), t);
         var death = session.NpcHitsPlayer(session.Resource.HpMax * 10, t + 1000, killerKey: 2001, killerSkill: 11010000);
         var kill = death.First(p => GameSessionTestHelpers.Op(p) == 0x8d04);
-        Assert.Equal(0u, BitConverter.ToUInt32(kill, kill.Length - 9));
-        Assert.Equal(1u, BitConverter.ToUInt32(kill, kill.Length - 5));
+        Assert.Equal(0u, BitConverter.ToUInt32(kill, kill.Length - 6));
+        Assert.Equal(1, kill[^2]);
     }
 
     [Fact]

@@ -70,7 +70,9 @@ public sealed class ChannelFileLogWriterTests
             writer.Enqueue("new line");
             for (var i = 0; i < 60 && new FileInfo(path).Length <= 9; i++) await Task.Delay(50);
             Assert.Equal(path, writer.Path);
-            Assert.Contains("new line", File.ReadAllText(path));
+            // Read with write sharing: the writer still holds the file (File.ReadAllText fails on Windows while it does).
+            using var check = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+            Assert.Contains("new line", check.ReadToEnd());
         }
         finally { await writer.DisposeAsync(); }
     }

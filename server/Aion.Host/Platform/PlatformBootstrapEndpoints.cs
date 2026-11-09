@@ -510,14 +510,11 @@ public static partial class PlatformBootstrapEndpoints
                     : GameSession.QunaBmCurrencyGroupId;
                 var balance = await qunaBalance.BalanceAsync(
                     context.Connection.RemoteIpAddress,
-                    responses.SessionId ?? BearerAuth(request),
+                    BearerAuth(request) ?? responses.SessionId,
                     request.Query["game_account_id"].FirstOrDefault(),
                     context.RequestAborted);
                 var body = ShopQunaBalanceService.JsonBody(balance, groupId);
                 var bodyText = System.Text.Encoding.UTF8.GetString(body);
-                platformLog.LogInformation(
-                    "virtual_currency balances currency_group_id={CurrencyGroupId} bytes={ByteCount} hex={Hex} body={Body}",
-                    groupId, body.Length, Convert.ToHexString(body), bodyText);
                 platformLog.LogDebug(
                     "virtual_currency balances currency_group_id={CurrencyGroupId} bytes={ByteCount} body={Body}",
                     groupId, body.Length, bodyText);

@@ -44,7 +44,7 @@ public sealed partial class GameSession
         foreach (var (item, count) in rolled)
         {
             dropCounter++;
-            var key = NextDropKey();
+            var key = target.Key;   // the source: every drop of one kill names the corpse (official 1E 56)
             var uid = ((long)playerKey << 32) | (uint)dropCounter;
             var angle = rng.NextDouble() * 2 * Math.PI;
             var radius = 60 + rng.NextDouble() * 90;
@@ -105,7 +105,7 @@ public sealed partial class GameSession
             _ => null,
         };
         dropCounter++;
-        var key = NextDropKey();
+        var key = target.Key;   // the source: every drop of one kill names the corpse (official 1E 56)
         var uid = ((long)party.Key << 32) | (uint)dropCounter;
         var angle = rng.NextDouble() * 2 * Math.PI;
         var radius = 60 + rng.NextDouble() * 90;
@@ -288,12 +288,21 @@ public sealed partial class GameSession
         if (!social.BidSessions.TryGetValue(bidUid, out var bid) || bid.Resolved || now >= bid.ExpiresAtMs
             || !bid.Eligible.Contains(playerKey) || price <= bid.HighPrice)
             return [DistributionPackets.BidItemReply(1, bidUid, price)];
-        if (Store is not { } store || CharacterId is not { } character || CostStacks(KinaItemId, price) is not { } costs)
+        // Raising one's own bid charges only the difference: the earlier amount is already held in escrow.
+        var held = bid.Escrow.GetValueOrDefault(playerKey);
+        var charge = price - held;
+        if (Store is not { } store || CharacterId is not { } character || CostStacks(KinaItemId, charge) is not { } costs)
             return [DistributionPackets.BidItemReply(2, bidUid, price)];
         var paid = await Stored(async () => await store.ShopBuyAsync(character, costs, [], [], ct) ? [[]] : []);
         if (paid.Count == 0) return [DistributionPackets.BidItemReply(2, bidUid, price)];
+        // The world lock is released during the store call: the bid may have closed or been outbid meanwhile.
+        if (bid.Resolved || !social.BidSessions.ContainsKey(bidUid) || price <= bid.HighPrice || bid.Escrow.GetValueOrDefault(playerKey) != held)
+        {
+            await Stored(async () => { await store.GrantLootAsync(character, [(KinaItemId, charge)], ct); return [[]]; });
+            return [DistributionPackets.BidItemReply(1, bidUid, price), .. await InventoryChangesAsync(ct, 0, 0)];
+        }
         if (bid.HighBidderKey is { } prev && prev != playerKey)
-            await RefundBidEscrowAsync(bid, prev, ct);
+            RefundBidEscrow(bid, prev);
         bid.HighBidderKey = playerKey;
         bid.HighPrice = price;
         bid.Escrow[playerKey] = price;
@@ -310,7 +319,8 @@ public sealed partial class GameSession
         if (!social.BidSessions.TryGetValue(bidUid, out var bid) || bid.Resolved || now >= bid.ExpiresAtMs
             || !bid.Eligible.Contains(playerKey) || !bid.Escrow.ContainsKey(playerKey))
             return [DistributionPackets.BidItemWithdrawReply(1, bidUid)];
-        await RefundBidEscrowAsync(bid, playerKey, ct);
+        if (bid.Escrow.Remove(playerKey, out var amount) && amount > 0 && Store is { } store && CharacterId is { } character)
+            await Stored(async () => { await store.GrantLootAsync(character, [(KinaItemId, amount)], ct); return [[]]; });
         if (bid.HighBidderKey == playerKey)
         {
             bid.HighBidderKey = null;
@@ -321,17 +331,20 @@ public sealed partial class GameSession
         return [DistributionPackets.BidItemWithdrawReply(0, bidUid), .. await InventoryChangesAsync(ct, 0, 0)];
     }
 
-    async Task RefundBidEscrowAsync(PartyBidSession bid, int memberKey, CancellationToken ct)
+    /// <summary>
+    /// Returns another member's escrowed kina. The grant runs on that member's own session (its loop owns its store calls
+    /// and inventory state), as the dice winner's grant does.
+    /// </summary>
+    void RefundBidEscrow(PartyBidSession bid, int memberKey)
     {
         if (!bid.Escrow.Remove(memberKey, out var amount) || amount <= 0) return;
-        if (World?.Online.GetValueOrDefault(memberKey) is not { } who || who.Session.Store is not { } store
-            || who.CharacterId is not { } character) return;
-        await who.Session.Stored(async () =>
+        if (World?.Online.GetValueOrDefault(memberKey) is not { } who) return;
+        _ = who.Session.InvokeAsync(async _ =>
         {
-            await store.GrantLootAsync(character, [(KinaItemId, amount)], ct);
-            return [[]];
+            if (who.Session.Store is not { } store || who.CharacterId is not { } character) return (false, new List<byte[]>());
+            var granted = await who.Session.Stored(async () => await store.GrantLootAsync(character, [(KinaItemId, amount)], default) ? [[]] : []);
+            return granted.Count == 0 ? (false, new List<byte[]>()) : (true, await who.Session.InventoryChangesAsync(default, 0, 0));
         });
-        await who.Session.InventoryChangesAsync(ct, 0, 0);
     }
 
     List<byte[]> ResolveBidSession(SocialState social, PartyBidSession bid, long now)
@@ -342,6 +355,8 @@ public sealed partial class GameSession
         var packets = new List<byte[]>();
         if (bid.HighBidderKey is not { } winKey || World?.Online.GetValueOrDefault(winKey) is not { } winner)
         {
+            // Nobody gets the item: whatever is still held goes back (to members online; see RefundBidEscrow).
+            foreach (var key in bid.Escrow.Keys.ToList()) RefundBidEscrow(bid, key);
             packets.Add(DistributionPackets.BidItemResultFail(bid.BidUid, 1));
             foreach (var m in DistributionMembersOf(bid.PartyKey)) m.Send(packets[0]);
             return packets;

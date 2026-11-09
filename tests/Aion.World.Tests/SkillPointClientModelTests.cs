@@ -167,28 +167,12 @@ public sealed class SkillPointClientModelTests
         Assert.Equal(24, window.Shown);
     }
 
-    static int ClientSpentFromSkillList(byte[] list, GameData data)
-    {
-        var offset = 3;
-        var spent = 0;
-        for (var i = 0; i < list[2]; i++)
-        {
-            var flag = list[offset];
-            var id = BitConverter.ToInt32(list, offset + 1);
-            var level = list[offset + 5];
-            var original = list[offset + 6];
-            if (level > original && data.HasPurchasableMasteryLevels(id))
-                spent += Enumerable.Range(original + 1, level - original).Sum(lvl => data.SkillLevelCost(id, lvl)?.Cost ?? 0);
-            offset += 1 + 4 + 2 + 9 + (flag == 5 ? 1 : 0);
-        }
-        return spent;
-    }
-
-    static int ClientAvailableFromSkillList(byte[] list, int charLevel, GameData data) =>
-        Math.Max(0, data.SkillPoints(charLevel) - ClientSpentFromSkillList(list, data));
-
+    /// <summary>
+    /// Official 2026-10-31: _original_skill_level is the bought mastery level (without Daevanion bonuses), not the class-kit
+    /// baseline, so the client cannot derive spent points from the list; the remaining total rides in 0x5105 (sent last).
+    /// </summary>
     [Fact]
-    public async Task Entry_list_uses_kit_baseline_as_original_so_client_spent_matches_server()
+    public async Task Entry_list_sends_bought_mastery_as_original_and_the_remaining_points_in_5105()
     {
         var data = GameSessionTestHelpers.LiveGameData;
         var store = new FakeCharacterStore { Progress = (12, 0) };
@@ -200,7 +184,7 @@ public sealed class SkillPointClientModelTests
             var up = await session1.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(skillId).ToArray(), Now);
             var update = up.First(p => GameSessionTestHelpers.Op(p) == GameSession.SkillLevelUpdateNt
                 && BitConverter.ToInt32(p, 3) == skillId);
-            Assert.Equal((2, 1), (update[12], update[13]));
+            Assert.Equal((2, 2), (update[12], update[13]));
         }
 
         var (session2, entry) = await EnterAsync(store, data, 12);
@@ -210,9 +194,6 @@ public sealed class SkillPointClientModelTests
         Assert.Equal(21, window.Shown);
 
         var list = entry.Single(p => GameSessionTestHelpers.Op(p) == 0x5100);
-        Assert.Equal(session2.SkillPointsLeft, ClientAvailableFromSkillList(list, 12, data));
-        Assert.Equal(data.SkillPoints(12) - session2.SkillPointsLeft, ClientSpentFromSkillList(list, data));
-        var kitLevels = data.LearnedSkills("Gladiator", 12).ToDictionary(k => k.SkillId, k => k.Level);
         var offset = 3;
         for (var i = 0; i < list[2]; i++)
         {
@@ -220,13 +201,8 @@ public sealed class SkillPointClientModelTests
             var id = BitConverter.ToInt32(list, offset + 1);
             var level = list[offset + 5];
             var original = list[offset + 6];
-            if (data.HasPurchasableMasteryLevels(id))
-            {
-                var kit = kitLevels.GetValueOrDefault(id, 1);
-                Assert.Equal(kit, original);
-                if (bought.Contains(id)) Assert.Equal(2, level);
-            }
-            else Assert.Equal(level, original);
+            Assert.Equal(level, original);   // no Daevanion bonuses here: level and bought mastery agree
+            if (bought.Contains(id)) Assert.Equal(2, original);
             offset += 1 + 4 + 2 + 9 + (flag == 5 ? 1 : 0);
         }
     }
@@ -251,7 +227,7 @@ public sealed class SkillPointClientModelTests
         new PacketWriter().U16(0x361b).String(name).U8(1).U32(6).Bytes([0x0c, 0x64]).U8(2).U8(1).U8(0).ToArray();
 
     [Fact]
-    public async Task Spiritmaster_level_16_entry_client_spent_matches_server_accounting()
+    public async Task Spiritmaster_level_16_entry_spends_every_point_and_lists_bought_mastery()
     {
         var data = GameSessionTestHelpers.LiveGameData;
         const int level = 16;
@@ -302,13 +278,10 @@ public sealed class SkillPointClientModelTests
         Assert.Equal(41, serverSpent);
         Assert.Equal(GamePackets.SkillPointUpdate(0), entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt));
         var list = entry.Single(p => GameSessionTestHelpers.Op(p) == 0x5100);
-        Assert.Equal(serverSpent, ClientSpentFromSkillList(list, data));
-        Assert.Equal(0, ClientAvailableFromSkillList(list, level, data));
         for (var i = 0; i < spendTargets.Count; i++)
         {
             var skillId = spendTargets[i];
             var bought = perSkill[i];
-            var kitLvl = kit.First(k => k.SkillId == skillId).Level;
             var offset = 3;
             for (var j = 0; j < list[2]; j++)
             {
@@ -316,7 +289,7 @@ public sealed class SkillPointClientModelTests
                 if (BitConverter.ToInt32(list, offset + 1) == skillId)
                 {
                     Assert.Equal(bought, list[offset + 5]);
-                    Assert.Equal(kitLvl, list[offset + 6]);
+                    Assert.Equal(bought, list[offset + 6]);   // original = bought mastery (official 2026-10-31)
                     break;
                 }
                 offset += 1 + 4 + 2 + 9 + (flag == 5 ? 1 : 0);

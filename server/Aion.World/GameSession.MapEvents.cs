@@ -194,7 +194,7 @@ public sealed partial class GameSession : IMapEventHost
             Note($"NpcConversation: {npc.Name} -> dungeon {entry.Dungeon}/map {entry.Teleport}: no move (instance {instanceKey}, dead {dead}, reloading {reloading})");
             return [];
         }
-        return [GamePackets.Death(npcKey, 1), .. moved];
+        return [GamePackets.Death(npcKey, GamePackets.DespawnOutOfView), .. moved];
     }
 
     /// <summary>0xe242 after a ClearMapEvent entry talk opened with 0xe240.</summary>
@@ -558,9 +558,15 @@ public sealed partial class GameSession : IMapEventHost
         return damage;
     }
 
-    void WireMapEventNpcCombatHooks(NpcAi ai, long now)
+    /// <summary>
+    /// <paramref name="sink"/>: collect the map-event packets there instead of returning them into the AI tick's output
+    /// (on a shared map that output is broadcast to every player, but the run is this player's own).
+    /// </summary>
+    void WireMapEventNpcCombatHooks(NpcAi ai, long now, List<byte[]>? sink = null)
     {
-        ai.OnNpcHpChanged = t => MapEventHp(t, now, playerCombat: false);
+        ai.OnNpcHpChanged = sink is null
+            ? t => MapEventHp(t, now, playerCombat: false)
+            : t => { sink.AddRange(MapEventHp(t, now, playerCombat: false)); return []; };
         ai.CapNpcDamage = CapMapEventNonPlayerDamage;
     }
 

@@ -19,6 +19,7 @@ public sealed class DaevanionTables
         [property: JsonPropertyName("creation_slot")] Dictionary<string, int> CreationSlot,
         [property: JsonPropertyName("item_points")] Dictionary<string, ItemPointJson> ItemPoints,
         [property: JsonPropertyName("level_points")] Dictionary<string, Dictionary<string, int>>? LevelPoints,
+        [property: JsonPropertyName("level_points_source")] string? LevelPointsSource,
         [property: JsonPropertyName("grid")] JsonElement Grid);
 
     public sealed record ItemPointJson([property: JsonPropertyName("point")] int PointType, [property: JsonPropertyName("amount")] int Amount);
@@ -38,6 +39,7 @@ public sealed class DaevanionTables
         creationSlot = file.CreationSlot.ToDictionary(p => int.Parse(p.Key, CultureInfo.InvariantCulture), p => p.Value);
         itemPoints = file.ItemPoints.ToDictionary(p => int.Parse(p.Key, CultureInfo.InvariantCulture), p => (p.Value.PointType, p.Value.Amount));
         origin = (file.Grid.GetProperty("origin").GetProperty("r").GetInt32(), file.Grid.GetProperty("origin").GetProperty("c").GetInt32());
+        LevelPointsFromClient = file.LevelPointsSource == "Exp.dat";
         if (file.LevelPoints is not null)
         {
             foreach (var (typeText, byLevel) in file.LevelPoints)
@@ -86,6 +88,9 @@ public sealed class DaevanionTables
     public int ClassSlot(int creationId) => creationSlot.GetValueOrDefault(creationId);
     public (int PointType, int Amount)? ItemGrant(int templateId) => itemPoints.TryGetValue(templateId, out var grant) ? grant : null;
     public (int Row, int Col) Origin => origin;
+
+    /// <summary>True when level_points came from the client's Exp.dat (DaevanionPointMap), not the builder's fallback guess.</summary>
+    public bool LevelPointsFromClient { get; }
 
     /// <summary>Cumulative crystals earned at a character level (Exp.dat DaevanionPointMap; tools/data/daevanion.json level_points).</summary>
     public int LevelPointsEarned(int pointType, int level)

@@ -90,7 +90,7 @@ public sealed class HeroPacketScenarioTests
         }
         watch.Hp = 1;
         var profile = GameData.Embedded.Profile(1, 1)!;
-        var basic = GameData.Embedded.LearnedSkills(profile.Class, session.Level).First(s =>
+        var basic = GameData.Embedded.LearnedSkills(profile.Class, session.Level).First(s => s.SkillId >= 10_000_000 &&
             GameData.Embedded.Skill(s.SkillId)?.Damage.Length > 0 && GameData.Embedded.Skill(s.SkillId)!.Cost.Mp == 0);
         var skillId = basic.SkillId;
         var cast = new PacketWriter().U16(0x3800).U16(16).I32(skillId).U8(2).Varint(watch.Key).F32(0).Vec3(watch.Position).U8(9).ToArray();

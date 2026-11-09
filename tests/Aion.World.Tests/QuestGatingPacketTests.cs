@@ -35,7 +35,7 @@ public sealed class QuestGatingPacketTests
         var hpBefore = watch!.Hp;
         var cls = GameData.Embedded.Profile(1, 1)!.Class;
         var skillId = GameData.Embedded.LearnedSkills(cls, session.Level)
-            .Select(s => s.SkillId).First(id => GameData.Embedded.Skill(id)?.Damage.Length > 0);
+            .Select(s => s.SkillId).First(id => id >= 10_000_000 && GameData.Embedded.Skill(id)?.Damage.Length > 0);   // class skills only (not Capture Lugi!)
         var cast = new PacketWriter().U16(0x3800).U16(16).I32(skillId).U8(2).Varint(watch.Key).F32(0)
             .Vec3(watch.Position).U8(9).ToArray();
         await session.HandleAsync(cast, Now + 1000);
@@ -57,7 +57,7 @@ public sealed class QuestGatingPacketTests
         Assert.True(watch.Hp > 0);
         var cls = GameData.Embedded.Profile(1, 1)!.Class;
         var skillId = GameData.Embedded.LearnedSkills(cls, session.Level)
-            .Select(s => s.SkillId).First(id => GameData.Embedded.Skill(id)?.Damage.Length > 0);
+            .Select(s => s.SkillId).First(id => id >= 10_000_000 && GameData.Embedded.Skill(id)?.Damage.Length > 0);   // class skills only (not Capture Lugi!)
         watch.Hp = watch.HpMax;
         var cast = new PacketWriter().U16(0x3800).U16(16).I32(skillId).U8(2).Varint(watch.Key).F32(0)
             .Vec3(watch.Position).U8(9).ToArray();

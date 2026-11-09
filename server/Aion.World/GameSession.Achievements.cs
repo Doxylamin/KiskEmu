@@ -344,7 +344,7 @@ public sealed partial class GameSession
         if (plain.Length < 7) return [];
         var id = BitConverter.ToInt32(plain, 2);
         var step = plain[6];
-        byte[] Reply(int result) => PacketWriter.Opcode(TakeAchievementRewardRs).I32(result).I32(id).U8(step).ToArray();
+        byte[] Reply(int result) => PacketWriter.Opcode(TakeAchievementRewardRs).U16(result).I32(id).U8(step).ToArray();
         var taken = await TakeStepAsync(id, step, now, ct);
         if (taken is null) return [Reply(1)];
         await FlushAchievementsAsync(now, ct, force: true);
@@ -377,7 +377,7 @@ public sealed partial class GameSession
         if (plain.Length < 7) return [];
         var groupId = BitConverter.ToInt32(plain, 2);
         var step = plain[6];
-        byte[] Reply(int result) => PacketWriter.Opcode(TakeAchievementGroupRewardRs).I32(result).I32(groupId).U8(step).ToArray();
+        byte[] Reply(int result) => PacketWriter.Opcode(TakeAchievementGroupRewardRs).U16(result).I32(groupId).U8(step).ToArray();
         var taken = await TakeGroupStepAsync(groupId, step, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), ct);
         return taken is null ? [Reply(1)] : [Reply(0), .. taken];
     }
@@ -444,10 +444,10 @@ public sealed partial class GameSession
         var takeResults = results.Select(r => (r.Group, (IReadOnlyList<byte>)r.GroupSteps, (IReadOnlyDictionary<int, int>)r.Steps)).ToList();
         var batchResult = takeResults.Count > 0 ? 0 : 1;
         if (takeResults.Count > 0) await FlushAchievementsAsync(now, ct, force: true);
-        // Batch RS first so the client parses _take_result before 5684/561b inventory NTs (revert: append RS after replies).
-        var batch = new List<byte[]> { RewardBatchReply(category, groupId, only, takeResults, batchResult) };
-        batch.AddRange(replies);
+        // The RS follows the step updates and inventory changes, as in the recorded batch claim (AttendanceBatchClaimTests).
+        var batch = new List<byte[]>(replies);
         if (inventoryChanges.Count > 0) batch.AddRange(inventoryChanges);
+        batch.Add(RewardBatchReply(category, groupId, only, takeResults, (ushort)batchResult));
         if (refreshAccountContents) batch.Add(AccountContentsInfoList(now));
         if (results.Any(r => r.GroupSteps.Count > 0)) batch.Add(AchievementList(now));
         return batch;
@@ -458,9 +458,10 @@ public sealed partial class GameSession
     /// [Common_AchievementRewardBatchTakeResult {group i32, [group step u8], map achievement i32 -> step u8}]}.
     /// The map value is a ByteProperty: an i32 there shifts every later group and the client reads garbage counts.
     /// </summary>
-    public static byte[] RewardBatchReply(byte category, int groupId, bool only, IReadOnlyList<(int Group, IReadOnlyList<byte> GroupSteps, IReadOnlyDictionary<int, int> Steps)> results, int result = 0)
+    public static byte[] RewardBatchReply(byte category, int groupId, bool only, IReadOnlyList<(int Group, IReadOnlyList<byte> GroupSteps, IReadOnlyDictionary<int, int> Steps)> results, ushort result = 0)
     {
-        var w = PacketWriter.Opcode(TakeAchievementRewardBatchRs).I32(result).U8(category).I32(groupId).U8(only ? (byte)1 : (byte)0).U8(0).Varint((uint)results.Count);
+        // result u16 and the two packed bools: the recorded 59-byte claim of 2026-10-30 (AchievementRewardBatchTests).
+        var w = PacketWriter.Opcode(TakeAchievementRewardBatchRs).U16(result).U8(category).I32(groupId).Bool(only).Bool(false).Varint((uint)results.Count);
         foreach (var (gid, groupSteps, steps) in results)
         {
             w.I32(gid).Varint((uint)groupSteps.Count);

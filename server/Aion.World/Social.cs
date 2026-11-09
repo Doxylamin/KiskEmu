@@ -7,14 +7,15 @@ namespace Aion.World;
 /// <summary>A party on this host (in memory; lost on restart). Members in join order; the leader leads.</summary>
 public sealed class Party(long key, WorldPlayer leader)
 {
-    public const int Limit = 4;   // _limit_member: our CANDIDATE AION2 party size
+    public const int Limit = 5;   // _limit_member: OBSERVED 5 in every captured 00 92
     public long Key { get; } = key;
     public WorldPlayer Leader { get; set; } = leader;
     public List<WorldPlayer> Members { get; } = [leader];
-    public byte Distribution { get; set; } = PartyOptions.DistributionSequence;
+    /// <summary>OBSERVED defaults (36 official PartyInfo_NT, AVION2 captures 2026-11-02..05): 02 01 00 02.</summary>
+    public byte Distribution { get; set; } = PartyOptions.DistributionRandom;
     public byte SpecialDistribution { get; set; } = PartyOptions.SpecialNormal;
-    public byte SpecialDistributionGrade { get; set; } = 2;
-    public byte JoinType { get; set; } = PartyOptions.JoinFree;
+    public byte SpecialDistributionGrade { get; set; } = 0;
+    public byte JoinType { get; set; } = PartyOptions.JoinApproval;
     /// <summary>Round-robin index for <see cref="PartyOptions.DistributionSequence"/>.</summary>
     public int SequenceIndex { get; set; }
     /// <summary>When set, this party belongs to a raid/alliance force.</summary>

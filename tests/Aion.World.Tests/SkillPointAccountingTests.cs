@@ -35,8 +35,8 @@ public sealed class SkillPointAccountingTests
         var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now, level: 8);
         var left = session.SkillPointsLeft;
         var up = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(11010000).ToArray(), Now);
-        Assert.Equal(2, up.Count);
-        Assert.Equal(GamePackets.SkillPointUpdate(left), up[1]);
+        // The refusal resyncs the list (0x5100) and ends with the points (live client 2026-10-31).
+        Assert.Equal(GamePackets.SkillPointUpdate(left), up[^1]);
         Assert.Equal(GameSession.SkillAcquireNotEnoughCharLevel, BitConverter.ToUInt16(up[0], 2));
         Assert.Equal(4, session.SkillLevel(11010000));
         Assert.Equal(left, session.SkillPointsLeft);
@@ -114,7 +114,7 @@ public sealed class SkillPointAccountingTests
         Assert.Equal(2, store.Skills.Single(s => s.SkillId == 11010000).Level);
         var update = first.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillLevelUpdateNt);
         Assert.Equal(2, update[12]);   // level
-        Assert.Equal(1, update[13]);  // original = kit baseline; client derives spent from levels above original
+        Assert.Equal(2, update[13]);  // original = the new bought level (official 2026-10-31)
         Assert.Equal(GamePackets.SkillPointUpdate(0), first.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt));
 
         var session2 = new GameSession(data, new GameSessionOptions { CharacterLevel = 4, WorldId = store.WorldId }, new Random(3)) { Store = store };
@@ -158,7 +158,7 @@ public sealed class SkillPointAccountingTests
         var skillList = entry.Single(p => GameSessionTestHelpers.Op(p) == 0x5100);
         var hex = Convert.ToHexStringLower(skillList);
         Assert.Contains(Convert.ToHexStringLower(BitConverter.GetBytes(11010000)), hex);
-        Assert.Contains("0201", hex);   // level 2, original 1 (kit baseline)
+        Assert.Contains("0202", hex);   // level 2, original 2 (bought mastery, official 2026-10-31)
     }
 
     [Fact]

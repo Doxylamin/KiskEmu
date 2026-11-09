@@ -411,7 +411,8 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
     {
         updated = stored;
         if (code.Length is < 8 or > 32) return false;
-        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim())));
+        // Codes are issued as upper-case hex; accept them typed in any case.
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim().ToUpperInvariant())));
         var index = Array.FindIndex(stored, h => CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(h), Encoding.UTF8.GetBytes(digest)));
         if (index < 0) return false;

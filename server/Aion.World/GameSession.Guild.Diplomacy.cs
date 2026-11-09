@@ -29,7 +29,7 @@ public sealed partial class GameSession
     {
         var wallet = g?.Wallet ?? [];
         var w = PacketWriter.Opcode(GuildOpcodes.UpdateGuildWalletNt).Varint(wallet.Count);
-        foreach (var (type, amount) in wallet) w.I32(type).I64(amount);
+        foreach (var (type, amount) in wallet) w.U8(type).I64(amount);   // EGuildWalletType u8 (OBSERVED in GuildInfo_RS)
         return w.I32(reason).ToArray();
     }
 

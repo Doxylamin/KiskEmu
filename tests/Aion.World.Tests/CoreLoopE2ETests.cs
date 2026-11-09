@@ -94,19 +94,25 @@ public sealed class CoreLoopE2ETests
         await session.HandleAsync(new PacketWriter().U16(0xe247).I64(torsoKey).U8(5).ToArray(), t + 1600);
 
         var levelBefore = session.Level;
-        for (var i = 0; i < 40; i++)
+        // Casts wait out the skill's cooldown (a refused cast kills nothing); the clock then moves past the loop. Field kills
+        // grant no experience (OBSERVED, GameSession.Experience), so the level comes from ShareExperience below.
+        var kills = 0;
+        var castGap = Math.Max(40, SkillCooldown.EffectiveMs(Data.Skill(basic)!) + 100);
+        var castAt = t + 1700;
+        for (var i = 0; i < 40; i++, castAt += castGap)
         {
             var mob = session.Targets!.Values.FirstOrDefault(m => !m.Dead && m.Relationship == 6);
             if (mob is null) break;
             mob.Hp = 1;
-            await MapEventScenarioHelpers.CombatCastAsync(session, basic, mob.Key, session.Position!.Value, t + 1700 + i * 40);
+            await MapEventScenarioHelpers.CombatCastAsync(session, basic, mob.Key, session.Position!.Value, castAt);
+            if (mob.Dead) kills++;
         }
-        Assert.True(session.Level > levelBefore);
-        var overCap = session.Level;
+        t = castAt - 1700;
+        Assert.True(kills >= 10, $"{kills} kills");
         session.ShareExperience(999_999_999);
         await session.TickAsync(t + 3500);
         await session.TickAsync(t + 3600);
-        Assert.InRange(session.Level, overCap, Data.MaxLevel);
+        Assert.InRange(session.Level, levelBefore + 1, Data.MaxLevel);
 
         store.Items.Add(FakeCharacterStore.BagItem(SpiritStone, 1, 201));
         store.Items.Add(FakeCharacterStore.BagItem(LifePotion, 5, 202));

@@ -59,14 +59,22 @@ public sealed class PlatformVirtualCurrencyTests
     }
 
     [Fact]
-    public async Task Balance_resolves_wire_game_account_id_before_world_entry()
+    public async Task Balance_ignores_the_unauthenticated_wire_game_account_id()
+    {
+        // The wire game_account_id is sequential and unauthenticated: with platform auth configured it names no account.
+        var store = new FakeCharacterStore(Guid.NewGuid());
+        store.Items.Add(FakeCharacterStore.BagItem(535300006, 50_000, 9001));
+        var svc = new ShopQunaBalanceService(new WorldPresence(), new WireOnlyPlatformAuth(store.AccountId), new StoreAccountQuna(store));
+        Assert.Equal(0, await svc.BalanceAsync(IPAddress.Loopback, platformSessionToken: null, wireAccountId: "1000001", default));
+    }
+
+    [Fact]
+    public async Task Balance_resolves_the_authenticated_platform_session_before_world_entry()
     {
         var store = new FakeCharacterStore(Guid.NewGuid());
         store.Items.Add(FakeCharacterStore.BagItem(535300006, 50_000, 9001));
-        var accountQuna = new StoreAccountQuna(store);
-        var platform = new WireOnlyPlatformAuth(store.AccountId);
-        var svc = new ShopQunaBalanceService(new WorldPresence(), platform, accountQuna);
-        Assert.Equal(50_000, await svc.BalanceAsync(IPAddress.Loopback, platformSessionToken: null, wireAccountId: "1000001", default));
+        var svc = new ShopQunaBalanceService(new WorldPresence(), new WireOnlyPlatformAuth(store.AccountId, "session"), new StoreAccountQuna(store));
+        Assert.Equal(50_000, await svc.BalanceAsync(IPAddress.Loopback, platformSessionToken: "session", wireAccountId: "1000001", default));
     }
 
     sealed class StubAccountQuna(long balance) : IAccountQunaBalance
@@ -80,11 +88,11 @@ public sealed class PlatformVirtualCurrencyTests
             accountId == store.AccountId ? store.AccountQunaBalanceAsync(ct) : Task.FromResult(0L);
     }
 
-    sealed class WireOnlyPlatformAuth(Guid accountId) : IPlatformSecondaryAuth
+    sealed class WireOnlyPlatformAuth(Guid accountId, string? session = null) : IPlatformSecondaryAuth
     {
         public Task RememberClientAsync(IPAddress? address, Guid accountId, CancellationToken ct = default) => Task.CompletedTask;
         public Task<Guid?> ResolveAccountAsync(IPAddress? address, string? platformAccessToken, CancellationToken ct) =>
-            Task.FromResult<Guid?>(null);
+            Task.FromResult<Guid?>(session is not null && platformAccessToken == session ? accountId : null);
         public Task<Guid?> ResolveAccountByWireIdAsync(string wireAccountId, CancellationToken ct) =>
             wireAccountId == "1000001" ? Task.FromResult<Guid?>(accountId) : Task.FromResult<Guid?>(null);
         public Task<byte[]?> AuthTypesAsync(Guid accountId, CancellationToken ct) => Task.FromResult<byte[]?>(null);

@@ -23,11 +23,15 @@ public static class SkillEffectSupport
         "MpHealRatio",
         "SpHeal",                          // same, SP
         "SpHealRatio",
+        "ApHeal",                          // same, AP (its own 0x8d00 update)
+        "ApHealRatio",
         "Dispel_Cc",                       // friendly recipients: crowd-control abnormals removed (0x382c reason 3)
         "Dispel_True",                     // [DeBuff] friendly cleanse; [Buff] purge of an enemy monster / player
         "Dispel",                          // purge of an enemy's beneficial abnormals (count)
         "Pull",                            // Abnormal_Move_Start/Stop_NT + position sync (GameSession.Displacement.cs)
         "MPBurn",                          // enemy players' MP
+        "APBurn",                          // enemy players' AP (flat)
+        "APBurnRatio",                     // same, of the maximum
         "IncreaseCooltime",                // enemy players' cooldowns (SkillCooltimeUpdate_NT)
         "DecreaseCooltime",                // the caster's own cooldowns
         "AggroTransfer",                   // monsters' hate moved off the caster (NpcAi.TransferAggro)

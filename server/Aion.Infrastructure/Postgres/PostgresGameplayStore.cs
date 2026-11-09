@@ -3114,9 +3114,15 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
             await Execute(c, t, "UPDATE game.item_instances SET location='trade_escrow',slot=NULL,revision=revision+1 WHERE instance_id=$1", ct, instanceId);
         else
         {
-            await Execute(c, t, "UPDATE game.item_instances SET quantity=quantity-$2,revision=revision+1 WHERE instance_id=$1", ct, instanceId, count);
-            await Scalar(c, t, "SELECT game.grant_item($1,(SELECT build_id FROM catalog.builds ORDER BY imported_at DESC LIMIT 1),$2,$3,$4)", ct, character, template, count, Guid.NewGuid());
-            instanceId = (Guid)(await Scalar(c, t, "SELECT instance_id FROM game.item_instances WHERE character_id=$1 AND location='trade_escrow' ORDER BY created_at DESC LIMIT 1", ct, character))!;
+            // Split the listed part off into its own escrow row. game.grant_item would top the bag stack back up (the
+            // listed units stayed in the bag) and the newest-escrow lookup could pick another listing's item.
+            var source = instanceId;
+            instanceId = Guid.NewGuid();
+            await Execute(c, t, "UPDATE game.item_instances SET quantity=quantity-$2,revision=revision+1 WHERE instance_id=$1", ct, source, count);
+            await Execute(c, t, """
+                INSERT INTO game.item_instances(instance_id,character_id,build_id,template_id,quantity,location,upgrades,rolled_stats)
+                SELECT $2,character_id,build_id,template_id,$3,'trade_escrow',upgrades,rolled_stats FROM game.item_instances WHERE instance_id=$1
+                """, ct, source, instanceId, count);
         }
         var expires = DateTimeOffset.FromUnixTimeMilliseconds(nowMs + EconomyListingDurationMs);
         var saleId = (long)(await Scalar(c, t, """
@@ -3142,7 +3148,9 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
             price = r.GetInt64(4);
         }
         if (!await DeductKina(c, t, buyerCharacter, price, ct)) return ("kina", 0);
-        await Execute(c, t, "UPDATE game.item_instances SET character_id=$2,location='bag',slot=NULL,revision=revision+1 WHERE instance_id=$1", ct, item, buyerCharacter);
+        // The item must still sit in the seller's escrow; returning before commit rolls the kina deduction back.
+        if (await ExecuteCount(c, t, "UPDATE game.item_instances SET character_id=$2,location='bag',slot=NULL,revision=revision+1 WHERE instance_id=$1 AND character_id=$3 AND location='trade_escrow'", ct, item, buyerCharacter, seller) != 1)
+            return ("missing", 0);
         await Execute(c, t, "UPDATE game.trade_listings SET sold=true WHERE sale_id=$1", ct, saleId);
         var proceeds = EconomySellerProceeds(price);
         var deliveryId = (long)(await Scalar(c, t, """
@@ -3155,9 +3163,11 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
     {
         await using var c = await source.OpenConnectionAsync(ct); await using var t = await c.BeginTransactionAsync(ct);
         if (!await Own(c, t, account.AccountId, character, ct)) return ("auth", null);
-        var row = await Scalar(c, t, "SELECT item_instance_id FROM game.trade_listings WHERE sale_id=$1 AND seller_character_id=$2 AND NOT sold FOR UPDATE", ct, saleId, character) as Guid?;
+        var row = await Scalar(c, t, "SELECT item_instance_id FROM game.trade_listings WHERE sale_id=$1 AND seller_character_id=$2 AND NOT sold AND NOT cancelled FOR UPDATE", ct, saleId, character) as Guid?;
         if (row is null) return ("missing", null);
-        await Execute(c, t, "UPDATE game.item_instances SET location='bag',revision=revision+1 WHERE instance_id=$1", ct, row);
+        // Only the listed item still in this seller's escrow comes back; anything else means the listing is stale.
+        var returned = await ExecuteCount(c, t, "UPDATE game.item_instances SET location='bag',slot=NULL,revision=revision+1 WHERE instance_id=$1 AND character_id=$2 AND location='trade_escrow'", ct, row, character);
+        if (returned != 1) return ("missing", null);
         await Execute(c, t, "UPDATE game.trade_listings SET cancelled=true WHERE sale_id=$1", ct, saleId);
         await t.CommitAsync(ct);
         return ("ok", new TradeListingRecord(saleId, character, row.Value, 0, templateId, count, 0, 0, 0, tradeServerId));

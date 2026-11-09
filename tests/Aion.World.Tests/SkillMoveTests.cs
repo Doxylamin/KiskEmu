@@ -107,7 +107,7 @@ public sealed class SkillMoveTests
         const int selfBuff = 13260000;
         var (session, _) = await Setup();
         Assert.Empty(GameData.Embedded.Skill(selfBuff)!.Damage);
-        Assert.Equal(100200001, SkillAreas.For(selfBuff)!.DebuffRows.Single().Abnormal);
+        Assert.Equal(100200001, SkillAreas.For(selfBuff)!.CasterDebuffRows.Single().Abnormal);   // the caster's own row
         var replies = await session.HandleAsync(Cast(selfBuff, session.PlayerKey, session.Position!.Value), Now + 6_000);
         Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x3801 && GameSession.CastResultCode(p) == 0);
         Assert.DoesNotContain(100200001, session.ActiveBuffs);

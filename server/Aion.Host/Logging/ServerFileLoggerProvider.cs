@@ -41,7 +41,16 @@ public sealed class ServerFileLoggerProvider : ILoggerProvider, IAsyncDisposable
         var debugDir = configuration.GetSection(AionConfiguration.Debug)["LogDirectory"];
         var directory = DebugOptions.ResolveLogDirectory(options.LogDirectory ?? debugDir, AppContext.BaseDirectory);
         var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-        return new ServerFileLoggerProvider(new ChannelFileLogWriter(UniquePath(directory, timestamp)), options.MinLevel);
+        try
+        {
+            return new ServerFileLoggerProvider(new ChannelFileLogWriter(UniquePath(directory, timestamp)), options.MinLevel);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A read-only install (systemd ProtectSystem=strict keeps /opt read-only) must not stop the host: console only.
+            Console.Error.WriteLine($"Server file log disabled: cannot write to {directory} ({ex.Message})");
+            return null;
+        }
     }
 
     /// <summary>

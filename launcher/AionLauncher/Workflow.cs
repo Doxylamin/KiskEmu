@@ -18,8 +18,8 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
     public LauncherConfig Config => config;
     public LauncherSettings Settings => settings;
     public AccountClient Account { get; } = new(config);
-    /// <summary>The client version chosen on the Play page (launcher.json "selectedClientVersion").</summary>
-    public ClientVersion Version { get; set; } = ClientVersions.Selected(config);
+    /// <summary>The client version chosen on the Play page (kept in the launcher settings, not in launcher.json).</summary>
+    public ClientVersion Version { get; set; } = ClientVersions.Selected(config, settings.SelectedClientVersion);
     /// <summary>The folder of the client started last (for waiting until it closes).</summary>
     public string? GameFolder { get; private set; }
 

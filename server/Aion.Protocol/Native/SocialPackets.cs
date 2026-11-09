@@ -143,7 +143,7 @@ public sealed record InvitationInfo(int PcId, int Level, int EquipItemLevel, str
 /// <summary>DevPacketData_Common_PartyRebirthSkillInfo.</summary>
 public sealed record PartyRebirthSkill(int SkillId, byte SkillLevel, int Cooltime);
 
-/// <summary>DevPacketData_Common_PartyMemberInfo (usmap order). Number is the member slot (0-based CANDIDATE).</summary>
+/// <summary>DevPacketData_Common_PartyMemberInfo (usmap order). Number is the member slot, 1-based (OBSERVED 01..05).</summary>
 public sealed record PartyMember
 {
     public byte Number { get; init; }
@@ -180,18 +180,19 @@ public sealed record PartyMember
     public byte NetworkLatency { get; init; } = 1;
 }
 
-/// <summary>DevPacketData_Common_PartyInfo. Markers, scan and map-pin lists are always sent empty.</summary>
+/// <summary>DevPacketData_Common_PartyInfo. The focus target, markers, scan list and map pins are masked out (never sent, as in every capture).</summary>
 public sealed record PartyInfo
 {
     public long Key { get; init; }
     public long LeaderDbId { get; init; }
-    /// <summary>_limit_member (AION2 party size; 4 is our CANDIDATE default).</summary>
-    public int LimitMember { get; init; } = 4;
-    public byte Distribution { get; init; } = PartyOptions.DistributionSequence;
+    /// <summary>_limit_member (OBSERVED 5).</summary>
+    public int LimitMember { get; init; } = 5;
+    /// <summary>OBSERVED defaults (36 official PartyInfo_NT, AVION2 captures 2026-11-02..05): 02 01 00 02.</summary>
+    public byte Distribution { get; init; } = PartyOptions.DistributionRandom;
     public byte SpecialDistribution { get; init; } = PartyOptions.SpecialNormal;
-    /// <summary>EItemGrade threshold for the special distribution (2 Rare).</summary>
-    public byte SpecialDistributionGrade { get; init; } = 2;
-    public byte JoinType { get; init; } = PartyOptions.JoinFree;
+    /// <summary>EItemGrade threshold for the special distribution (OBSERVED 0).</summary>
+    public byte SpecialDistributionGrade { get; init; } = 0;
+    public byte JoinType { get; init; } = PartyOptions.JoinApproval;
     public int FocusTargetKey { get; init; }
     public int FocusPartsId { get; init; }
     public int FocusTargetType { get; init; }
@@ -266,14 +267,28 @@ public static class SocialPackets
     static void WriteInvitation(PacketWriter w, InvitationInfo i) =>
         w.I32(i.PcId).I32(i.Level).I32(i.EquipItemLevel).String(i.Nickname).ServerId(i.ServerId).I32(i.ConquerorLevel).I64(i.CombatPower).U8(i.MentoringRole);
 
+    /// <summary>
+    /// One member (OBSERVED 00 92 / 0D 92): a mask byte first (01 legion name, 02 legion emblem, 04 rebirth skills), and
+    /// the masked fields only when their bit is set. A rebirth entry is its own mask (01 cooltime) | skill | level | [cooltime].
+    /// </summary>
     static void WriteMember(PacketWriter w, PartyMember m)
     {
-        w.U8(m.Number).Key(m.Key).ServerId(m.BornServerId).ServerId(m.CurrentServerId).String(m.GameAccountId).I64(m.DbId).String(m.Nickname)
+        var mask = (m.GuildName.Length > 0 ? 1 : 0) | (m.GuildEmblemId != 0 ? 2 : 0) | (m.RebirthSkills.Count > 0 ? 4 : 0);
+        w.U8(mask).U8(m.Number).Key(m.Key).ServerId(m.BornServerId).ServerId(m.CurrentServerId).String(m.GameAccountId).I64(m.DbId).String(m.Nickname)
             .I32(m.PcId).Hp(m.Hp).Hp(m.HpMax).I32(m.Mp).I32(m.MpMax).I32(m.Ap).I32(m.ApMax).I32(m.Dp).I32(m.DpMax)
-            .I64(m.MapKey).I32(m.SubzoneId).Vec3(m.Position).Bool(m.Live).String(m.GuildName).I32(m.GuildEmblemId)
-            .I32(m.Level).I32(m.ConquerorLevel).I32(m.EquipItemLevel).Bool(m.CanTakeDropItem).Bool(m.Login)
-            .Varint(m.RebirthSkills.Count);
-        foreach (var s in m.RebirthSkills) w.I32(s.SkillId).U8(s.SkillLevel).I32(s.Cooltime);
+            .I64(m.MapKey).I32(m.SubzoneId).Vec3(m.Position).Bool(m.Live);
+        if ((mask & 1) != 0) w.String(m.GuildName);
+        if ((mask & 2) != 0) w.I32(m.GuildEmblemId);
+        w.I32(m.Level).I32(m.ConquerorLevel).I32(m.EquipItemLevel).Bool(m.CanTakeDropItem).Bool(m.Login);
+        if ((mask & 4) != 0)
+        {
+            w.Varint(m.RebirthSkills.Count);
+            foreach (var s in m.RebirthSkills)
+            {
+                w.U8(s.Cooltime != 0 ? 1 : 0).I32(s.SkillId).U8(s.SkillLevel);
+                if (s.Cooltime != 0) w.I32(s.Cooltime);
+            }
+        }
         w.I64(m.CombatPower).U8(m.NetworkLatency);
     }
 
@@ -347,13 +362,13 @@ public static class SocialPackets
     /// <summary>PartyInfo_NT (0x9200): the whole party and why it is sent (Create, Join, AddMember, ...).</summary>
     public static byte[] PartyInfo(PartyInfo p, PartyUpdateReason reason)
     {
-        var w = Op(SocialOpcodes.PartyInfoNt).I64(p.Key).I64(p.LeaderDbId).I32(p.LimitMember)
+        // OBSERVED: a mask byte (00 in every capture: no focus target, markers, scan list or map pins follow), key, leader,
+        // limit, the four rule bytes, the members, the reason.
+        var w = Op(SocialOpcodes.PartyInfoNt).U8(0).I64(p.Key).I64(p.LeaderDbId).I32(p.LimitMember)
             .U8(p.Distribution).U8(p.SpecialDistribution).U8(p.SpecialDistributionGrade).U8(p.JoinType)
-            .Key(p.FocusTargetKey).I32(p.FocusPartsId).I32(p.FocusTargetType)
-            .Varint(0).Varint(0).Varint(0)       // target markers, world markers, leader scan list
             .Varint(p.Members.Count);
         foreach (var m in p.Members) WriteMember(w, m);
-        return w.Varint(0).U8((byte)reason).ToArray();   // map pins, reason
+        return w.U8((byte)reason).ToArray();
     }
 
     /// <summary>PartyInfoUpdate_RS (0x9202).</summary>
@@ -396,13 +411,14 @@ public static class SocialPackets
     /// <summary>PartyAbnormalAdd_NT (0x920e): member key and abnormal ids.</summary>
     public static byte[] PartyAbnormalAdd(int key, IReadOnlyList<int> abnormalIds)
     {
-        var w = Op(SocialOpcodes.PartyAbnormalAddNt).Key(key).Varint(abnormalIds.Count);
+        if (abnormalIds.Count > byte.MaxValue) throw new ArgumentException("At most 255 abnormals", nameof(abnormalIds));
+        var w = Op(SocialOpcodes.PartyAbnormalAddNt).Varint((uint)key).U8(abnormalIds.Count);   // OBSERVED: entity varint, count u8
         foreach (var id in abnormalIds) w.I32(id);
         return w.ToArray();
     }
 
     /// <summary>PartyAbnormalRemove_NT (0x921a).</summary>
-    public static byte[] PartyAbnormalRemove(int key, int abnormalId) => Op(SocialOpcodes.PartyAbnormalRemoveNt).Key(key).I32(abnormalId).ToArray();
+    public static byte[] PartyAbnormalRemove(int key, int abnormalId) => Op(SocialOpcodes.PartyAbnormalRemoveNt).Varint((uint)key).I32(abnormalId).ToArray();
 
     /// <summary>PartySetLeader_RS (0x9210).</summary>
     public static byte[] PartySetLeaderReply(int result) => Op(SocialOpcodes.PartySetLeaderRs).Result(result).ToArray();
@@ -417,7 +433,7 @@ public static class SocialPackets
 
     /// <summary>PartyUpdateMemberHPMP_NT (0x921b).</summary>
     public static byte[] PartyMemberHpMp(PartyMemberPoints p) =>
-        Op(SocialOpcodes.PartyUpdateMemberHpMpNt).Key(p.Key).Hp(p.Hp).Hp(p.HpMax).I32(p.Mp).I32(p.MpMax).I32(p.Ap).I32(p.ApMax)
+        Op(SocialOpcodes.PartyUpdateMemberHpMpNt).Varint((uint)p.Key).Hp(p.Hp).Hp(p.HpMax).I32(p.Mp).I32(p.MpMax).I32(p.Ap).I32(p.ApMax)
             .I32(p.Dp).I32(p.DpMax).Bool(p.Live).ToArray();
 
     /// <summary>PartyUpdateMemberStatus_NT (0x921c): map, position, level of a member.</summary>

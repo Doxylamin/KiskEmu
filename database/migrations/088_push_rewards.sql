@@ -20,13 +20,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON game.push_rewards TO aion_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON game.character_push_rewards TO aion_app;
 GRANT USAGE, SELECT ON SEQUENCE game.push_rewards_push_reward_id_seq TO aion_app;
 
--- OBSERVED on the official server at launch: six gifts of one item each (two launch gifts for 70 days,
--- one weekly and three daily gifts for 7 days). Item ids match event_Box_Push_Reward_* rows in tools/data/boxes.json.
-INSERT INTO game.push_rewards (push_reward_id, reward_type, sender, title, body, item_template_id, item_count, expire_at) VALUES
-    (1, 1, 'AION', 'Launch Gift I', 'Welcome.', 533460001, 500, now() + interval '70 days'),
-    (2, 1, 'AION', 'Launch Gift II', 'Welcome.', 532760001, 1, now() + interval '70 days'),
-    (3, 1, 'AION', 'Weekly Gift', 'Weekly reward.', 531060026, 3, now() + interval '7 days'),
-    (4, 2, 'AION', 'Daily Gift I', 'Daily reward.', 530116006, 3, now() + interval '7 days'),
-    (5, 2, 'AION', 'Daily Gift II', 'Daily reward.', 503700031, 1, now() + interval '7 days'),
-    (6, 2, 'AION', 'Daily Gift III', 'Daily reward.', 530116001, 10, now() + interval '7 days');
-SELECT setval('game.push_rewards_push_reward_id_seq', (SELECT MAX(push_reward_id) FROM game.push_rewards));
+-- No gifts are seeded: a migration also runs on live servers, where it would hand every character items. The official
+-- launch set (OBSERVED: 533460001 x500 and 532760001 x1 for 70 days; 531060026 x3 weekly; 530116006 x3, 503700031 x1
+-- and 530116001 x10 daily, 7 days each) can be added by an operator with an INSERT into game.push_rewards.

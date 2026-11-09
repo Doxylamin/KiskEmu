@@ -7,7 +7,7 @@ namespace Aion.World;
 public sealed partial class GameSession
 {
     public const ushort GuildCreateRq = 0x8a00, GuildCreateRs = 0x8a01, GuildInfoRq = 0x8a02, GuildInfoRs = 0x8a03,
-        GuildMemberInfoRq = 0x8a04, GuildMemberInfoRs = 0x8a05, GuildSearchRq = 0x8a08, GuildSearchRs = 0x8a09,
+        GuildMemberInfoRq = 0x8a04, GuildMemberInfoRs = 0x8a05, GuildRecommendedListRq = 0x8a06, GuildRecommendedListRs = 0x8a07, GuildSearchRq = 0x8a08, GuildSearchRs = 0x8a09,
         GuildLeaveRq = 0x8a0a, GuildLeaveRs = 0x8a0b, GuildLeaveNt = 0x8a0c, GuildKickRq = 0x8a0d, GuildKickRs = 0x8a0e,
         GuildJoinRq = 0x8a0f, GuildJoinRs = 0x8a10, GuildDescUpdateNt = 0x8a33, GuildDisbandRq = 0x8a34, GuildDisbandRs = 0x8a35,
         GuildMemberConnectedNt = 0x8a39;
@@ -67,25 +67,58 @@ public sealed partial class GameSession
         var remain = g?.Members.FirstOrDefault(m => m.CharacterId == CharacterId)?.DonationsToday is { } used
             ? Math.Max(0, Legion.DonationsPerDay - used) : Legion.DonationsPerDay;
         var canAttend = g is not null;
+        // OBSERVED (200 official GuildInfo_RS, AVION2 captures 2026-11-02..05): usmap widths, the emblem a u16:
+        // count u8, max u8, level u8 (`80 80 01`: 128 of 128, level 1), exp i64, next i64 (1000), emblem u16 (01 00), strings,
+        // join rule, password, two packed bools, three u8 counts, registration time i64 (ms), agit id i32, agit end i64.
         var w = PacketWriter.Opcode(GuildInfoRs).U16(result).String(g?.Name ?? "").String(g?.Members.FirstOrDefault(m => m.Grade == 0)?.Name ?? "")
-            .U8(g?.Members.Count ?? 0).U8(maxMembers).U8(level).I64(g?.Exp ?? 0).I64(nextExp).I32(g?.Emblem ?? 0)
+            .U8(g?.Members.Count ?? 0).U8(maxMembers).U8(level)
+            .I64(g?.Exp ?? 0).I64(nextExp).U16(g?.Emblem ?? 0)
             .String(g?.Intro ?? "").String(g?.Notice ?? "").U8(g?.JoinRule ?? 0).String(g?.Password ?? "")
-            .I32(0).I32(canAttend ? 1 : 0).I32(g?.YesterdayAttendance ?? 0).I32(g?.TodayAttendance ?? 0).I32(remain).I32(g is null ? 0 : 1).I32(g?.AgitId ?? 0).I64(g?.AgitEndMs ?? 0);
+            .Bool(false).Bool(canAttend).U8(g?.YesterdayAttendance ?? 0).U8(g?.TodayAttendance ?? 0).U8(remain)
+            .I64(g?.Created.ToUnixTimeMilliseconds() ?? 0).I32(g?.AgitId ?? 0).I64(g?.AgitEndMs ?? 0);
         WriteGuildRelationLists(w, g);
         WriteAuthorityList(w, g);
         WriteWalletList(w, g);
         return w.I32(0).ToArray();
     }
 
+    /// <summary>
+    /// GuildSearch_RS / GuildRecommendedList_RS: Common_GuildInfo rows (OBSERVED, 10 official replies 2026-11-02..05: usmap
+    /// widths with the maximum a u8 and the emblem a u16, `7f 80 01 00` = 127 of 128, emblem 1).
+    /// </summary>
+    byte[] GuildList(ushort opcode, IReadOnlyList<GuildView> found)
+    {
+        var w = PacketWriter.Opcode(opcode).U16(0).Varint(found.Count);
+        foreach (var g in found)
+        {
+            var (lv, _) = GuildLevel(g);
+            w.I64(g.Id).String(g.Name).String(g.Members.FirstOrDefault(m => m.Grade == 0)?.Name ?? "").U8(lv).I64(g.Exp)
+                .U8(g.Members.Count).U8(GuildMaxMembers(g)).U16(g.Emblem).String(g.Intro)
+                .U8(g.JoinRule).Bool(false).I64(0).U8(profileRace);
+        }
+        return w.ToArray();
+    }
+
     byte[] GuildMembers(int result)
     {
-        var online = options.World;
+        var onlineWorld = options.World;
         var members = guild?.Members ?? [];
         var w = PacketWriter.Opcode(GuildMemberInfoRs).U16(result).Varint(members.Count);
         foreach (var m in members)
-            w.I64(0).I64(CharDbId(m.CharacterId)).I32(m.CreationId).String(m.Name).I32(m.Level).I32(0).U8(m.Grade).String(m.Comment)
-                .I64(0).I64(m.Reputation).I64(m.WeeklyReputation).I64(m.DonationReputation).I64(m.WeeklyDonationReputation)
-                .I32(m.CharacterId == CharacterId || online?.FindOnline(m.CharacterId) is not null ? 1 : 0).I64(0).I32(0).I32(0).I32(0).I32(0);
+        {
+            // OBSERVED (213 official GuildMemberInfo_RS, 2026-11-02..05): a presence mask, then Common_GuildMemberInfo with the
+            // default-valued optional fields left out. Bit 1 (the shared message) is observed; the other bits follow the optional
+            // fields' usmap order (CANDIDATE: conqueror level 0, fame 2, the four reputations 3-6, today's attendance 7). Logined
+            // is a bool sharing the packet's open bool byte; logout time, subzone, item level and combat power always follow.
+            long[] reputations = [0, m.Reputation, m.WeeklyReputation, m.DonationReputation, m.WeeklyDonationReputation];
+            var mask = (m.Comment.Length > 0 ? 2 : 0);
+            for (var i = 0; i < reputations.Length; i++) if (reputations[i] != 0) mask |= 4 << i;
+            var online = m.CharacterId == CharacterId || onlineWorld?.FindOnline(m.CharacterId) is not null;
+            w.U8(mask).I64(0).I64(CharDbId(m.CharacterId)).I32(m.CreationId).String(m.Name).I32(m.Level).U8(m.Grade);
+            if (m.Comment.Length > 0) w.String(m.Comment);
+            foreach (var value in reputations) if (value != 0) w.I64(value);
+            w.Bool(online).I64(0).I32(0).I32(0).I64(0);
+        }
         return w.ToArray();
     }
 
@@ -135,14 +168,15 @@ public sealed partial class GameSession
                     var name = r.String();
                     IReadOnlyList<GuildView> found = [];
                     await Stored(async () => { found = await store.SearchGuildsAsync(name, ct); return []; });
-                    var w = PacketWriter.Opcode(GuildSearchRs).U16(0).Varint(found.Count);
-                    foreach (var g in found)
-                    {
-                        var (lv, _) = GuildLevel(g);
-                        w.I64(g.Id).String(g.Name).String(g.Members.FirstOrDefault(m => m.Grade == 0)?.Name ?? "").U8(lv).I64(g.Exp)
-                            .U8(g.Members.Count).U8(GuildMaxMembers(g)).I32(g.Emblem).String(g.Intro).U8(g.JoinRule).Bool(false).I64(0).U8(profileRace);
-                    }
-                    return [w.ToArray()];
+                    return [GuildList(GuildSearchRs, found)];
+                }
+                case GuildRecommendedListRq:
+                {
+                    // OBSERVED 0x8a07 (6 official replies, 100 legions each, same rows as the search). OURS: the search's
+                    // first legions (an empty name matches every legion, highest level first).
+                    IReadOnlyList<GuildView> found = [];
+                    await Stored(async () => { found = await store.SearchGuildsAsync("", ct); return []; });
+                    return [GuildList(GuildRecommendedListRs, found)];
                 }
                 case GuildJoinRq:
                 {
@@ -188,7 +222,7 @@ public sealed partial class GameSession
                     var outcome = "none";
                     await Stored(async () => { outcome = await store.DisbandGuildAsync(character, ct); return []; });
                     if (outcome != "ok") return [PacketWriter.Opcode(GuildDisbandRs).U16(2).ToArray()];
-                    TellGuild(before, PacketWriter.Opcode(GuildLeaveNt).String(StoredName).U8(4).I64(0).ToArray());
+                    TellGuild(before, PacketWriter.Opcode(GuildLeaveNt).String(StoredName).U8(2).I64(0).ToArray());   // reason 2 after a disband (OBSERVED)
                     if (before is not null && options.World is { } world)
                         foreach (var m in before.Members.Where(m => m.CharacterId != character))
                             if (world.FindOnline(m.CharacterId) is { } online)

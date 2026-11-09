@@ -7,6 +7,12 @@ namespace Aion.Launcher;
 
 public sealed class AccountException(string message) : Exception(message);
 
+/// <summary>The password was right and the account has an authenticator: finish with <see cref="AccountClient.CompleteTotpAsync"/>.</summary>
+public sealed class TotpRequiredException(string challengeToken) : Exception("An authenticator code is required.")
+{
+    public string ChallengeToken { get; } = challengeToken;
+}
+
 /// <summary>
 /// The account site's API: sign in (optionally a 30-day session the launcher keeps), one launch
 /// authorization per game start, the launcher's own update, sign out.
@@ -63,10 +69,32 @@ public sealed class AccountClient : IDisposable
         if (response.StatusCode == HttpStatusCode.Unauthorized) throw new AccountException("Wrong username or password.");
         if (response.StatusCode == HttpStatusCode.TooManyRequests) throw new AccountException("Too many attempts. Wait a minute and try again.");
         if (!response.IsSuccessStatusCode) throw new AccountException($"The account server answered {(int)response.StatusCode}.");
+        var reply = await response.Content.ReadFromJsonAsync<LoginReply>(ct) ?? throw new AccountException("The account server sent no session.");
+        if (reply.RequiresTotp == true && reply.ChallengeToken is { Length: > 0 } challenge) throw new TotpRequiredException(challenge);
+        token = reply.Token ?? throw new AccountException("The account server sent no session.");
+        ExpiresAt = reply.ExpiresAt;
+    }
+
+    /// <summary>The second sign-in step when the account has an authenticator: the 6-digit code or a recovery code.</summary>
+    public async Task CompleteTotpAsync(string challengeToken, string code, CancellationToken ct = default)
+    {
+        code = code.Trim();
+        var isCode = code.Length == 6 && code.All(char.IsAsciiDigit);
+        using var response = await Send(HttpMethod.Post, "/api/accounts/login/totp",
+            new { challengeToken, code = isCode ? code : null, recoveryCode = isCode ? null : code.ToUpperInvariant() }, ct);
+        if (response.StatusCode == HttpStatusCode.Unauthorized) throw new AccountException("Wrong code, or the sign-in timed out. Sign in again.");
+        if (response.StatusCode == HttpStatusCode.TooManyRequests) throw new AccountException("Too many attempts. Wait a minute and try again.");
+        if (!response.IsSuccessStatusCode) throw new AccountException($"The account server answered {(int)response.StatusCode}.");
         var session = await response.Content.ReadFromJsonAsync<Session>(ct) ?? throw new AccountException("The account server sent no session.");
         token = session.Token;
         ExpiresAt = session.ExpiresAt;
     }
+
+    sealed record LoginReply(
+        [property: JsonPropertyName("token")] string? Token,
+        [property: JsonPropertyName("expiresAt")] DateTimeOffset? ExpiresAt,
+        [property: JsonPropertyName("requiresTotp")] bool? RequiresTotp,
+        [property: JsonPropertyName("challengeToken")] string? ChallengeToken);
 
     /// <summary>Continues a kept session. False when the server no longer accepts it (it ended or was signed out elsewhere).</summary>
     public async Task<bool> ResumeAsync(string savedToken, CancellationToken ct = default)

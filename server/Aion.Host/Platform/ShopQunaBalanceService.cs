@@ -10,15 +10,13 @@ namespace Aion.Host.Platform;
 /// <summary>Account-wide GameCash (Quna) for platform GET virtual_currency/v2.0/me/balances and in-world refresh parity.</summary>
 public sealed class ShopQunaBalanceService(
     WorldPresence presence,
-    IPlatformSecondaryAuth? platformAuth,
-    IAccountQunaBalance? accountQuna)
+    IPlatformSecondaryAuth? platformAuth = null,
+    IAccountQunaBalance? accountQuna = null)
 {
     public async Task<long> BalanceAsync(IPAddress? clientAddress, string? platformSessionToken, string? wireAccountId, CancellationToken ct)
     {
         if (await ResolveAccountIdAsync(clientAddress, platformSessionToken, wireAccountId, ct) is not { } accountId)
             return 0;
-        if (platformAuth is not null)
-            await platformAuth.RememberClientAsync(clientAddress, accountId, ct);
         if (accountQuna is not null)
             return await accountQuna.SumAsync(accountId, ct);
         return OnlineSessionQuna(accountId);
@@ -33,13 +31,12 @@ public sealed class ShopQunaBalanceService(
 
     async Task<Guid?> ResolveAccountIdAsync(IPAddress? clientAddress, string? platformSessionToken, string? wireAccountId, CancellationToken ct)
     {
+        // Only an authenticated platform client (its session or the address its launch was bound to) names the account.
+        // The game_account_id query is unauthenticated and sequential: trusting it let anyone read any account's balance
+        // and bind their own address to that account for the platform OTP routes. It is used only when no platform auth
+        // is configured (local development), and then only for an account that is online right now.
         if (platformAuth is not null)
-        {
-            if (await platformAuth.ResolveAccountAsync(clientAddress, platformSessionToken, ct) is { } fromAuth)
-                return fromAuth;
-            if (wireAccountId is not null && await platformAuth.ResolveAccountByWireIdAsync(wireAccountId, ct) is { } fromWire)
-                return fromWire;
-        }
+            return await platformAuth.ResolveAccountAsync(clientAddress, platformSessionToken, ct);
         if (wireAccountId is not null && SessionByWireAccount(wireAccountId)?.Store?.AccountId is { } fromOnline)
             return fromOnline;
         return null;

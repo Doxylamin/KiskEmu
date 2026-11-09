@@ -47,8 +47,10 @@ public sealed partial class GameSession
 
     static List<int> ReadAffixList(PacketReader reader)
     {
-        var count = checked((int)reader.Varint());
-        var list = new List<int>(count);
+        // The count is the client's: bound it before allocating (a count near 2^31 asked for an ~8 GB list).
+        var count = reader.Varint();
+        if (count > 32) throw new ProtocolException($"affix list of {count}");
+        var list = new List<int>((int)count);
         for (var i = 0; i < count; i++) list.Add(reader.I32());
         return list;
     }
@@ -479,7 +481,7 @@ public sealed partial class GameSession
         var info = SocialPackets.PartyInfo(new PartyInfo
         {
             Key = party.Key, LeaderDbId = party.Leader.Session.DbId, LimitMember = Party.Limit, JoinType = party.JoinType,
-            Members = party.Members.Select((m, i) => m.Session.MemberInfo((byte)i)).ToList(),
+            Members = party.Members.Select((m, i) => m.Session.MemberInfo((byte)(i + 1))).ToList(),
         }, PartyUpdateReason.Create);
         foreach (var member in party.Members) member.Send(info);
     }

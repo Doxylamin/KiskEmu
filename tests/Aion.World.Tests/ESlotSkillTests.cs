@@ -70,7 +70,7 @@ public sealed class ESlotSkillTests
         Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x3801 && GameSession.CastResultCode(p) == 0);
 
         var up = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(skill).ToArray(), Now + 20_000);
-        Assert.Equal(0, BitConverter.ToUInt16(up[0], 2));
+        Assert.Equal(0, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(up), 2));
         Assert.Equal(2, session.SkillLevel(skill));
     }
 
@@ -153,14 +153,14 @@ public sealed class ESlotSkillTests
         Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x3801 && GameSession.CastResultCode(p) == 0);
 
         var up = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(skill).ToArray(), Now + 20_000);
-        Assert.Equal(0, BitConverter.ToUInt16(up[0], 2));
+        Assert.Equal(0, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(up), 2));
         Assert.Equal(2, session.SkillLevel(skill));
     }
 
     [Theory]
     [InlineData("Assassin", 13_340_000, new[] { 13_340_000, 13_350_000, 13_100_000, 13_130_000 })]
     [InlineData("Gladiator", 11_280_000, new[] { 11_280_000, 11_390_000, 11_170_000, 11_010_000 })]
-    [InlineData("Ranger", 14_330_000, new[] { 14_330_000, 14_110_000, 14_090_000, 14_130_000 })]
+    [InlineData("Ranger", 14_330_000, new[] { 14_330_000, 14_070_000, 14_090_000, 0 })]   // PCContextSkillSlot export (Suppressing Arrow)
     [InlineData("Templar", 12_340_000, new[] { 12_340_000, 12_010_000, 12_100_000, 0 })]
     [InlineData("Elementalist", 16_340_000, new[] { 16_340_000, 16_140_000, 16_040_000, 0 })]
     [InlineData("Sorcerer", 15_010_000, new[] { 15_010_000, 15_090_000, 15_040_000, 0 })]

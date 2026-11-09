@@ -159,15 +159,31 @@ export function AdminApp() {
 function SignIn({ message, onSignedIn, onMessage }:
   { message: StatusMessage | null; onSignedIn: (s: Session, remember: boolean) => void; onMessage: (m: StatusMessage) => void }) {
   const [busy, setBusy] = useState(false);
+  // Accounts with an authenticator answer the password with a challenge; the code finishes the sign-in.
+  const [challenge, setChallenge] = useState<{ token: string; username: string; remember: boolean } | null>(null);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    const username = String(data.get('username'));
-    const remember = data.get('remember') === 'on';
+    const username = challenge?.username ?? String(data.get('username'));
+    const remember = challenge?.remember ?? data.get('remember') === 'on';
     setBusy(true);
     try {
-      const { token } = await api<{ token: string }>('/api/accounts/login', { method: 'POST', body: { username, password: data.get('password'), remember } });
+      let token: string;
+      if (challenge) {
+        const code = String(data.get('code') ?? '').trim();
+        const isCode = /^[0-9]{6}$/.test(code);
+        ({ token } = await api<{ token: string }>('/api/accounts/login/totp', {
+          method: 'POST', body: { challengeToken: challenge.token, code: isCode ? code : null, recoveryCode: isCode ? null : code.toUpperCase() },
+        }));
+        setChallenge(null);
+      } else {
+        const reply = await api<{ token?: string; requiresTotp?: boolean; challengeToken?: string }>('/api/accounts/login',
+          { method: 'POST', body: { username, password: data.get('password'), remember } });
+        if (reply.requiresTotp && reply.challengeToken) { setChallenge({ token: reply.challengeToken, username, remember }); return; }
+        if (!reply.token) throw new Error('The server sent no session.');
+        token = reply.token;
+      }
       try {
         const profile = await api<StaffProfile>('/api/admin/me', { token });
         onSignedIn({ token, username, profile }, remember);
@@ -176,6 +192,7 @@ function SignIn({ message, onSignedIn, onMessage }:
         onMessage({ text: error instanceof ApiError && error.code === 'forbidden' ? ERRORS.forbidden : describe(error), kind: 'error' });
       }
     } catch (error) {
+      if (challenge) setChallenge(null);
       onMessage({ text: error instanceof ApiError && error.status === 401 ? 'Sign-in failed. Check your details.' : describe(error), kind: 'error' });
     } finally {
       setBusy(false);
@@ -193,19 +210,28 @@ function SignIn({ message, onSignedIn, onMessage }:
           <h2>Staff sign-in</h2>
           <p className="muted">Use an account with the GameMaster or Admin role.</p>
         </div>
-        <div className="field">
-          <label htmlFor="username">Username</label>
-          <input id="username" name="username" className="input" autoComplete="username" required maxLength={32} />
-        </div>
-        <div className="field">
-          <label htmlFor="password">Password</label>
-          <input id="password" name="password" type="password" className="input" autoComplete="current-password" required maxLength={256} />
-        </div>
-        <label className="check">
-          <input type="checkbox" name="remember" defaultChecked />
-          <span>Keep me signed in on this computer (30 days)</span>
-        </label>
-        <Button type="submit" variant="primary" block busy={busy}>Sign in</Button>
+        {challenge ? (
+          <div className="field">
+            <label htmlFor="code">Authenticator code or recovery code</label>
+            <input id="code" name="code" className="input" autoComplete="one-time-code" required maxLength={32} autoFocus />
+          </div>
+        ) : (
+          <>
+            <div className="field">
+              <label htmlFor="username">Username</label>
+              <input id="username" name="username" className="input" autoComplete="username" required maxLength={32} />
+            </div>
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <input id="password" name="password" type="password" className="input" autoComplete="current-password" required maxLength={256} />
+            </div>
+            <label className="check">
+              <input type="checkbox" name="remember" defaultChecked />
+              <span>Keep me signed in on this computer (30 days)</span>
+            </label>
+          </>
+        )}
+        <Button type="submit" variant="primary" block busy={busy}>{challenge ? 'Verify' : 'Sign in'}</Button>
         <Status message={message} />
       </form>
     </main>

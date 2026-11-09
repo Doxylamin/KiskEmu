@@ -74,6 +74,13 @@ class DotnetPlatformHostTests(unittest.TestCase):
                 time.sleep(0.2)
         self.fail('host did not open the platform port')
 
+    def assertSession(self, body):
+        # The fixture's six fields, then the official external_account (Steam goods account) and roles (capture 2026-10-30).
+        reply = json.loads(body)
+        self.assertEqual({k: reply[k] for k in self.session}, self.session)
+        self.assertEqual(reply['external_account']['auth_provider_code'], 'steam')
+        self.assertEqual(reply['roles'], [])
+
     def stop(self):
         self.process.terminate()
         self.process.wait(timeout=10)
@@ -100,7 +107,7 @@ class DotnetPlatformHostTests(unittest.TestCase):
         self.assertEqual(self.policy(prefix + '/MobileAppConfigSdk/app/policy')['api_gate'],
                          f'http://127.0.0.1:{self.port}{prefix}/local-api-gate')
         self.assertEqual(self.policy()['api_gate'], f'http://127.0.0.1:{self.port}/local-api-gate')
-        self.assertEqual(self.request('GET', prefix + '/local-api-gate/sessions/v1.0/local-abc')[1], json.dumps(self.session).encode())
+        self.assertSession(self.request('GET', prefix + '/local-api-gate/sessions/v1.0/local-abc')[1])
         self.assertEqual(self.request('GET', prefix + '/local-api-gate/sessions/v1.0/')[0], 200)
         self.assertEqual(self.request('POST', prefix + '/local-api-gate/sessions/v1.0/authn_token')[0], 401)
         self.assertEqual(self.request('GET', '/c/' + 'ab' * 31 + '/MobileAppConfigSdk/app/key')[0], 503)
@@ -120,10 +127,12 @@ class DotnetPlatformHostTests(unittest.TestCase):
         self.assertEqual(self.request('POST', '/MobileAppConfigSdk/app/policy/maintenance')[0], 200)
         self.assertEqual(self.request('POST', '/local-api-gate/sessions/v1.0/authn_token')[1],
                          json.dumps({'authn_token': 'local-dev-token'}).encode())
-        self.assertEqual(self.request('GET', '/local-api-gate/sessions/v1.0/local-abc')[1], json.dumps(self.session).encode())
+        self.assertSession(self.request('GET', '/local-api-gate/sessions/v1.0/local-abc')[1])
         self.assertEqual(self.request('GET', '/local-api-gate/sessions/v1.0/0b4f6a3c-1d2e-4f50-8a9b-0c1d2e3f4a5b')[0], 200)
         # A fresh saved folder has no stored session ID (the launcher's Saved_A2CorePrivate).
-        self.assertEqual(self.request('GET', '/local-api-gate/sessions/v1.0/'), (200, json.dumps(self.session).encode()))
+        status, body = self.request('GET', '/local-api-gate/sessions/v1.0/')
+        self.assertEqual(status, 200)
+        self.assertSession(body)
         self.assertEqual(self.request('GET', '/local-api-gate/sessions/v1.0/not-a-session')[0], 503)
         self.assertEqual(self.request('GET', '/local-api-gate/geolocations/v1.0/me'), (200, b'{"geolocation":"NO"}'))
         # Not configured (no secondary-auth fixtures) or unknown: 503, and no static files here.

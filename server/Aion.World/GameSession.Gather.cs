@@ -13,6 +13,12 @@ namespace Aion.World;
 // (MyGatherSkillList_NT, points) is not modelled: the points stay 0.
 public sealed partial class GameSession
 {
+    /// <summary>0x8d33 result (OBSERVED): 0 gathered, 1 gathered a better grade, 2 failed.</summary>
+    const int GatherFailed = 2;
+
+    // OBSERVED (83 official GatherSourceCompleted_NT): u8 result, then a constant 0x3a byte, then the varint target key
+    // and five i32 reward fields. The meaning of 0x3a is unknown; mirror it.
+    static PacketWriter GatherCompleted(int result, long key) => PacketWriter.Opcode(GatherCompletedNt).U8((byte)result).U8(0x3a).Varint(key);
     public const ushort GatherStartRq = 0x8d30, GatherStartRs = 0x8d31, GatherStopRq = 0x8d32, GatherCompletedNt = 0x8d33, GatherExpUpdateNt = 0x8d35,
         GatherLevelUpdateNt = 0x8d36;
     public const long GatherRespawnMs = 60_000;
@@ -135,7 +141,7 @@ public sealed partial class GameSession
     /// 0x8d30 GatherSourceStart_RQ {target key}: the attempt's turns are rolled at once and sent in 0x8d31 (GatherTurnResult
     /// {EGatherTurnResult, no extra discovery, no skill effects, success gauge before/after, fail gauge before/after}; an
     /// empty turn list left the result panel waiting). A won attempt starts the node's timed interaction (completion as for
-    /// 0x3636: the material, 0x8d33, the node used up); a lost one costs one of the node's attempts (0x8d33 result 1, the node
+    /// 0x3636: the material, 0x8d33, the node used up); a lost one costs one of the node's attempts (0x8d33 result 2, the node
     /// available again) and the last loss uses the node up.
     /// </summary>
     async Task<List<byte[]>> GatherStartAsync(byte[] plain, long now, CancellationToken ct)
@@ -146,14 +152,15 @@ public sealed partial class GameSession
         var index = (int)key - WorldObjects.FirstKey;
         byte[] Reply(int result, int attempts, bool won, IReadOnlyList<GatherTurn> turns)
         {
-            var masteryGradeQuest = TryElevateGatherCollect(out _, out var stepId) ? stepId : 0;
+            // OBSERVED (88 official GatherSourceStart_RS): _mastery_grade_quest is one bool sharing the open bool byte.
+            var masteryGradeQuest = TryElevateGatherCollect(out _, out _);
             var w = PacketWriter.Opcode(GatherStartRs).U16(result).Varint(key).I32(attempts).Bool(won).Bool(false).Varint(0)
                 .Bool(false).Varint(0).I32(1).Varint(turns.Count);
             foreach (var t in turns) w.U8(t.Result).Bool(false).Varint(0).I32(t.SuccessBefore).I32(t.SuccessAfter).I32(t.FailBefore).I32(t.FailAfter);
-            return w.I32(masteryGradeQuest).Bool(false).ToArray();
+            return w.Bool(masteryGradeQuest).ToArray();
         }
         byte[] GatherCompletedFail(long[] gatherNode) =>
-            PacketWriter.Opcode(GatherCompletedNt).U16(1).Varint(key).I32((int)gatherNode[0]).I32(0).I32(0).I32(0).I32(0).ToArray();
+            GatherCompleted(GatherFailed, key).I32((int)gatherNode[0]).I32(0).I32(0).I32(0).I32(0).ToArray();
 
         List<byte[]> GatherStartAborted(long[] gatherNode)
         {
@@ -171,7 +178,10 @@ public sealed partial class GameSession
         if (GatherRefused(now, take: false)) return GatherStartAborted(node);
         // The node's GatherSource MasteryLevel (the fifth gather value) gates it.
         var target = node.Length >= 6 && node[5] > 0 ? (int)node[5] : GatherBasicGain;
-        var attempts = gatherAttempts.TryGetValue(index, out var left) ? left : node.Length >= 7 && node[6] > 0 ? (int)node[6] : 3;
+        var total = node.Length >= 7 && node[6] > 0 ? (int)node[6] : 3;
+        var attempts = gatherAttempts.TryGetValue(index, out var left) ? left : total;
+        // 0x8d31's u32 counts the gathers on this node so far, this one included (OBSERVED), not the attempts left.
+        var gatherNumber = total - attempts + 1;
         var turns = GatherTurns(target, node.Length >= 5 ? (int)node[4] : 1);
         var won = turns.Count > 0 && turns[^1].SuccessAfter >= 100;
         if (won)
@@ -179,10 +189,10 @@ public sealed partial class GameSession
             var replies = await UseObjectAsync(new PacketWriter().U16(0x3636).Varint(key).ToArray(), now, ct);
             var refused = replies.Any(b => b[0] == 0x37 && b[1] == 0x36 && b.Length > 2 && b[2] != 0);
             if (!refused) gatherAttempts.Remove(index);
-            return [Reply(refused ? 1 : 0, attempts, !refused, turns), .. replies];
+            return [Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies];
         }
         attempts--;
-        var lost = new List<byte[]> { Reply(0, attempts, false, turns), PacketWriter.Opcode(GatherCompletedNt).U16(1).Varint(key).I32((int)node[0]).I32(0).I32(0).I32(0).I32(0).ToArray() };
+        var lost = new List<byte[]> { Reply(0, gatherNumber, false, turns), GatherCompleted(GatherFailed, key).I32((int)node[0]).I32(0).I32(0).I32(0).I32(0).ToArray() };
         if (attempts <= 0)
         {
             gatherAttempts.Remove(index);
@@ -212,7 +222,7 @@ public sealed partial class GameSession
         var g = node.Gather!;
         int key = WorldObjects.FirstKey + index, item = (int)g[0], count = (int)g[1];
         if (GatherRefused(now, take: true))
-            return [PacketWriter.Opcode(GatherCompletedNt).U16(1).Varint(key).I32(item).I32(0).I32(0).I32(0).I32(0).ToArray()];
+            return [GatherCompleted(GatherFailed, key).I32(item).I32(0).I32(0).I32(0).I32(0).ToArray()];
         var bonus = g.Length >= 4 && g[2] > 0 && GatherBonusRoll() == 0 ? ((int)g[2], (int)g[3]) : (0, 0);
         var rewards = new List<(int, long)> { (item, count) };
         if (bonus.Item1 > 0) rewards.Add((bonus.Item1, bonus.Item2));
@@ -223,10 +233,10 @@ public sealed partial class GameSession
         {
             var granted = await Stored(async () => await store.GrantLootAsync(character, rewards, ct) ? [[]] : []);
             if (granted.Count == 0)
-                return [PacketWriter.Opcode(GatherCompletedNt).U16(1).Varint(key).I32(item).I32(0).I32(0).I32(0).I32(0).ToArray()];
+                return [GatherCompleted(GatherFailed, key).I32(item).I32(0).I32(0).I32(0).I32(0).ToArray()];
             replies.AddRange(await InventoryChangesAsync(ct, IncreaseGatherSource, 0));
         }
-        replies.Insert(0, PacketWriter.Opcode(GatherCompletedNt).U16(0).Varint(key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
+        replies.Insert(0, GatherCompleted(0, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
         gathered[index] = now + GatherRespawnMs;
         gatherAttempts.Remove(index);
         if (shownObjects.Remove(index)) replies.Add(GamePackets.EnvObjDespawn(key));

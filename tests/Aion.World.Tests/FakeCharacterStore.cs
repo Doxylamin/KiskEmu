@@ -121,6 +121,15 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
+    public Task<CharacterState> SaveInstanceReturnAsync(CharacterState state, int? mapId, Vector3d? position, CancellationToken ct)
+    {
+        var idx = States.FindIndex(s => s.Summary.CharacterId == state.Summary.CharacterId);
+        var basis = idx >= 0 ? States[idx].Progress : state.Progress;
+        var updated = state with { Progress = StoredCharacters.WithInstanceReturn(basis, mapId, position), Revision = state.Revision + 1 };
+        if (idx >= 0) States[idx] = updated;
+        return Task.FromResult(updated);
+    }
+
     public Task<CharacterState> SavePositionAsync(CharacterState state, int mapId, Vector3d position, CancellationToken ct)
     {
         var idx = States.FindIndex(s => s.Summary.CharacterId == state.Summary.CharacterId);
@@ -567,7 +576,7 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
-    public Task<bool> TakeAchievementRewardAsync(Guid character, int achievementId, int step, IReadOnlyList<(int TemplateId, long Count)> items, CancellationToken ct)
+    public Task<bool> TakeAchievementRewardAsync(Guid character, int achievementId, int step, int progressCount, IReadOnlyList<(int TemplateId, long Count)> items, CancellationToken ct)
     {
         var index = Achievements.FindIndex(a => a.Id == achievementId);
         if (index >= 0 && Achievements[index].RewardedStep >= step) return Task.FromResult(false);

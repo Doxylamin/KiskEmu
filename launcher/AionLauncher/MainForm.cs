@@ -319,16 +319,50 @@ sealed class MainForm : Form
         signIn.Click += async (_, _) =>
         {
             if (username.Text.Trim().Length == 0 || password.Text.Length == 0) { SetStatus("Enter your username and password.", error: true); return; }
+            string? challenge = null;
             var ok = await RunAsync(async ct =>
             {
                 SetStatus("Signing in…");
-                await workflow.Account.SignInAsync(username.Text.Trim(), password.Text, keep.Checked, ct);
-                workflow.Settings.Username = username.Text.Trim();
-                workflow.Settings.KeepSignedIn = keep.Checked;
-                workflow.Settings.SetSession(keep.Checked ? workflow.Account.Token : null, workflow.Account.ExpiresAt);
-                workflow.Settings.Save();
+                try { await workflow.Account.SignInAsync(username.Text.Trim(), password.Text, keep.Checked, ct); }
+                catch (TotpRequiredException required) { challenge = required.ChallengeToken; return; }
+                SignedIn(username.Text.Trim(), keep.Checked);
             }, username, password, keep, signIn);
             password.Clear();
+            if (ok && challenge is not null) { ShowTotp(challenge, username.Text.Trim(), keep.Checked); return; }
+            if (ok) { SetStatus(""); await AfterSignInAsync(); }
+        };
+    }
+
+    void SignedIn(string username, bool keep)
+    {
+        workflow.Settings.Username = username;
+        workflow.Settings.KeepSignedIn = keep;
+        workflow.Settings.SetSession(keep ? workflow.Account.Token : null, workflow.Account.ExpiresAt);
+        workflow.Settings.Save();
+    }
+
+    /// <summary>The second sign-in step for accounts with an authenticator app (set up on the account page).</summary>
+    void ShowTotp(string challenge, string username, bool keep)
+    {
+        Page(SignInStep, "Authenticator code", "Enter the 6-digit code from your authenticator app, or one of your recovery codes.");
+        AddLabel("Code");
+        var code = AddInput();
+        var verify = AddButton("Verify", primary: true, null, wide: true);
+        AddLink("Back to sign in", () => ShowSignIn());
+        AcceptButton = verify;
+        ActiveControl = code;
+        verify.Click += async (_, _) =>
+        {
+            if (code.Text.Trim().Length == 0) { SetStatus("Enter the code.", error: true); return; }
+            var failed = (string?)null;
+            var ok = await RunAsync(async ct =>
+            {
+                SetStatus("Checking the code…");
+                try { await workflow.Account.CompleteTotpAsync(challenge, code.Text, ct); }
+                catch (AccountException error) { failed = error.Message; return; }
+                SignedIn(username, keep);
+            }, code, verify);
+            if (failed is not null) { ShowSignIn(failed); return; }
             if (ok) { SetStatus(""); await AfterSignInAsync(); }
         };
     }
@@ -580,8 +614,11 @@ sealed class MainForm : Form
         versionBox.SelectedIndexChanged += (_, _) =>
         {
             workflow.Version = versions[versionBox.SelectedIndex];
-            try { ClientVersions.SaveSelection(Path.Combine(AppContext.BaseDirectory, "launcher.json"), workflow.Config, workflow.Version.Id); }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { SetStatus("The choice was not saved: " + error.Message, true); }
+            // Saved with the player's settings: a launcher.json written next to the exe would override the embedded
+            // server config, so later self-updates could no longer move accountUrl, serverAddress or the pin.
+            workflow.Settings.SelectedClientVersion = workflow.Version.Id;
+            try { workflow.Settings.Save(); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { SetStatus("The choice was not saved: " + error.Message, true); }
             DescribeVersion();
         };
         var patchPaks = AddCheck("Apply client patch paks (z_A2Core_Patch-Windows_P) before launch", workflow.Settings.AllowClientPatchPaks);

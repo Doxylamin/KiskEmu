@@ -22,7 +22,7 @@ public sealed class SkillLevelUpProtocolTests
             GameSessionTestHelpers.SkillMasteryCoreOpcodes(up));
         Assert.Equal(GamePackets.CharCombatPowerUpdate(cpBefore + 1, cpBefore + 1), up[0]);
         Assert.Equal(Convert.FromHexString("4038" + "0000" + "D0FFA700"), up[1]);
-        Assert.Equal(Convert.FromHexString("1338" + "01" + "D0FFA700" + "01" + "D0FFA700" + "0201" + "0000000000" + "03"), up[2]);
+        Assert.Equal(Convert.FromHexString("1338" + "01" + "D0FFA700" + "01" + "D0FFA700" + "0202" + "0000000000" + "03"), up[2]);
         Assert.Equal(GamePackets.SkillPointUpdate(15), up[3]);
         Assert.Equal(0, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(up), 2));
         Assert.Equal(2, session.SkillLevel(RendingBlow));
@@ -35,8 +35,10 @@ public sealed class SkillLevelUpProtocolTests
         var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now, level: 10);
         await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(RendingBlow).ToArray(), Now);
         var down = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelDownRq).I32(RendingBlow).ToArray(), Now);
-        Assert.Equal([0x3656, GameSession.SkillLevelDownRs, GameSession.SkillLevelUpdateNt, GameSession.SkillPointUpdateNt],
+        // A level down resyncs the list (0x5100) before the points; 0x5105 stays last (live client 2026-10-31).
+        Assert.Equal([0x3656, GameSession.SkillLevelDownRs, GameSession.SkillLevelUpdateNt, 0x5100],
             GameSessionTestHelpers.SkillMasteryCoreOpcodes(down));
+        Assert.Equal(GameSession.SkillPointUpdateNt, GameSessionTestHelpers.Op(down[^1]));
         Assert.Equal(4, down[2][^1]);
     }
 
@@ -46,9 +48,10 @@ public sealed class SkillLevelUpProtocolTests
         var store = new FakeCharacterStore { Progress = (4, 0) };
         var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now, level: 4);
         var refused = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(99999999).ToArray(), Now);
-        Assert.Equal(2, refused.Count);
+        // A refusal resyncs the list (0x5100), then 0x5105 last (live client 2026-10-31).
         Assert.Equal(GameSession.SkillLevelUpRs, GameSessionTestHelpers.Op(refused[0]));
-        Assert.Equal(GameSession.SkillPointUpdateNt, GameSessionTestHelpers.Op(refused[1]));
+        Assert.Equal(0x5100, GameSessionTestHelpers.Op(refused[1]));
+        Assert.Equal(GameSession.SkillPointUpdateNt, GameSessionTestHelpers.Op(refused[^1]));
         Assert.DoesNotContain(refused, p => GameSessionTestHelpers.Op(p) == 0x3656);
     }
 
@@ -58,7 +61,7 @@ public sealed class SkillLevelUpProtocolTests
         var store = new FakeCharacterStore();
         var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
         var reply = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).ToArray(), Now);
-        Assert.Equal(2, reply.Count);
         Assert.Equal(1, BitConverter.ToUInt16(reply[0], 2));
+        Assert.Equal(GameSession.SkillPointUpdateNt, GameSessionTestHelpers.Op(reply[^1]));   // after the 0x5100 resync
     }
 }

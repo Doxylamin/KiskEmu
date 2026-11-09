@@ -64,7 +64,7 @@ static partial class MapEventScenarioHelpers
             var weapons = (sk.Weapons ?? []).Where(w => w != "None").ToList();
             return weapons.Count == 0 || weaponType is not null && weapons.Contains(weaponType);
         }
-        var kit = GameData.Embedded.LearnedSkills(profile.Class, session.Level);
+        var kit = GameData.Embedded.LearnedSkills(profile.Class, session.Level).Where(s => s.SkillId >= 10_000_000).ToList();
         if (kit.FirstOrDefault(s => Fits(s, requireCooldown: true)) is { SkillId: var preferred }) return preferred;
         return kit.First(s => Fits(s, requireCooldown: false)).SkillId;
     }

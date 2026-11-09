@@ -111,7 +111,8 @@ public sealed class SpiritConditionSkillTests
         var spirit = Assert.Single(session.Targets!.Values, t => t.OwnerKey == session.PlayerKey);
         Assert.Contains(icon, p => GameSessionTestHelpers.Op(p) == 0xe239 && p[2] == GamePackets.ElementalSummonWireMask && p[3] == group
             && new PacketReader(p) { Offset = 4 }.Varint() == (uint)spirit.Key);
-        Assert.Contains(icon, p => GameSessionTestHelpers.Op(p) == 0x382a && session.ActiveBuffs.Contains(GameSession.SpiritSummonStateAbnormal));
+        // The spirit-out state abnormal is per element: base + EElementalSummonGroupType (Fire 1 .. Earth 4).
+        Assert.Contains(icon, p => GameSessionTestHelpers.Op(p) == 0x382a && session.ActiveBuffs.Contains(GameSession.SpiritSummonStateAbnormalBase + group));
 
         var joint = await session.HandleAsync(Cast(Jointstrike, dummy.Key), Now + 61_000);
         Assert.True(Accepted(joint), "Jointstrike is accepted while the spirit is out");

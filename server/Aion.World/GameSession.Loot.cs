@@ -16,13 +16,10 @@ public sealed partial class GameSession
     readonly Dictionary<long, GroundDrop> drops = [];
     int dropCounter;
     /// <summary>
-    /// Drop actor keys: one server-wide sequence in their own block. Drops are shown to the whole map, and trigger actors
-    /// (WorldObjects.FirstTriggerKey, up to 93 per map) and the boss challenge use 950,000+, so a per-session counter from
-    /// 950,000 gave two players' drops, or a drop and a live trigger actor, the same key on one client.
+    /// A drop's first field is its source, the entity it dropped from (u32, OBSERVED: one chest's nine drops share it, 1,498
+    /// drops), not a key of its own; drops are told apart by their uid. GroundDrop.Key holds that source.
     /// </summary>
-    public const int DropLifetimeMs = 60_000, FirstDropKey = 960_000, DropKeys = 30_000;
-    static int dropKeySequence;
-    static int NextDropKey() => FirstDropKey + (int)((uint)Interlocked.Increment(ref dropKeySequence) % DropKeys);
+    public const int DropLifetimeMs = 60_000;
     /// <summary>A drop is picked up within this distance (cm), with room for latency.</summary>
     public const double LootRange = 1500;
     const byte IncreaseDropItemGet = 5;   // EIncreaseReason kDropItemGet

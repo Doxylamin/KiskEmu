@@ -655,11 +655,11 @@ public static class PlayerPackets
     }
 
     /// <summary>
-    /// CharMoveStart/Update/StopReject_RS (0x373e/0x373f/0x3740): key | move state (0 stop) | substate |
-    /// position | reason i32. Usmap layout; key as a varint like the movement NTs; reason 1 CANDIDATE.
+    /// CharMoveStart/Update/StopReject_RS (0x373e/0x373f/0x3740): key i32 | position | reason u16 (OBSERVED, 27 official
+    /// rejects 2026-11-02..05, 20 bytes each, reason 1). The usmap's move state and substate are not on the wire.
     /// </summary>
     public static byte[] MoveReject(ushort opcode, int key, Vector3d position, int reason = 1) =>
-        PacketWriter.Opcode(opcode).Varint(key).U8(0).U8(0).Vec3(position).I32(reason).ToArray();
+        PacketWriter.Opcode(opcode).I32(key).Vec3(position).U16(reason).ToArray();
 
     /// <summary>EAbnormalMoveType (usmap): how an abnormal moves its owner.</summary>
     public const byte MovePush = 0, MoveKnockback = 1, MovePull = 2, MoveKnockbackInstant = 3, MoveKnockdownInstant = 4;

@@ -304,7 +304,9 @@ partial class GameSession
         killedLevels.Add(target.Level);
         replies.AddRange(DropLoot(target, now));
         replies.Add(GamePackets.TargetUpdate(target.Key));
-        replies.Add(GamePackets.Kill(target.Key, skillId, killerKey, ServerId, StoredName));
+        // OBSERVED: a player killer's legion name and emblem u16 follow its name (e.g. "WHITEOUT", emblem 1).
+        replies.Add(GamePackets.Kill(target.Key, skillId, killerKey, ServerId, StoredName, reason: (byte)(skillId == 0 ? 3 : 1),
+            killerGuild: guild?.Name ?? "", killerEmblem: guild?.Emblem ?? 0));
         replies.AddRange(ai.Killed(target));
         // The map event last: its kill step can move the player to another map (the lake cave boss -> Ascension Subspace).
         // Live 2026-10-30: the 0x8d04 for key 2000 went out after 0x3621 PrepareEnterMap, the client applied the death to

@@ -44,30 +44,13 @@ public sealed partial class GameSession
         }
     }
 
-    void RecomputeDaevanionUsedFromNodes()
-    {
-        daevanionUsed.Clear();
-        foreach (var id in daevanionNodes)
-        {
-            if (Daevanion.NodeOf(id) is not { Cost: > 0 } node) continue;
-            if (Daevanion.BoardOf(node.BoardId) is not { } board) continue;
-            daevanionUsed[board.PointType] = daevanionUsed.GetValueOrDefault(board.PointType) + node.Cost;
-        }
-    }
-
     void EnsureStartNodes()
     {
         if (character is null) return;
         var slot = Daevanion.ClassSlot(character.CreationId);
         if (slot == 0) return;
-        // Drop nodes from other class boards (legacy saves e.g. 610113 on a Ranger slot 3 / board 31).
-        foreach (var id in daevanionNodes.ToList())
-        {
-            if (Daevanion.NodeOf(id) is not { } node) continue;
-            if (Daevanion.BoardOf(node.BoardId) is not { } board || board.Slot == slot) continue;
-            daevanionNodes.Remove(id);
-        }
-        RecomputeDaevanionUsedFromNodes();
+        // Nodes saved on another class's board (the class-slot map was rebuilt in 2026-11) are kept, not dropped: dropping
+        // them on login rewrote saved boards of whole classes. A board reset (0xe22c) still clears them with a refund.
         foreach (var boardId in Daevanion.BoardsForCreation(character.CreationId))
         {
             if (level < (Daevanion.BoardOf(boardId)?.NeedLevel ?? 999)) continue;
@@ -76,10 +59,24 @@ public sealed partial class GameSession
     }
 
     /// <summary>
-    /// Level-earned Daevanion crystals per point type (client Exp.dat DaevanionPointMap; embedded level_points in daevanion.json).
+    /// Level-earned Daevanion crystals per point type (client Exp/Daevanion tables: one at NeedLevel, then +1 per level;
+    /// matches UI cap e.g. level 16 on a board opening at 12 → 4/4 available when used=0). The level_points table in
+    /// daevanion.json is used only when it was built from Exp.dat; the builder's fallback (+4 per level) is a guess.
     /// </summary>
-    int DaevanionLevelEarned(int pointType) =>
-        character is null ? 0 : Daevanion.LevelPointsEarned(pointType, level);
+    int DaevanionLevelEarned(int pointType)
+    {
+        if (character is null) return 0;
+        if (Daevanion.LevelPointsFromClient) return Daevanion.LevelPointsEarned(pointType, level);
+        var earned = 0;
+        foreach (var boardId in Daevanion.BoardsForCreation(character.CreationId))
+        {
+            if (Daevanion.BoardOf(boardId) is not { } board || board.PointType != pointType) continue;
+            if (level < board.NeedLevel) continue;
+            var tier = level == board.NeedLevel ? 1 : level - board.NeedLevel;
+            earned = Math.Max(earned, tier);
+        }
+        return earned;
+    }
 
     int DaevanionAvailable(int pointType) =>
         DaevanionLevelEarned(pointType) + daevanionBonus.GetValueOrDefault(pointType) - daevanionUsed.GetValueOrDefault(pointType);

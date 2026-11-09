@@ -85,7 +85,7 @@ public sealed class ExpeditionTables
 
 public sealed partial class GameSession
 {
-    public const ushort PartyDungeonClearNt = 0x3A69, PartyDungeonMiddleBossKillNt = 0x3829,
+    public const ushort PartyDungeonClearNt = 0x3A69, PartyDungeonMiddleBossKillNt = 0x572e /* OBSERVED (AVION2: 10 mid-boss kills, npc u32) */,
         ContentsTicketsNt = 0x3854, ContentsTicketUpdateNt = 0x3855;
 
     static ExpeditionTables Expeditions => ExpeditionTables.Embedded;

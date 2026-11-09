@@ -204,9 +204,11 @@ public sealed partial class GameSession
         return replies;
     }
 
-    bool IsAllowedContextSkillEdit(int[] target, byte contextSlot, int skillId)
+    bool IsAllowedContextSkillEdit(int[] target, byte contextSlot, int skillId, IReadOnlyDictionary<int, int[]> stacks)
     {
         if (skillId == 0) return true;
+        // A skill already placed elsewhere in the bar moves here and swaps with the one it displaces.
+        if (stacks.Values.Any(stack => !ReferenceEquals(stack, target) && Array.IndexOf(stack, skillId) >= 0)) return true;
         if (contextSlot == 0 && target[0] == 0) return learned.Contains(skillId);
         var bar = target[0];
         if (bar <= 0) return false;
@@ -249,7 +251,7 @@ public sealed partial class GameSession
         }
         var displaced = target[contextSlot];
         if (displaced == skillId) return [Rs(0), Hotbar(profile.DefaultBar())];
-        if (!IsAllowedContextSkillEdit(target, contextSlot, skillId)) return Refused();
+        if (!IsAllowedContextSkillEdit(target, contextSlot, skillId, stacks)) return Refused();
 
         byte swapSlot = 0, swapContext = 0;
         var swapped = false;

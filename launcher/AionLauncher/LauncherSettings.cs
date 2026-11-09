@@ -35,6 +35,8 @@ sealed class LauncherSettings
     public string? SteamToken { get; set; }
     /// <summary>When true, copy z_A2Core_Patch-Windows_P.* from the client editor deploy folder before starting the game.</summary>
     public bool AllowClientPatchPaks { get; set; }
+    /// <summary>The client version chosen on the Play page (an id from launcher.json "clientVersions").</summary>
+    public string? SelectedClientVersion { get; set; }
 
     /// <summary>The kept account session, when there is one that has not ended yet.</summary>
     public string? Session()

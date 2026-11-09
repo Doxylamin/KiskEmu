@@ -33,7 +33,8 @@ public sealed class QuestGatingSharedWorldTests
     static int DamageSkillId()
     {
         var cls = GameData.Embedded.Profile(1, 1)!.Class;
-        return GameData.Embedded.LearnedSkills(cls, 55).First(s => GameData.Embedded.Skill(s.SkillId)?.Damage.Length > 0).SkillId;
+        // A class skill (8-digit id): the learned list also holds event skills such as Capture Lugi! (4900202), which do no damage.
+        return GameData.Embedded.LearnedSkills(cls, 55).First(s => s.SkillId >= 10_000_000 && GameData.Embedded.Skill(s.SkillId)?.Damage.Length > 0).SkillId;
     }
 
     static byte[] CastAt(int skillId, Target t) =>

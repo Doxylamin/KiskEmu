@@ -23,7 +23,7 @@ public static class QuestReferenceCatalog
         return JsonSerializer.Deserialize<Root>(File.ReadAllText(path), JsonOptions)!;
     }
 
-    static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };   // the file is snake_case (start_npc, npc_name)
 
     public sealed record Root(int Cap, QuestRow[] Quests);
 

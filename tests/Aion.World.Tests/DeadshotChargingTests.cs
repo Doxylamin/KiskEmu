@@ -136,8 +136,8 @@ public sealed class DeadshotChargingTests
         var startAt = Now + 120_000;
         await session.HandleAsync(ChargingStartWire(Deadshot, mob.Key, mob.Position), startAt);
         Assert.True(session.HasPendingSkillChargeForTests);
+        // Silence after the last 0x381a counts as the button released: the charge fires and its abnormal goes.
         var tick = await session.TickAsync(startAt + GameSession.SkillChargeTimeoutMs + 1);
-        Assert.Contains(tick, p => GameSessionTestHelpers.Op(p) == GameSession.SkillChargingStopRs);
         Assert.Contains(tick, p => GameSessionTestHelpers.Op(p) == 0x382c);
         Assert.False(session.HasPendingSkillChargeForTests);
     }

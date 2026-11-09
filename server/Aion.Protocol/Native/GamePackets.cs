@@ -1362,15 +1362,15 @@ public static class GamePackets
     public static byte[] NpcHp(int key, long hp) => PacketWriter.Opcode(0x8d00).Varint(key).U8(2).U8(1).U8(0).I64(hp).ToArray();
 
     /// <summary>
-    /// 0x8d04 CharDie_NT (usmap DevPacketData_GameServer_CharDie_NT): victim, skill u32, killer key, PC server id u16,
-    /// PC nick and guild strings, guild emblem u32, NPC caster data id u32, NPC die act u32, reason u32, EPCDieType u8.
-    /// NPC kills use dieType 0; a player killed in PvE uses dieType 2 (DiePvE) with server id 0, die act 0, reason 1,
-    /// and the killer NPC's data id (varint) when the killer is an NPC.
+    /// 0x8d04 CharDie_NT (OBSERVED, AVION2 captures: 1,501 records): victim varint, skill u32, killer varint, killer server
+    /// u16, killer name, killer legion, emblem u16, killer NPC code varint (when an NPC killed), die act u32, reason u8
+    /// (1 a hit, 3 damage over time, 0 no cause), die type u8 (2: the victim is a player, or the kill went to a group).
+    /// An NPC killer has server 0, no name, and its NPC code filled in.
     /// </summary>
     public static byte[] Kill(int victimKey, int skillId, int killerKey, int serverId, string killerName, byte dieType = 0, int npcCasterDataId = 0,
-        uint npcDieActId = 0, uint reason = 0) =>
-        PacketWriter.Opcode(0x8d04).Varint(victimKey).U32((uint)skillId).Varint(killerKey).U16(serverId).String(killerName).String("")
-            .U32(0).Varint(npcCasterDataId).U32(npcDieActId).U32(reason).U8(dieType).ToArray();
+        uint npcDieActId = 0, byte reason = 1, string killerGuild = "", int killerEmblem = 0) =>
+        PacketWriter.Opcode(0x8d04).Varint(victimKey).U32((uint)skillId).Varint(killerKey).U16(serverId).String(killerName).String(killerGuild)
+            .U16(killerEmblem).Varint(npcCasterDataId).U32(npcDieActId).U8(reason).U8(dieType).ToArray();
 
     /// <summary>0x8d21: key | 00 | 1 in combat / 0 out.</summary>
     public static byte[] CombatState(int key, bool inCombat) => PacketWriter.Opcode(0x8d21).Varint(key).U8(0).U8(inCombat ? 1 : 0).ToArray();
@@ -1378,7 +1378,11 @@ public static class GamePackets
     /// <summary>0x8d52 NpcFirstAggro_NT: the NPC key (catalogue 897 + 0x89d1). OBSERVED with every official aggro start.</summary>
     public static byte[] NpcFirstAggro(int key) => PacketWriter.Opcode(0x8d52).Varint(key).ToArray();
 
-    /// <summary>0x3642 despawn: flag 3 removes a corpse, 1 is the out-of-view removal.</summary>
+    /// <summary>
+    /// 0x3642 NpcDisappear_NT: key | reason (0) | despawn act (OBSERVED, 17,427 records): 1 already dead when loaded,
+    /// 3 the corpse removed after a death, 7 out of view.
+    /// </summary>
+    public const int DespawnDeadOnLoad = 1, DespawnCorpse = 3, DespawnOutOfView = 7;
     public static byte[] Death(int key, int flag = 3) => PacketWriter.Opcode(0x3642).Varint(key).U8(0).Varint(flag).ToArray();
 
     // ---------- Casts ----------
@@ -1450,12 +1454,12 @@ public static class GamePackets
 
     /// <summary>
     /// 0x381c SkillChargingStart_NT (live +0x157, OBSERVED Deadshot 2026-10-31): actor varint | skill i32 | level u8 |
-    /// target mask u8 2 | target varint | yaw f32 | Vec3 | charge rate f32 | act_move u8 | charging_act_id i32 (usmap).
+    /// target mask u8 2 | target varint | yaw f32 | Vec3 | charge rate f32 | act_move u8. The usmap also lists charging_act_id i32, but the recorded message ends after act_move (DeadshotChargingTests).
     /// </summary>
     public static byte[] SkillChargingStartNotify(int actorKey, int skillId, int skillLevel, int targetKey, float yaw, Vector3d location,
         float chargeRate = 1.236f, byte actMoveType = 1, int chargingActId = 0) =>
         PacketWriter.Opcode(0x381c).Varint(actorKey).I32(skillId).U8(skillLevel).U8(2).Varint(targetKey).F32(yaw)
-            .F32((float)location.X).F32((float)location.Y).F32((float)location.Z).F32(chargeRate).U8(actMoveType).I32(chargingActId).ToArray();
+            .F32((float)location.X).F32((float)location.Y).F32((float)location.Z).F32(chargeRate).U8(actMoveType).ToArray();
 
     /// <summary>0x381e SkillChargingEnd_RS (OBSERVED): step u8, result u16, skill i32, i32 0, selected skill i32.</summary>
     public static byte[] SkillChargingEndReply(int result, int skill, int step, int selectedSkill) =>
@@ -1525,7 +1529,8 @@ public static class GamePackets
     /// <summary>
     /// 0x371d NPC move delta, every 100 ms between the 1 s full positions (OBSERVED, capture 20261013: 5984 samples). Mask
     /// 0x01 the move type byte (03 run), 0x02/0x04/0x08 dx/dy/dz as signed bytes (game units since the last sent position;
-    /// dz left out when 0), 0x20 the heading pair; a walk ends with 01 as 0x371b/0x371c do. Example walk `2e ff 1f ff 5066 5066 01`
+    /// dz left out when 0), 0x20 the dead-reckoning bool (97,882 records); the heading pair is always present, and a walk
+    /// ends with 01 as 0x371b/0x371c do. Example walk `2e ff 1f ff 5066 5066 01`
     /// (12.6 units = 126/s), run `2f 03 e9 aa fc 51b5 51b5` (Robin at 875/s).
     /// </summary>
     public static byte[] NpcMoveDelta(int key, int dx, int dy, int dz, double heading, bool run)

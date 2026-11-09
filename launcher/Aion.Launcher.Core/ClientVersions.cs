@@ -1,5 +1,4 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
+
 using System.Text.Json.Serialization;
 
 namespace Aion.Launcher;
@@ -33,11 +32,16 @@ public static class ClientVersions
     public static IReadOnlyList<ClientVersion> All(LauncherConfig config) =>
         config.ClientVersions is { Length: > 0 } list ? list : ClientVersion.Defaults;
 
-    /// <summary>The selected version ("selectedClientVersion"), else the first (2.0.6.0).</summary>
-    public static ClientVersion Selected(LauncherConfig config)
+    /// <summary>
+    /// The player's choice (<paramref name="chosen"/>, kept in the launcher settings), else launcher.json
+    /// "selectedClientVersion", else the first (2.0.6.0).
+    /// </summary>
+    public static ClientVersion Selected(LauncherConfig config, string? chosen = null)
     {
         var all = All(config);
-        return all.FirstOrDefault(v => v.Id.Equals(config.SelectedClientVersion, StringComparison.OrdinalIgnoreCase)) ?? all[0];
+        return all.FirstOrDefault(v => v.Id.Equals(chosen, StringComparison.OrdinalIgnoreCase))
+            ?? all.FirstOrDefault(v => v.Id.Equals(config.SelectedClientVersion, StringComparison.OrdinalIgnoreCase))
+            ?? all[0];
     }
 
     /// <summary>
@@ -60,16 +64,4 @@ public static class ClientVersions
         return [.. list];
     }
 
-    /// <summary>
-    /// Stores the selection in launcher.json (the file next to the exe; created from <paramref name="config"/>
-    /// when missing). Only "selectedClientVersion" changes; other keys are kept as written.
-    /// </summary>
-    public static void SaveSelection(string path, LauncherConfig config, string id)
-    {
-        JsonObject root = File.Exists(path) && JsonNode.Parse(File.ReadAllText(path)) is JsonObject existing
-            ? existing
-            : JsonSerializer.SerializeToNode(config with { SelectedClientVersion = null })!.AsObject();
-        root["selectedClientVersion"] = id;
-        File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull }));
-    }
 }

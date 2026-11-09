@@ -2057,7 +2057,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (killer.OwnerKey == playerKey) { replies.AddRange(PlayerKilledNpc(victim, 0, killer.Key, now)); continue; }
             respawnAt[victim.Key] = now + RespawnMs;
             replies.Add(GamePackets.TargetUpdate(victim.Key));
-            replies.Add(GamePackets.Kill(victim.Key, 0, killer.Key, 0, ""));
+            replies.Add(GamePackets.Kill(victim.Key, 0, killer.Key, 0, "", npcCasterDataId: killer.NpcId));   // an NPC killer: server 0, its NPC code
             replies.AddRange(fights.Killed(victim));
             replies.AddRange(MapEventKilled(victim, now));
         }
@@ -2104,8 +2104,12 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         + EnchantStat("ArmorDefense") + EnchantStat("Defense") + ExceedStat("ArmorDefense") + ExceedStat("Defense") + BuffStat("Defense")
         + BoardStat("Defense") + TitleStat("Defense") + SetStat("Defense") + DaevanionWireStat(52);
 
-    /// <summary>The MP pool: MPMax 1500 plus buffs.</summary>
-    int MpMax => MpMaxBase + BuffStat("MPMax") + BoardStat("MPMax") + TitleStat("MPMax") + DaevanionWireStat(199);
+    /// <summary>
+    /// The MP pool: MPMax 1500 plus gear, buffs, board, titles, sets and Daevanion, as HPMax. Not fixed (OBSERVED: a level-45
+    /// Chanter had 2,599); PcStatLevel has no MPMax, so the level-1 base stays the sample's.
+    /// </summary>
+    int MpMax => MpMaxBase + EquipStat("MPMax") + EnchantStat("MPMax") + ExceedStat("MPMax") + RideStat("MPMax")
+        + BuffStat("MPMax") + BoardStat("MPMax") + TitleStat("MPMax") + SetStat("MPMax") + DaevanionWireStat(199);
 
     /// <summary>
     /// The stat sheet (0x3649 / 0x364a): PcStatLevel bases plus gear, buffs, titles, Daevanion and the official sample defaults where still unknown.
@@ -2123,9 +2127,10 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         int WeaponAccuracySheet() => PlayerCombatAccuracy();
         var byType = GamePackets.DefaultStats.Select(s => s.Type switch
         {
-            31 => (Type: s.Type, Value: WeaponLine("WeaponDamage", 31, weapon.Max) + TitleStat("FixingDamage") + D(31)),
-            33 => (Type: s.Type, Value: WeaponLine("WeaponMinDamage", 33, weapon.Min) + TitleStat("FixingDamage") + D(33)),
-            128 => (Type: s.Type, Value: WeaponLine("Critical", 128, weapon.Critical) + D(128)),
+            // WeaponLine (AggregatedStat) already includes the Daevanion wire stat: adding D(wire) again counted it twice.
+            31 => (Type: s.Type, Value: WeaponLine("WeaponDamage", 31, weapon.Max) + TitleStat("FixingDamage")),
+            33 => (Type: s.Type, Value: WeaponLine("WeaponMinDamage", 33, weapon.Min) + TitleStat("FixingDamage")),
+            128 => (Type: s.Type, Value: WeaponLine("Critical", 128, weapon.Critical)),
             318 => (Type: s.Type, Value: WeaponAccuracySheet()),
             193 => (Type: s.Type, Value: hpMax), 199 => (Type: s.Type, Value: MpMax), 242 => (Type: s.Type, Value: GamePackets.SpawnSp + BuffStat("SPMax")),
             307 => (Type: s.Type, Value: Defense),
@@ -2342,7 +2347,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         var gone = new List<byte[]>();
         foreach (var i in shownObjects) gone.Add(GamePackets.EnvObjDespawn(WorldObjects.FirstKey + i));
         foreach (var i in shownTriggers) gone.Add(GamePackets.EnvObjDespawn(WorldObjects.FirstTriggerKey + i));
-        foreach (var key in seenNpcs) gone.Add(GamePackets.Death(key, 1));
+        foreach (var key in seenNpcs) gone.Add(GamePackets.Death(key, GamePackets.DespawnDeadOnLoad));   // flag 1, as OBSERVED at the HQ001 entry
         if (worldPlayer is { } me) foreach (var key in me.Seeing) gone.Add(PlayerPackets.CharDisappear(key, 1));
         return gone;
     }
@@ -2832,13 +2837,16 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 SyncSharedMapAiKillPreserve(aiMap);
                 aiMap.Ai.DefenseOf ??= key => aiMap.Players.TryGetValue(key, out var p) ? p.Session.Defense : 0;
                 aiMap.Ai.PlayerLevelOf ??= key => aiMap.Players.TryGetValue(key, out var p) ? p.Session.Level : 1;
-                WireMapEventNpcCombatHooks(aiMap.Ai, now);
+                // This session's map-event packets (its own instance script) go to this player only, not into the broadcast.
+                var ownMapEvents = new List<byte[]>();
+                WireMapEventNpcCombatHooks(aiMap.Ai, now, ownMapEvents);
                 aiMap.BroadcastAll(aiMap.Ai.Tick(aiMap.Targets, aiMap.NpcVictims(), now, (key, damage) =>
                 {
                     if (aiMap.Players.TryGetValue(key, out var victim)) victim.Send(victim.Session.NpcHitsPlayer(damage, now, aiMap.Ai.LastAttacker, aiMap.Ai.LastHitSkill));
                     return [];
                 }));
                 ClearMapEventNpcCombatHooks(aiMap.Ai);
+                replies.AddRange(ownMapEvents);
                 var npcKills = NpcKillsByNpcs(aiMap.Ai, now);
                 aiMap.BroadcastAll(npcKills, worldPlayer);
                 replies.AddRange(npcKills);

@@ -111,7 +111,7 @@ public sealed class BittercoldWindTests
         var (session, map, at) = await Entered();
         var main = Mob(map, 880_601, at);
         session.PlaceZoneForTest(BittercoldWind, main.Key, at, Now);
-        session.DismissAllSummons();
+        session.DismissAllSummons(Now);
         await session.TickAsync(Now + 1_000);
         Assert.Equal(0, session.PlacedZoneCount);
         Assert.Equal(main.HpMax, main.Hp);

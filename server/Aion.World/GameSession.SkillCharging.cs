@@ -116,8 +116,12 @@ partial class GameSession
         if (SkillCooldown.IsBasicAutoAttack(definition) || definition.CastingMs > 0 || definition.Damage.Length < 2)
             return false;
         var timed = SkillTiming.TimedRows(definition);
-        return timed[^1] == timed[0];
+        // Stages of a charge grow stronger (Deadshot 599/18825 -> 809/25414). Equal simultaneous rows are one cast's two hits
+        // (Templar Shield Smite 173/17575 twice): those are ordinary instant skills, cast with 0x3800.
+        return timed[^1] == timed[0] && StageStrength(definition.Damage[^1]) > StageStrength(definition.Damage[0]);
     }
+
+    static long StageStrength(DamageRow row) => (row.Ratio.Length > 0 ? row.Ratio[0] ?? 0 : 0) * 1000L + (row.Flat.Length > 0 ? row.Flat[0] ?? 0 : 0);
 
     static bool UsesHoldChargeFlow(SkillDefinition definition) => HasHoldChargeStages(definition);
 
@@ -189,9 +193,10 @@ partial class GameSession
     List<byte[]> HoldChargeStartPackets(CastRequest request, byte level, float yaw, float chargeRate,
         int chargingActId, int abnormalUid, long expireAt) =>
     [
-        GamePackets.SkillChargingStartReply(0, request.SkillId),
+        // Official order (capture): 0x381c notify, 0x381b reply, then the charging abnormal.
         GamePackets.SkillChargingStartNotify(playerKey, request.SkillId, level, request.TargetKey, yaw, request.Location, chargeRate,
             chargingActId: chargingActId),
+        GamePackets.SkillChargingStartReply(0, request.SkillId),
         PlayerPackets.AbnormalAdd(playerKey,
         [
             new AbnormalWire(abnormalUid, SkillChargingAbnormalId, SkillChargingAbnormalDurationMs, expireAt, CasterKey: playerKey, Level: level,

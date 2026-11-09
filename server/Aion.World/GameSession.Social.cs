@@ -219,7 +219,7 @@ public sealed partial class GameSession
         Key = party.Key, LeaderDbId = party.Leader.Session.DbId, LimitMember = Party.Limit,
         Distribution = party.Distribution, SpecialDistribution = party.SpecialDistribution,
         SpecialDistributionGrade = party.SpecialDistributionGrade, JoinType = party.JoinType,
-        Members = party.Members.Select((m, i) => m.Session.MemberInfo((byte)i)).ToList(),
+        Members = party.Members.Select((m, i) => m.Session.MemberInfo((byte)(i + 1))).ToList(),
     };
 
     InvitationInfo Invitation() => new(Profile()?.PcId ?? 1, level, 0, StoredName, ServerId);
@@ -291,7 +291,7 @@ public sealed partial class GameSession
             return [SocialPackets.PartyInviteResponseReply(0)];
         }
         party.Members.Add(worldPlayer);
-        var member = MemberInfo((byte)(party.Members.Count - 1));
+        var member = MemberInfo((byte)party.Members.Count);   // slots are 1-based (OBSERVED 01..05)
         foreach (var other in party.Others(worldPlayer)) other.Send(SocialPackets.PartyAddMember(member));
         return [SocialPackets.PartyInviteResponseReply(0), SocialPackets.PartyInfo(Info(party), PartyUpdateReason.Join), .. Achieve("JoinParty")];
     }
@@ -414,7 +414,7 @@ public sealed partial class GameSession
     internal void PartyReconnectIfNeeded()
     {
         if (Social is not { } s || worldPlayer is null || s.PartyOf(worldPlayer) is not { } party || party.Members.Count < 2) return;
-        var member = MemberInfo((byte)Math.Max(0, party.Members.IndexOf(worldPlayer)));
+        var member = MemberInfo((byte)(Math.Max(0, party.Members.IndexOf(worldPlayer)) + 1));
         foreach (var m in party.Others(worldPlayer))
             m.Send(SocialPackets.PartyReconnectMember(member));
     }

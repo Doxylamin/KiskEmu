@@ -75,6 +75,8 @@ def environment(args, credentials):
         'Aion__NcGuard__DataDirectory': args.state / 'ncguard',
         # Players' anti-cheat requests are answered, never recorded.
         'Aion__NcGuard__Capture': 'false',
+        # The journal already keeps the console log; the file mirror has no rotation and /opt is read-only under systemd.
+        'Aion__ServerLog__Enabled': 'false',
     }
     if (data / 'terrain').is_dir():
         env['Aion__Native__TerrainDirectory'] = data / 'terrain'

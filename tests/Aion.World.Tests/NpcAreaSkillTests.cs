@@ -11,7 +11,7 @@ public sealed class NpcAreaSkillTests
     const int MonsterKey = 2001;
 
     static byte[] HitPrefix(int targetKey, int skill) =>
-        PacketWriter.Opcode(0x3804).Varint(targetKey).U8(6).U8(0).Varint(MonsterKey).U32((uint)skill).ToArray();
+        PacketWriter.Opcode(0x3804).Varint(targetKey).U8(6).U8(0x06).Varint(MonsterKey).U32((uint)skill).ToArray();   // presence mask: plotter + damage
 
     static bool Hits(IEnumerable<byte[]> packets, int targetKey) =>
         packets.Any(p => p.AsSpan().StartsWith(HitPrefix(targetKey, CircleSkill)));

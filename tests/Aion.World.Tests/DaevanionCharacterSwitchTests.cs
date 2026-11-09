@@ -51,8 +51,9 @@ public sealed class DaevanionCharacterSwitchTests
 
         var spiritEntry = await SelectAndEnterAsync(session, spiritWire, Now + 10);
         var spiritBoard = BoardIds(spiritEntry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.DaevanionBoardInfoNt));
-        Assert.Equal([61], spiritBoard);
-        Assert.DoesNotContain(51, spiritBoard);
+        // Creation 6 is the Elementalist: its board slot is 5 (board 51's nodes raise its 16xxxxxx skills).
+        Assert.Equal([51], spiritBoard);
+        Assert.DoesNotContain(61, spiritBoard);
 
         var unlock = spiritEntry.Single(p => GameSessionTestHelpers.Op(p) == 0xe257);
         var unlockTypes = new PacketReader(unlock) { Offset = 2 }.Bytes();
@@ -83,6 +84,6 @@ public sealed class DaevanionCharacterSwitchTests
         store.States[0] = store.States[0] with { Progress = store.States[0].Progress with { Level = 20 } };
         var entry = await SelectAndEnterAsync(session, store.States[0].WireId, Now + 5);
         var boards = BoardIds(entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.DaevanionBoardInfoNt));
-        Assert.Equal([61, 62], boards);
+        Assert.Equal([51, 52], boards);   // the Elementalist's slot-5 boards
     }
 }
