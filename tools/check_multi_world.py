@@ -261,6 +261,11 @@ def main():
             check(request('/api/admin/worlds/1205/start', 'POST', token=token)[0] == 200, 'start requested')
             running = wait(lambda: state_is(1205, 'running'), 90, 'world 1205 running')
             check(running['listed'] and running['runtime']['processId'], 'second world runs as its own process and is listed')
+            # The realm socket (server/REALM_LINK.md): each world server dials the auth host; world tools ride it.
+            wait(lambda: all((runtime(w).get('link') or {}).get('connected') for w in (1204, 1205)), 30, 'both worlds hold a realm socket')
+            before = request('/api/admin/worlds', token=token)[1]['linkCounters']['tunnelled']
+            check(request('/api/admin/server?world=1205', token=token)[0] == 200, 'a world tool answers over the realm socket')
+            check(request('/api/admin/worlds', token=token)[1]['linkCounters']['tunnelled'] > before, 'the world tool call was tunnelled')
 
             def login():
                 ticket = request('/api/game-tickets', 'POST', {'worldId': 1204}, token)[1]['token']

@@ -71,6 +71,10 @@ Every request carries `X-World-Id: <id>` and `Authorization: Bearer <token>`:
 | `POST tickets`, `POST chat` | `//report` tickets; announcements and staff chat |
 | `POST characters` | the character index sync |
 
+While a world's **realm socket** is open (`/internal/realm/socket`, the same sign-in), these calls and the auth
+host's calls to the world's control port ride one WebSocket the world dials, plus pushed events (account and state
+changes, presence); HTTP stays the fallback. See [REALM_LINK.md](REALM_LINK.md).
+
 The world server's settings: `Aion:Role=world`, `Aion:Native:WorldId`, `ConnectionStrings:World`,
 `Aion:Realm:Url` (the account site, e.g. `https://203.0.113.5:8780`), `Aion:Realm:Token`, optionally
 `Aion:Realm:CertificateSha256` (pins a self-signed certificate), `Aion:LocalPort` and

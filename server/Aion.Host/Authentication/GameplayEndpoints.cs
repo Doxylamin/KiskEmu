@@ -99,11 +99,20 @@ public static class GameplayEndpoints
             return Results.Ok(new { MapId=id, Areas=areas });
         });
         if (!accounts) return;
-        api.MapPost("/admin/accounts/{id:guid}/disable",async(Guid id,HttpContext ctx,IAccountManagement management,CancellationToken ct) =>
-            await management.DisableAccountAsync(Bearer(ctx),id,ct) ? Results.NoContent() : Results.StatusCode(403));
-        // Admins only; the player sees a role change at their next game login.
-        api.MapPost("/admin/accounts/{id:guid}/roles",async(Guid id,StaffRoleChange input,HttpContext ctx,IAccountManagement management,CancellationToken ct) =>
-            await management.SetStaffRoleAsync(Bearer(ctx),id,input.Role,input.Granted,ct) ? Results.NoContent() : Results.StatusCode(403));
+        // Both reach the world servers' account mirrors at once over their realm sockets (server/REALM_LINK.md).
+        api.MapPost("/admin/accounts/{id:guid}/disable",async(Guid id,HttpContext ctx,IAccountManagement management,IServiceProvider services,CancellationToken ct) =>
+        {
+            if(!await management.DisableAccountAsync(Bearer(ctx),id,ct)) return Results.StatusCode(403);
+            if(services.GetService<Aion.Host.Realm.RealmSocketHub>() is { } sockets) await sockets.AccountChangedAsync(id);
+            return Results.NoContent();
+        });
+        // Admins only; the world servers mirror the change now, the player's client sees it at their next game login.
+        api.MapPost("/admin/accounts/{id:guid}/roles",async(Guid id,StaffRoleChange input,HttpContext ctx,IAccountManagement management,IServiceProvider services,CancellationToken ct) =>
+        {
+            if(!await management.SetStaffRoleAsync(Bearer(ctx),id,input.Role,input.Granted,ct)) return Results.StatusCode(403);
+            if(services.GetService<Aion.Host.Realm.RealmSocketHub>() is { } sockets) await sockets.AccountChangedAsync(id);
+            return Results.NoContent();
+        });
     }
     private static string Bearer(HttpContext context)
     { var h=context.Request.Headers.Authorization.ToString(); return h.StartsWith("Bearer ",StringComparison.OrdinalIgnoreCase)?h[7..]:""; }

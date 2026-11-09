@@ -101,6 +101,8 @@ public static partial class StaffToolsEndpoints
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();
             var created = await tools.CreateEventAsync(a, new NewScheduledEvent(input.Kind ?? "", input.StartsAt, input.EndsAt, input.RepeatMinutes, input.Text ?? "", input.Multiplier), ct);
             await control.RefreshAsync(ct);
+            // The world servers reload events (boosts, announcements) now instead of within 30 s.
+            if (ctx.RequestServices.GetService<Aion.Host.Realm.RealmSocketHub>() is { } sockets) await sockets.StateChangedAsync();
             return Results.Ok(created);
         });
         staff.MapDelete("/events/{id:long}", async (long id, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, ServerControl control, CancellationToken ct) =>
@@ -108,6 +110,7 @@ public static partial class StaffToolsEndpoints
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();
             var cancelled = await tools.CancelEventAsync(a, id, ct);
             await control.RefreshAsync(ct);
+            if (ctx.RequestServices.GetService<Aion.Host.Realm.RealmSocketHub>() is { } sockets) await sockets.StateChangedAsync();
             return Results.Ok(new { cancelled });
         });
 

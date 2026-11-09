@@ -60,7 +60,7 @@ public static class RealmLinkEndpoints
         link.AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
-            if (await Caller(http) is not { } world) return Results.StatusCode(403);
+            if (await CallerAsync(http) is not { } world) return Results.StatusCode(403);
             http.Items[WorldKey] = world;
             try { return await next(context); }
             catch (GameplayException error)
@@ -131,6 +131,10 @@ public static class RealmLinkEndpoints
             var worldKey = World(ctx).WorldId.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return Results.Ok(new LinkCount(await Authentication.StaffEndpoints.ChatAnnounceAsync(services, text, worldKey)));
         });
+
+        // The realm socket (server/REALM_LINK.md): the same sign-in, then one WebSocket for both directions.
+        if (app.Services.GetService<RealmSocketHub>() is { } hub)
+            app.Map(RealmSocketHub.Path, (HttpContext ctx) => hub.AcceptAsync(ctx, async http => (await CallerAsync(http))?.WorldId));
     }
 
     static WorldRecord World(HttpContext context) => (WorldRecord)context.Items[WorldKey]!;
@@ -138,7 +142,7 @@ public static class RealmLinkEndpoints
     static bool? Address(string? text) => text is null ? null : System.Net.IPAddress.TryParse(text, out var a) && a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
 
     /// <summary>The world the request signs in as: a registered world whose token matches, else null.</summary>
-    static async Task<WorldRecord?> Caller(HttpContext http)
+    public static async Task<WorldRecord?> CallerAsync(HttpContext http)
     {
         if (!int.TryParse(http.Request.Headers[WorldHeader].ToString(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var worldId))
             return null;
@@ -163,7 +167,8 @@ public sealed class RealmLinkClient
     readonly ILogger<RealmLinkClient> logger;
     public int WorldId { get; }
 
-    public RealmLinkClient(RealmLinkOptions options, int worldId, ILogger<RealmLinkClient> logger)
+    /// <param name="slot">The realm socket: requests go over it while it is open, else over HTTP (server/REALM_LINK.md).</param>
+    public RealmLinkClient(RealmLinkOptions options, int worldId, ILogger<RealmLinkClient> logger, LinkSlot? slot = null)
     {
         this.logger = logger;
         WorldId = worldId;
@@ -176,14 +181,17 @@ public sealed class RealmLinkClient
                 errors == System.Net.Security.SslPolicyErrors.None
                 || certificate is not null && CryptographicOperations.FixedTimeEquals(SHA256.HashData(certificate.GetRawCertData()), expected);
         }
-        http = new HttpClient(handler) { BaseAddress = new Uri(options.Url.TrimEnd('/') + "/internal/realm/"), Timeout = TimeSpan.FromSeconds(10) };
+        HttpMessageHandler send = slot is null ? handler : new LinkTunnelHandler(handler, _ => slot.Current, slot.Counters, logger);
+        http = new HttpClient(send) { BaseAddress = new Uri(options.Url.TrimEnd('/') + "/internal/realm/"), Timeout = TimeSpan.FromSeconds(10) };
         http.DefaultRequestHeaders.Add(RealmLinkEndpoints.WorldHeader, worldId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", options.Token);
     }
 
-    async Task<T?> Send<T>(HttpMethod method, string path, object? body, CancellationToken ct, bool quiet = false)
+    async Task<T?> Send<T>(HttpMethod method, string path, object? body, CancellationToken ct, bool quiet = false, bool repeatable = false)
     {
         using var request = new HttpRequestMessage(method, path);
+        // Sent again over HTTP when the realm socket closes during the call (server/REALM_LINK.md).
+        if (repeatable) request.Options.Set(LinkTunnelHandler.RetrySafe, true);
         if (body is not null) request.Content = JsonContent.Create(body);
         using var response = await http.SendAsync(request, ct);
         if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.NotFound) return default;
@@ -200,16 +208,16 @@ public sealed class RealmLinkClient
 
     sealed record Error([property: System.Text.Json.Serialization.JsonPropertyName("error")] string? Code);
 
-    public Task<LinkWorld?> RegisterAsync(LinkRegister input, CancellationToken ct) => Send<LinkWorld>(HttpMethod.Post, "register", input, ct, quiet: true);
+    public Task<LinkWorld?> RegisterAsync(LinkRegister input, CancellationToken ct) => Send<LinkWorld>(HttpMethod.Post, "register", input, ct, quiet: true, repeatable: true);
     public Task<LinkSession?> OpenSessionAsync(LinkSessionOpen input, CancellationToken ct) => Send<LinkSession>(HttpMethod.Post, "sessions/open", input, ct);
-    public Task<LinkIdentity?> ValidateSessionAsync(string token, CancellationToken ct) => Send<LinkIdentity>(HttpMethod.Post, "sessions/validate", new LinkToken(token), ct);
+    public Task<LinkIdentity?> ValidateSessionAsync(string token, CancellationToken ct) => Send<LinkIdentity>(HttpMethod.Post, "sessions/validate", new LinkToken(token), ct, repeatable: true);
     public Task CloseSessionAsync(string token, CancellationToken ct) => Send<bool>(HttpMethod.Post, "sessions/close", new LinkToken(token), ct);
-    public Task<AccountSnapshot?> AuthenticateAsync(string token, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Post, "authenticate", new LinkToken(token), ct);
+    public Task<AccountSnapshot?> AuthenticateAsync(string token, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Post, "authenticate", new LinkToken(token), ct, repeatable: true);
     public Task<AccountSnapshot?> AccountAsync(Guid account, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Get, $"accounts/{account:D}", null, ct);
     public Task<LinkRealmState?> StateAsync(CancellationToken ct) => Send<LinkRealmState>(HttpMethod.Get, "state", null, ct);
     public Task<MaintenanceState?> SetMaintenanceAsync(LinkMaintenance input, CancellationToken ct) => Send<MaintenanceState>(HttpMethod.Post, "maintenance", input, ct);
     public Task<LinkCount?> TicketAsync(LinkTicket input, CancellationToken ct) => Send<LinkCount>(HttpMethod.Post, "tickets", input, ct);
-    public Task SyncCharactersAsync(LinkCharacters input, CancellationToken ct) => Send<bool>(HttpMethod.Post, "characters", input, ct);
+    public Task SyncCharactersAsync(LinkCharacters input, CancellationToken ct) => Send<bool>(HttpMethod.Post, "characters", input, ct, repeatable: true);
     public async Task<int> ChatAsync(string text, CancellationToken ct) => (await Send<LinkCount>(HttpMethod.Post, "chat", new LinkText(text), ct))?.Value ?? 0;
 }
 
@@ -229,6 +237,12 @@ public sealed class AccountMirrorService(IAccountMirror mirror, RealmLinkClient 
         if (mirrored.TryGetValue(account.AccountId, out var at) && DateTimeOffset.UtcNow - at < Fresh) return;
         await mirror.UpsertAsync(account, ct);
         mirrored[account.AccountId] = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>Reads every account mirrored since this server started from the realm again (after the realm socket reconnects).</summary>
+    public async Task RefreshAllAsync(CancellationToken ct)
+    {
+        foreach (var account in mirrored.Keys.ToList()) await RefreshAsync(account, ct);
     }
 
     /// <summary>Reads the account from the realm again (a ban or role change).</summary>
@@ -303,6 +317,13 @@ public sealed class LinkedAccountAuthentication(RealmLinkClient link, AccountMir
         return verified;
     }
 
+    /// <summary>The realm changed the account (roles, disabled): its sign-ins are checked with the realm again.</summary>
+    public void Forget(Guid account)
+    {
+        foreach (var (token, entry) in signed)
+            if (entry.Account.AccountId == account) signed.TryRemove(token, out _);
+    }
+
     public Task<bool> RegisterAsync(string username, string password, CancellationToken cancellationToken) => Task.FromResult(false);
     public Task<AccountSession?> SignInAsync(string username, string password, CancellationToken cancellationToken) => Task.FromResult<AccountSession?>(null);
     public Task SignOutAsync(string token, CancellationToken cancellationToken) => Task.CompletedTask;
@@ -326,6 +347,9 @@ public sealed class LinkedStaffTools(PostgresStaffTools local, RealmLinkClient l
         stateAt = DateTimeOffset.UtcNow;
         return state;
     }
+
+    /// <summary>The realm's state changed (the realm socket said so): the next read asks the realm.</summary>
+    public void Invalidate() => stateAt = DateTimeOffset.MinValue;
 
     static NotSupportedException RealmOnly() => new("A realm tool: the auth host answers it.");
 
@@ -400,6 +424,9 @@ public sealed class RealmLinkService(RealmLinkClient link, IAccountMirror mirror
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
+
+    /// <summary>Signs in now (after the realm socket connected).</summary>
+    public Task SignInAsync(CancellationToken ct) => RegisterAsync(ct);
 
     async Task RegisterAsync(CancellationToken ct)
     {

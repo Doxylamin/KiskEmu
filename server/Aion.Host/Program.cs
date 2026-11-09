@@ -116,8 +116,15 @@ else if (accountsReady)
     // World server: game logins, staff sign-ins, bans, maintenance and reports go through the realm link; it keeps its
     // account mirror and the realm's character index current.
     var linkWorldId = builder.Configuration.GetValue<int?>("Aion:Native:WorldId") ?? Aion.World.DevelopmentDefaults.WorldId;
+    // The realm socket (server/REALM_LINK.md): realm-link calls ride it while it is open; Aion:Realm:Socket=false keeps HTTP only.
+    var realmSocket = builder.Configuration.GetValue<bool?>("Aion:Realm:Socket") ?? true;
+    builder.Services.AddSingleton<Aion.Host.Realm.LinkSlot>();
     builder.Services.AddSingleton(provider => new Aion.Host.Realm.RealmLinkClient(realmLink!, linkWorldId,
-        provider.GetRequiredService<ILogger<Aion.Host.Realm.RealmLinkClient>>()));
+        provider.GetRequiredService<ILogger<Aion.Host.Realm.RealmLinkClient>>(), realmSocket ? provider.GetRequiredService<Aion.Host.Realm.LinkSlot>() : null));
+    if (realmSocket)
+        builder.Services.AddHostedService(provider => new Aion.Host.Realm.RealmSocketClient(realmLink!, linkWorldId,
+            Aion.Host.Realm.RealmSocketClient.ControlAddress(worldProcess!.ListenAddress, builder.Configuration.GetValue<int?>("Aion:LocalPort") ?? 8780),
+            provider.GetRequiredService<Aion.Host.Realm.LinkSlot>(), provider, provider.GetRequiredService<ILogger<Aion.Host.Realm.RealmSocketClient>>()));
     builder.Services.AddSingleton<Aion.Host.Realm.AccountMirrorService>();
     builder.Services.AddSingleton<IAccountAuthentication, Aion.Host.Realm.LinkedAccountAuthentication>();
     builder.Services.AddSingleton<IWorldSessions, Aion.Host.Realm.LinkedWorldSessions>();
@@ -271,6 +278,8 @@ if (native.LoginPort is not null || native.GamePort is not null)
     // (chat, staff tools) and the characters in each world for the realm's chat.
     if (authHost)
     {
+        // Each world server's realm socket (server/REALM_LINK.md): both directions of the links below, HTTP as the fallback.
+        builder.Services.AddSingleton<Aion.Host.Realm.RealmSocketHub>();
         builder.Services.AddSingleton<Aion.Host.Worlds.WorldSupervisor>();
         builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Worlds.WorldSupervisor>());
         builder.Services.AddSingleton(provider => new Aion.Host.Worlds.LoginWorldList(provider.GetRequiredService<IWorldRegistry>(), native,
@@ -305,6 +314,9 @@ builder.Services.AddRateLimiter(options =>
             ? RateLimitPartition.GetNoLimiter("chat")
             : context.Request.Path.StartsWithSegments("/wardrobe") || context.Request.Path.StartsWithSegments("/assets")
             ? RateLimitPartition.GetNoLimiter("files")
+            // A world server's realm socket lives as long as the world (its tunnelled calls come back through here).
+            : context.Request.Path.StartsWithSegments(Aion.Host.Realm.RealmSocketHub.Path)
+            ? RateLimitPartition.GetNoLimiter("realm-socket")
             : RateLimitPartition.GetConcurrencyLimiter("host", _ => new ConcurrencyLimiterOptions { PermitLimit = 16, QueueLimit = 0 }));
     options.AddPolicy("account-entry", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",

@@ -85,6 +85,7 @@ public static class WorldEndpoints
             var native = services.GetService<NativeOptions>();
             var supervisor = services.GetService<WorldSupervisor>();
             var worlds = await registry.ListAsync(ct);
+            var sockets = services.GetService<Realm.RealmSocketHub>();
             var listed = native is null ? [] : LoginWorldList.Directory(worlds, native, supervisor is null ? _ => WorldRuntime.None : supervisor.Runtime);
             return Results.Ok(new
             {
@@ -101,8 +102,10 @@ public static class WorldEndpoints
                         Characters = counts.GetValueOrDefault(w.WorldId),
                         Listed = listed.Any(l => l.WorldId == w.WorldId),
                         Runtime = runtime,
+                        Link = sockets?.Describe(w.WorldId),
                     };
                 }),
+                linkCounters = sockets?.Counters.Snapshot(),
             });
         });
         staff.MapPost("", async (WorldInput input, HttpContext ctx, IAccountAuthentication auth, IWorldRegistry registry, IServiceProvider services, CancellationToken ct) =>
@@ -185,15 +188,7 @@ public static class WorldEndpoints
             return Results.Ok(new { stopping = true });
         });
         control.MapGet("/presence", (IServiceProvider services) =>
-        {
-            var entries = new List<WorldPresenceEntry>();
-            if (services.GetService<WorldPresence>() is { } presence)
-                foreach (var entry in presence.All)
-                    if (entry is { AccountId: { } account, Session: { InWorld: true, CharacterId: { } id } session }
-                        && Chat.WorldChatDirectory.Describe(id, session) is { } character)
-                        entries.Add(new WorldPresenceEntry(id, account, character.Name, character.DisplayName, character.GuildId, character.Race));
-            return Results.Ok(entries);
-        });
+            Results.Ok(services.GetService<WorldPresence>() is { } presence ? PresenceEntries(presence) : []));
         control.MapPost("/command", async (WorldCommandRequest input, IServiceProvider services, CancellationToken ct) =>
         {
             if (services.GetService<Aion.Application.Chat.IChatCommandHandler>() is not { } commands || !commands.Owns(input.Content ?? ""))
@@ -219,6 +214,8 @@ public static class WorldEndpoints
         control.MapPost("/sanctions", async (WorldSanctionChange input, IServiceProvider services, CancellationToken ct) =>
         {
             if (services.GetService<Authentication.ServerControl>() is not { } serverControl) return Results.Ok(new { value = 0 });
+            // The realm's sanctions as they are now, not the state read within the last 2 s.
+            if (services.GetService<IStaffTools>() is Realm.LinkedStaffTools linked) linked.Invalidate();
             await serverControl.RefreshAsync(ct);
             // A disabled account or changed roles reach this world's account mirror too.
             if (input.KickAccount is { } named && services.GetService<Realm.AccountMirrorService>() is { } mirror) await mirror.RefreshAsync(named, ct);
@@ -230,6 +227,17 @@ public static class WorldEndpoints
         // The account's Quna on this world (its characters and account storage live in this world's database).
         control.MapGet("/quna", async (Guid account, IAccountQunaBalance quna, CancellationToken ct) =>
             Results.Ok(new { value = await quna.SumAsync(account, ct) }));
+    }
+
+    /// <summary>The characters in this world now, as the realm's chat and presence know them.</summary>
+    public static List<WorldPresenceEntry> PresenceEntries(WorldPresence presence)
+    {
+        var entries = new List<WorldPresenceEntry>();
+        foreach (var entry in presence.All)
+            if (entry is { AccountId: { } account, Session: { InWorld: true, CharacterId: { } id } session }
+                && Chat.WorldChatDirectory.Describe(id, session) is { } character)
+                entries.Add(new WorldPresenceEntry(id, account, character.Name, character.DisplayName, character.GuildId, character.Race));
+        return entries;
     }
 
     static async Task<VerifiedAccount?> Signed(HttpContext ctx, IAccountAuthentication auth, CancellationToken ct)

@@ -24,14 +24,17 @@ public sealed record WorldSanctionChange(Guid? KickAccount, string? Reason);
 /// remote one), called with the world's control token. The realm's chat server, the staff dashboard's world tools and
 /// realm-wide actions (bans, scheduled announcements) reach the worlds through it. A world counts while it answers.
 /// </summary>
-public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor, ILogger<WorldLinks> logger)
+public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor, ILogger<WorldLinks> logger, Realm.RealmSocketHub? sockets = null)
 {
     public const string ControlHeader = "X-World-Control";
-    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
+    // Over the world's realm socket while it is open, else HTTP to its control port (server/REALM_LINK.md).
+    readonly HttpClient Http = new(sockets is null ? new SocketsHttpHandler() : sockets.Handler(new SocketsHttpHandler()))
+    { Timeout = TimeSpan.FromSeconds(5) };
 
-    /// <summary>The world servers that answer on their status port now.</summary>
+    /// <summary>The world servers that answer now (on their status port, or a remote one over its realm socket).</summary>
     public async Task<IReadOnlyList<WorldRecord>> RunningAsync(CancellationToken ct) =>
-        (await worlds.WorldsAsync(ct)).Where(w => w is { Enabled: true, InternalPort: not null }
+        (await worlds.WorldsAsync(ct)).Where(w => w is { Enabled: true }
+            && (w.InternalPort is not null || sockets?.Connected(w.WorldId) == true)
             && supervisor.Runtime(w.WorldId).State is WorldRuntime.Running or WorldRuntime.Online).ToList();
 
     public async Task<WorldRecord?> RunningAsync(int worldId, CancellationToken ct) =>
@@ -44,14 +47,18 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
 
     HttpRequestMessage Request(WorldRecord world, HttpMethod method, string pathAndQuery)
     {
-        var request = new HttpRequestMessage(method, $"http://{WorldSupervisor.StatusHost(world)}:{world.InternalPort}{pathAndQuery}");
+        // A remote world without a control port is reached over its realm socket only.
+        var address = world.InternalPort is { } port ? $"{WorldSupervisor.StatusHost(world)}:{port}" : $"world-{world.WorldId}.invalid";
+        var request = new HttpRequestMessage(method, $"http://{address}{pathAndQuery}");
         request.Headers.Add(ControlHeader, supervisor.ControlToken(world.WorldId));
+        request.Options.Set(Realm.LinkTunnelHandler.World, world.WorldId);
         return request;
     }
 
-    async Task<T?> SendAsync<T>(WorldRecord world, HttpMethod method, string path, object? body, CancellationToken ct)
+    async Task<T?> SendAsync<T>(WorldRecord world, HttpMethod method, string path, object? body, CancellationToken ct, bool repeatable = false)
     {
         using var request = Request(world, method, path);
+        if (repeatable) request.Options.Set(Realm.LinkTunnelHandler.RetrySafe, true);
         if (body is not null) request.Content = JsonContent.Create(body);
         try
         {
@@ -138,7 +145,7 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
     {
         var kicked = 0;
         foreach (var world in await RunningAsync(ct))
-            kicked += (await SendAsync<Count>(world, HttpMethod.Post, "/internal/world/sanctions", new WorldSanctionChange(kickAccount, reason), ct))?.Value ?? 0;
+            kicked += (await SendAsync<Count>(world, HttpMethod.Post, "/internal/world/sanctions", new WorldSanctionChange(kickAccount, reason), ct, repeatable: true))?.Value ?? 0;
         return kicked;
     }
 
@@ -200,7 +207,7 @@ public sealed class LinkedAccountQunaBalance(WorldLinks links) : IAccountQunaBal
 /// The characters in the world on each running world process, polled every 2 s (and on demand at a chat login) for the
 /// realm's chat server, which runs on the primary host. Reads trusted world state over the control link only.
 /// </summary>
-public sealed class WorldPresenceMirror(WorldLinks links, ILogger<WorldPresenceMirror> logger) : BackgroundService
+public sealed class WorldPresenceMirror(WorldLinks links, ILogger<WorldPresenceMirror> logger, Realm.RealmSocketHub? sockets = null) : BackgroundService
 {
     static readonly TimeSpan Every = TimeSpan.FromSeconds(2);
     readonly ConcurrentDictionary<int, IReadOnlyDictionary<Guid, WorldPresenceEntry>> worlds = new();
@@ -231,6 +238,8 @@ public sealed class WorldPresenceMirror(WorldLinks links, ILogger<WorldPresenceM
     {
         if (polledAt.TryGetValue(worldId, out var at) && DateTimeOffset.UtcNow - at < TimeSpan.FromMilliseconds(500)) return;
         polledAt[worldId] = DateTimeOffset.UtcNow;
+        // A world with an open realm socket pushes its characters as they enter and leave: its list is live.
+        if (sockets?.Presence.In(worldId) is { } pushed) { worlds[worldId] = pushed; return; }
         if (await links.RunningAsync(worldId, ct) is not { } world) { worlds.TryRemove(worldId, out _); return; }
         if (await links.PresenceAsync(world, ct) is { } entries) worlds[worldId] = entries.ToDictionary(e => e.CharacterId);
     }
@@ -246,6 +255,7 @@ public sealed class WorldPresenceMirror(WorldLinks links, ILogger<WorldPresenceM
                 foreach (var gone in worlds.Keys.Except(running.Select(w => w.WorldId))) worlds.TryRemove(gone, out _);
                 foreach (var world in running)
                 {
+                    if (sockets?.Presence.In(world.WorldId) is { } pushed) { worlds[world.WorldId] = pushed; continue; }
                     polledAt[world.WorldId] = DateTimeOffset.UtcNow;
                     if (await links.PresenceAsync(world, stoppingToken) is { } entries) worlds[world.WorldId] = entries.ToDictionary(e => e.CharacterId);
                 }

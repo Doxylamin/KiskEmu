@@ -27,7 +27,8 @@ public sealed record WorldProcessStatus(int WorldId, int Players, int Connection
 /// that exits on its own is restarted with a growing delay. Remote worlds are only probed: their status port (internal
 /// port, when set) or else their game port answers or not. The auth host runs no world itself.
 /// </summary>
-public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration configuration, ILogger<WorldSupervisor> logger) : BackgroundService
+public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration configuration, ILogger<WorldSupervisor> logger,
+    Realm.RealmSocketHub? sockets = null) : BackgroundService
 {
     static readonly TimeSpan Interval = TimeSpan.FromSeconds(5), StopTimeout = TimeSpan.FromSeconds(45), MaxBackoff = TimeSpan.FromMinutes(2);
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(2) };
@@ -127,6 +128,12 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
                 if (child.Process is not null) await StopChildAsync(child, "now remote");
                 // A probe opens a game connection there (closed after the greeting window), so only every 30 seconds.
                 if (!world.Enabled) { child.State = WorldRuntime.Stopped; child.Status = null; }
+                else if (sockets?.Status(world.WorldId) is { } live)
+                {
+                    // Its realm socket is open and reports players: online without an inbound port (server/REALM_LINK.md).
+                    child.Status = live;
+                    child.State = WorldRuntime.Online;
+                }
                 else if (world.InternalPort is not null)
                 {
                     // A remote world server with a status port: asked like a managed one (players, uptime), every pass.
