@@ -354,12 +354,90 @@ def create_world(world_id, catalog=None):
 
 
 def ensure_worlds(catalog=None):
-    """Every managed world of the realm gets its database; every world database here is migrated."""
+    """Every managed world of the realm gets its database; every world database here is migrated; then the Quna item
+    stacks still in the world databases move into the realm's account wallets (migrate_quna)."""
     names = [create_world(world_id, catalog) for world_id in realm_worlds(managed_only=True)]
     for world_id, name in local_world_databases().items():
         if name not in names:
             names.append(create_world(world_id, catalog))
+    for world_id, account, amount, repeated in migrate_quna():
+        print(f'Quna: {amount} of account {account} on world {world_id} moved to the wallet' + (' (credited before)' if repeated else ''))
     return names
+
+
+# Migration 095: Quna (NC GameCash, item 535300006) is the realm's account wallet, no longer an item in the world databases.
+QUNA_ITEM = 535300006
+QUNA_STACKS = f"""
+SELECT COALESCE(i.account_storage_owner, c.account_id), i.instance_id, i.quantity
+FROM game.item_instances i LEFT JOIN game.characters c ON c.character_id = i.character_id
+WHERE i.template_id = {QUNA_ITEM} AND i.quantity > 0 AND COALESCE(i.account_storage_owner, c.account_id) IS NOT NULL
+ORDER BY 1, 2;
+"""
+
+
+def quna_stacks(database):
+    """Account -> [(instance id, quantity)] of the Quna item stacks in one world database."""
+    stacks = {}
+    for line in sql(QUNA_STACKS, database=database).stdout.splitlines():
+        if line.strip():
+            account, instance, quantity = line.strip().split('|')
+            stacks.setdefault(account, []).append((instance, int(quantity)))
+    return stacks
+
+
+def quna_request(world_id, account, stacks):
+    """The ledger request id of one account's stacks on one world: the same stacks give the same id (a rerun after the
+    credit but before the delete credits nothing twice); stacks found later give a new one."""
+    digest = hashlib.sha256(chr(10).join(f'{i}:{q}' for i, q in sorted(stacks)).encode()).hexdigest()[:24]
+    return f'migration:{int(world_id)}:{account}:{digest}'
+
+
+def quna_credit(account, request, amount, world_id, details):
+    """game.quna_apply in the realm: (ok, balance, error, repeated), or None when the realm does not know the account."""
+    row = sql(f"""SELECT q.ok, q.balance, COALESCE(q.error, ''), q.repeated
+        FROM auth.accounts a CROSS JOIN LATERAL game.quna_apply(a.account_id, {literal(request)}, {int(amount)}, 'migration',
+            {int(world_id)}, NULL, {literal(json.dumps(details))}::jsonb) q
+        WHERE a.account_id = {literal(account)};""").stdout.strip()
+    if not row:
+        return None
+    ok, balance, error, repeated = row.split('|')
+    return ok == 't', int(balance), error or None, repeated == 't'
+
+
+def quna_delete(database, instances):
+    """Deletes the credited stacks (their grant records and market listings go with them, ON DELETE CASCADE)."""
+    ids = ','.join(literal(i) for i in instances)
+    sql(f'BEGIN; DELETE FROM game.item_instances WHERE template_id = {QUNA_ITEM} AND instance_id IN ({ids}); COMMIT;', database=database)
+
+
+def quna_wallets_ready():
+    return sql("SELECT to_regclass('game.quna_wallets') IS NOT NULL;").stdout.strip() == 't'
+
+
+def migrate_quna(worlds=None, stacks=quna_stacks, credit=quna_credit, delete=quna_delete):
+    """Moves every Quna item stack of every world database here into the realm's account wallets, per world and account:
+    the stacks' sum as one 'migration' ledger entry, then the stacks are deleted. Safe to run again: credited stacks have
+    the same request id (the realm returns the first result) and are only deleted. The world servers must be stopped.
+    Returns (world, account, amount, repeated) for each account moved."""
+    if worlds is None:
+        if not quna_wallets_ready():
+            return []
+        worlds = local_world_databases()
+    moved = []
+    for world_id, database in sorted(worlds.items()):
+        for account, rows in sorted(stacks(database).items()):
+            amount = sum(q for _, q in rows)
+            details = {'world': int(world_id), 'stacks': len(rows), 'source': 'item 535300006'}
+            result = credit(account, quna_request(world_id, account, rows), amount, world_id, details)
+            if result is None:
+                print(f'Quna: account {account} on world {world_id} is not in the realm; its {amount} Quna stays as items', file=sys.stderr)
+                continue
+            ok, _, error, repeated = result
+            if not ok:
+                raise RuntimeError(f'Quna migration of account {account} on world {world_id} refused: {error}')
+            delete(database, [i for i, _ in rows])
+            moved.append((int(world_id), account, amount, repeated))
+    return moved
 
 
 def import_catalog(directory, database=None):
@@ -450,6 +528,7 @@ def main():
     world.add_argument('--catalog', type=Path, help='game-catalog-v2 export to import into a new world database')
     worlds = sub.add_parser('ensure-worlds', help='a database for every managed world; migrate every world database')
     worlds.add_argument('--catalog', type=Path)
+    sub.add_parser('migrate-quna', help="move the Quna item stacks of every world database here into the realm's wallets (idempotent)")
     load = sub.add_parser('import-catalog')
     load.add_argument('--directory', type=Path, default=ROOT / 'research/local/game-catalog-v2')
     backup = sub.add_parser('backup')
@@ -478,6 +557,11 @@ def main():
     elif args.command == 'ensure-worlds':
         for name in ensure_worlds(args.catalog):
             print('World database ready:', name)
+    elif args.command == 'migrate-quna':
+        moved = migrate_quna()
+        for world_id, account, amount, repeated in moved:
+            print(f'Quna: {amount} of account {account} on world {world_id} moved to the wallet' + (' (credited before)' if repeated else ''))
+        print(f'Quna: {len(moved)} account stacks moved.')
     elif args.command == 'import-catalog':
         print(json.dumps(import_catalog(args.directory), indent=2))
     elif args.command == 'backup':

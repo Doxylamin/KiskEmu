@@ -12,6 +12,12 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
 {
     /// <summary>Configured live character cap (Exp.dat tables still define levels through <see cref="ProgressionOptions.TableMaxLevel"/>).</summary>
     int MaxLevel => progression.LevelCap;
+    /// <summary>The account Quna wallet (the realm's, server/DATABASES.md): a staff grant of the Quna item goes there.</summary>
+    public IQunaWallet? QunaWallet { get; init; }
+    /// <summary>This world (the ledger's world of a staff grant made here); null on the auth host.</summary>
+    public int? QunaWorldId { get; init; }
+    /// <summary>Item.dat GameCash (Quna); never stored as an item since migration 095.</summary>
+    public const int QunaItemId = 535300006;
     private static JsonElement Json(object value) => JsonSerializer.SerializeToElement(value);
 
     static JsonElement RollEquipStats(IItemStatRoller? roller, int templateId) =>
@@ -2777,7 +2783,18 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
         if(await Scalar(c,t,"SELECT c.character_id FROM game.characters c JOIN auth.accounts a USING(account_id) WHERE c.character_id=$1 AND a.disabled_at IS NULL FOR UPDATE OF c",ct,command.CharacterId) is not Guid)
             throw new GameplayException("character_unavailable");
         JsonElement result;
-        if(command.Command=="grant")
+        if(command.Command=="grant" && command.TemplateId==QunaItemId)
+        {
+            // Quna is the account's wallet in the realm: credited there (the request id makes a retry of this command
+            // return the same grant); the realm pushes the balance to the world the account plays on.
+            if(QunaWallet is not { } wallet) throw new GameplayException("quna_unavailable");
+            var owner=(Guid)(await Scalar(c,t,"SELECT account_id FROM game.characters WHERE character_id=$1",ct,command.CharacterId))!;
+            var granted=await wallet.GrantAsync(new QunaRequest(owner,"admin:"+command.RequestId.ToString("N"),command.Quantity,QunaWalletRules.Staff,
+                QunaWorldId,command.CharacterId,Json(new{actor=actor.AccountId,command="grant"})),ct);
+            if(!granted.Ok) throw new GameplayException("quna_"+granted.Error);
+            result=Json(new{quna=granted.Balance});
+        }
+        else if(command.Command=="grant")
         {
             if(await Scalar(c,t,"SELECT template_id FROM catalog.items WHERE build_id=$1 AND template_id=$2",ct,command.BuildId!,command.TemplateId) is null) throw new GameplayException("unknown_item");
             var id=(Guid)(await Scalar(c,t,"SELECT game.grant_item($1,$2,$3,$4,$5)",ct,command.CharacterId,command.BuildId!,command.TemplateId,command.Quantity,command.RequestId))!;

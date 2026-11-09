@@ -108,35 +108,4 @@ public sealed class WorldRegistryTests
         Assert.True(File.Exists(file));
         Assert.All(arguments, a => Assert.EndsWith("Aion.Host.dll", a));
     }
-
-    [Fact]
-    public async Task Account_quna_is_summed_over_the_worlds_and_a_silent_world_counts_as_zero()
-    {
-        WorldRecord[] worlds =
-        [
-            World(1204, "Alpha", 1361, 2361, WorldRecord.Managed, 13328, 18780),
-            World(1205, "Beta", 1362, 2362, WorldRecord.Managed, 13329, 18781),
-            World(1208, "Far", 1365, 2365, WorldRecord.Remote, 13328, 18790, host: "10.9.9.9"),
-        ];
-        var answers = new Dictionary<int, long?> { [1204] = 1_500, [1205] = null, [1208] = 250 };
-        var missing = new List<int>();
-        var sum = await WorldLinks.SumOverAsync(worlds, w => Task.FromResult(answers[w.WorldId]), w => missing.Add(w.WorldId));
-        Assert.Equal(1_750, sum);
-        Assert.Equal([1205], missing);
-        Assert.Equal(0, await WorldLinks.SumOverAsync([], _ => Task.FromResult<long?>(1), _ => { }));
-    }
-
-    [Fact]
-    public void Shop_quna_counts_only_the_world_the_account_plays_on()
-    {
-        WorldRecord[] worlds =
-        [
-            World(1204, "Alpha", 1361, 2361, WorldRecord.Managed, 13328, 18780),
-            World(1205, "Beta", 1362, 2362, WorldRecord.Managed, 13329, 18781),
-        ];
-        Assert.Equal([1205], WorldLinks.QunaWorlds(worlds, 1205).Select(w => w.WorldId));
-        // Not in a world, or in one that is not running: every running world.
-        Assert.Equal([1204, 1205], WorldLinks.QunaWorlds(worlds, null).Select(w => w.WorldId));
-        Assert.Equal([1204, 1205], WorldLinks.QunaWorlds(worlds, 1299).Select(w => w.WorldId));
-    }
 }

@@ -989,11 +989,15 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     async Task<List<InventoryItem>> LoadInventoryAsync(INativeCharacterStore store, Guid character, CancellationToken ct, IReadOnlyDictionary<long, int>? hints = null)
     {
         var rows = await store.InventoryAsync(character, ct);
+        // Quna is the account wallet's: stacks still stored go into it, and the balance is read on the first load.
+        if (store.QunaWallet is { } wallet && rows.Any(r => IsQunaRow(r) && r.Location == "bag")) rows = await SweepQunaStacksAsync(store, wallet, character, rows, ct);
+        if (qunaEntry < 0) await RefreshAccountQunaBalanceAsync(ct);
         storedItems.Clear();
-        foreach (var row in rows) storedItems[WireKey(row)] = row;
+        foreach (var row in rows.Where(r => !QunaInWallet || !IsQunaRow(r))) storedItems[WireKey(row)] = row;
         await EnsureRolledStatsAsync(store, character, ct);
-        var result = Layout(storedItems.Values.ToList(), selected?.WireId ?? 0, data, inventory, hints);
-        await RefreshAccountQunaBalanceAsync(ct);
+        // The virtual Quna stack is laid out with the stored rows (it keeps its slot) but is not one of them.
+        var result = Layout(WithVirtualQuna(storedItems.Values), selected?.WireId ?? 0, data, inventory, hints);
+        shownQuna ??= QunaBalance();
         await LoadMembershipAsync(ct);
         return result;
     }
@@ -1054,6 +1058,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         if (Store is { } store && CharacterId is { } character)
             return await Stored(async () =>
             {
+                await RefreshAccountQunaBalanceAsync(ct);
                 var items = await LoadInventoryAsync(store, character, ct);
                 Remember(items);
                 equippedWeapon = WeaponFromInventory();
@@ -1085,7 +1090,6 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     async Task<List<byte[]>> InventoryChangesAsync(CancellationToken ct, byte increase, byte decrease, IReadOnlyDictionary<long, int>? hints = null)
     {
         if (Store is not { } store || CharacterId is not { } character) return [];
-        var beforeQuna = QunaBalance();
         var items = await LoadInventoryAsync(store, character, ct, hints);
         var changes = new List<ItemModification>();
         var gained = new List<(int ItemId, long Count)>();
@@ -1103,9 +1107,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         foreach (var gone in inventory.Values.Where(i => !kept.Contains(i.Key)))
             changes.Add(new ItemModification(2, gone, Decrease: decrease));
         Remember(items);
-        await RefreshAccountQunaBalanceAsync(ct);
         var quest = await SyncQuestCollectItemsAsync(ct);
-        var qunaRefresh = AppendQunaRefreshIfNeeded(beforeQuna);
+        var qunaRefresh = QunaRefreshIfChanged();
         if (changes.Count == 0)
             return qunaRefresh.Count == 0
                 ? (quest.Count == 0 ? acquired : [.. acquired, .. quest])

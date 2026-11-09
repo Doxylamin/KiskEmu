@@ -78,9 +78,10 @@ if (!string.IsNullOrWhiteSpace(connectionString))
     builder.Services.AddSingleton<IWireCharacterRepository>(provider => provider.GetRequiredService<PostgresCharacterRepository>());
     builder.Services.AddSingleton<CharacterService>();
     builder.Services.AddSingleton<CharacterPersistenceService>();
+    // A staff grant of Quna goes to the account's wallet (server/DATABASES.md), not into the world's items.
     builder.Services.AddSingleton<IGameplayStore>(sp => new PostgresGameplayStore(
-        sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<ProgressionOptions>(), sp.GetService<IItemStatRoller>()));
-    builder.Services.AddSingleton<IAccountQunaBalance, PostgresAccountQunaBalance>();
+        sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<ProgressionOptions>(), sp.GetService<IItemStatRoller>())
+    { QunaWallet = sp.GetService<IQunaWallet>(), QunaWorldId = worldProcess is null ? null : builder.Configuration.GetValue<int?>("Aion:Native:WorldId") });
     if (worldProcess is null)
     {
         builder.Services.AddSingleton<IGameTicketRedeemer, PostgresGameTicketRedeemer>();
@@ -89,8 +90,6 @@ if (!string.IsNullOrWhiteSpace(connectionString))
     }
     else builder.Services.AddSingleton<IAccountMirror, PostgresAccountMirror>();
 }
-else
-    builder.Services.AddSingleton<IAccountQunaBalance, NullAccountQunaBalance>();
 var accountsReady = !string.IsNullOrWhiteSpace(connectionString) && (!string.IsNullOrWhiteSpace(authConnectionString) || realmLink is not null);
 if (accountsReady && worldProcess is null)
 {
@@ -116,6 +115,13 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddSingleton<PostgresCustomShop>();
     builder.Services.AddSingleton<ICustomShopAdmin>(provider => provider.GetRequiredService<PostgresCustomShop>());
     builder.Services.AddSingleton<ICustomShopCatalog>(provider => provider.GetRequiredService<PostgresCustomShop>());
+    // The account Quna wallets (migration 095): the realm's; changes are pushed to the world the account plays on.
+    builder.Services.AddSingleton<PostgresQunaWallet>();
+    builder.Services.AddSingleton<IQunaWallet>(provider =>
+        provider.GetService<Aion.Host.Worlds.WorldPresenceMirror>() is { } mirror && provider.GetService<Aion.Host.Worlds.WorldLinks>() is { } links
+            ? new Aion.Host.Worlds.PushingQunaWallet(provider.GetRequiredService<PostgresQunaWallet>(), mirror, links,
+                provider.GetRequiredService<ILogger<Aion.Host.Worlds.PushingQunaWallet>>())
+            : provider.GetRequiredService<PostgresQunaWallet>());
     builder.Services.AddSingleton<Aion.Host.Authentication.ServerControl>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Authentication.ServerControl>());
 }
@@ -143,6 +149,8 @@ else if (accountsReady)
     builder.Services.AddSingleton<Aion.Host.Realm.RealmLinkService>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Realm.RealmLinkService>());
     builder.Services.AddSingleton<ICustomShopCatalog, Aion.Host.Realm.LinkedCustomShopCatalog>();
+    // Quna is the realm's account wallet (server/DATABASES.md): spent and granted over the realm link.
+    builder.Services.AddSingleton<IQunaWallet, Aion.Host.Realm.LinkedQunaWallet>();
     builder.Services.AddSingleton<IShopLedger>(provider => new PostgresShopLedger(provider.GetRequiredService<NpgsqlDataSource>()));
 }
 // Optional Lime chat API for the dev client (policy ChatServerURL), on its own loopback port.
@@ -295,7 +303,6 @@ if (native.LoginPort is not null || native.GamePort is not null)
         builder.Services.AddSingleton(provider => new Aion.Host.Worlds.LoginWorldList(provider.GetRequiredService<IWorldRegistry>(), native,
             provider.GetService<Aion.Host.Worlds.WorldSupervisor>(), provider.GetRequiredService<ILogger<Aion.Host.Worlds.LoginWorldList>>()));
         builder.Services.AddSingleton<Aion.Host.Worlds.WorldLinks>();
-        builder.Services.AddSingleton<IAccountQunaBalance, Aion.Host.Worlds.LinkedAccountQunaBalance>();
         builder.Services.AddSingleton<Aion.Host.Worlds.WorldPresenceMirror>();
         builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Worlds.WorldPresenceMirror>());
     }

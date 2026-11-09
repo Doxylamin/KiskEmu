@@ -224,9 +224,23 @@ public static class WorldEndpoints
         });
         control.MapGet("/blocked", async (Guid from, Guid to, IGameplayStore game, CancellationToken ct) =>
             Results.Ok(new { value = await game.AnyBlockBetweenAsync(from, to, ct) }));
-        // The account's Quna on this world (its characters and account storage live in this world's database).
-        control.MapGet("/quna", async (Guid account, IAccountQunaBalance quna, CancellationToken ct) =>
-            Results.Ok(new { value = await quna.SumAsync(account, ct) }));
+        // The realm's wallet changed (server/DATABASES.md, Quna): the account's sessions here show the new balance.
+        control.MapPost("/quna/balance", (QunaBalancePush input, IServiceProvider services) =>
+            Results.Ok(new { value = QunaPushed(services.GetService<WorldPresence>(), input) }));
+    }
+
+    /// <summary>Hands a pushed Quna balance to every session of the account in this world (on its game loop); the number reached.</summary>
+    public static int QunaPushed(WorldPresence? presence, QunaBalancePush push)
+    {
+        var reached = 0;
+        foreach (var entry in presence?.All ?? [])
+            if (entry.AccountId == push.AccountId || entry.Session.Store?.AccountId == push.AccountId)
+            {
+                var session = entry.Session;
+                _ = session.InvokeAsync(async _ => (true, await session.QunaPushedAsync(push.Balance, push.EntryId)));
+                reached++;
+            }
+        return reached;
     }
 
     /// <summary>The characters in this world now, as the realm's chat and presence know them.</summary>

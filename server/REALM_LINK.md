@@ -62,7 +62,8 @@ The callers did not change: `WorldLinks` and `RealmLinkClient` send through an `
 | `status` | world | `WorldProcessStatus` | players and connections every 5 s (a remote world is online while it sends these) |
 
 The realm sends `account.changed` after a staff role change or an account disable, and `state.changed` after a
-scheduled event is created or cancelled. Sanctions, kicks, notices and announcements were already pushes
+scheduled event is created or cancelled. An account's Quna balance after a wallet change goes to the world the account
+plays on as a tunnelled request (`POST /internal/world/quna/balance`, server/DATABASES.md), so it falls back to HTTP. Sanctions, kicks, notices and announcements were already pushes
 (`/internal/world/sanctions`, `/notice`); they now ride the tunnel.
 
 While a world's socket is open, the realm's presence for it is the pushed list (live, no polling); the 2 s poll of

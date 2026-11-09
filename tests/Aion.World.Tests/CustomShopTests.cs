@@ -62,7 +62,10 @@ public sealed class CustomShopTests
         return BitConverter.ToUInt16(replies[0], 2);
     }
 
-    static long Held(FakeCharacterStore store, int item) => store.Items.Where(i => i.TemplateId == item && i.Location == "bag").Sum(i => i.Quantity);
+    // Quna is the account wallet's (the stacks seeded as items are swept into it at entry).
+    static long Held(FakeCharacterStore store, int item) => item == PlatformGoodsTables.Embedded.QunaItemId
+        ? store.QunaBalance + store.Items.Where(i => i.TemplateId == item).Sum(i => i.Quantity)
+        : store.Items.Where(i => i.TemplateId == item && i.Location == "bag").Sum(i => i.Quantity);
 
     [Fact]
     public void Custom_goods_ids_sit_above_the_official_ones()

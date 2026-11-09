@@ -59,15 +59,12 @@ public sealed partial class GameSession
         List<(int, int, string, int, int)> limits = goods.LimitCount > 0
             ? [(goods.LimitTarget, goodsId, ShopTables.Period(goods.LimitPeriod, at), quantity, goods.LimitCount)]
             : [];
-        var costs = new List<(Guid, long, int)>();
-        if (price.Total > 0)
-        {
-            if (CostStacks(price.Currency, price.Total) is not { } stacks) return [reply(2)];
-            costs = stacks;
-        }
+        if (PurchaseCosts([(price.Currency, price.Total)]) is not { } paid) return [reply(2)];
         var order = new ShopOrderLine("custom", goodsId, quantity, price.Currency, price.Total);
-        var done = await Stored(async () => await store.ShopBuyAsync(character, costs, rewards, limits, [order], ct) ? [[]] : []);
-        if (done.Count == 0)
+        var pay = await PayQunaAsync(paid.Quna, new { kind = "custom", goods = goodsId, quantity },
+            () => StoredOk(() => store.ShopBuyAsync(character, paid.Costs, rewards, limits, [order], ct)), ct);
+        if (pay == QunaPay.NotEnough) return [reply(2)];
+        if (pay != QunaPay.Done)
         {
             DebugShop($"Custom goods {goodsId} x{quantity} failed{(limits.Count > 0 ? " (limit?)" : "")}");
             return [reply(limits.Count > 0 ? 3 : 1)];

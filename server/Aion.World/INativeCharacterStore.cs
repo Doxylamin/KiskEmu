@@ -198,8 +198,8 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<CharacterState> SaveInstanceReturnAsync(CharacterState state, int? mapId, Vector3d? position, CancellationToken ct);
     /// <summary>The character's stored items (bag, equipment, storage).</summary>
     Task<IReadOnlyList<ItemState>> InventoryAsync(Guid character, CancellationToken ct);
-    /// <summary>Sum of Quna item stacks for the whole account (platform GameCash wallet).</summary>
-    Task<long> AccountQunaBalanceAsync(CancellationToken ct) => Task.FromResult(0L);
+    /// <summary>The account's Quna wallet in the realm (server/DATABASES.md); null without one (Quna then cannot be spent).</summary>
+    Aion.Application.Gameplay.IQunaWallet? QunaWallet => null;
     /// <summary>Equips a stored item in an equipment slot (null: back to the bag); false when the rules refuse it.</summary>
     Task<bool> MoveItemAsync(Guid character, Guid item, long revision, int? equipmentSlot, CancellationToken ct);
     Task<IReadOnlyList<SocialRelation>> SocialAsync(Guid character, CancellationToken ct);

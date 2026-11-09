@@ -7,7 +7,7 @@ own PostgreSQL, and no world can read another world's characters or the accounts
 
 | Database | Name | Holds | Used by |
 | --- | --- | --- | --- |
-| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`); the catalogue (dashboard) | auth host |
+| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`), the account Quna wallets and their ledger (`game.quna_wallets`, `game.quna_ledger`); the catalogue (dashboard) | auth host |
 | World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests, shop purchases and limits, the purchase ledger `game.shop_orders`, memberships), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
 
 ## Migrations
@@ -71,6 +71,7 @@ Every request carries `X-World-Id: <id>` and `Authorization: Bearer <token>`:
 | `POST tickets`, `POST chat` | `//report` tickets; announcements and staff chat |
 | `POST characters` | the character index sync |
 | `GET shop/goods` | the custom shop goods the world sells (cached 30 s by the world) |
+| `GET quna/{account}`, `POST quna/spend`, `quna/grant`, `quna/refund` | the account Quna wallet (below); every call repeatable by its request id |
 
 While a world's **realm socket** is open (`/internal/realm/socket`, the same sign-in), these calls and the auth
 host's calls to the world's control port ride one WebSocket the world dials, plus pushed events (account and state
@@ -84,12 +85,40 @@ The world server's settings: `Aion:Role=world`, `Aion:Native:WorldId`, `Connecti
 
 Chat stays on the auth host: the client learns the chat address from the bootstrap policy before it picks
 a world. Whisper blocks are world data, so the auth host asks the sender's world server
-(`/internal/world/blocked`). The platform's Quna balance (`virtual_currency/v2.0/me/balances`) is item data
-too: while one of the account's characters is in a world, the auth host asks only that world server
-(`/internal/world/quna`), because the in-game shop spends that world's Quna; otherwise it asks every
-running world server and adds the answers, and a world that does not answer counts as 0. Shop purchases,
-the purchase ledger (`game.shop_orders`), stored memberships and the pass unlock all run on the player's
-world server against its own database; the auth host only lists the custom goods.
+(`/internal/world/blocked`). Shop purchases, the purchase ledger (`game.shop_orders`), stored memberships and the
+pass unlock all run on the player's world server against its own database; the auth host only lists the custom goods.
+
+## Quna: the account wallet
+
+Quna (NC GameCash, the paid currency) belongs to the account, not to a character or a world: one wallet per
+account in the realm (`game.quna_wallets`, balance never below 0) and an append-only ledger (`game.quna_ledger`:
+entry, account, delta, balance after, reason `purchase`/`grant`/`refund`/`staff`/`migration`, a unique
+`request_id`, the world and character it came from, `details` JSON, time; migration 095). Every change goes through
+`game.quna_apply` (or `game.quna_refund`), which locks the wallet row, refuses a debit the balance cannot cover
+(`insufficient`) and returns the first result for a request id it has already applied (`repeated`); the same id
+with another account or amount is `request_conflict`. The ledger cannot be updated, deleted or truncated.
+
+- **The auth host** uses the wallet directly (`PostgresQunaWallet`): the platform balance
+  (`virtual_currency/v2.0/me/balances`) is the wallet's balance, before and after world entry.
+- **A world server** has no Quna in its database. It spends, grants and refunds over the realm link
+  (`LinkedQunaWallet`, the realm socket while it is open, HTTP otherwise; the realm records the calling world).
+  A purchase takes the Quna first, then runs its own transaction (items, limits, `game.shop_orders`); when that
+  fails the Quna is refunded (`refund:<request id>`). NPC, coin, guild and in-game shop goods, custom goods, the
+  random shop, the Daeva Pass unlock and the membership all pay this way; the GM command `GrantShopCurrency quna`
+  (and `AcquireItem` of item 535300006) and the staff dashboard's grant of item 535300006 (`staff` reason, request
+  `admin:<command id>`) credit the wallet.
+- **The bag stack**: the client still expects Quna as a stack of item 535300006 (0x5611, 0x561b) and in
+  `RefreshCurrency_NT`, so the world shows a virtual stack whose count is the wallet balance. It is never stored;
+  it changes after a spend or grant and when the realm pushes a change.
+- **Push**: after every change the realm sends the new balance and its ledger entry to the world one of the
+  account's characters is in (`POST /internal/world/quna/balance`, over the world's socket or HTTP); the world
+  keeps the balance with the highest entry, so a push and an answer arriving out of order do not go back.
+- **Old stacks**: `postgres_dev.py ensure-worlds` (and `migrate-quna`) moves every 535300006 stack of every world
+  database in the cluster into the wallets: per world and account one `migration` entry for the stacks' sum, then
+  the stacks are deleted. The request id is the world, the account and a hash of the stacks, so a rerun (after a
+  failure between the credit and the delete) credits nothing twice. A stack that still turns up later on a world
+  in a bag (mail sent before the update, a remote world's database) is credited when its owner's inventory loads
+  (request `stack:<instance>:<revision>`, reason `grant`) and then deleted.
 
 ## Not covered
 

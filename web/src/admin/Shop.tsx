@@ -284,7 +284,7 @@ export function Shop({ call, active, isAdmin, worldName }: { call: Call; active:
             <h2>How it works</h2>
             <ul className="muted help-list">
               <li>Custom goods appear in the in-game shop, in the tab you pick, on every world.</li>
-              <li>Players pay from their bag in Kina or Quna. The server's premium setting can make Quna goods cost Kina, be free, or be hidden.</li>
+              <li>Players pay Kina from their bag and Quna from their account's wallet (shared by every world). The server's premium setting can make Quna goods cost Kina, be free, or be hidden.</li>
               <li>Limits count per character or per account on the buyer's world, and reset at the game's daily, weekly or monthly reset.</li>
               <li>Changes reach the worlds within a minute; players see them the next time they open the shop.</li>
               <li>The icon is one of the client's shop icons; leave it empty if none fits.</li>

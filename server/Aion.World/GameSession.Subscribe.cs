@@ -125,15 +125,11 @@ public sealed partial class GameSession
         var changes = new List<byte[]>();
         if (Store is { } store && CharacterId is { } character)
         {
-            var costs = new List<(Guid, long, int)>();
-            if (price > 0)
-            {
-                if (CostStacks(currency, price) is not { } stacks) return [reply(2)];
-                costs = stacks;
-            }
+            if (PurchaseCosts([(currency, price)]) is not { } paid) return [reply(2)];
             var order = new Aion.Application.Gameplay.ShopOrderLine("membership", goodsId, 1, currency, price);
-            var done = await Stored(async () => await store.ShopBuyAsync(character, costs, [], [], [order], ct) ? [[]] : []);
-            if (done.Count == 0) return [reply(1)];
+            var pay = await PayQunaAsync(paid.Quna, new { kind = "membership", goods = goodsId },
+                () => StoredOk(() => store.ShopBuyAsync(character, paid.Costs, [], [], [order], ct)), ct);
+            if (pay != QunaPay.Done) return [reply(pay == QunaPay.NotEnough ? 2 : 1)];
             if (price > 0) changes.AddRange(await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy));
             await Stored(async () => await store.SaveMembershipAsync(ToStored(extended), ct) ? [[]] : []);
         }

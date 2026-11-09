@@ -7,18 +7,21 @@ using Aion.World;
 
 namespace Aion.Host.Platform;
 
-/// <summary>Account-wide GameCash (Quna) for platform GET virtual_currency/v2.0/me/balances and in-world refresh parity.</summary>
+/// <summary>
+/// The account's GameCash (Quna) for platform GET virtual_currency/v2.0/me/balances: the realm's account wallet
+/// (server/DATABASES.md). Without a wallet (development without accounts) the one online session's balance.
+/// </summary>
 public sealed class ShopQunaBalanceService(
     WorldPresence presence,
     IPlatformSecondaryAuth? platformAuth = null,
-    IAccountQunaBalance? accountQuna = null)
+    IQunaWallet? wallet = null)
 {
     public async Task<long> BalanceAsync(IPAddress? clientAddress, string? platformSessionToken, string? wireAccountId, CancellationToken ct)
     {
         if (await ResolveAccountIdAsync(clientAddress, platformSessionToken, wireAccountId, ct) is not { } accountId)
             return 0;
-        if (accountQuna is not null)
-            return await accountQuna.SumAsync(accountId, ct);
+        if (wallet is not null)
+            return (await wallet.BalanceAsync(accountId, ct)).Balance;
         return OnlineSessionQuna(accountId);
     }
 

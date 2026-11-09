@@ -15,7 +15,7 @@ namespace Aion.Host.Native;
 /// revalidates it (and its parent browser session), and disposing closes it.
 /// </summary>
 public sealed class ServiceNativeCharacterStore(string token, WorldIdentity identity, IWorldSessions sessions,
-    IWireCharacterRepository wire, IGameplayStore game, CharacterPersistenceService persistence, IAccountQunaBalance accountQuna) : INativeCharacterStore, IGameplayFlushStore, IQuestBatchStore
+    IWireCharacterRepository wire, IGameplayStore game, CharacterPersistenceService persistence, IQunaWallet? quna) : INativeCharacterStore, IGameplayFlushStore, IQuestBatchStore
 {
     bool closed;
     (CharacterState State, int MapId, Vector3d Position)? pendingLocation;
@@ -154,7 +154,8 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return itemCache!;
     }
 
-    public Task<long> AccountQunaBalanceAsync(CancellationToken ct) => accountQuna.SumAsync(AccountId, ct);
+    /// <summary>The realm's account Quna wallet (over the realm link on a world server).</summary>
+    public IQunaWallet? QunaWallet => quna;
 
     public async Task<IReadOnlyList<QuestRecord>> SaveQuestBatchAsync(Guid character, IReadOnlyList<QuestRecord> quests, CancellationToken ct)
     {
