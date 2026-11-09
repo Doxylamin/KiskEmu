@@ -83,34 +83,6 @@ public static class GameplayEndpoints
             var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
             return Results.Ok(await game.AdminAsync(account,input,ct));
         });
-        // Live overview: who is in the world now and where (in-memory, read under the world gate).
-        admin.MapGet("/live",async(HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,IServiceProvider services,CancellationToken ct) =>
-        {
-            var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
-            await game.AdminProfileAsync(account,ct);   // staff only
-            var presence=services.GetService<Aion.World.WorldPresence>();
-            var world=services.GetService<Aion.World.SharedWorld>();
-            var entries=presence?.All ?? [];
-            var views=new List<(Aion.World.WorldPresence.Entry Entry,Aion.World.GameSession.LiveView View)>();
-            if(world is not null) await world.Lock.EnterExclusiveAsync(ct);
-            try { foreach(var e in entries) views.Add((e,e.Session.Live())); }
-            finally { world?.Lock.ExitExclusive(); }
-            var players=new List<object>();
-            foreach(var (e,v) in views.OrderBy(p => p.View.Name,StringComparer.OrdinalIgnoreCase))
-            {
-                var stored=v.CharacterId is { } id ? (await game.AdminFindCharactersAsync(account,id.ToString(),ct)).FirstOrDefault() : null;
-                players.Add(new {
-                    v.Name, v.CharacterId, AccountName=stored?.AccountName, v.StaffRole, v.Level, v.ClassName, v.MapId, v.Area,
-                    Position=v.Position is { } at ? new[]{Math.Round(at.X),Math.Round(at.Y),Math.Round(at.Z)} : null,
-                    v.Hp, v.HpMax, v.Mp, v.MpMax, v.Invisible, v.PartyLeader, v.PartySize, InWorldSince=e.Since,
-                    Heading=Math.Round(v.Heading,1), v.Dead, v.SpeedRejects });
-            }
-            return Results.Ok(new {
-                ServerTime=DateTimeOffset.UtcNow,
-                StartedAt=new DateTimeOffset(System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()),
-                Connections=presence?.Connections ?? 0,
-                Players=players });
-        });
         // Minimap outlines: a map's subzone polygons (2D, cm), the same data that clears world-map fog.
         admin.MapGet("/maps/{id:int}/outline",async(int id,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,CancellationToken ct) =>
         {

@@ -138,14 +138,15 @@ Object.assign(ERRORS, {
 /** GET /api/admin/worlds (World Management). */
 export interface WorldRuntime { state: string; processId: number | null; since: string | null; players: number | null; connections: number | null; lastError: string | null; restarts: number }
 export interface WorldEntry {
-  worldId: number; name: string; lightServerId: number; darkServerId: number; kind: 'primary' | 'managed' | 'remote'; host: string | null;
+  worldId: number; name: string; lightServerId: number; darkServerId: number; kind: 'managed' | 'remote'; host: string | null;
   gamePort: number | null; internalPort: number | null; enabled: boolean; levelCap: number | null; createdAt: string; updatedAt: string;
   characters: number; listed: boolean; runtime: WorldRuntime;
 }
 export interface WorldList { canManage: boolean; supervised: boolean; publicAddress: string | null; worlds: WorldEntry[] }
 Object.assign(ERRORS, {
   unknown_world: 'That world no longer exists.',
-  primary_world: 'The primary world is this host\'s own game port: it cannot be stopped, removed or moved here.',
+  world_required: 'Choose a world server first.',
+  world_offline: 'That world server is not running. Start it on the Worlds page.',
   world_enabled: 'Stop the world first.',
   world_has_characters: 'The world still has characters, so it cannot be removed.',
   world_id_in_use: 'That world id is already used.',

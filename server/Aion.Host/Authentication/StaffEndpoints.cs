@@ -38,20 +38,26 @@ public static class StaffEndpoints
             IServiceProvider services, CancellationToken ct) =>
         {
             if (await StaffAsync(ctx, auth, game, ct) is not { } account) return Results.Unauthorized();
-            if (services.GetService<WorldPresence>() is not { } presence) return Results.NotFound();
+            // A world server announces in its own world; the auth host (no world) in every world server.
+            var presence = services.GetService<WorldPresence>();
+            var links = services.GetService<Aion.Host.Worlds.WorldLinks>();
+            if (presence is null && links is null) return Results.NotFound();
             var text = (input.Text ?? "").Trim();
             if (text.Length is 0 or > 200 || text.Any(char.IsControl) || !input.Notice && !input.Chat) return Results.BadRequest(new { error = "invalid_announcement" });
             var color = ValidColor(input.Color) ? input.Color! : "FFFFFF";
+            var size = Math.Clamp(input.Size, 10, 60);
             var shown = 0;
-            if (input.Notice)
+            if (input.Notice && presence is not null)
             {
-                var packet = GameSession.Notice(text, Math.Clamp(input.Size, 10, 60), color);
+                var packet = GameSession.Notice(text, size, color);
                 foreach (var entry in presence.All)
                 {
                     _ = entry.Session.InvokeAsync(_ => (true, new List<byte[]> { packet }));
                     shown++;
                 }
             }
+            if (input.Notice && links is not null) shown += await links.NoticeAllAsync(text, color, ct, size);
+            // A world server's chat: its own world's sessions (handed to the auth host); the auth host's: everyone.
             var chatted = input.Chat ? await ChatAnnounceAsync(services, text) : 0;
             await game.AdminRecordAsync(account, "staff_announce", null, new { text, input.Notice, input.Chat, shown, chatted }, ct);
             return Results.Ok(new { shown, chatted });
@@ -104,6 +110,34 @@ public static class StaffEndpoints
                 (s, now) => s.StaffTeleport(input.MapId, at, now), ct);
         });
 
+        // Live overview: who is in this world server now and where (in-memory, read under the world gate).
+        staff.MapGet("/live",async(HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,IServiceProvider services,CancellationToken ct) =>
+        {
+            var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
+            await game.AdminProfileAsync(account,ct);   // staff only
+            var presence=services.GetService<Aion.World.WorldPresence>();
+            var world=services.GetService<Aion.World.SharedWorld>();
+            var entries=presence?.All ?? [];
+            var views=new List<(Aion.World.WorldPresence.Entry Entry,Aion.World.GameSession.LiveView View)>();
+            if(world is not null) await world.Lock.EnterExclusiveAsync(ct);
+            try { foreach(var e in entries) views.Add((e,e.Session.Live())); }
+            finally { world?.Lock.ExitExclusive(); }
+            var players=new List<object>();
+            foreach(var (e,v) in views.OrderBy(p => p.View.Name,StringComparer.OrdinalIgnoreCase))
+            {
+                var stored=v.CharacterId is { } id ? (await game.AdminFindCharactersAsync(account,id.ToString(),ct)).FirstOrDefault() : null;
+                players.Add(new {
+                    v.Name, v.CharacterId, AccountName=stored?.AccountName, v.StaffRole, v.Level, v.ClassName, v.MapId, v.Area,
+                    Position=v.Position is { } at ? new[]{Math.Round(at.X),Math.Round(at.Y),Math.Round(at.Z)} : null,
+                    v.Hp, v.HpMax, v.Mp, v.MpMax, v.Invisible, v.PartyLeader, v.PartySize, InWorldSince=e.Since,
+                    Heading=Math.Round(v.Heading,1), v.Dead, v.SpeedRejects });
+            }
+            return Results.Ok(new {
+                ServerTime=DateTimeOffset.UtcNow,
+                StartedAt=new DateTimeOffset(System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()),
+                Connections=presence?.Connections ?? 0,
+                Players=players });
+        });
         // Server health for the overview: players, CPU, memory, how busy the world lock is (since the last request).
         staff.MapGet("/server", async (HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, IServiceProvider services, CancellationToken ct) =>
         {
@@ -211,7 +245,7 @@ public static class StaffEndpoints
         return Results.Ok(new { done = true });
     }
 
-    /// <summary>A notice in the middle of every player's screen and the same text in chat; the number of screens.</summary>
+    /// <summary>A notice in the middle of every player's screen (on the auth host: in every world server) and the same text in chat; the number of screens.</summary>
     public static async Task<int> AnnounceAllAsync(IServiceProvider services, string text, string color = "FFFFFF", int size = 20)
     {
         var shown = 0;
@@ -224,18 +258,48 @@ public static class StaffEndpoints
                 shown++;
             }
         }
+        // The auth host (scheduled events, its restart): every world server shows the notice.
+        if (services.GetService<Aion.Host.Worlds.WorldLinks>() is { } links)
+            try { shown += await links.NoticeAllAsync(text, color, CancellationToken.None, size); }
+            catch (Exception error) when (error is InvalidOperationException or Npgsql.NpgsqlException) { }
         try { await ChatAnnounceAsync(services, text); }
         catch (Exception error) when (error is IOException or InvalidOperationException) { }
         return shown;
     }
 
-    /// <summary>A chat announcement to everyone (as the update script's restart warnings); the number of deliveries.</summary>
-    public static async Task<int> ChatAnnounceAsync(IServiceProvider services, string text)
+    /// <summary>
+    /// A chat announcement (as the update script's restart warnings): to everyone, or with <paramref name="serverKey"/> to
+    /// that world's chat sessions; the number of deliveries. A world process has no chat server: it hands its own world's
+    /// announcement to the realm host's.
+    /// </summary>
+    public static async Task<int> ChatAnnounceAsync(IServiceProvider services, string text, string? serverKey = null)
     {
+        if (services.GetService<Aion.Host.Worlds.WorldProcessOptions>() is { } process)
+            return await ForwardChatAsync(process, services.GetService<NativeOptions>()?.WorldId ?? DevelopmentDefaults.WorldId, text);
         if (services.GetService<ChatRelay>() is not { } relay || services.GetService<StompHub>() is not { } hub) return 0;
-        var deliveries = relay.Announce(text);
+        var deliveries = relay.Announce(text, serverKey: serverKey);
         await hub.DeliverAsync(deliveries);
         return deliveries.Count;
+    }
+
+    static readonly HttpClient RealmHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
+    sealed record Delivered(int Value);
+
+    static async Task<int> ForwardChatAsync(Aion.Host.Worlds.WorldProcessOptions process, int worldId, string text)
+    {
+        if (process.RealmUrl is not { Length: > 0 } realm) return 0;
+        using var request = new HttpRequestMessage(HttpMethod.Post, realm.TrimEnd('/') + "/internal/world/chat")
+        {
+            Content = System.Net.Http.Json.JsonContent.Create(new Aion.Host.Worlds.WorldText(worldId, text)),
+        };
+        request.Headers.Add(Aion.Host.Worlds.WorldLinks.ControlHeader, process.ControlToken);
+        try
+        {
+            using var response = await RealmHttp.SendAsync(request);
+            return response.IsSuccessStatusCode
+                ? (await System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsync<Delivered>(response.Content))?.Value ?? 0 : 0;
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { return 0; }
     }
 
     static string Bearer(HttpContext context)

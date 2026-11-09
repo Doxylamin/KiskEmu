@@ -20,7 +20,7 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
 
     static async Task<List<WorldRecord>> All(NpgsqlConnection c, NpgsqlTransaction? t, CancellationToken ct, bool forUpdate = false)
     {
-        await using var q = new NpgsqlCommand($"SELECT {Columns} FROM game.worlds ORDER BY kind<>'primary', world_id" + (forUpdate ? " FOR UPDATE" : ""), c, t);
+        await using var q = new NpgsqlCommand($"SELECT {Columns} FROM game.worlds ORDER BY world_id" + (forUpdate ? " FOR UPDATE" : ""), c, t);
         await using var r = await q.ExecuteReaderAsync(ct);
         var list = new List<WorldRecord>();
         while (await r.ReadAsync(ct)) list.Add(Read(r));
@@ -33,24 +33,6 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
         return await All(c, null, ct);
     }
 
-    public async Task<WorldRecord> EnsurePrimaryAsync(int worldId, CancellationToken ct = default)
-    {
-        await using var c = await source.OpenConnectionAsync(ct);
-        await using (var insert = new NpgsqlCommand("""
-            INSERT INTO game.worlds(world_id,name,light_server_id,dark_server_id,kind,enabled)
-            SELECT $1,'World '||$1,
-                   (SELECT COALESCE(max(greatest(light_server_id,dark_server_id)),2360)+1 FROM game.worlds),
-                   (SELECT COALESCE(max(greatest(light_server_id,dark_server_id)),2360)+2 FROM game.worlds),'primary',true
-            WHERE NOT EXISTS (SELECT 1 FROM game.worlds WHERE kind='primary') AND NOT EXISTS (SELECT 1 FROM game.worlds WHERE world_id=$1)
-            ON CONFLICT DO NOTHING
-            """, c))
-        {
-            insert.Parameters.Add(Int(worldId));
-            await insert.ExecuteNonQueryAsync(ct);
-        }
-        var all = await All(c, null, ct);
-        return all.FirstOrDefault(w => w.IsPrimary) ?? all.First(w => w.WorldId == worldId);
-    }
 
     async Task<T> AsAdmin<T>(VerifiedAccount actor, Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> work, CancellationToken ct)
     {
@@ -102,14 +84,13 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
     {
         var all = await All(c, t, ct, forUpdate: true);
         var kind = Clean(input.Kind) ?? WorldRecord.Managed;
-        if (kind == WorldRecord.Primary) throw new GameplayException("primary_world");
         // Defaults: the next free world id and login rows, the next free ports above the highest in use.
-        var id = input.WorldId ?? Math.Max(1204, all.Count == 0 ? 1204 : all.Max(w => w.WorldId)) + 1;
+        var id = input.WorldId ?? (all.Count == 0 ? 1204 : Math.Max(1203, all.Max(w => w.WorldId)) + 1);
         if (all.Any(w => w.WorldId == id)) throw new GameplayException("world_id_in_use");
         // Login rows: the next ids after the highest Light (1361, 1362, ...) and Dark (2361, 2362, ...) rows.
         var light = input.LightServerId ?? Math.Max(1360, all.Select(w => w.LightServerId).DefaultIfEmpty(0).Max()) + 1;
         var dark = input.DarkServerId ?? Math.Max(2360, all.Select(w => w.DarkServerId).DefaultIfEmpty(0).Max()) + 1;
-        int? gamePort = input.GamePort ?? (kind == WorldRecord.Managed ? Math.Max(13329, all.Select(w => w.GamePort ?? 0).DefaultIfEmpty(0).Max() + 1) : null);
+        int? gamePort = input.GamePort ?? (kind == WorldRecord.Managed ? Math.Max(13328, all.Select(w => w.GamePort ?? 0).DefaultIfEmpty(0).Max() + 1) : null);
         int? internalPort = input.InternalPort ?? (kind == WorldRecord.Managed ? Math.Max(18781, all.Select(w => w.InternalPort ?? 0).DefaultIfEmpty(0).Max() + 1) : null);
         var now = DateTimeOffset.UtcNow;
         var world = new WorldRecord(id, Clean(input.Name) ?? "", light, dark, kind, Clean(input.Host), gamePort, internalPort, false, input.LevelCap, now, now);
@@ -124,23 +105,22 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
         var all = await All(c, t, ct, forUpdate: true);
         var current = all.FirstOrDefault(w => w.WorldId == worldId) ?? throw new GameplayException("unknown_world");
         var kind = Clean(input.Kind) ?? current.Kind;
-        if ((kind == WorldRecord.Primary) != current.IsPrimary) throw new GameplayException("primary_world");
         if (input.WorldId is { } newId && newId != worldId) throw new GameplayException("invalid_world_id");
         // The login rows and the ports of a running world change only while it is stopped (clients hold them).
         var moved = input.LightServerId is { } l && l != current.LightServerId || input.DarkServerId is { } d && d != current.DarkServerId
             || input.GamePort is { } g && g != current.GamePort || input.InternalPort is { } i && i != current.InternalPort
             || Clean(input.Host) != current.Host && input.Host is not null || kind != current.Kind;
-        if (moved && current.Enabled && !current.IsPrimary) throw new GameplayException("world_enabled");
+        if (moved && current.Enabled) throw new GameplayException("world_enabled");
         var world = current with
         {
             Name = Clean(input.Name) ?? current.Name,
             LightServerId = input.LightServerId ?? current.LightServerId,
             DarkServerId = input.DarkServerId ?? current.DarkServerId,
             Kind = kind,
-            // An empty host clears it (the primary host's public address).
+            // An empty host clears it (the auth host's public address).
             Host = input.Host is null ? current.Host : Clean(input.Host),
-            GamePort = current.IsPrimary ? null : input.GamePort ?? current.GamePort,
-            InternalPort = current.IsPrimary ? null : input.InternalPort ?? current.InternalPort,
+            GamePort = input.GamePort ?? current.GamePort,
+            InternalPort = input.InternalPort ?? current.InternalPort,
             LevelCap = input.LevelCap is 0 ? null : input.LevelCap ?? current.LevelCap,
         };
         if (WorldInput.Problem(world, all) is { } problem) throw new GameplayException(problem);
@@ -153,8 +133,6 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
     {
         var all = await All(c, t, ct, forUpdate: true);
         var current = all.FirstOrDefault(w => w.WorldId == worldId) ?? throw new GameplayException("unknown_world");
-        // The primary world is the login host's own game port: it runs while that host runs.
-        if (current.IsPrimary && !enabled) throw new GameplayException("primary_world");
         var saved = await Save(c, t, current with { Enabled = enabled }, insert: false, ct);
         await Audit(c, t, actor, enabled ? "world.start" : "world.stop", new { worldId, saved.Name }, ct);
         return saved;
@@ -164,7 +142,6 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
     {
         var all = await All(c, t, ct, forUpdate: true);
         var current = all.FirstOrDefault(w => w.WorldId == worldId) ?? throw new GameplayException("unknown_world");
-        if (current.IsPrimary) throw new GameplayException("primary_world");
         if (current.Enabled) throw new GameplayException("world_enabled");
         await using (var count = new NpgsqlCommand("SELECT count(*) FROM game.characters WHERE world_id=$1", c, t))
         {

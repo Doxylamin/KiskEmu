@@ -19,17 +19,32 @@ public sealed class ServerControl(IStaffTools tools, IServiceProvider services, 
     readonly ConcurrentQueue<ChatLogEntry> chat = new();
     DateTimeOffset refreshedAt = DateTimeOffset.MinValue, sampledAt = DateTimeOffset.MinValue, cleanedAt = DateTimeOffset.MinValue;
 
+    /// <summary>
+    /// This host's world (a world server, or a development host's game port): its maintenance mode is the one cached here
+    /// (each world has its own). Null on the auth host, which runs no world.
+    /// </summary>
+    public int? WorldId { get; } = services.GetService<Aion.Host.Native.NativeOptions>() is { GamePort: not null } native ? native.WorldId : null;
     public MaintenanceState Maintenance => maintenance;
     public (double Exp, double Drop) Boosts { get; private set; } = (1, 1);
 
-    /// <summary>Why this account may not enter the game now ("banned …", "maintenance …"), or null.</summary>
-    public async Task<string?> LoginBlockedAsync(Guid account, CancellationToken ct)
+    /// <summary>Why this account may not enter this host's world now ("banned …", "maintenance …"), or null.</summary>
+    public async Task<string?> LoginBlockedAsync(Guid account, CancellationToken ct) =>
+        BanMessage(account) ?? (WorldId is not null && maintenance.Enabled && !await tools.IsStaffAsync(account, ct) ? "maintenance" : null);
+
+    /// <summary>"banned …" while the account is banned (every world), else null.</summary>
+    public string? BanMessage(Guid account)
     {
         var now = DateTimeOffset.UtcNow;
-        if (sanctions.FirstOrDefault(s => s.AccountId == account && s.Kind == "ban" && s.Active(now)) is { } ban)
-            return "banned" + (ban.ExpiresAt is { } until ? $" until {until:u}" : "") + (ban.Reason.Length > 0 ? $": {ban.Reason}" : "");
-        if (maintenance.Enabled && !await tools.IsStaffAsync(account, ct)) return "maintenance";
-        return null;
+        return sanctions.FirstOrDefault(s => s.AccountId == account && s.Kind == "ban" && s.Active(now)) is { } ban
+            ? "banned" + (ban.ExpiresAt is { } until ? $" until {until:u}" : "") + (ban.Reason.Length > 0 ? $": {ban.Reason}" : "")
+            : null;
+    }
+
+    /// <summary>Whether the world (any world of the realm, for the login port's pick) is in maintenance for this account.</summary>
+    public async Task<bool> MaintenanceBlocksAsync(Guid account, int worldId, CancellationToken ct)
+    {
+        var state = worldId == WorldId ? maintenance : await tools.MaintenanceAsync(worldId, ct);
+        return state.Enabled && !await tools.IsStaffAsync(account, ct);
     }
 
     public string? MuteMessage(Guid account)
@@ -47,7 +62,7 @@ public sealed class ServerControl(IStaffTools tools, IServiceProvider services, 
     /// <summary>Reloads maintenance, sanctions and events now (after a staff change).</summary>
     public async Task RefreshAsync(CancellationToken ct)
     {
-        maintenance = await tools.MaintenanceAsync(ct);
+        maintenance = WorldId is { } world ? await tools.MaintenanceAsync(world, ct) : new(false, "", null, null);
         sanctions = await tools.ActiveSanctionsAsync(ct);
         events = await tools.LiveEventsAsync(ct);
         refreshedAt = DateTimeOffset.UtcNow;
@@ -117,15 +132,17 @@ public sealed class ServerControl(IStaffTools tools, IServiceProvider services, 
         if (now - refreshedAt >= Refresh) await RefreshAsync(ct);
         ApplyBoosts(now);
         await FlushChatAsync(ct);
-        // A world process (multi-world) keeps the sanctions, maintenance and boosts; the scheduled announcements, the
-        // population samples and the cleanup are the primary host's.
+        // A world server keeps the sanctions, its maintenance and the boosts; the scheduled announcements, the population
+        // samples (every world server's players) and the cleanup are the auth host's.
         if (services.GetService<Aion.Host.Worlds.WorldProcessOptions>() is not null) return;
         await RunAnnouncementsAsync(now, ct);
         if (now - sampledAt >= SampleEvery)
         {
             sampledAt = now;
             var presence = services.GetService<WorldPresence>();
-            await tools.SamplePopulationAsync(presence?.All.Count ?? 0, presence?.Connections ?? 0, ct);
+            var (players, connections) = services.GetService<Aion.Host.Worlds.WorldLinks>() is { } links
+                ? await links.PopulationAsync(ct) : (presence?.All.Count ?? 0, presence?.Connections ?? 0);
+            await tools.SamplePopulationAsync(players, connections, ct);
         }
         if (now - cleanedAt >= TimeSpan.FromHours(24))
         {

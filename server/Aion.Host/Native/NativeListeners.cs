@@ -209,19 +209,29 @@ public sealed class NativeLoginListener(NativeOptions options, IServiceProvider 
         // Multi-world: the registered worlds that are up now (null without a registry: the single world on GamePort).
         var directory = services.GetService<Aion.Host.Worlds.LoginWorldList>() is { } worldList ? await worldList.DirectoryAsync(ct) : null;
         var handoff = services.GetService<IClientHandoff>();
+        var control = services.GetService<Aion.Host.Authentication.ServerControl>();
+        var account = new System.Runtime.CompilerServices.StrongBox<Guid>();
         var session = new LoginSession(new LoginSessionOptions
         {
             Directory = directory,
-            Route = handoff is null || directory is null ? null : (wire, grant, world, race, token) =>
-                long.TryParse(wire, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var wireId)
-                    ? handoff.RouteLoginAsync(grant.ToString("D"), wireId, world, race, token) : Task.FromResult(false),
+            Route = handoff is null || directory is null ? null : async (wire, grant, world, race, token) =>
+            {
+                if (!long.TryParse(wire, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var wireId)) return false;
+                // Maintenance is per world: only the picked world's turns players away (staff still enter).
+                if (control is not null && await control.MaintenanceBlocksAsync(account.Value, world, token))
+                {
+                    Logger.LogInformation("Native login refused: world {World} is in maintenance", world);
+                    return false;
+                }
+                return await handoff.RouteLoginAsync(grant.ToString("D"), wireId, world, race, token);
+            },
             RedirectHost = Options.Network.PublicAddress,
             RedirectPort = Options.GamePort ?? 13328,
             Characters = Options.Development && Options.IntroCharacter
                 ? [LoginPackets.PreGeneratedIntro(LoginPackets.DefaultWorlds[0].Id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())] : [],
             WorldPicked = services.GetService<WorldChoices>() is { } choices ? choices.Pick : null,
             LastPickedRace = services.GetService<WorldChoices>() is { } picks ? picks.Race : null,
-        }, Options.Development ? null : AuthenticateAsync);
+        }, Options.Development ? null : (identity, token) => AuthenticateAsync(identity, account, token));
         var chunk = new byte[8192];
         while (true)
         {
@@ -248,19 +258,22 @@ public sealed class NativeLoginListener(NativeOptions options, IServiceProvider 
         }
     }
 
-    async Task<LoginGrant?> AuthenticateAsync(ClientIdentity identity, CancellationToken ct)
+    async Task<LoginGrant?> AuthenticateAsync(ClientIdentity identity, System.Runtime.CompilerServices.StrongBox<Guid> account, CancellationToken ct)
     {
         var handoff = services.GetService<IClientHandoff>();
         var characters = services.GetService<CharacterService>();
         if (handoff is null || characters is null) return null;
         var grant = await handoff.BeginLoginAsync(identity.AuthnToken, Options.WorldId, ct);
         if (grant is null || !Guid.TryParse(grant.Grant, out var grantId)) return null;
-        // Banned accounts, and everyone but staff during maintenance, are turned away (the client shows a failed login).
-        if (services.GetService<Aion.Host.Authentication.ServerControl>() is { } control && await control.LoginBlockedAsync(grant.AccountId, ct) is { } blocked)
+        // Banned accounts are turned away (the client shows a failed login). Maintenance is per world: with a world list it
+        // is checked on the pick (Route); a single world (no registry) checks this host's.
+        if (services.GetService<Aion.Host.Authentication.ServerControl>() is { } control
+            && (services.GetService<Aion.Host.Worlds.LoginWorldList>() is null ? await control.LoginBlockedAsync(grant.AccountId, ct) : control.BanMessage(grant.AccountId)) is { } blocked)
         {
             Logger.LogInformation("Native login refused: {Reason}", blocked);
             return null;
         }
+        account.Value = grant.AccountId;
         // The login port's character list (0x390b) shows a per-server character count: each character on its own world
         // (the login session leaves out worlds that are not listed now).
         var owned = (await characters.ListAsync(new VerifiedAccount(grant.AccountId), ct))

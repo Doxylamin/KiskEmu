@@ -9,7 +9,9 @@ namespace Aion.Application.Chat;
 
 /// <summary>
 /// Room chat state shared by the chat transports: sessions, joined rooms and fan-out.
-/// Transport-free; the host maps Lime HTTP routes and STOMP onto it.
+/// Transport-free; the host maps Lime HTTP routes and STOMP onto it. One relay serves every world
+/// (game server) of the realm: a session's server key is its world, rooms carry the server key,
+/// and whispers reach characters of the sender's world only (names are unique per world).
 ///
 /// Rooms: the client joins WORLD/{serverKey}/{serverKey}, REGION/{serverKey}/RG (common) and
 /// REGION/{serverKey}/SH (shout), with serverKey from Login_RS — the same for every character
@@ -115,12 +117,16 @@ public sealed class ChatRelay(TimeProvider clock, IChatDirectory? directory = nu
         return (notification.Guid, targets);
     }
 
-    /// <summary>A server announcement (e.g. a restart warning) to every session, in its joined WORLD room.</summary>
-    public IReadOnlyList<ChatDelivery> Announce(string text, string from = "Server")
+    /// <summary>
+    /// A server announcement (e.g. a restart warning) to every session, in its joined WORLD room; with
+    /// <paramref name="serverKey"/>, to the sessions of that world only.
+    /// </summary>
+    public IReadOnlyList<ChatDelivery> Announce(string text, string from = "Server", string? serverKey = null)
     {
         var deliveries = new List<ChatDelivery>();
         foreach (var (token, session) in sessions)
         {
+            if (serverKey is not null && session.Identity.ServerKey != serverKey) continue;
             ChatRoomKey? room;
             lock (session) room = session.Rooms.FirstOrDefault(r => r.Type == "WORLD") ?? session.Rooms.FirstOrDefault();
             if (room is null) continue;
@@ -144,7 +150,8 @@ public sealed class ChatRelay(TimeProvider clock, IChatDirectory? directory = nu
         var name = CharacterNames.Stored(shown ?? "");
         if (name.Length == 0 && string.IsNullOrEmpty(message.ReceiverCharacterId))
             throw new ChatRejectedException("Choose whom to whisper.");
-        var receivers = sessions.Where(pair => pair.Key != token && Addressed(pair.Value, name, message.ReceiverCharacterId)).ToList();
+        var receivers = sessions.Where(pair => pair.Key != token && pair.Value.Identity.ServerKey == sender.Identity.ServerKey
+            && Addressed(pair.Value, name, message.ReceiverCharacterId)).ToList();
         if (receivers.Count == 0)
             throw new ChatRejectedException($"{(name.Length > 0 ? name : "That character")} is not online.");
         CheckMute(sender.Identity);

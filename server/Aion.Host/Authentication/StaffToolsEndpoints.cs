@@ -41,20 +41,27 @@ public static partial class StaffToolsEndpoints
         // ---------- Moderation ----------
         staff.MapGet("/sanctions", async (bool? all, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
             await Signed(ctx, auth, ct) is { } a ? Results.Ok(await tools.SanctionsAsync(a, all == true, ct)) : Results.Unauthorized());
-        staff.MapPost("/sanctions", async (SanctionRequest input, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, ServerControl control, CancellationToken ct) =>
+        staff.MapPost("/sanctions", async (SanctionRequest input, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, ServerControl control,
+            IServiceProvider services, CancellationToken ct) =>
         {
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();
             TimeSpan? duration = input.Hours is { } h ? TimeSpan.FromHours(h) : null;
             var sanction = await tools.SanctionAsync(a, input.Player ?? "", input.Kind ?? "", input.Reason ?? "", duration, ct);
             await control.RefreshAsync(ct);
-            var kicked = sanction.Kind == "ban" ? control.KickAccount(sanction.AccountId, sanction.Reason.Length > 0 ? sanction.Reason : "Banned") : 0;
+            var reason = sanction.Reason.Length > 0 ? sanction.Reason : "Banned";
+            var kicked = sanction.Kind == "ban" ? control.KickAccount(sanction.AccountId, reason) : 0;
+            // Sanctions are the realm's: every world server reloads them now, and a ban disconnects the account there.
+            if (services.GetService<Aion.Host.Worlds.WorldLinks>() is { } links)
+                kicked += await links.SanctionsChangedAsync(sanction.Kind == "ban" ? sanction.AccountId : null, reason, ct);
             return Results.Ok(new { sanction, kicked });
         });
-        staff.MapDelete("/sanctions/{id:long}", async (long id, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, ServerControl control, CancellationToken ct) =>
+        staff.MapDelete("/sanctions/{id:long}", async (long id, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, ServerControl control,
+            IServiceProvider services, CancellationToken ct) =>
         {
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();
             var revoked = await tools.RevokeSanctionAsync(a, id, ct);
             await control.RefreshAsync(ct);
+            if (services.GetService<Aion.Host.Worlds.WorldLinks>() is { } links) await links.SanctionsChangedAsync(null, null, ct);
             return Results.Ok(new { revoked });
         });
         staff.MapGet("/chat", async (string? q, string? sender, long? before, int? limit, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
@@ -65,16 +72,19 @@ public static partial class StaffToolsEndpoints
             await Signed(ctx, auth, ct) is { } a ? Results.Ok(new { updated = await tools.UpdateTicketAsync(a, id, input.Status ?? "", input.Note ?? "", ct) }) : Results.Unauthorized());
 
         // ---------- Maintenance ----------
-        staff.MapGet("/maintenance", async (HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
+        // Each world server has its own maintenance mode: these run on the world server (the auth host forwards ?world=…).
+        staff.MapGet("/maintenance", async (HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, ServerControl control, CancellationToken ct) =>
         {
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();
             if ((await tools.RolesAsync(a, ct)).Count == 0) return Results.StatusCode(403);
-            return Results.Ok(await tools.MaintenanceAsync(ct));
+            if (control.WorldId is not { } world) return Results.BadRequest(new { error = "world_required" });
+            return Results.Ok(await tools.MaintenanceAsync(world, ct));
         });
         staff.MapPost("/maintenance", async (MaintenanceRequest input, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, ServerControl control, CancellationToken ct) =>
         {
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();
-            var state = await tools.SetMaintenanceAsync(a, input.Enabled, input.Message ?? "", ct);
+            if (control.WorldId is not { } world) return Results.BadRequest(new { error = "world_required" });
+            var state = await tools.SetMaintenanceAsync(a, world, input.Enabled, input.Message ?? "", ct);
             await control.RefreshAsync(ct);
             var kicked = input.Enabled && input.Kick ? await control.KickPlayersAsync(state.Message, ct) : 0;
             return Results.Ok(new { state, kicked });

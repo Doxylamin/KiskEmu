@@ -12,8 +12,11 @@ namespace Aion.Host.Chat;
 /// </summary>
 public sealed class WorldChatDirectory(WorldPresence presence, IWireCharacterRepository characters, int worldId) : IChatDirectory
 {
-    public async Task<IReadOnlyList<(ChatCharacter Character, string WireId)>> InWorldAsync(Guid account, CancellationToken cancellationToken)
+    public int WorldId => worldId;
+
+    public async Task<IReadOnlyList<(ChatCharacter Character, string WireId)>> InWorldAsync(Guid account, int world, CancellationToken cancellationToken)
     {
+        if (world != worldId) return [];
         var stored = await characters.ListWorldAsync(account, worldId, cancellationToken);
         var found = new List<(ChatCharacter, string)>();
         foreach (var state in stored)
@@ -32,11 +35,14 @@ public sealed class WorldChatDirectory(WorldPresence presence, IWireCharacterRep
     {
         var entry = presence.FindCharacter(character);
         if (entry is null || entry.AccountId != account || !entry.Session.InWorld) return null;
-        var session = entry.Session;
+        return Describe(character, entry.Session);
+    }
+
+    /// <summary>The character of an in-world session as chat shows it, or null before it has a name.</summary>
+    public static ChatCharacter? Describe(Guid character, GameSession session) =>
         // CharacterName is the stored name (WorldPresence is keyed by it); the shown name adds the staff tag.
-        return session.CharacterName is { Length: > 0 } name
+        session.CharacterName is { Length: > 0 } name
             ? new ChatCharacter(character, name, CharacterNames.Display(name, session.StaffRole), session.Guild?.Id ?? 0,
                 session.ProfileRace)
             : null;
-    }
 }

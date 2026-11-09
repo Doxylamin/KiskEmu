@@ -70,10 +70,14 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
 
     // ---------- Maintenance ----------
 
-    public async Task<MaintenanceState> MaintenanceAsync(CancellationToken ct = default)
+    /// <summary>Each world's maintenance is the server setting "maintenance:{world id}" (migration 091).</summary>
+    static string MaintenanceKey(int worldId) => "maintenance:" + worldId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    public async Task<MaintenanceState> MaintenanceAsync(int worldId, CancellationToken ct = default)
     {
         await using var c = await source.OpenConnectionAsync(ct);
-        await using var q = Query(c, null, "SELECT s.value::text,s.updated_at,a.subject FROM game.server_settings s LEFT JOIN auth.accounts a ON a.account_id=s.updated_by WHERE s.key='maintenance'");
+        await using var q = Query(c, null, "SELECT s.value::text,s.updated_at,a.subject FROM game.server_settings s LEFT JOIN auth.accounts a ON a.account_id=s.updated_by WHERE s.key=$1",
+            MaintenanceKey(worldId));
         await using var r = await q.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return new(false, "", null, null);
         using var json = JsonDocument.Parse(r.GetString(0));
@@ -82,7 +86,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
         return new(enabled, message, At(r, 1), TextOrNull(r, 2));
     }
 
-    public async Task<MaintenanceState> SetMaintenanceAsync(VerifiedAccount actor, bool enabled, string message, CancellationToken ct = default)
+    public async Task<MaintenanceState> SetMaintenanceAsync(VerifiedAccount actor, int worldId, bool enabled, string message, CancellationToken ct = default)
     {
         message = (message ?? "").Trim();
         if (message.Length > 200) throw new GameplayException("invalid_message");
@@ -90,13 +94,13 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
         {
             await RequireStaff(c, t, actor, ct, admin: true);
             await using (var q = Query(c, t, """
-                INSERT INTO game.server_settings(key,value,updated_at,updated_by) VALUES('maintenance',$1::jsonb,now(),$2)
+                INSERT INTO game.server_settings(key,value,updated_at,updated_by) VALUES($3,$1::jsonb,now(),$2)
                 ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now(),updated_by=EXCLUDED.updated_by
-                """, JsonSerializer.Serialize(new { enabled, message }), actor.AccountId)) await q.ExecuteNonQueryAsync(ct);
-            await Audit(c, t, actor, enabled ? "staff_maintenance_on" : "staff_maintenance_off", new { message }, ct);
+                """, JsonSerializer.Serialize(new { enabled, message }), actor.AccountId, MaintenanceKey(worldId))) await q.ExecuteNonQueryAsync(ct);
+            await Audit(c, t, actor, enabled ? "staff_maintenance_on" : "staff_maintenance_off", new { message, world = worldId }, ct);
             return true;
         }, ct);
-        return await MaintenanceAsync(ct);
+        return await MaintenanceAsync(worldId, ct);
     }
 
     // ---------- Sanctions ----------

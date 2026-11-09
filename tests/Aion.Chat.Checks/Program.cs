@@ -148,7 +148,7 @@ var legionRoom = new ChatRoomKey("GUILD", "1204", "GU7");
 Rejected(() => accounts.Join(elyraToken, legionRoom), "a character without a legion cannot join a legion room");
 world.Enter(accountA, elyra with { GuildId = 7 }, "11");
 world.Enter(accountB, bram with { GuildId = 7 }, "12");
-var altOne = (await world.InWorldAsync(accountC, default)).First(p => p.Character.Name == "AltOne").Character;
+var altOne = (await world.InWorldAsync(accountC, 1204, default)).First(p => p.Character.Name == "AltOne").Character;
 world.Enter(accountC, altOne with { GuildId = 8 }, "21");
 var altToken = accounts.Login((await verifier.VerifyAsync(Login(ticketC, "21"), default))!);
 accounts.Join(elyraToken, legionRoom);
@@ -188,6 +188,50 @@ Check(accounts.Send(elyraToken, common, Message("after switch")).Deliveries[0].N
 Check((await accounts.CommandAsync(elyraToken, common, Message("//admin"), (id, name) => Task.FromResult(id.Character!.Name + "/" + name)))
     .Deliveries.Single().Notification.Content == "Zakl/Zakl", "commands after a switch run as the new character");
 world.Leave(zakl);
+// Several worlds (game servers) on one chat server: the server key is the world, rooms and whispers stay in it.
+var realmWorld = new FakeDirectory();
+var accountD = Guid.NewGuid();
+var accountE = Guid.NewGuid();
+var accountF = Guid.NewGuid();
+var dara = new ChatCharacter(Guid.NewGuid(), "Dara", "Dara");
+var eiko = new ChatCharacter(Guid.NewGuid(), "Eiko", "Eiko");
+var daraTwin = new ChatCharacter(Guid.NewGuid(), "Dara", "Dara");   // names are unique per world only
+realmWorld.Enter(accountD, dara, "31", 1204);
+realmWorld.Enter(accountE, eiko, "32", 1205);
+realmWorld.Enter(accountF, daraTwin, "33", 1205);
+var ticketD = new string('1', 64);
+var ticketE = new string('2', 64);
+var ticketF = new string('3', 64);
+var realmHandoff = new FakeHandoff(new() { [ticketD] = accountD, [ticketE] = accountE, [ticketF] = accountF });
+var realmVerifier = new AccountChatLoginVerifier(realmHandoff, realmWorld, key => key is "1204" or "1205" ? int.Parse(key) : null, TimeSpan.Zero);
+var daraId = await realmVerifier.VerifyAsync(Login(ticketD, "31", "1204"), default);
+var eikoId = await realmVerifier.VerifyAsync(Login(ticketE, "32", "1205"), default);
+var twinId = await realmVerifier.VerifyAsync(Login(ticketF, "33", "1205"), default);
+Check(daraId is { ServerKey: "1204", Character.Name: "Dara" } && eikoId is { ServerKey: "1205", Character.Name: "Eiko" },
+    "one chat server: each login is bound to the world of its server key");
+Check(await realmVerifier.VerifyAsync(Login(ticketE, "32", "1204"), default) is null, "a character is found only in its own world");
+Check(await realmVerifier.VerifyAsync(Login(ticketD, "31", "1299"), default) is null, "a world this chat server does not serve is rejected");
+Check(realmHandoff.Worlds.Contains(1205), "the ticket is checked for the login's world");
+var realm = new ChatRelay(clock, realmWorld);
+var daraToken = realm.Login(daraId!);
+var eikoToken = realm.Login(eikoId!);
+var twinToken = realm.Login(twinId!);
+var common1204 = new ChatRoomKey("REGION", "1204", "RG");
+var common1205 = new ChatRoomKey("REGION", "1205", "RG");
+realm.Join(daraToken, common1204);
+realm.Join(eikoToken, common1205);
+realm.Join(twinToken, common1205);
+Rejected(() => realm.Join(daraToken, common1205), "another world's rooms cannot be joined");
+Check(realm.Send(eikoToken, common1205, Message("hi 1205")).Deliveries.Select(d => d.SessionToken).Order().SequenceEqual(new[] { eikoToken, twinToken }.Order()),
+    "a room message stays in its world");
+var crossWhisper = realm.Whisper(eikoToken, whisperRoom, Message("psst") with { TargetCharacterName = "Dara" });
+Check(crossWhisper.Deliveries.Select(d => d.SessionToken).Order().SequenceEqual(new[] { eikoToken, twinToken }.Order()),
+    "a whisper reaches the named character of the sender's world only");
+Rejected(() => realm.Whisper(daraToken, whisperRoom, Message("x") with { TargetCharacterName = "Eiko" }), "characters of other worlds are not whispered to");
+var worldNotice = realm.Announce("World 1205 restarts", serverKey: "1205");
+Check(worldNotice.Select(d => d.SessionToken).Order().SequenceEqual(new[] { eikoToken, twinToken }.Order()), "a world's announcement reaches that world only");
+Check(realm.Announce("Everyone").Count == 3, "a realm announcement reaches every world");
+
 var readWhisper = LimeWire.ReadWhisper(JsonNode.Parse(
     """{"gameUserKey":{"characterId":"12"},"gameMessageInfo":{"content":"x"},"validationInfo":{"targetCharacterName":"[GM] Elyra"}}"""));
 Check(readWhisper is { TargetCharacterName: "[GM] Elyra", ReceiverCharacterId: "12", Content: "x" }, "reads sendWhisper");
@@ -242,12 +286,12 @@ sealed class ManualClock : TimeProvider
 
 sealed class FakeDirectory : IChatDirectory
 {
-    readonly Dictionary<Guid, (Guid Account, ChatCharacter Character, string WireId)> present = [];
-    public void Enter(Guid account, ChatCharacter character, string wireId) => present[character.Id] = (account, character, wireId);
+    readonly Dictionary<Guid, (Guid Account, ChatCharacter Character, string WireId, int World)> present = [];
+    public void Enter(Guid account, ChatCharacter character, string wireId, int world = 1204) => present[character.Id] = (account, character, wireId, world);
     public void Leave(ChatCharacter character) => present.Remove(character.Id);
-    public Task<IReadOnlyList<(ChatCharacter Character, string WireId)>> InWorldAsync(Guid account, CancellationToken cancellationToken) =>
+    public Task<IReadOnlyList<(ChatCharacter Character, string WireId)>> InWorldAsync(Guid account, int worldId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<(ChatCharacter Character, string WireId)>>(
-            present.Values.Where(p => p.Account == account).Select(p => (p.Character, p.WireId)).ToList());
+            present.Values.Where(p => p.Account == account && p.World == worldId).Select(p => (p.Character, p.WireId)).ToList());
     public ChatCharacter? Current(Guid character, Guid account) =>
         present.TryGetValue(character, out var p) && p.Account == account ? p.Character : null;
     public ChatCharacter? CurrentOfAccount(Guid account) =>

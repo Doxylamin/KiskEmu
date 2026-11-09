@@ -35,9 +35,10 @@ public interface IStaffTools
     /// <summary>Whether an account holds a staff role (maintenance logins).</summary>
     Task<bool> IsStaffAsync(Guid account, CancellationToken ct = default);
 
-    Task<MaintenanceState> MaintenanceAsync(CancellationToken ct = default);
+    /// <summary>Maintenance mode of one world (game server); each world has its own.</summary>
+    Task<MaintenanceState> MaintenanceAsync(int worldId, CancellationToken ct = default);
     /// <summary>Admins only.</summary>
-    Task<MaintenanceState> SetMaintenanceAsync(VerifiedAccount actor, bool enabled, string message, CancellationToken ct = default);
+    Task<MaintenanceState> SetMaintenanceAsync(VerifiedAccount actor, int worldId, bool enabled, string message, CancellationToken ct = default);
 
     /// <summary>Every sanction not revoked and not expired (the host caches them for login and chat checks).</summary>
     Task<IReadOnlyList<Sanction>> ActiveSanctionsAsync(CancellationToken ct = default);

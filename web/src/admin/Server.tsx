@@ -102,8 +102,8 @@ function RestartCard({ call, pending, now, onChange }: { call: Call; pending: st
   return (
     <section className="card card-body stack restart-card">
       <div>
-        <h2>Restart the server</h2>
-        <p className="muted small">Players get notices at 10 and 5 minutes, 1 minute, 30 and 10 seconds. Everyone is saved, then the server starts again by itself (about 30 seconds).</p>
+        <h2>Restart this world server</h2>
+        <p className="muted small">Players get notices at 10 and 5 minutes, 1 minute, 30 and 10 seconds. Everyone is saved, then the world server starts again by itself (about 30 seconds). Other worlds are not affected.</p>
       </div>
       {pending
         ? <div className="row-between notice">
@@ -181,7 +181,7 @@ function MaintenanceCard({ call, active, isAdmin }: { call: Call; active: boolea
         <h2>Maintenance mode</h2>
         <span className={`tag ${state?.enabled ? 'tag-gm' : ''}`}>{state?.enabled ? 'On' : 'Off'}</span>
       </div>
-      <p className="muted small">While on, only GameMasters and Admins can enter the game; everyone else gets a failed login.
+      <p className="muted small">While on, only GameMasters and Admins can enter this world; everyone else gets a failed login. Other worlds stay open.
         {state?.enabled && state.since ? ` On since ${new Date(state.since).toLocaleString()} (${state.by ?? 'staff'}).` : ''}</p>
       {isAdmin
         ? <>

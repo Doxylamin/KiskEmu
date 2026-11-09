@@ -4,15 +4,15 @@ using Aion.Core.Accounts;
 namespace Aion.Application.Gameplay;
 
 /// <summary>
-/// A registered world (migration 090): a world_id (characters, tickets and world sessions are scoped by it) with one
-/// login-list row per race. Kind: "primary" (the login host's own world), "managed" (a child process the primary host
-/// starts and stops) or "remote" (a world-role host elsewhere on the same database, listed only).
+/// A registered world server (migrations 090, 091): a world_id (characters, tickets and world sessions are scoped by it)
+/// with one login-list row per race. The auth host (login port) runs no world itself. Kind: "managed" (a world server
+/// process the auth host starts and stops) or "remote" (a world server run elsewhere on the same database, which the auth
+/// host lists while it answers).
 /// </summary>
 public sealed record WorldRecord(int WorldId, string Name, int LightServerId, int DarkServerId, string Kind, string? Host,
     int? GamePort, int? InternalPort, bool Enabled, int? LevelCap, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
 {
-    public const string Primary = "primary", Managed = "managed", Remote = "remote";
-    public bool IsPrimary => Kind == Primary;
+    public const string Managed = "managed", Remote = "remote";
     public bool IsManaged => Kind == Managed;
 }
 
@@ -30,10 +30,10 @@ public sealed record WorldInput(int? WorldId, string? Name, int? LightServerId, 
             return "invalid_name";
         if (world.LightServerId is < 1 or > 65535 || world.DarkServerId is < 1 or > 65535 || world.LightServerId == world.DarkServerId)
             return "invalid_server_ids";
-        if (world.Kind is not (WorldRecord.Managed or WorldRecord.Remote or WorldRecord.Primary)) return "invalid_kind";
+        if (world.Kind is not (WorldRecord.Managed or WorldRecord.Remote)) return "invalid_kind";
         if (world.Host is { } host && !Ipv4.IsMatch(host)) return "invalid_host";
         if (world.Kind == WorldRecord.Remote && world.Host is null) return "remote_needs_host";
-        if (world.Kind != WorldRecord.Primary && world.GamePort is null) return "game_port_required";
+        if (world.GamePort is null) return "game_port_required";
         if (world.GamePort is < 1 or > 65535 || world.InternalPort is < 1 or > 65535) return "invalid_port";
         if (world.Kind == WorldRecord.Managed && world.InternalPort is null) return "internal_port_required";
         if (world.GamePort is not null && world.GamePort == world.InternalPort) return "port_in_use";
@@ -43,7 +43,7 @@ public sealed record WorldInput(int? WorldId, string? Name, int? LightServerId, 
             if (other.Name.Equals(world.Name, StringComparison.OrdinalIgnoreCase)) return "name_in_use";
             int[] rows = [other.LightServerId, other.DarkServerId];
             if (rows.Contains(world.LightServerId) || rows.Contains(world.DarkServerId)) return "server_id_in_use";
-            // Ports clash only on the same machine (null host: the primary host's address).
+            // Ports clash only on the same machine (null host: the auth host's address).
             if (other.Host == world.Host || other.Kind != WorldRecord.Remote && world.Kind != WorldRecord.Remote)
             {
                 int?[] ports = [other.GamePort, other.InternalPort];
@@ -58,11 +58,9 @@ public interface IWorldRegistry
 {
     /// <summary>Every registered world (host use: login list, supervisor).</summary>
     Task<IReadOnlyList<WorldRecord>> ListAsync(CancellationToken ct = default);
-    /// <summary>Adds the primary row for this host's world when the registry has none (an existing primary row is kept).</summary>
-    Task<WorldRecord> EnsurePrimaryAsync(int worldId, CancellationToken ct = default);
 
     // Staff (admin role), audited. GameplayException codes: forbidden, unknown_world, a WorldInput.Problem code,
-    // primary_world (the primary cannot be removed or re-kinded), world_enabled (stop it first), world_has_characters.
+    // world_id_in_use, world_enabled (stop it first), world_has_characters.
     Task<WorldRecord> CreateAsync(VerifiedAccount actor, WorldInput input, CancellationToken ct = default);
     Task<WorldRecord> UpdateAsync(VerifiedAccount actor, int worldId, WorldInput input, CancellationToken ct = default);
     Task<WorldRecord> SetEnabledAsync(VerifiedAccount actor, int worldId, bool enabled, CancellationToken ct = default);

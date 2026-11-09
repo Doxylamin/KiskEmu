@@ -53,6 +53,9 @@ body { background: radial-gradient(1200px 600px at 75% -10%, #18202c 0%, transpa
 .brand-mark { width: 34px; height: 34px; flex: none; border-radius: 10px; transform: rotate(45deg) scale(.78);
   background: linear-gradient(135deg, #f3d488, #a77a2a); box-shadow: 0 0 0 3px #1d1608, 0 0 0 4px #6b5527, 0 6px 20px rgba(216, 178, 92, .25); }
 .nav { display: flex; flex-direction: column; gap: 2px; }
+/* The world server the world tools act on (multi-world). */
+.world-picker { padding: 0 8px; gap: 4px; }
+.world-picker .select { width: 100%; }
 .nav-item { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px; border: 0; border-radius: 9px; background: none;
   color: var(--muted); font: inherit; font-weight: 550; cursor: pointer; text-align: left; position: relative; }
 .nav-item:hover { background: var(--panel-2); color: var(--text); }
@@ -304,6 +307,7 @@ code { padding: 1px 5px; border-radius: 4px; background: var(--panel-2); font-si
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 16px; gap: 10px; border-right: 0; border-bottom: 1px solid var(--line); }
   .nav { flex-direction: row; overflow-x: auto; flex: 1 1 100%; order: 3; }
+  .world-picker { flex: 1 1 100%; order: 2; padding: 0; }
   .nav-item span { display: none; }
   .nav-item[aria-current="page"]::before { display: none; }
   .sidebar-foot { margin: 0 0 0 auto; flex-direction: row; }

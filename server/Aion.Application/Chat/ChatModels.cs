@@ -59,10 +59,10 @@ public interface IChatLoginVerifier
 public interface IChatDirectory
 {
     /// <summary>
-    /// The account's characters that are in the world on this host, each with its wire
+    /// The account's characters that are in the given world (game server) now, each with its wire
     /// character ID as decimal text (the ID the client's chat login may carry).
     /// </summary>
-    Task<IReadOnlyList<(ChatCharacter Character, string WireId)>> InWorldAsync(Guid account, CancellationToken cancellationToken);
+    Task<IReadOnlyList<(ChatCharacter Character, string WireId)>> InWorldAsync(Guid account, int worldId, CancellationToken cancellationToken);
 
     /// <summary>The character as it is now, when it is in the world for this account; else null.</summary>
     ChatCharacter? Current(Guid character, Guid account);
@@ -100,24 +100,31 @@ public sealed class DevelopmentChatLoginVerifier : IChatLoginVerifier
 /// picks one; it must match. The client starts its chat login after world entry (the chat
 /// unlock follows the post-load 0x8a1c query); in case it races the game connection, the
 /// verifier waits up to <c>settle</c> (default 5 s) for the character to appear.
+/// Several worlds (game servers) share one chat server: <c>worlds</c> maps the login's server key
+/// (the world ID as text, from Login_RS) to a world this chat server serves, else null (rejected).
+/// The game ticket was rebound to the picked world on the login port, so it resolves for that world.
 /// </summary>
-public sealed class AccountChatLoginVerifier(IClientHandoff handoff, IChatDirectory directory, string serverKey, int worldId,
+public sealed class AccountChatLoginVerifier(IClientHandoff handoff, IChatDirectory directory, Func<string, int?> worlds,
     TimeSpan? settle = null) : IChatLoginVerifier
 {
     readonly TimeSpan wait = settle ?? TimeSpan.FromSeconds(5);
 
+    /// <summary>One world: only <paramref name="serverKey"/> is served.</summary>
+    public AccountChatLoginVerifier(IClientHandoff handoff, IChatDirectory directory, string serverKey, int worldId, TimeSpan? settle = null)
+        : this(handoff, directory, key => key == serverKey ? worldId : null, settle) { }
+
     public async Task<ChatIdentity?> VerifyAsync(ChatLoginRequest request, CancellationToken cancellationToken)
     {
-        if (request.ServerKey != serverKey || request.AuthnToken is not { Length: 64 } token || !token.All(char.IsAsciiHexDigit))
-            return null;
+        if (request.ServerKey is not { Length: >= 1 and <= 10 } serverKey || worlds(serverKey) is not { } worldId) return null;
+        if (request.AuthnToken is not { Length: 64 } token || !token.All(char.IsAsciiHexDigit)) return null;
         if (request.CharacterId is not { Length: >= 1 and <= 20 } claimed || !claimed.All(char.IsAsciiDigit)) return null;
         // Read-only ticket lookup: the live game ticket's enabled account.
         if (await handoff.ResolveTicketAsync(token, worldId, cancellationToken) is not { } accountId) return null;
-        var present = await directory.InWorldAsync(accountId, cancellationToken);
+        var present = await directory.InWorldAsync(accountId, worldId, cancellationToken);
         for (var waited = TimeSpan.Zero; present.Count == 0 && waited < wait; waited += TimeSpan.FromMilliseconds(500))
         {
             await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
-            present = await directory.InWorldAsync(accountId, cancellationToken);
+            present = await directory.InWorldAsync(accountId, worldId, cancellationToken);
         }
         var chosen = present.Count == 1 ? present[0] : present.FirstOrDefault(p => p.WireId == claimed);
         if (chosen.Character is null) return null;

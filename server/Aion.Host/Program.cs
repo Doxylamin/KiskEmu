@@ -22,9 +22,11 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddServerFileLog(builder.Configuration);
-// Multi-world: a host in world role (Aion:Role=world) runs one world's game port only: no login port, account site,
-// platform bootstrap, NCGuard or chat port. The primary host starts managed ones (Aion.Host.Worlds.WorldSupervisor);
-// remote ones run on other machines against the same database.
+// Auth host and world servers (as an authserver and its worldservers, sharing one database): with account logins the
+// host that runs the login port is the auth host (login, world list, account site, platform bootstrap, chat, staff
+// dashboard) and runs no world itself. Every world is a world server, a host in world role (Aion:Role=world) running one
+// world's game port only: managed ones are started by the auth host (Aion.Host.Worlds.WorldSupervisor), remote ones run
+// on other machines against the same database. A development host (no database) still runs login and game in one process.
 var worldProcess = Aion.Host.Worlds.WorldProcessOptions.From(builder.Configuration);
 if (worldProcess is not null) builder.Services.AddSingleton(worldProcess);
 var debugOptions = builder.Configuration.GetSection(AionConfiguration.Debug).Get<DebugOptions>() ?? new DebugOptions();
@@ -103,9 +105,11 @@ builder.Services.AddSingleton(TimeProvider.System);
 // login is rejected.
 var chatServerKey = builder.Configuration["Aion:ChatServerKey"] ?? Aion.World.DevelopmentDefaults.WorldIdString;
 var chatWorldId = int.TryParse(chatServerKey, out var parsedChatWorld) ? parsedChatWorld : Aion.World.DevelopmentDefaults.WorldId;
-static WorldChatDirectory? ChatDirectory(IServiceProvider provider, int world) =>
-    provider.GetService<Aion.World.WorldPresence>() is { } presence && provider.GetService<IWireCharacterRepository>() is { } characters
-        ? new WorldChatDirectory(presence, characters, world) : null;
+// On the auth host one chat server serves every world server: its directory is the characters the world servers report.
+static IChatDirectory? ChatDirectory(IServiceProvider provider, int world) =>
+    provider.GetService<IWireCharacterRepository>() is not { } characters ? null
+    : provider.GetService<Aion.Host.Worlds.WorldPresenceMirror>() is { } mirror ? new Aion.Host.Worlds.RealmChatDirectory(null, mirror, characters)
+    : provider.GetService<Aion.World.WorldPresence>() is { } presence ? new WorldChatDirectory(presence, characters, world) : null;
 builder.Services.AddSingleton(provider => new ChatRelay(provider.GetRequiredService<TimeProvider>(), ChatDirectory(provider, chatWorldId)));
 builder.Services.AddSingleton<StompHub>();
 if (builder.Configuration.GetValue<bool>("Aion:ChatDevelopmentLogins"))
@@ -113,7 +117,12 @@ if (builder.Configuration.GetValue<bool>("Aion:ChatDevelopmentLogins"))
 else
     builder.Services.AddSingleton<IChatLoginVerifier>(provider =>
         provider.GetService<IClientHandoff>() is { } handoff && ChatDirectory(provider, chatWorldId) is { } directory
-            ? new AccountChatLoginVerifier(handoff, directory, chatServerKey, chatWorldId)
+            ? provider.GetService<Aion.Host.Worlds.WorldLinks>() is not null
+                // Auth host: the server key is the world the client logged in to (its ticket was routed there).
+                ? new AccountChatLoginVerifier(handoff, directory, key =>
+                    int.TryParse(key, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var world)
+                    && world is >= 1 and <= 65535 ? world : null)
+                : new AccountChatLoginVerifier(handoff, directory, chatServerKey, chatWorldId)
             : new RejectingChatLoginVerifier());
 // --- end chat identity ---
 // Native client ports (port of tools/login_server.py and game_server.py) on the network bind address.
@@ -133,6 +142,9 @@ if (worldProcess is not null)
         throw new InvalidOperationException("World role needs Aion:Native:GamePort, account logins and the Aion and Auth connection strings.");
     native = native with { LoginPort = null };
 }
+// The auth host runs no world: its game port setting is ignored (the world servers' ports are in the world registry).
+var authHost = worldProcess is null && native.LoginPort is not null && !native.Development && accountsReady;
+if (authHost) native = native with { GamePort = null };
 if (native.LoginPort is not null || native.GamePort is not null)
 {
     if (!native.Development && !accountsReady)
@@ -166,8 +178,10 @@ if (native.LoginPort is not null || native.GamePort is not null)
             (actor, command, result) => log.LogInformation("GM {Command} by {Actor}: {Result}", command, actor, result),
             provider.GetRequiredService<Aion.World.GameData>());
     });
-    builder.Services.AddSingleton<IChatCommandHandler>(provider =>
-        new Aion.World.GmCommands(provider.GetRequiredService<Aion.World.WorldPresence>(), provider.GetRequiredService<Aion.World.BuilderCommands>())
+    builder.Services.AddSingleton<IChatCommandHandler>(provider => authHost
+        // Auth host: a chat command is answered by the world server the sender plays on.
+        ? new Aion.Host.Worlds.RealmChatCommands(null, provider.GetRequiredService<Aion.Host.Worlds.WorldLinks>(), "")
+        : new Aion.World.GmCommands(provider.GetRequiredService<Aion.World.WorldPresence>(), provider.GetRequiredService<Aion.World.BuilderCommands>())
         {
             // "//report <text>" opens a ticket for the staff dashboard (accounts only).
             Report = provider.GetService<IStaffTools>() is { } staffTools ? async (sender, name, text, ct) =>
@@ -218,13 +232,17 @@ if (native.LoginPort is not null || native.GamePort is not null)
         };
     });
     if (native.LoginPort is not null) builder.Services.AddHostedService<NativeLoginListener>();
-    // Multi-world (primary host): the world registry's list for the login port and the managed child worlds.
-    if (native.LoginPort is not null && !native.Development && worldProcess is null && !string.IsNullOrWhiteSpace(connectionString))
+    // Auth host: the world registry's list for the login port, the managed world servers, the links to every world server
+    // (chat, staff tools) and the characters in each world for the realm's chat.
+    if (authHost)
     {
         builder.Services.AddSingleton<Aion.Host.Worlds.WorldSupervisor>();
         builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Worlds.WorldSupervisor>());
         builder.Services.AddSingleton(provider => new Aion.Host.Worlds.LoginWorldList(provider.GetRequiredService<IWorldRegistry>(), native,
             provider.GetService<Aion.Host.Worlds.WorldSupervisor>(), provider.GetRequiredService<ILogger<Aion.Host.Worlds.LoginWorldList>>()));
+        builder.Services.AddSingleton<Aion.Host.Worlds.WorldLinks>();
+        builder.Services.AddSingleton<Aion.Host.Worlds.WorldPresenceMirror>();
+        builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Worlds.WorldPresenceMirror>());
     }
     if (native.GamePort is not null) builder.Services.AddHostedService<NativeGameListener>();
     if (native.GamePort is not null)
@@ -281,7 +299,8 @@ if (ncGuard.Port is not null)
 // (Aion:Https PEM certificate) unless a TLS proxy in front of it is declared (Aion:Https:Proxy).
 var port = builder.Configuration.GetValue<int?>("Aion:LocalPort") ?? 8780;
 var https = builder.Configuration.GetSection(AionConfiguration.Https).Get<HttpsOptions>() ?? new HttpsOptions();
-// A world process's HTTP port is loopback only (status and stop for the primary host), without TLS.
+// A world server's HTTP port (status and control for the auth host, staff tools of this world) is plain HTTP on
+// Aion:WorldProcess:ListenAddress (loopback unless a remote world server is reached over the network).
 if (worldProcess is not null) https = new HttpsOptions { Proxy = true };
 if (!network.LoopbackOnly && https.CertificateFile is null && !https.Proxy)
     throw new InvalidOperationException("A public host needs Aion:Https:CertificateFile and KeyFile for the account port (or Aion:Https:Proxy=true behind a TLS proxy).");
@@ -295,7 +314,7 @@ builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = 16384;
     // Behind a proxy the account port stays on loopback; the proxy is the public endpoint.
-    options.Listen(https.Proxy ? IPAddress.Loopback : network.Bind, port, listener =>
+    options.Listen(worldProcess is not null ? IPAddress.Parse(worldProcess.ListenAddress) : https.Proxy ? IPAddress.Loopback : network.Bind, port, listener =>
     {
         if (accountCertificate is not null) listener.UseHttps(accountCertificate);
     });
@@ -307,8 +326,17 @@ builder.Services.AddSingleton<WardrobeAccess>();
 var app = builder.Build();
 if (worldProcess is not null)
 {
-    app.Logger.LogInformation("World process for world {World} ({Name}) on game port {Port}", native.WorldId, worldProcess.Name, native.GamePort);
+    app.Logger.LogInformation("World server for world {World} ({Name}) on game port {Port}", native.WorldId, worldProcess.Name, native.GamePort);
     Aion.Host.Worlds.WorldEndpoints.MapWorldProcessEndpoints(app, worldProcess, native.WorldId);
+    // The staff dashboard's world tools (maintenance, announcements, players, live map, restart) for this world, reached
+    // through the auth host (?world=…); every request still needs a staff sign-in.
+    app.UseExceptionHandler(handler => handler.Run(async context =>
+    {
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsJsonAsync(new { error = "The request could not be completed." });
+    }));
+    Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
+    Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
     app.MapGet("/health/live", () => Results.Ok(new { status = "alive" }));
     app.Run();
     return;
@@ -364,6 +392,16 @@ if (platform.Port is { } platformPort)
     app.UsePlatformBootstrap(platformPort, platformResponses!, platform.RequestLog, network, accountPageBase);
 }
 app.UseRateLimiter();
+// Auth host: the staff dashboard's world tools (?world=<id>) are answered by that world server.
+if (app.Services.GetService<Aion.Host.Worlds.WorldLinks>() is { } worldLinks)
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api/admin") && !context.Request.Path.StartsWithSegments("/api/admin/worlds")
+            && context.Request.Query["world"] is [{ } worldText]
+            && int.TryParse(worldText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var worldId))
+            await worldLinks.ProxyAsync(context, worldId);
+        else await next();
+    });
 if (debugOptions.Enabled) app.UsePlaytestHttpLogging();
 app.UseWebSockets();
 app.MapSynapseStub();
@@ -424,6 +462,7 @@ if (accountsReady)
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapTicketEndpoints(app);
     Aion.Host.Worlds.WorldEndpoints.MapWorldEndpoints(app);
+    Aion.Host.Worlds.WorldEndpoints.MapRealmChatEndpoints(app);
     var bridgeSecret = builder.Configuration["Aion:BridgeSecret"];
     if (bridgeSecret is { Length: >= 64 })
     {

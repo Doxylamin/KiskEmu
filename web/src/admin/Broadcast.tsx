@@ -16,8 +16,9 @@ const TEMPLATES = [
   'Welcome to the server! Report bugs to the staff in chat.',
 ];
 
-export function Broadcast({ call, active }: { call: Call; active: boolean }) {
+export function Broadcast({ call, active, worldName }: { call: Call; active: boolean; worldName: string | null }) {
   const [text, setText] = useState('');
+  const [everywhere, setEverywhere] = useState(false);
   const [notice, setNotice] = useState(true);
   const [chat, setChat] = useState(true);
   const [size, setSize] = useState(22);
@@ -35,7 +36,7 @@ export function Broadcast({ call, active }: { call: Call; active: boolean }) {
   async function send() {
     setBusy(true);
     try {
-      const r = await call<{ shown: number; chatted: number }>('/api/admin/announce', { method: 'POST', body: { text: text.trim(), notice, chat, size, color } });
+      const r = await call<{ shown: number; chatted: number }>('/api/admin/announce', { method: 'POST', body: { text: text.trim(), notice, chat, size, color }, world: everywhere || !worldName ? 'all' : undefined });
       setMessage({ text: `Sent: ${notice ? `on ${r.shown} screen${r.shown === 1 ? '' : 's'}` : ''}${notice && chat ? ', ' : ''}${chat ? `${r.chatted} chat deliver${r.chatted === 1 ? 'y' : 'ies'}` : ''}.`, kind: 'ok' });
       setText('');
       loadHistory();
@@ -49,11 +50,16 @@ export function Broadcast({ call, active }: { call: Call; active: boolean }) {
       <header className="page-head">
         <div>
           <h1>Announcements</h1>
-          <p className="muted">Show a message to everyone on the server: in the middle of the screen, in chat, or both.</p>
+          <p className="muted">Show a message to everyone on {everywhere || !worldName ? 'every world server' : worldName}: in the middle of the screen, in chat, or both.</p>
         </div>
       </header>
       <div className="broadcast-grid">
         <section className="card card-body stack">
+          {worldName && (
+            <label className="check">
+              <input type="checkbox" checked={everywhere} onChange={e => setEverywhere(e.target.checked)} /> <span>Send to all world servers, not only {worldName}</span>
+            </label>
+          )}
           <div className="field">
             <label htmlFor="announce-text">Message</label>
             <textarea id="announce-text" className="input textarea" rows={4} maxLength={200} value={text} placeholder="Write the announcement…"

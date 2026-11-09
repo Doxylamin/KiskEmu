@@ -1,6 +1,6 @@
-// World Management: the worlds (game servers) the login port lists. The primary world is this host's own game port;
-// managed worlds run as child processes this host starts and stops; remote worlds run on other machines against the
-// same database and are only listed while their game port answers. Admins add, change, start, stop, restart and remove
+// World Management: the world servers the auth host's login port lists. The auth host runs no world itself: managed
+// world servers run as processes it starts and stops; remote ones run on other machines against the same database and
+// are listed while they answer (their control port, when set, also carries chat and the staff tools). Admins add, change, start, stop, restart and remove
 // worlds; Game Masters see the list. Polls /api/admin/worlds every 5 s while shown.
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Badge, Button, ConfirmDialog, Icon, Status, type ConfirmRequest, type StatusMessage } from '../ui/components';
@@ -19,7 +19,7 @@ const STATE: Record<string, { label: string; tone?: 'accent' | 'danger' | 'ok' }
   offline: { label: 'Unreachable', tone: 'danger' },
   crashed: { label: 'Crashed', tone: 'danger' },
 };
-const KIND: Record<string, string> = { primary: 'Primary', managed: 'Managed', remote: 'Remote' };
+const KIND: Record<string, string> = { managed: 'Managed', remote: 'Remote' };
 
 export function Worlds({ call, active }: { call: Call; active: boolean }) {
   const [list, setList] = useState<WorldList | null>(null);
@@ -77,7 +77,7 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
               {worlds.map(w => {
                 const state = STATE[w.runtime.state] ?? { label: w.runtime.state };
                 const since = w.runtime.since ? ` for ${duration(Math.max(0, now - Date.parse(w.runtime.since)))}` : '';
-                const running = w.enabled && w.kind !== 'primary';
+                const running = w.enabled;
                 return (
                   <tr key={w.worldId}>
                     <td data-label="World"><strong>{w.name}</strong> <span className="faint mono small">#{w.worldId}</span></td>
@@ -94,7 +94,7 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
                     <td data-label="Server list rows" className="mono small">Light {w.lightServerId} · Dark {w.darkServerId}</td>
                     <td data-label="Level cap" className="mono">{w.levelCap ?? <span className="faint">default</span>}</td>
                     <td className="actions nowrap">
-                      {manage && w.kind !== 'primary' && (running
+                      {manage && (running
                         ? <>
                             {w.kind === 'managed' && <Button size="sm" busy={busy === w.worldId} onClick={() => setConfirm({ title: `Restart ${w.name}?`,
                               body: 'Players in this world are disconnected and saved; the world comes back in about 30 seconds.', confirmLabel: 'Restart', danger: true,
@@ -106,7 +106,7 @@ export function Worlds({ call, active }: { call: Call; active: boolean }) {
                           </>
                         : <Button size="sm" variant="primary" busy={busy === w.worldId} onClick={() => act(w, 'start')}>Start</Button>)}
                       {manage && <button type="button" className="icon-btn" title="Settings" aria-label={`Settings of ${w.name}`} onClick={() => setEditing(w)}><Icon name="open" size={16} /></button>}
-                      {manage && w.kind !== 'primary' && !w.enabled && <button type="button" className="icon-btn" title="Remove" aria-label={`Remove ${w.name}`}
+                      {manage && !w.enabled && <button type="button" className="icon-btn" title="Remove" aria-label={`Remove ${w.name}`}
                         onClick={() => setConfirm({ title: `Remove ${w.name}?`, body: w.characters > 0
                           ? `This world still has ${w.characters} character${w.characters === 1 ? '' : 's'}; it cannot be removed while they exist.`
                           : 'The world is removed from the registry. Its game port is freed.', confirmLabel: 'Remove world', danger: true, onConfirm: () => act(w, 'remove') })}>
@@ -150,7 +150,7 @@ function WorldDialog({ editing, call, onClose, onSaved }: { editing: WorldEntry 
     const text = (name: string) => String(data.get(name) ?? '').trim();
     const number = (name: string) => { const v = text(name); return v === '' ? null : Number(v); };
     const body = {
-      worldId: world ? null : number('worldId'), name: text('name'), kind: world?.kind === 'primary' ? null : kind,
+      worldId: world ? null : number('worldId'), name: text('name'), kind,
       host: text('host'), gamePort: number('gamePort'), internalPort: number('internalPort'),
       lightServerId: number('lightServerId'), darkServerId: number('darkServerId'), levelCap: number('levelCap') ?? (world ? 0 : null),
     };
@@ -163,8 +163,7 @@ function WorldDialog({ editing, call, onClose, onSaved }: { editing: WorldEntry 
     finally { setBusy(false); }
   }
 
-  const primary = world?.kind === 'primary';
-  const locked = !!world && world.enabled && !primary;
+  const locked = !!world && world.enabled;
   return (
     <dialog ref={ref} className="dialog" onClose={onClose} aria-labelledby="world-title">
       {editing && (
@@ -176,15 +175,13 @@ function WorldDialog({ editing, call, onClose, onSaved }: { editing: WorldEntry 
               <label htmlFor="world-name">Name (shown in the server list)</label>
               <input id="world-name" name="name" className="input" maxLength={32} required defaultValue={world?.name} autoFocus />
             </div>
-            {!primary && (
-              <div className="field">
-                <label htmlFor="world-kind">Runs</label>
-                <select id="world-kind" className="select" value={kind} disabled={locked} onChange={e => setKind(e.target.value)}>
-                  <option value="managed">On this host (started and stopped here)</option>
-                  <option value="remote">On another machine (listed while it answers)</option>
-                </select>
-              </div>
-            )}
+            <div className="field">
+              <label htmlFor="world-kind">Runs</label>
+              <select id="world-kind" className="select" value={kind} disabled={locked} onChange={e => setKind(e.target.value)}>
+                <option value="managed">On this host (started and stopped here)</option>
+                <option value="remote">On another machine (listed while it answers)</option>
+              </select>
+            </div>
             <div className="form-row">
               {!world && <div className="field"><label htmlFor="world-id">World id</label>
                 <input id="world-id" name="worldId" className="input" type="number" min={1} max={65535} placeholder="next free" /></div>}
@@ -194,13 +191,13 @@ function WorldDialog({ editing, call, onClose, onSaved }: { editing: WorldEntry 
             <div className="form-row">
               <div className="field"><label htmlFor="world-host">Address players connect to</label>
                 <input id="world-host" name="host" className="input" placeholder={kind === 'remote' ? '203.0.113.7' : 'this host'} disabled={locked}
-                  required={kind === 'remote' && !primary} defaultValue={world?.host ?? ''} /></div>
-              {!primary && <div className="field"><label htmlFor="world-port">Game port</label>
+                  required={kind === 'remote'} defaultValue={world?.host ?? ''} /></div>
+              <div className="field"><label htmlFor="world-port">Game port</label>
                 <input id="world-port" name="gamePort" className="input" type="number" min={1} max={65535} placeholder="next free" disabled={locked}
-                  required={kind === 'remote'} defaultValue={world?.gamePort ?? ''} /></div>}
-              {!primary && kind === 'managed' && <div className="field"><label htmlFor="world-internal">Control port (loopback)</label>
-                <input id="world-internal" name="internalPort" className="input" type="number" min={1} max={65535} placeholder="next free" disabled={locked}
-                  defaultValue={world?.internalPort ?? ''} /></div>}
+                  required={kind === 'remote'} defaultValue={world?.gamePort ?? ''} /></div>
+              <div className="field"><label htmlFor="world-internal">{kind === 'managed' ? 'Control port (loopback)' : 'Control port (chat, staff tools)'}</label>
+                <input id="world-internal" name="internalPort" className="input" type="number" min={1} max={65535}
+                  placeholder={kind === 'managed' ? 'next free' : 'none'} disabled={locked} defaultValue={world?.internalPort ?? ''} /></div>
             </div>
             <div className="form-row">
               <div className="field"><label htmlFor="world-light">Light row id</label>

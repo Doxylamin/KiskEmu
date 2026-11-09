@@ -62,9 +62,14 @@ public static class LimeChatEndpoints
         });
 
         // Loopback only (deploy/linux/update.sh): who is online, and a chat announcement to everyone.
-        chat.MapGet("/internal/online", (HttpContext context, IServiceProvider services) =>
+        // On the auth host: the players of every world server.
+        chat.MapGet("/internal/online", async (HttpContext context, IServiceProvider services) =>
             System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? System.Net.IPAddress.None)
-                ? Results.Ok(new { players = services.GetService<Aion.World.WorldPresence>()?.All.Count ?? 0 }) : Results.NotFound());
+                ? Results.Ok(new
+                {
+                    players = (services.GetService<Aion.World.WorldPresence>()?.All.Count ?? 0)
+                        + (services.GetService<Aion.Host.Worlds.WorldLinks>() is { } links ? (await links.PopulationAsync(context.RequestAborted)).Players : 0),
+                }) : Results.NotFound());
         // Loopback only (tools/load_test.py): world lock totals since startup and the process CPU seconds.
         chat.MapGet("/internal/world", (HttpContext context, IServiceProvider services) =>
             System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? System.Net.IPAddress.None)
@@ -88,6 +93,9 @@ public static class LimeChatEndpoints
             if (text.Length is 0 or > 100) return Results.BadRequest();
             var deliveries = relay.Announce(text);
             await hub.DeliverAsync(deliveries);
+            // On the auth host the world servers show it as a notice too (a restart of the auth host stops them all).
+            if (context.RequestServices.GetService<Aion.Host.Worlds.WorldLinks>() is { } links)
+                await links.NoticeAllAsync(text, "FFD54A", context.RequestAborted);
             return Results.Ok(new { delivered = deliveries.Count });
         });
 

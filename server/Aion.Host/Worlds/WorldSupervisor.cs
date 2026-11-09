@@ -24,8 +24,8 @@ public sealed record WorldProcessStatus(int WorldId, int Players, int Connection
 /// <summary>
 /// Keeps managed worlds (game.worlds kind "managed") in their desired state: an enabled world runs as a child aion-host in
 /// world role (Aion:Role=world) on its own game port, a disabled one is stopped gracefully (its players are saved). A child
-/// that exits on its own is restarted with a growing delay. Remote worlds are only probed (their game port answers or not).
-/// The primary world is this host's own game port and is not supervised here.
+/// that exits on its own is restarted with a growing delay. Remote worlds are only probed: their status port (internal
+/// port, when set) or else their game port answers or not. The auth host runs no world itself.
 /// </summary>
 public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration configuration, ILogger<WorldSupervisor> logger) : BackgroundService
 {
@@ -50,13 +50,12 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
     readonly ConcurrentDictionary<int, Child> children = new();
     readonly SemaphoreSlim wake = new(0);
     readonly SemaphoreSlim reconcile = new(1, 1);
-    // Stop tokens: derived from the bridge secret when set (a restarted primary can still stop children it did not start),
-    // else random per primary process.
-    readonly byte[] controlKey = configuration["Aion:BridgeSecret"] is { Length: >= 32 } secret
-        ? SHA256.HashData(Encoding.UTF8.GetBytes("aion-world-control:" + secret)) : RandomNumberGenerator.GetBytes(32);
+    // Control tokens: derived from the bridge secret when set (a restarted auth host can still reach the world servers it did
+    // not start, and a remote world server with the same secret derives its own), else random per auth host process.
+    readonly byte[] controlKey = WorldProcessOptions.ControlKey(configuration) ?? RandomNumberGenerator.GetBytes(32);
 
-    /// <summary>The token a child accepts on /internal/world/stop.</summary>
-    public string ControlToken(int worldId) => Convert.ToHexString(HMACSHA256.HashData(controlKey, BitConverter.GetBytes(worldId)));
+    /// <summary>The token a world server accepts on its control endpoints (/internal/world/...).</summary>
+    public string ControlToken(int worldId) => WorldProcessOptions.Token(controlKey, worldId);
 
     public WorldRuntime Runtime(int worldId) => children.TryGetValue(worldId, out var c)
         ? new(c.State, c.Process is { HasExited: false } p ? p.Id : null, c.Since, c.Status?.Players, c.Status?.Connections, c.LastError, c.Restarts)
@@ -95,7 +94,7 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await base.StopAsync(cancellationToken);
-        // The primary host is going down: every child is stopped gracefully (systemd also signals them; a double stop is harmless).
+        // The auth host is going down: every child is stopped gracefully (systemd also signals them; a double stop is harmless).
         await Task.WhenAll(children.Values.Where(c => c.Process is not null).Select(c => StopChildAsync(c, "host shutdown")));
     }
 
@@ -103,9 +102,9 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
     {
         var worlds = await registry.ListAsync(ct);
         var now = DateTimeOffset.UtcNow;
-        foreach (var gone in children.Keys.Except(worlds.Where(w => !w.IsPrimary).Select(w => w.WorldId)).ToList())
+        foreach (var gone in children.Keys.Except(worlds.Select(w => w.WorldId)).ToList())
             if (children.TryRemove(gone, out var removed)) await StopChildAsync(removed, "removed");
-        foreach (var world in worlds.Where(w => !w.IsPrimary))
+        foreach (var world in worlds)
         {
             var child = children.GetOrAdd(world.WorldId, _ => new Child { World = world });
             var previous = child.World;
@@ -114,7 +113,13 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
             {
                 if (child.Process is not null) await StopChildAsync(child, "now remote");
                 // A probe opens a game connection there (closed after the greeting window), so only every 30 seconds.
-                if (!world.Enabled) child.State = WorldRuntime.Stopped;
+                if (!world.Enabled) { child.State = WorldRuntime.Stopped; child.Status = null; }
+                else if (world.InternalPort is not null)
+                {
+                    // A remote world server with a status port: asked like a managed one (players, uptime), every pass.
+                    child.Status = await StatusAsync(world, ct);
+                    child.State = child.Status is { } status && status.WorldId == world.WorldId ? WorldRuntime.Online : WorldRuntime.Offline;
+                }
                 else if (now - child.ProbedAt >= TimeSpan.FromSeconds(30) || child.State == WorldRuntime.Stopped || previous != world)
                 {
                     child.ProbedAt = now;
@@ -145,7 +150,7 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
             if (!world.Enabled) { child.State = WorldRuntime.Stopped; continue; }
             if (!running)
             {
-                // A child left over from an earlier primary process (still answering) is adopted instead of started twice.
+                // A child left over from an earlier auth host process (still answering) is adopted instead of started twice.
                 if (await StatusAsync(world, ct) is { } leftover && leftover.WorldId == world.WorldId)
                 {
                     child.Adopted = true;
@@ -194,6 +199,9 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
         env["Aion__LocalPort"] = world.InternalPort!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         env["Aion__WorldProcess__ControlToken"] = ControlToken(world.WorldId);
         env["Aion__WorldProcess__Name"] = world.Name;
+        // Its chat announcements go to this host's chat server (the realm's one).
+        if (configuration.GetValue<int?>("Aion:ChatPort") is { } chatPort)
+            env["Aion__WorldProcess__RealmUrl"] = $"http://127.0.0.1:{chatPort.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
         // The child's console goes to this host's log (with the world id); it writes no log file of its own.
         env["Aion__ServerLog__Enabled"] = "false";
         if (world.LevelCap is { } cap) env["Aion__Progression__LevelCap"] = cap.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -242,7 +250,7 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
         {
             if (world.InternalPort is { } port)
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{port}/internal/world/stop");
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"http://{StatusHost(world)}:{port}/internal/world/stop");
                 request.Headers.Add("X-World-Control", ControlToken(world.WorldId));
                 using var _ = await Http.SendAsync(request);
             }
@@ -272,10 +280,13 @@ public sealed class WorldSupervisor(IWorldRegistry registry, IConfiguration conf
         child.Since = null;
     }
 
+    /// <summary>Where a world server's status and control port is: loopback for a managed one, its host for a remote one.</summary>
+    public static string StatusHost(WorldRecord world) => world.IsManaged ? "127.0.0.1" : world.Host ?? "127.0.0.1";
+
     static async Task<WorldProcessStatus?> StatusAsync(WorldRecord world, CancellationToken ct)
     {
         if (world.InternalPort is not { } port) return null;
-        try { return await Http.GetFromJsonAsync<WorldProcessStatus>($"http://127.0.0.1:{port}/internal/world/status", ct); }
+        try { return await Http.GetFromJsonAsync<WorldProcessStatus>($"http://{StatusHost(world)}:{port}/internal/world/status", ct); }
         catch (Exception error) when (error is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { return null; }
     }
 

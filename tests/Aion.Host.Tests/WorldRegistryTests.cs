@@ -12,14 +12,14 @@ public sealed class WorldRegistryTests
     static WorldRecord World(int id, string name, int light, int dark, string kind, int? port = null, int? internalPort = null, bool enabled = true, string? host = null) =>
         new(id, name, light, dark, kind, host, port, internalPort, enabled, null, At, At);
 
-    static readonly NativeOptions Native = new() { WorldId = 1204, GamePort = 13328, LoginPort = 3700, Network = new NetworkOptions { PublicAddress = "10.0.0.5" } };
+    static readonly NativeOptions Native = new() { WorldId = 1204, LoginPort = 3700, Network = new NetworkOptions { PublicAddress = "10.0.0.5" } };
 
     [Fact]
-    public void Login_list_has_the_primary_and_the_worlds_that_are_up()
+    public void Login_list_has_the_world_servers_that_are_up()
     {
         WorldRecord[] worlds =
         [
-            World(1204, "Alpha", 1361, 2361, WorldRecord.Primary),
+            World(1204, "Alpha", 1361, 2361, WorldRecord.Managed, 13328, 18780),
             World(1205, "Beta", 1362, 2362, WorldRecord.Managed, 13329, 18781),
             World(1206, "Gamma", 1363, 2363, WorldRecord.Managed, 13330, 18782),
             World(1207, "Delta", 1364, 2364, WorldRecord.Managed, 13331, 18783, enabled: false),
@@ -27,6 +27,7 @@ public sealed class WorldRegistryTests
         ];
         WorldRuntime Runtime(int id) => id switch
         {
+            1204 => WorldRuntime.None with { State = WorldRuntime.Running },
             1205 => WorldRuntime.None with { State = WorldRuntime.Running },
             1206 => WorldRuntime.None with { State = WorldRuntime.Starting },
             1207 => WorldRuntime.None with { State = WorldRuntime.Running },
@@ -36,6 +37,7 @@ public sealed class WorldRegistryTests
         var list = LoginWorldList.Directory(worlds, Native, Runtime);
         Assert.Equal([1204, 1205, 1208], list.Select(w => w.WorldId));
         Assert.Equal(("10.0.0.5", 13328), (list[0].Host, list[0].Port));
+        Assert.Empty(LoginWorldList.Directory(worlds, Native, _ => WorldRuntime.None));
         Assert.Equal(("10.0.0.5", 13329), (list[1].Host, list[1].Port));
         Assert.Equal(("10.9.9.9", 13328), (list[2].Host, list[2].Port));
     }
@@ -43,7 +45,7 @@ public sealed class WorldRegistryTests
     [Fact]
     public void World_input_is_checked_against_the_other_worlds()
     {
-        WorldRecord[] others = [World(1204, "Alpha", 1361, 2361, WorldRecord.Primary), World(1205, "Beta", 1362, 2362, WorldRecord.Managed, 13329, 18781)];
+        WorldRecord[] others = [World(1204, "Alpha", 1361, 2361, WorldRecord.Managed, 13328, 18780), World(1205, "Beta", 1362, 2362, WorldRecord.Managed, 13329, 18781)];
         Assert.Null(WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Managed, 13330, 18782), others));
         Assert.Equal("name_in_use", WorldInput.Problem(World(1206, "beta", 1363, 2363, WorldRecord.Managed, 13330, 18782), others));
         Assert.Equal("server_id_in_use", WorldInput.Problem(World(1206, "Gamma", 2362, 2363, WorldRecord.Managed, 13330, 18782), others));
@@ -53,6 +55,8 @@ public sealed class WorldRegistryTests
         Assert.Equal("invalid_host", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Remote, 13330, host: "example.com"), others));
         // A remote world on another machine may reuse a port of this host.
         Assert.Null(WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Remote, 13329, host: "10.9.9.9"), others));
+        Assert.Equal("game_port_required", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, WorldRecord.Managed, null, 18782), others));
+        Assert.Equal("invalid_kind", WorldInput.Problem(World(1206, "Gamma", 1363, 2363, "primary", 13330, 18782), others));
         Assert.Equal("invalid_name", WorldInput.Problem(World(1206, new string('x', 33), 1363, 2363, WorldRecord.Managed, 13330, 18782), others));
     }
 
@@ -68,6 +72,17 @@ public sealed class WorldRegistryTests
         var options = WorldProcessOptions.From(world);
         Assert.NotNull(options);
         Assert.Equal(("abc", "Beta"), (options.ControlToken, options.Name));
+        // A remote world server derives its control token from the shared bridge secret, as the auth host does.
+        var secret = new string('s', 64);
+        var remote = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Aion:Role"] = "world", ["Aion:Native:WorldId"] = "1207", ["Aion:BridgeSecret"] = secret, ["Aion:WorldProcess:ListenAddress"] = "0.0.0.0",
+        }).Build();
+        var derived = WorldProcessOptions.From(remote)!;
+        var auth = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Aion:BridgeSecret"] = secret }).Build();
+        Assert.Equal(WorldProcessOptions.Token(WorldProcessOptions.ControlKey(auth)!, 1207), derived.ControlToken);
+        Assert.NotEqual(WorldProcessOptions.Token(WorldProcessOptions.ControlKey(auth)!, 1208), derived.ControlToken);
+        Assert.Equal("0.0.0.0", derived.ListenAddress);
     }
 
     [Fact]

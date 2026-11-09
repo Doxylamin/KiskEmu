@@ -8,25 +8,42 @@ using Aion.World;
 
 namespace Aion.Host.Worlds;
 
-/// <summary>Aion:WorldProcess, set by the primary host for a managed child (world role, Aion:Role=world).</summary>
+/// <summary>
+/// Aion:WorldProcess of a world server (Aion:Role=world): set by the auth host for a managed one, by its operator for a
+/// remote one (which then derives its control token from the shared Aion:BridgeSecret and sets RealmUrl and ListenAddress).
+/// </summary>
 public sealed record WorldProcessOptions
 {
-    /// <summary>Required on /internal/world/stop (the primary host derives it per world).</summary>
+    /// <summary>Required on the control endpoints (/internal/world/...): the auth host derives it per world.</summary>
     public string ControlToken { get; init; } = "";
+    /// <summary>Address of the status and control port (Aion:LocalPort): loopback, or the address the auth host reaches.</summary>
+    public string ListenAddress { get; init; } = "127.0.0.1";
     public string Name { get; init; } = "";
+    /// <summary>The realm host's chat port on loopback (http://127.0.0.1:port): this world's chat announcements go there.</summary>
+    public string? RealmUrl { get; init; }
     public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
 
     /// <summary>The options when this host runs in world role, else null.</summary>
-    public static WorldProcessOptions? From(IConfiguration configuration) =>
-        string.Equals(configuration["Aion:Role"], "world", StringComparison.OrdinalIgnoreCase)
-            ? configuration.GetSection("Aion:WorldProcess").Get<WorldProcessOptions>() ?? new WorldProcessOptions()
-            : null;
+    public static WorldProcessOptions? From(IConfiguration configuration)
+    {
+        if (!string.Equals(configuration["Aion:Role"], "world", StringComparison.OrdinalIgnoreCase)) return null;
+        var options = configuration.GetSection("Aion:WorldProcess").Get<WorldProcessOptions>() ?? new WorldProcessOptions();
+        if (options.ControlToken.Length == 0 && ControlKey(configuration) is { } key && configuration.GetValue<int?>("Aion:Native:WorldId") is { } worldId)
+            options = options with { ControlToken = Token(key, worldId) };
+        return options;
+    }
+
+    /// <summary>The control key the auth host and its world servers share: derived from Aion:BridgeSecret, else null.</summary>
+    public static byte[]? ControlKey(IConfiguration configuration) => configuration["Aion:BridgeSecret"] is { Length: >= 32 } secret
+        ? SHA256.HashData(Encoding.UTF8.GetBytes("aion-world-control:" + secret)) : null;
+
+    public static string Token(byte[] key, int worldId) => Convert.ToHexString(HMACSHA256.HashData(key, BitConverter.GetBytes(worldId)));
 }
 
 /// <summary>
 /// Multi-world HTTP: the staff dashboard's World Management (/api/admin/worlds: list, add, change, start, stop, restart,
-/// remove; changes need the admin role, the store checks and audits them) and a world process's loopback endpoints for
-/// the primary host (/internal/world/status, /internal/world/stop).
+/// remove; changes need the admin role, the store checks and audits them) and a world server's status and control
+/// endpoints for the auth host (/internal/world/...).
 /// </summary>
 public static class WorldEndpoints
 {
@@ -38,9 +55,8 @@ public static class WorldEndpoints
         app.MapGet("/api/worlds", async (IServiceProvider services, CancellationToken ct) =>
         {
             if (services.GetService<IWorldRegistry>() is not { } registry) return Results.Ok(Array.Empty<object>());
-            var native = services.GetService<NativeOptions>();
             var worlds = await registry.ListAsync(ct);
-            return Results.Ok(worlds.Select(w => new { WorldId = w.IsPrimary && native is not null ? native.WorldId : w.WorldId, w.Name }));
+            return Results.Ok(worlds.Select(w => new { w.WorldId, w.Name }));
         });
         var staff = app.MapGroup("/api/admin/worlds").RequireRateLimiting("admin");
         staff.AddEndpointFilter(async (context, next) =>
@@ -58,8 +74,6 @@ public static class WorldEndpoints
             var roles = services.GetService<IStaffTools>() is { } tools ? await tools.RolesAsync(account, ct) : [];
             var native = services.GetService<NativeOptions>();
             var supervisor = services.GetService<WorldSupervisor>();
-            var presence = services.GetService<WorldPresence>();
-            if (native is not null) await registry.EnsurePrimaryAsync(native.WorldId, ct);
             var worlds = await registry.ListAsync(ct);
             var listed = native is null ? [] : LoginWorldList.Directory(worlds, native, supervisor is null ? _ => WorldRuntime.None : supervisor.Runtime);
             return Results.Ok(new
@@ -69,18 +83,13 @@ public static class WorldEndpoints
                 publicAddress = native?.Network.PublicAddress,
                 worlds = worlds.Select(w =>
                 {
-                    var runtime = w.IsPrimary
-                        ? new WorldRuntime(native?.GamePort is null ? WorldRuntime.Stopped : WorldRuntime.Running, Environment.ProcessId, null,
-                            presence?.All.Count, presence?.Connections, null, 0)
-                        : supervisor?.Runtime(w.WorldId) ?? WorldRuntime.None;
-                    var worldId = w.IsPrimary && native is not null ? native.WorldId : w.WorldId;
+                    var runtime = supervisor?.Runtime(w.WorldId) ?? WorldRuntime.None;
                     return new
                     {
-                        w.WorldId, w.Name, w.LightServerId, w.DarkServerId, w.Kind, w.Host,
-                        GamePort = w.IsPrimary ? native?.GamePort : w.GamePort,
+                        w.WorldId, w.Name, w.LightServerId, w.DarkServerId, w.Kind, w.Host, w.GamePort,
                         w.InternalPort, w.Enabled, w.LevelCap, w.CreatedAt, w.UpdatedAt,
-                        Characters = counts.GetValueOrDefault(worldId),
-                        Listed = listed.Any(l => l.WorldId == worldId),
+                        Characters = counts.GetValueOrDefault(w.WorldId),
+                        Listed = listed.Any(l => l.WorldId == w.WorldId),
                         Runtime = runtime,
                     };
                 }),
@@ -131,7 +140,35 @@ public static class WorldEndpoints
         return Results.Ok(world);
     }
 
-    /// <summary>World role: status and graceful stop on the loopback HTTP port.</summary>
+    /// <summary>
+    /// Realm host: a world process's chat announcement (scheduled restart, staff announcement on that world) to the chat
+    /// sessions of that world. Loopback only, with the world's control token.
+    /// </summary>
+    public static void MapRealmChatEndpoints(WebApplication app)
+    {
+        app.MapPost("/internal/world/chat", async (WorldText input, HttpContext ctx, IServiceProvider services) =>
+        {
+            if (!System.Net.IPAddress.IsLoopback(ctx.Connection.RemoteIpAddress ?? System.Net.IPAddress.None)) return Results.NotFound();
+            if (services.GetService<WorldLinks>() is not { } links || !Authorized(ctx, links.ControlToken(input.WorldId))) return Results.StatusCode(403);
+            var text = (input.Text ?? "").Trim();
+            if (text.Length is 0 or > 200) return Results.BadRequest();
+            var delivered = await Authentication.StaffEndpoints.ChatAnnounceAsync(services, text, input.WorldId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return Results.Ok(new { value = delivered });
+        });
+    }
+
+    static bool Authorized(HttpContext ctx, string token)
+    {
+        var given = Encoding.UTF8.GetBytes(ctx.Request.Headers[WorldLinks.ControlHeader].ToString());
+        var expected = Encoding.UTF8.GetBytes(token);
+        return expected.Length > 0 && CryptographicOperations.FixedTimeEquals(given, expected);
+    }
+
+    /// <summary>
+    /// World role, on the loopback HTTP port: status (open), and for the realm host with this world's control token a
+    /// graceful stop, the characters in the world (the realm's chat), chat commands of this world's players, notices and
+    /// sanction changes.
+    /// </summary>
     public static void MapWorldProcessEndpoints(WebApplication app, WorldProcessOptions options, int worldId)
     {
         app.MapGet("/internal/world/status", (IServiceProvider services) =>
@@ -139,14 +176,53 @@ public static class WorldEndpoints
             var presence = services.GetService<WorldPresence>();
             return Results.Ok(new WorldProcessStatus(worldId, presence?.All.Count ?? 0, presence?.Connections ?? 0, options.StartedAt.ToUnixTimeMilliseconds()));
         });
-        app.MapPost("/internal/world/stop", (HttpContext ctx, IHostApplicationLifetime lifetime) =>
+        var control = app.MapGroup("/internal/world");
+        control.AddEndpointFilter(async (context, next) =>
+            Authorized(context.HttpContext, options.ControlToken) ? await next(context) : Results.StatusCode(403));
+        control.MapPost("/stop", (IHostApplicationLifetime lifetime) =>
         {
-            var given = Encoding.UTF8.GetBytes(ctx.Request.Headers["X-World-Control"].ToString());
-            var expected = Encoding.UTF8.GetBytes(options.ControlToken);
-            if (expected.Length == 0 || !CryptographicOperations.FixedTimeEquals(given, expected)) return Results.StatusCode(403);
-            app.Logger.LogInformation("World {World} stopping on request of the primary host", worldId);
+            app.Logger.LogInformation("World {World} stopping on request of the realm host", worldId);
             lifetime.StopApplication();
             return Results.Ok(new { stopping = true });
+        });
+        control.MapGet("/presence", (IServiceProvider services) =>
+        {
+            var entries = new List<WorldPresenceEntry>();
+            if (services.GetService<WorldPresence>() is { } presence)
+                foreach (var entry in presence.All)
+                    if (entry is { AccountId: { } account, Session: { InWorld: true, CharacterId: { } id } session }
+                        && Chat.WorldChatDirectory.Describe(id, session) is { } character)
+                        entries.Add(new WorldPresenceEntry(id, account, character.Name, character.DisplayName, character.GuildId, character.Race));
+            return Results.Ok(entries);
+        });
+        control.MapPost("/command", async (WorldCommandRequest input, IServiceProvider services, CancellationToken ct) =>
+        {
+            if (services.GetService<Aion.Application.Chat.IChatCommandHandler>() is not { } commands || !commands.Owns(input.Content ?? ""))
+                return Results.Ok(new { answer = "Commands are not available here." });
+            return Results.Ok(new { answer = await commands.HandleAsync(input.Sender, input.UserName ?? "", input.Content ?? "", ct) });
+        });
+        control.MapPost("/notice", (WorldText input, IServiceProvider services) =>
+        {
+            var text = (input.Text ?? "").Trim();
+            if (text.Length is 0 or > 200) return Results.BadRequest();
+            var shown = 0;
+            if (services.GetService<WorldPresence>() is { } presence)
+            {
+                var packet = GameSession.Notice(text, Math.Clamp(input.Size ?? 20, 10, 60), input.Color is { Length: 6 } color && color.All(char.IsAsciiHexDigit) ? color : "FFFFFF");
+                foreach (var entry in presence.All)
+                {
+                    _ = entry.Session.InvokeAsync(_ => (true, new List<byte[]> { packet }));
+                    shown++;
+                }
+            }
+            return Results.Ok(new { value = shown });
+        });
+        control.MapPost("/sanctions", async (WorldSanctionChange input, IServiceProvider services, CancellationToken ct) =>
+        {
+            if (services.GetService<Authentication.ServerControl>() is not { } serverControl) return Results.Ok(new { value = 0 });
+            await serverControl.RefreshAsync(ct);
+            var kicked = input.KickAccount is { } account ? serverControl.KickAccount(account, input.Reason is { Length: > 0 } reason ? reason : "Banned") : 0;
+            return Results.Ok(new { value = kicked });
         });
     }
 
