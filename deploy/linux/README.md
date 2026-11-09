@@ -143,18 +143,32 @@ sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres python3 /opt/aio
 The account site is `https://<domain or address>:8780`; players register there, and the
 launcher signs in there.
 
-## Several worlds
+## Auth host and world servers
 
-The staff dashboard's **Worlds** page (admins) adds worlds to the game's server list. The host's own
-world (port 13328) is the primary one. A world added as "on this host" runs as a child `aion-host`
-process in world role on its own game port (13329 upwards; its control port 18781 upwards stays on
-loopback); Start and Stop on the page start it and stop it gracefully (its players are saved), and it
-is restarted by itself if it exits. Its output goes to `journalctl -u aion-host` as `[world <id>]`
-lines. A world added as "on another machine" runs there as
-`Aion__Role=world Aion__Native__WorldId=<id> Aion__Native__GamePort=<port> Aion__LocalPort=<port>`
-with the same connection strings (the database must be reachable from it); it is listed while its
-game port answers. Characters belong to the world they were created on. Open the extra game ports
-in the provider's firewall as well. Chat (port 8091) still serves the primary world only.
+As with an authserver and its worldservers, the `aion-host` service is the **auth host**: login port,
+world list, account site, chat (8091) and staff dashboard. It runs no world itself. Every world is a
+**world server**, an `aion-host` process in world role on its own game port, using the same database.
+Migration 091 turns the world the host used to run itself (1204) into a world server on 13328.
+
+The staff dashboard's **Worlds** page (admins) adds, changes, starts, stops and removes worlds. A world
+"on this host" is started by the auth host (game port 13328 upwards; its control port 18781 upwards
+stays on loopback); Start and Stop on the page start and stop it gracefully (its players are saved),
+and it is restarted by itself if it exits. Its output goes to `journalctl -u aion-host` as
+`[world <id>]` lines. Restarting the service restarts every world on this host.
+
+A world "on another machine" runs there as
+`Aion__Role=world Aion__Native__WorldId=<id> Aion__Native__GamePort=<port> Aion__LocalPort=<control port>`
+`Aion__WorldProcess__ListenAddress=<its address> Aion__WorldProcess__RealmUrl=http://<auth host>:8091`
+with the same connection strings and the same `Aion__BridgeSecret` (its control token derives from it);
+give the world its control port on the Worlds page and let the auth host reach that port. It is listed
+while it answers. Characters belong to the world they were created on. Open the game ports in the
+provider's firewall as well.
+
+One chat server (8091) serves every world: a player chats with the players of their own world, and
+chat commands are answered by their world server. On the staff dashboard, the **world server** picker
+chooses the world the world tools act on: live map and players, maintenance, announcements, server
+health and restart. Maintenance turns players away from that world only. Bans, mutes, tickets, the
+chat log and scheduled events are the realm's.
 
 ## How clients reach this server
 
