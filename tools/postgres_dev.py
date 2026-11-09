@@ -230,6 +230,9 @@ def local_world_databases():
 
 def realm_is_split():
     """Whether the realm database no longer holds character data (migration 093 ran)."""
+    # A new database has no migration table yet.
+    if sql("SELECT to_regclass('public.schema_migrations') IS NOT NULL;").stdout.strip() != 't':
+        return False
     return sql("SELECT EXISTS(SELECT FROM public.schema_migrations WHERE version LIKE '093\\_%');").stdout.strip() == 't'
 
 

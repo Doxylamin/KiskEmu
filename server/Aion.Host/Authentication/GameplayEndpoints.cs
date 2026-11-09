@@ -8,7 +8,9 @@ public static class GameplayEndpoints
     private sealed record MoveItem(long Revision, int? EquipmentSlot);
     private sealed record ChangePassword(string CurrentPassword, string NewPassword);
     private sealed record StaffRoleChange(string Role, bool Granted);
-    public static void MapGameplayEndpoints(this WebApplication app)
+    /// <param name="accounts">The account store's routes (password, sessions, TOTP reset, disable, roles): the auth host
+    /// only; a world server has the realm's accounts only as a mirror (server/DATABASES.md).</param>
+    public static void MapGameplayEndpoints(this WebApplication app, bool accounts = true)
     {
         var api=app.MapGroup("/api").RequireRateLimiting("account-entry");
         api.AddEndpointFilter(async (context,next) =>
@@ -34,10 +36,13 @@ public static class GameplayEndpoints
             var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
             return await game.MoveItemAsync(account,id,item,input.Revision,input.EquipmentSlot,ct) ? Results.NoContent() : Results.Conflict();
         });
+        if (accounts)
+        {
         api.MapPost("/accounts/password",async(ChangePassword input,HttpContext ctx,IAccountManagement management,CancellationToken ct) =>
             await management.ChangePasswordAsync(Bearer(ctx),input.CurrentPassword,input.NewPassword,ct) ? Results.NoContent() : Results.Unauthorized());
         api.MapPost("/accounts/revoke-sessions",async(HttpContext ctx,IAccountManagement management,CancellationToken ct) =>
             await management.RevokeSessionsAsync(Bearer(ctx),ct) ? Results.NoContent() : Results.Unauthorized());
+        }
         // Staff dashboard: role-checked in the store; a separate, larger rate budget than account entry.
         var admin=app.MapGroup("/api/admin").RequireRateLimiting("admin");
         admin.AddEndpointFilter(async (context,next) =>
@@ -66,6 +71,7 @@ public static class GameplayEndpoints
             var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
             return Results.Ok(await game.AdminCatalogAsync(account,q??"",category,offset??0,limit??120,ct));
         });
+        if (accounts)
         admin.MapPost("/accounts/{id:guid}/totp/reset", async (Guid id, HttpContext ctx, IAccountAuthentication auth, ITotpAuthentication totp, IGameplayStore game, CancellationToken ct) =>
         {
             var account = await auth.AuthenticateAsync(Bearer(ctx), ct);
@@ -92,6 +98,7 @@ public static class GameplayEndpoints
                 a.Name, a.Priority, Points=a.Points.Select(p => new[]{Math.Round(p[0]),Math.Round(p[1])}).ToArray() });
             return Results.Ok(new { MapId=id, Areas=areas });
         });
+        if (!accounts) return;
         api.MapPost("/admin/accounts/{id:guid}/disable",async(Guid id,HttpContext ctx,IAccountManagement management,CancellationToken ct) =>
             await management.DisableAccountAsync(Bearer(ctx),id,ct) ? Results.NoContent() : Results.StatusCode(403));
         // Admins only; the player sees a role change at their next game login.

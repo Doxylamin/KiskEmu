@@ -370,7 +370,7 @@ if (worldProcess is not null)
         context.Response.StatusCode = 500;
         await context.Response.WriteAsJsonAsync(new { error = "The request could not be completed." });
     }));
-    app.MapGameplayEndpoints();
+    app.MapGameplayEndpoints(accounts: false);
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
     app.MapGet("/health/live", () => Results.Ok(new { status = "alive" }));
