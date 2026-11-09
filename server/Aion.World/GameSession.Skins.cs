@@ -66,11 +66,11 @@ public sealed partial class GameSession
         foreach (var (slot, id) in extras.SkinEquips) skinEquips[slot] = id;
     }
 
-    /// <summary>0x8d5b SkinInfo_NT: the collection {skin i32, {count i32, instances i32}}, no points, no pure-skin equips, preset 1, no preset or visual slot infos.</summary>
+    /// <summary>0x8d5b SkinInfo_NT: the collection {skin i32, count i32} (OBSERVED: 8 bytes per skin in the official entry lists), no points, no pure-skin equips, preset 1, no preset or visual slot infos.</summary>
     byte[] SkinInfo()
     {
         var w = PacketWriter.Opcode(SkinInfoNt).Varint(skins.Count);
-        foreach (var (id, count) in skins.OrderBy(p => p.Key)) w.I32(id).I32(count).I32(0);
+        foreach (var (id, count) in skins.OrderBy(p => p.Key)) w.I32(id).I32(count);
         return w.Varint(0).Varint(0).U8(1).Varint(0).Varint(0).ToArray();
     }
 

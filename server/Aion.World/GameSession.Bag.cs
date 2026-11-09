@@ -20,9 +20,15 @@ public sealed partial class GameSession
     {
         quickSlots.Clear();
         var repairs = new List<QuickSlotRecord>();
-        foreach (var slot in await store.QuickSlotsAsync(character, ct))
+        var saved = await store.QuickSlotsAsync(character, ct);
+        // Free placement (0x5607) moves a skill between the bar's slots (the class's default bar under the saved ones), so a
+        // row may hold any skill of the bar's stacks; only skills foreign to the whole bar are repaired.
+        var barSkills = saved.Where(s => s.Type == 0 && s.SkillId > 0).Select(s => s.SkillId)
+            .Concat(Profile()?.DefaultBar().Select(d => d.SkillId) ?? []).Where(id => id > 0)
+            .SelectMany(AllowedContextSkillIds).ToHashSet();
+        foreach (var slot in saved)
         {
-            if (slot.Type == 0 && slot.SkillId != 0 && !ContextStackValid(slot.SkillId, ContextSkillsForSlot(slot)))
+            if (slot.Type == 0 && slot.SkillId != 0 && !ContextStackValid(slot.SkillId, ContextSkillsForSlot(slot), barSkills))
             {
                 var fixedSlot = slot with { ContextSkills = data.DefaultContextSkills(slot.SkillId).ToArray() };
                 quickSlots[slot.Slot] = fixedSlot;

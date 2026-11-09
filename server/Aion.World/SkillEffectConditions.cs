@@ -10,7 +10,9 @@ namespace Aion.World;
 /// </summary>
 public static class SkillEffectConditions
 {
-    public sealed record Condition([property: JsonPropertyName("type")] string Type, [property: JsonPropertyName("values")] string[]? Values);
+    /// <summary>One SkillEffectConditionList row; <paramref name="Negate"/> is ConditionalExpression false (the condition must not hold).</summary>
+    public sealed record Condition([property: JsonPropertyName("type")] string Type, [property: JsonPropertyName("values")] string[]? Values,
+        [property: JsonPropertyName("negate")] bool Negate = false);
 
     sealed record SkillDebuffConditions(
         [property: JsonPropertyName("debuffs")] Dictionary<string, Condition[]>? Debuffs);
@@ -44,7 +46,7 @@ public static class SkillEffectConditions
     public static bool DebuffAllowed(int skillId, int abnormalId, Context ctx)
     {
         var list = DebuffConditions(skillId, abnormalId);
-        return list.Count == 0 || list.All(c => Met(c, ctx));
+        return list.Count == 0 || list.All(c => Met(c, ctx) != c.Negate);
     }
 
     public static bool Met(Condition cond, Context ctx) => cond.Type switch

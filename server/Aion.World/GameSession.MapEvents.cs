@@ -324,7 +324,10 @@ public sealed partial class GameSession : IMapEventHost
     Vector3d? QuestDungeonResume(int map, long now)
     {
         if (MapEventData.DungeonOfMap(map) is not { MaxMember: <= 1 } room || !MapEventData.Serves(map) || MapEventData.Volume(map) is not null) return null;
-        var wanted = MapEventData.EventsOn(map).Any(e => MapEventRun.StartHolds(e, this, now));
+        // Only an event its open quest step starts (an unconditioned or DungeonState-started event, as Dungeon_0005_Sub_MapEvent,
+        // would bring the player back forever once the quest is done).
+        var wanted = MapEventData.EventsOn(map).Any(e => e.Start is { Length: > 0 } start
+            && start.Any(g => g.Any(c => c.Type == "IncompleteQuestStep")) && MapEventRun.StartHolds(e, this, now));
         if (!wanted || !MeetsEntry(room, now, out _) || ArrivalPoint(room) is not { } arrival) return null;
         pendingArrivalCutscene = room.ArrivalCutscene is { Length: > 0 } cutscene ? (cutscene, false) : null;
         return arrival;

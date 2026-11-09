@@ -83,6 +83,11 @@ public sealed class CraftTables
     {
         conversions = file.Conversions;
         conversionRecipes = (file.ConversionRecipes ?? []).ToDictionary(p => int.Parse(p.Key, System.Globalization.CultureInfo.InvariantCulture), p => ConversionRow(p.Value));
+        // NC Oct 7 Global: "A weekly limit of 20 Morphs per server" for Sealed Wings -> Enhance Stones (Light and Dark share it, see
+        // GameSession.LimitRecipeKey); ConversionRecipe.dat carries the 20 as LimitAccountCount (target 2). The notice wins.
+        foreach (var id in new[] { GameSession.SharedWingMorphLimitRecipeId, GameSession.DarkWingMorphRecipeId })
+            if (conversionRecipes.TryGetValue(id, out var wing) && wing is { LimitTarget: 2, ExtraLimits: null or { Count: 0 } })
+                conversionRecipes[id] = wing with { LimitTarget = 3 };
         rateCurves = file.RateCurves ?? [];
         craftMastery = file.CraftMastery ?? [];
         gatherMastery = file.GatherMastery ?? [];
@@ -114,7 +119,7 @@ public sealed class CraftTables
 
 // Crafting at worktables (NpcData FunctionType Blacksmith/Tailor/Jewelcraft/Alchemy/Cook). The 0x8d run (catalogue index
 // + 0x89d1): MyCraftRecipeList_NT 0x8d7e and MyConversionRecipeList_NT 0x8d8c OBSERVED at the official world entry
-// (109 Light Auto recipes of mastery 1; 102 default conversions), MyGatherSkillList_NT 0x8d37 OBSERVED as 0000000000.
+// (109 Light Auto recipes of mastery 1; 113 default conversions since the ConversionRecipe.dat regeneration), MyGatherSkillList_NT 0x8d37 OBSERVED as 0000000000.
 // CraftStart_RQ 0x8d6e {worktable key, recipe, components, succession} -> 0x8d6f, then CraftCompleted_NT 0x8d71
 // (CANDIDATE layouts). Craft mastery per ECraftCategory (migration 029): a recipe is known up to the mastery of its
 // worktable, the success rate is the CraftRecipeRate curve at the player's mastery gap over the recipe (the published

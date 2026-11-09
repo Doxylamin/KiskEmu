@@ -134,11 +134,11 @@ public sealed partial class GameSession
     }
 
     /// <summary>Saved or default context rows match the class stack (no foreign skills such as Deadshot on the E combo slot).</summary>
-    bool ContextStackValid(int barSkillId, IReadOnlyList<int> stack)
+    bool ContextStackValid(int barSkillId, IReadOnlyList<int> stack, IReadOnlySet<int>? barSkills = null)
     {
         if (barSkillId <= 0 || stack.Count < 4 || stack[0] != barSkillId) return false;
         var allowed = AllowedContextSkillIds(barSkillId);
-        return stack[0] == barSkillId && stack.All(id => id == 0 || allowed.Contains(id));
+        return stack[0] == barSkillId && stack.All(id => id == 0 || allowed.Contains(id) || barSkills?.Contains(id) == true);
     }
 
     /// <summary>Slots the server auto-selected after a SkillCond grant; reverted when that abnormal group expires.</summary>

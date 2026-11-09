@@ -121,28 +121,33 @@ public static class SocialPacketChecks
 
     static void PartyLayouts()
     {
-        var a = Member(0, 100001, 11, "Al");
-        var b = Member(1, 100002, 12, "Bo", live: false, login: false);
+        var a = Member(1, 100001, 11, "Al") with { GuildName = "Lg", RebirthSkills = [new PartyRebirthSkill(9, 2, 0), new PartyRebirthSkill(8, 1, 30)] };
+        var b = Member(2, 100002, 12, "Bo", live: false, login: false);
         var info = new PartyInfo { Key = 77, LeaderDbId = 11, Members = [a, b] };
         var bytes = SocialPackets.PartyInfo(info, PartyUpdateReason.AddMember);
-        // Decode it back field by field (usmap order) to pin the layout and the shared bool byte.
+        // Decode it back field by field (OBSERVED 00 92 order) to pin the layout, the masks and the shared bool byte.
         var r = new PacketReader(bytes);
-        Check(r.U16() == 0x9200 && r.I64() == 77 && r.I64() == 11 && r.I32() == 4, "PartyInfo head");
-        Check(r.U8() == 3 && r.U8() == 1 && r.U8() == 2 && r.U8() == 1, "PartyInfo options");
-        Check(r.I32() == 0 && r.I32() == 0 && r.I32() == 0, "PartyInfo focus target");
-        Check(r.Varint() == 0 && r.Varint() == 0 && r.Varint() == 0 && r.Varint() == 2, "PartyInfo lists, member count");
+        Check(r.U16() == 0x9200 && r.U8() == 0 && r.I64() == 77 && r.I64() == 11 && r.I32() == 5, "PartyInfo head (mask 0, limit 5)");
+        // OBSERVED: all 36 official PartyInfo_NT carry the rules 02 01 00 02 (random, grade 0, approval).
+        Check(r.U8() == 2 && r.U8() == 1 && r.U8() == 0 && r.U8() == 2, "PartyInfo options");
+        Check(r.Varint() == 2, "PartyInfo member count");
         foreach (var m in new[] { a, b })
         {
+            var mask = r.U8();
+            Check(mask == (m == a ? 5 : 0), "member mask " + m.Nickname);
             Check(r.U8() == m.Number && r.I32() == m.Key && r.U16() == 1204 && r.U16() == 1204 && r.String() == "" && r.I64() == m.DbId && r.String() == m.Nickname, "member identity " + m.Nickname);
             Check(r.I32() == 29 && r.Varint() == 1500 && r.Varint() == 1500 && r.I32() == 200 && r.I32() == 200, "member points " + m.Nickname);
             for (var n = 0; n < 4; n++) r.I32();
             Check(r.I64() == 1000 && r.I32() == 0 && r.Vec3() == new Vector3d(1, 2, 3) && r.Bool() == m.Live, "member map/pos/live " + m.Nickname);
-            Check(r.String() == "" && r.I32() == 0 && r.I32() == 5 && r.I32() == 0 && r.I32() == 0, "member guild/levels " + m.Nickname);
-            Check(r.Bool() && r.Bool() == m.Login && r.Varint() == 0 && r.I64() == 0 && r.U8() == 1, "member tail " + m.Nickname);
+            if ((mask & 1) != 0) Check(r.String() == "Lg", "member legion " + m.Nickname);
+            Check(r.I32() == 5 && r.I32() == 0 && r.I32() == 0, "member levels " + m.Nickname);
+            Check(r.Bool() && r.Bool() == m.Login, "member drop/login " + m.Nickname);
+            if ((mask & 4) != 0)
+                Check(r.Varint() == 2 && r.U8() == 0 && r.I32() == 9 && r.U8() == 2 && r.U8() == 1 && r.I32() == 8 && r.U8() == 1 && r.I32() == 30,
+                    "member rebirth skills (cooltime only when its bit is set) " + m.Nickname);
+            Check(r.I64() == 0 && r.U8() == 1, "member tail " + m.Nickname);
         }
-        Check(r.Varint() == 0 && r.U8() == (byte)PartyUpdateReason.AddMember && r.End, "PartyInfo tail");
-        // The six member bools share the byte opened at the first _live: 1,1,1 then 0,1,0 -> 0x17.
-        Check(bytes[119] == 0x17, "shared bool byte (live, can_take, login of both members)");
+        Check(r.U8() == (byte)PartyUpdateReason.AddMember && r.End, "PartyInfo tail: the reason only");
 
         Same("PartyInfoUpdate_RS", SocialPackets.PartyInfoUpdateReply(0), "0292 0000");
         Same("PartyInfoUpdate_NT", SocialPackets.PartyInfoUpdateNotice(4, 3, 1, 2), "0392 04000000 03 01 02");
@@ -155,15 +160,15 @@ public static class SocialPacketChecks
         Same("PartyInviteResponse_NT", SocialPackets.PartyInviteResponseNotice(12, 1204, "Bo", PartyInviteAnswer.Refusal), "0c92 0c00000000000000 b404 02426f 01");
         var add = SocialPackets.PartyAddMember(a);
         Check(add[0] == 0x0d && add[1] == 0x92 && add.AsSpan(2).SequenceEqual(SocialPackets.PartyReconnectMember(a).AsSpan(2)), "PartyAddMember_NT / PartyReconnectMember_NT share the member record");
-        Same("PartyAbnormalAdd_NT", SocialPackets.PartyAbnormalAdd(5, [7, 8]), "0e92 05000000 02 07000000 08000000");
-        Same("PartyAbnormalRemove_NT", SocialPackets.PartyAbnormalRemove(5, 7), "1a92 05000000 07000000");
+        Same("PartyAbnormalAdd_NT", SocialPackets.PartyAbnormalAdd(5, [7, 8]), "0e92 05 02 07000000 08000000");
+        Same("PartyAbnormalRemove_NT", SocialPackets.PartyAbnormalRemove(5, 7), "1a92 05 07000000");
         Same("PartySetLeader_RS", SocialPackets.PartySetLeaderReply(0), "1092 0000");
         Same("PartyNewLeader_NT", SocialPackets.PartyNewLeader(12), "1192 0c00000000000000");
         Same("PartyLeave_RS", SocialPackets.PartyLeaveReply(0), "1392 0000");
         Same("PartyKickout_RS", SocialPackets.PartyKickoutReply(0), "1892 0000");
         Same("PartyKickout_NT", SocialPackets.PartyKickout(false), "1992 00");
         Same("PartyUpdateMemberHPMP_NT", SocialPackets.PartyMemberHpMp(new PartyMemberPoints(5, 300, 1500, 10, 200)),
-            "1b92 05000000 ac02 dc0b 0a000000 c8000000 00000000 00000000 00000000 00000000 01");
+            "1b92 05 ac02 dc0b 0a000000 c8000000 00000000 00000000 00000000 00000000 01");
         Same("PartyUpdateMemberStatus_NT", SocialPackets.PartyMemberStatus(new PartyMemberStatus { DbId = 12, PcId = 29, MapKey = 1000, Position = new Vector3d(0, 0, 0), Level = 6 }),
             "1c92 0c00000000000000 1d000000 e803000000000000 00000000 000000000000000000000000 06000000 00000000 00000000 00 00000000 01 0000000000000000 01");
         Same("PartyDisband_RS", SocialPackets.PartyDisbandReply(0), "1e92 0000");

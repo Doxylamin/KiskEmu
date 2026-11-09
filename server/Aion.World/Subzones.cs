@@ -35,7 +35,8 @@ public static class Subzones
     public const double HeightSlack = 2000;
 
     sealed record File([property: JsonPropertyName("groups")] int[] Groups,
-                       [property: JsonPropertyName("maps")] Dictionary<string, SubzoneArea[]> Maps);
+                       [property: JsonPropertyName("maps")] Dictionary<string, SubzoneArea[]> Maps,
+                       [property: JsonPropertyName("defaults")] Dictionary<string, int>? Defaults = null);
 
     static readonly Lazy<File> data = new(() =>
     {
@@ -73,7 +74,15 @@ public static class Subzones
         OnMap(mapId).Where(a => a.Contains(at)).MaxBy(a => a.Priority);
 
     /// <summary>Subzone table id at a position (MyCharAppear _subzone_id), else 0.</summary>
-    public static int SubzoneIdAt(int mapId, Vector3d at) => AreaContaining(mapId, at)?.Subzone ?? 0;
+    /// <summary>
+    /// The subzone the appearance carries: the area the position is in, else the map's Map.dat DefaultSubzoneID (OBSERVED: every
+    /// official layer and dungeon appearance, e.g. layer 101001 -> 2001, 101006 -> 2013, dungeon 200003 -> 10012), else 0.
+    /// </summary>
+    public static int SubzoneIdAt(int mapId, Vector3d at) => AreaContaining(mapId, at)?.Subzone ?? DefaultSubzone(mapId);
+
+    /// <summary>Map.dat DefaultSubzoneID of the map (0 when the map has none).</summary>
+    public static int DefaultSubzone(int mapId) =>
+        data.Value.Defaults?.GetValueOrDefault(mapId.ToString(System.Globalization.CultureInfo.InvariantCulture)) ?? 0;
 
     /// <summary>Whether Subzone.dat allows mounting at this position (defaults true when unset in export).</summary>
     public static bool AllowsRide(int mapId, Vector3d at) => AreaContaining(mapId, at)?.UseRide ?? true;

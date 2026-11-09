@@ -43,8 +43,14 @@ def conditions_of(effect):
         kind = _short(entry.get('ConditionType', 'None'))
         if kind in ('None', 'Max'):
             continue
-        vals = [str(_value(v)) for v in entry.get('ConditionValueList') or []]
-        out.append({'type': kind, 'values': vals})
+        # Client build 2026-10: ConditionValues (strings); older exports named it ConditionValueList.
+        vals = [str(_value(v)) for v in entry.get('ConditionValues') or entry.get('ConditionValueList') or []]
+        row = {'type': kind, 'values': vals}
+        # ConditionalExpression is the result the condition must have: false = the condition must NOT hold
+        # (e.g. effect 91405: caster has abnormal 265 and the target does not have 269).
+        if entry.get('ConditionalExpression') is False:
+            row['negate'] = True
+        out.append(row)
     return out
 
 

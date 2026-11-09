@@ -12,12 +12,20 @@ when a group is uncovered (messages 2396 and 9344: 65, 64). The 0x9501 list of m
 2..54), earlier taken for the fog, is another message.
 
     python tools/subzones.py build    # writes tools/data/subzones.json
+    python tools/subzones.py defaults <Map.dat export table-NNN.json>   # adds Map.dat DefaultSubzoneID per map
+
+Map.dat DefaultSubzoneID is the subzone of a map outside its volumes; layers and most dungeons have no volume of their own
+(OBSERVED: the official appearance on layer 101001 carries 2001, on 101006 2013 = their DefaultSubzoneID).
 """
 import argparse
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+from data_json import write_data_json  # noqa: E402
+
 MAPDATA = ROOT / 'research/local/all-mapdata-full'
 SUBZONE_TABLE = ROOT / 'research/local/ascension-flight-tables/table-005.json'
 DATA = ROOT / 'tools/data/subzones.json'
@@ -68,12 +76,29 @@ def build(source=MAPDATA, table=SUBZONE_TABLE):
     return {'source': 'MapData.dat SubzoneVolumeInfoMap + Subzone.dat WorldMapFogGroupId', 'groups': groups, 'maps': maps}
 
 
+def map_defaults(map_table):
+    """Map id -> Map.dat DefaultSubzoneID (only maps that name one)."""
+    rows = json.loads(Path(map_table).read_text(encoding='utf-8'))['Properties']['Data']
+    return {str(row['ID']['Value']): row['DefaultSubzoneID'] for row in rows if row.get('DefaultSubzoneID')}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('command', choices=['build'])
-    parser.parse_args()
+    parser.add_argument('command', choices=['build', 'defaults'])
+    parser.add_argument('map_table', nargs='?', type=Path, help='Map.dat export (defaults)')
+    args = parser.parse_args()
+    if args.command == 'defaults':
+        if not args.map_table:
+            parser.error('defaults needs the Map.dat export table')
+        out = json.loads(DATA.read_text(encoding='utf-8'))
+        out['defaults'] = map_defaults(args.map_table)
+        write_data_json(DATA, out)
+        print(len(out['defaults']), 'map default subzones ->', DATA.relative_to(ROOT))
+        return
     out = build()
-    DATA.write_text(json.dumps(out, separators=(',', ':')) + '\n', encoding='utf-8')
+    if 'defaults' in (old := json.loads(DATA.read_text(encoding='utf-8')) if DATA.exists() else {}):
+        out['defaults'] = old['defaults']   # a volume rebuild keeps the Map.dat defaults
+    write_data_json(DATA, out)
     print(len(out['maps']), 'maps,', sum(len(v) for v in out['maps'].values()), 'areas,', len(out['groups']), 'fog groups ->', DATA.relative_to(ROOT))
 
 

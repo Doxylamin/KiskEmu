@@ -590,7 +590,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case 0x363d when QuestKey(plain, 2) is { } stopKey:
                 if (pendingUse?.Key == stopKey) pendingUse = null;
                 return [GamePackets.InteractEnvObjStopReply(stopKey)];
-            case 0xe242 when NpcKeyFromBody(plain) is { } npcKey:
+            // The key as sent even when it is no longer among the targets (after a layer move): the failure reply below needs it
+            // (NpcKeyFromBody only resolves present keys, which made that branch unreachable).
+            case 0xe242 when (NpcKeyFromBody(plain) ?? QuestKey(plain, 2)) is { } npcKey:
                 // Once the conversation is over on the server's side (the partner removed and a map load pending, as after an
                 // NPC's layer entry) the official answer is the failure 0x3e08 with key 0 (OBSERVED #9656); the talk mode ends on it.
                 if (reloading || targets?.ContainsKey(npcKey) != true) return [GamePackets.FinishNpcInteractionReply(0, FinishNoConversation)];

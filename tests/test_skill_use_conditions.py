@@ -57,7 +57,14 @@ class SkillUseConditionTests(unittest.TestCase):
 
     def test_jointstrike_gets_an_improvised_condition_for_every_variant(self):
         doc = {'skills': {'16140000': {'type': 'Active'}, '16140010': {'type': 'Active'}, '16040000': {'type': 'Active'}}}
-        patched, _ = skill_use_conditions.patch(doc)
+        # No local Skill.dat export: a present one wins over the override (test_skill_dat_export_wins_over_override_for_spirit).
+        old_local = skill_use_conditions.LOCAL
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_use_conditions.LOCAL = Path(tmp)
+            try:
+                patched, _ = skill_use_conditions.patch(doc)
+            finally:
+                skill_use_conditions.LOCAL = old_local
         self.assertEqual(patched, ['16140000', '16140010'])
         self.assertEqual(doc['skills']['16140010']['use_condition_source'], 'override')
         self.assertNotIn('needs_spirit', doc['skills']['16040000'])

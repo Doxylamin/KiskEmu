@@ -460,7 +460,9 @@ public sealed class SkillEffectTests
         const long t = 1_760_400_100_000;
         var (a, b) = await DuelAsync();
         var spot = b.Position!.Value;
-        a.PvpSkillDebuffs(b.WorldPlayer!, 11290000, t);
+        // 11320000: its knockback row (100000321) has no condition; 11290000's only lands on a target carrying
+        // TriggerSkillCheck_BossMonster (SkillEffect 1129000043), so a duel opponent is never thrown by it.
+        a.PvpSkillDebuffs(b.WorldPlayer!, 11320000, t);
         Assert.True(b.HeldByAbnormal || b.ActiveBuffs.Contains(Knockback), "the abnormals of the skill land on the victim");
         var outbox = new List<byte[]>();
         while (b.WorldPlayer!.Outbox.TryDequeue(out var packet)) outbox.Add(packet);
