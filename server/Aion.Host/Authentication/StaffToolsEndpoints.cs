@@ -39,6 +39,8 @@ public static partial class StaffToolsEndpoints
             { return error.Code == "forbidden" ? Results.StatusCode(403) : Results.BadRequest(new { error = error.Code }); }
         });
 
+        MapShop(staff);
+
         // ---------- Moderation ----------
         staff.MapGet("/sanctions", async (bool? all, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
             await Signed(ctx, auth, ct) is { } a ? Results.Ok(await tools.SanctionsAsync(a, all == true, ct)) : Results.Unauthorized());

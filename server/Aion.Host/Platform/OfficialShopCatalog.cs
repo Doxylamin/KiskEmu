@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Aion.Application.Gameplay;
 
 namespace Aion.Host.Platform;
 
@@ -52,20 +53,89 @@ public static class OfficialShopCatalog
             o["effective_to"] = Far;
     }
 
-    static byte[] Page(IEnumerable<JsonNode> rows, int pageIndex, int pageSize, DateTimeOffset now)
+    static byte[] Page(IEnumerable<JsonNode> rows, int pageIndex, int pageSize, DateTimeOffset now, string? revision = null)
     {
         var all = rows.ToList();
         var page = new JsonArray(all.Skip((pageIndex - 1) * pageSize).Take(pageSize).Select(g => (JsonNode)Fresh(g, now)).ToArray());
         var root = new JsonObject
         {
-            ["revision_id"] = Revision, ["total_count"] = all.Count.ToString(), ["page_index"] = pageIndex.ToString(), ["page"] = page,
+            ["revision_id"] = revision ?? Revision, ["total_count"] = all.Count.ToString(), ["page_index"] = pageIndex.ToString(), ["page"] = page,
         };
         return Serialize(root);
     }
 
-    /// <summary>GET goods/v2.0/goods.</summary>
-    public static byte[] Goods(int pageIndex, int pageSize, DateTimeOffset now) =>
-        Page(Data.Value["goods"]!.AsArray()!.Select(n => n!), Math.Max(1, pageIndex), pageSize is < 1 or > 500 ? 400 : pageSize, now);
+    /// <summary>GET goods/v2.0/goods: the official goods, then the custom goods on sale now (staff dashboard: Shop).</summary>
+    public static byte[] Goods(int pageIndex, int pageSize, DateTimeOffset now, IReadOnlyList<CustomShopGoods>? custom = null)
+    {
+        var onSale = (custom ?? []).Where(g => g.OnSale(now)).ToList();
+        var rows = Data.Value["goods"]!.AsArray()!.Select(n => n!).Concat(onSale.Select(g => (JsonNode)CustomGoods(g)));
+        return Page(rows, Math.Max(1, pageIndex), pageSize is < 1 or > 500 ? 400 : pageSize, now, CustomRevision(onSale));
+    }
+
+    /// <summary>Official revision, with a suffix that changes with the custom goods (so a client cache is not reused).</summary>
+    static string CustomRevision(IReadOnlyList<CustomShopGoods> custom)
+    {
+        if (custom.Count == 0) return Revision;
+        var hash = 17L;
+        foreach (var g in custom) hash = unchecked(hash * 31 + g.GoodsId * 7 + g.UpdatedAt.ToUnixTimeMilliseconds());
+        return Revision + (Math.Abs(hash % 1_000_000)).ToString("D6", CultureInfo.InvariantCulture);
+    }
+
+    static readonly string[] Languages = ["de-DE", "en-US", "es-ES", "fr-FR", "ja-JP", "ko-KR", "pt-BR", "ru-RU"];
+
+    /// <summary>Currency group of a custom goods' price: 145 GameCash (Quna), else 159 game money (Kina; 0 when free).</summary>
+    public static string CurrencyGroup(CustomShopGoods g) => g.Currency == "quna" ? "145" : "159";
+
+    static string Iso(DateTimeOffset at) => at.ToOffset(TimeSpan.FromHours(9)).ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// A custom goods in the official goods shape (as goods 1169: one tab per race in goods_data catl/catd, "None" hides it
+    /// from the other race; gi the shop icon; items by game_item_key; one basic price in its currency group).
+    /// </summary>
+    public static JsonObject CustomGoods(CustomShopGoods g)
+    {
+        var id = g.GoodsId.ToString(CultureInfo.InvariantCulture);
+        var light = g.Race == 2 ? "None" : g.TabLight;
+        var dark = g.Race == 1 ? "None" : g.TabDark;
+        var items = new JsonArray(g.Items.Select(i => (JsonNode)new JsonObject
+        {
+            ["item_id"] = i.TemplateId.ToString(CultureInfo.InvariantCulture), ["item_quantity"] = i.Quantity.ToString(CultureInfo.InvariantCulture),
+            ["item_receive_expiration_type"] = "1", ["item_name"] = g.Name, ["item_type"] = "103", ["item_description"] = "",
+            ["game_item_key"] = i.TemplateId.ToString(CultureInfo.InvariantCulture),
+        }).ToArray());
+        return new JsonObject
+        {
+            ["goods_id"] = id, ["app_group_code"] = "aion2global", ["goods_name"] = g.Name, ["sale_status"] = "2",
+            ["effective_from"] = g.SaleFrom is { } from ? Iso(from) : "2025-01-01T05:00:00+09:00",
+            ["effective_to"] = g.SaleTo is { } to ? Iso(to) : Far,
+            ["goods_data"] = $"catl:{light},catd:{dark},do:{g.SortOrder},sset:0,ssd:0,sen:0,gi:{g.Icon},l:,os:1,cl:1,thm:,thf:,orp:0,sc:1,rg:,cp:0",
+            ["purchase_type"] = "1", ["is_subscribable"] = "0", ["is_delivery_confirmation"] = "0", ["refund_unit_type"] = "1", ["inventory_type"] = "0",
+            ["goods_type"] = "1", ["goods_delivery_type"] = "0", ["is_single"] = "0", ["items"] = items, ["pgs"] = new JsonArray(),
+            ["display_names"] = new JsonArray(Languages.Select(l => (JsonNode)new JsonObject { ["language_code"] = l, ["goods_display_name"] = g.Name }).ToArray()),
+            ["display_policies"] = new JsonArray(),
+            ["goods_basic_price_policies"] = new JsonArray(new JsonObject
+            {
+                ["currency_group_id"] = CurrencyGroup(g), ["goods_basic_price"] = g.Price.ToString(CultureInfo.InvariantCulture) + ".0000",
+            }),
+            ["goods_basic_currency_price_policies"] = new JsonArray(), ["goods_missions"] = new JsonArray(),
+        };
+    }
+
+    /// <summary>The shop tabs (catl, catd pairs) and icons (gi) of the official goods, for the staff dashboard's choices.</summary>
+    public static (IReadOnlyList<(string Light, string Dark, int Goods)> Tabs, IReadOnlyList<string> Icons) Choices()
+    {
+        var tabs = new Dictionary<(string, string), int>();
+        var icons = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var g in Data.Value["goods"]!.AsArray().Concat(Data.Value["me_goods"]!.AsArray()))
+        {
+            var data = (g?["goods_data"]?.GetValue<string>() ?? "").Split(',').Select(kv => kv.Split(':', 2)).Where(kv => kv.Length == 2)
+                .GroupBy(kv => kv[0]).ToDictionary(x => x.Key, x => x.First()[1]);
+            if (data.GetValueOrDefault("catl") is { Length: > 0 } l && l != "None" && data.GetValueOrDefault("catd") is { Length: > 0 } d && d != "None")
+                tabs[(l, d)] = tabs.GetValueOrDefault((l, d)) + 1;
+            if (data.GetValueOrDefault("gi") is { Length: > 0 } icon) icons.Add(icon);
+        }
+        return (tabs.OrderByDescending(t => t.Value).Select(t => (t.Key.Item1, t.Key.Item2, t.Value)).ToList(), icons.ToList());
+    }
 
     static HashSet<string> Csv(string? v) =>
         (v ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
@@ -82,7 +152,7 @@ public static class OfficialShopCatalog
     }
 
     /// <summary>GET goods/v2.0/me/goods/policy: captured quotas (purchase counters zeroed), or a plain purchasable quota.</summary>
-    public static byte[] Policy(string? goodsIds, string? pgGoodsKeys, string? currencyGroupId, DateTimeOffset now)
+    public static byte[] Policy(string? goodsIds, string? pgGoodsKeys, string? currencyGroupId, DateTimeOffset now, IReadOnlyList<CustomShopGoods>? custom = null)
     {
         var ids = Csv(goodsIds);
         var keys = Csv(pgGoodsKeys);
@@ -92,6 +162,7 @@ public static class OfficialShopCatalog
         if (ids.Count > 0)
         {
             var goods = Data.Value["goods"]!.AsArray().Concat(Data.Value["me_goods"]!.AsArray()).Select(n => n!)
+                .Concat((custom ?? []).Select(g => (JsonNode)CustomGoods(g)))
                 .GroupBy(g => g["goods_id"]!.GetValue<string>()).ToDictionary(x => x.Key, x => x.First());
             foreach (var id in ids)
             {

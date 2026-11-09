@@ -16,7 +16,8 @@ namespace Aion.World;
 // INFERRED (OURS): _battle_pass_list lists the passes the character holds (the free ones and the unlocked paid ones);
 // _period_exp is 0 (the weekly exp limit is not applied); BattlePassPurchase_RQ._item_id is the BattlePass.dat id of a
 // paid pass (or its group id: every paid pass of the group). BattlePass.dat UnlockCostType/UnlockCostCount are not
-// extracted, so the unlock is free unless Aion:Shop:PremiumMode is Disabled. An unlock is stored as an achievement
+// extracted: the unlock costs Aion:Shop:PassUnlockPrice Quna (default 1500), repriced by Aion:Shop:PremiumMode (Kina, free,
+// or refused when Disabled), and is a "pass" line of the world's shop ledger. An unlock is stored as an achievement
 // record keyed by the pass id (count 1), which no achievement id collides with.
 public sealed partial class GameSession
 {
@@ -145,23 +146,26 @@ public sealed partial class GameSession
         var passes = ActivePasses(now)
             .SelectMany(g => g.Id == itemId ? g.Passes.Where(IsPaid) : g.Passes.Where(p => p[0] == itemId && IsPaid(p)))
             .Where(p => !PassUnlocked(p)).ToList();
-        if (passes.Count == 0 || shopOptions.PremiumMode == ShopPremiumMode.Disabled) return [Reply(1)];
-        var price = shopOptions.PremiumMode switch
-        {
-            ShopPremiumMode.Disabled => -1L,
-            ShopPremiumMode.Free => 0L,
-            _ => PaidPassUnlockQunaCost,
-        };
-        if (price < 0) return [Reply(1)];
-        var changes = new List<byte[]>();
+        if (passes.Count == 0 || ApplyPremiumPrice(PlatformGoodsTables.Embedded.QunaItemId, shopOptions.PassUnlockPrice) is not { } priced)
+            return [Reply(1)];
+        var (currency, price) = priced;
+        if (Store is not { } store || CharacterId is not { } character) return price > 0 ? [Reply(1)] : await UnlockPassesAsync(passes, now, [], Reply, ct);
+        var costs = new List<(Guid, long, int)>();
         if (price > 0)
         {
-            if (Store is not { } store || CharacterId is not { } character) return [Reply(1)];
-            if (CostStacks(PlatformGoodsTables.Embedded.QunaItemId, price) is not { } stacks) return [Reply(2)];
-            var done = await Stored(async () => await store.ShopBuyAsync(character, stacks, [], [], ct) ? [[]] : []);
-            if (done.Count == 0) return [Reply(1)];
-            changes.AddRange(await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy));
+            if (CostStacks(currency, price) is not { } stacks) return [Reply(2)];
+            costs = stacks;
         }
+        // The unlock is the ledger's "pass" line (goods: the pass id), paid in one transaction with its record.
+        var orders = passes.Select((p, i) => new Aion.Application.Gameplay.ShopOrderLine("pass", (int)p[0], 1, currency, i == 0 ? price : 0)).ToList();
+        var done = await Stored(async () => await store.ShopBuyAsync(character, costs, [], [], orders, ct) ? [[]] : []);
+        if (done.Count == 0) return [Reply(1)];
+        var changes = price > 0 ? await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy) : [];
+        return await UnlockPassesAsync(passes, now, changes, Reply, ct);
+    }
+
+    async Task<List<byte[]>> UnlockPassesAsync(List<long[]> passes, long now, List<byte[]> changes, Func<int, byte[]> Reply, CancellationToken ct)
+    {
         foreach (var pass in passes)
         {
             achievements[(int)pass[0]] = new AchievementState { Count = 1, CompletedMs = now, UpdatedMs = now };

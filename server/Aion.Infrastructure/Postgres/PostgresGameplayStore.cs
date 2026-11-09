@@ -496,10 +496,12 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
     }
 
     public async Task<bool> ShopBuyAsync(VerifiedAccount account, Guid character, IReadOnlyList<(Guid Item,long Revision,int Count)> costs,
-        IReadOnlyList<(int TemplateId,long Count)> goods, IReadOnlyList<(int Target,int GoodsId,string Period,int Count,int Limit)> limits, CancellationToken ct=default)
+        IReadOnlyList<(int TemplateId,long Count)> goods, IReadOnlyList<(int Target,int GoodsId,string Period,int Count,int Limit)> limits,
+        IReadOnlyList<ShopOrderLine>? orders, CancellationToken ct=default)
     {
+        if(orders is not null && orders.Any(o=>o.Quantity<1 || o.Price<0 || !ShopOrderKinds.Contains(o.Kind))) throw new GameplayException("invalid_shop_buy");
         // No goods with costs: a failed craft (the components are used up).
-        if(goods.Count==0 && costs.Count==0 || goods.Any(g=>g.Count<1) || costs.Any(x=>x.Count<1) || limits.Any(l=>l.Count<1 || l.Limit<1)) throw new GameplayException("invalid_shop_buy");
+        if(goods.Count==0 && costs.Count==0 && (orders is null || orders.Count==0) || goods.Any(g=>g.Count<1) || costs.Any(x=>x.Count<1) || limits.Any(l=>l.Count<1 || l.Limit<1)) throw new GameplayException("invalid_shop_buy");
         await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
         if(!await Own(c,t,account.AccountId,character,ct)) return false;
         foreach(var (cost,revision,count) in costs)
@@ -518,9 +520,36 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
             if(build is null || await Scalar(c,t,"SELECT template_id FROM catalog.items WHERE build_id=$1 AND template_id=$2",ct,build,template) is null) return false;
             if(!await GrantShopGoodAsync(c,t,character,build,template,count,itemRoller,ct)) return false;
         }
+        foreach(var o in orders ?? [])
+            await Execute(c,t,"INSERT INTO game.shop_orders(character_id,account_id,kind,goods_id,quantity,currency_item,price) VALUES($1,$2,$3,$4,$5,$6,$7)",ct,
+                character,account.AccountId,o.Kind,o.GoodsId,o.Quantity,o.CurrencyItemId,o.Price);
         await Execute(c,t,"INSERT INTO audit.events(action,character_id,actor_id,details) VALUES('shop_bought',$1,$2,$3)",ct,character,account.AccountId,
             Json(new {goods=goods.Select(g=>new[]{(long)g.TemplateId,g.Count}),costs=costs.Select(x=>new{x.Item,x.Count})}));
         await t.CommitAsync(ct); return true;
+    }
+
+    static readonly HashSet<string> ShopOrderKinds=["npc","coin","guild","bm","custom","pass","membership"];
+
+    public async Task<StoredMembership?> MembershipAsync(VerifiedAccount account, CancellationToken ct=default)
+    {
+        await using var c=await source.OpenConnectionAsync(ct);
+        await using var q=new NpgsqlCommand("SELECT starts_at,ends_at,revoked FROM game.account_memberships WHERE account_id=$1",c);
+        q.Parameters.Add(new NpgsqlParameter{Value=account.AccountId});
+        await using var r=await q.ExecuteReaderAsync(ct);
+        if(!await r.ReadAsync(ct)) return null;
+        return new StoredMembership(new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(0),DateTimeKind.Utc)),new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(1),DateTimeKind.Utc)),r.GetBoolean(2));
+    }
+
+    public async Task SaveMembershipAsync(VerifiedAccount account, StoredMembership membership, CancellationToken ct=default)
+    {
+        await using var c=await source.OpenConnectionAsync(ct);
+        await using var q=new NpgsqlCommand("INSERT INTO game.account_memberships(account_id,starts_at,ends_at,revoked) VALUES($1,$2,$3,$4) "
+            +"ON CONFLICT(account_id) DO UPDATE SET starts_at=EXCLUDED.starts_at,ends_at=EXCLUDED.ends_at,revoked=EXCLUDED.revoked,updated_at=now()",c);
+        q.Parameters.Add(new NpgsqlParameter{Value=account.AccountId});
+        q.Parameters.Add(new NpgsqlParameter{Value=membership.StartsAt.UtcDateTime,NpgsqlDbType=NpgsqlTypes.NpgsqlDbType.TimestampTz});
+        q.Parameters.Add(new NpgsqlParameter{Value=membership.EndsAt.UtcDateTime,NpgsqlDbType=NpgsqlTypes.NpgsqlDbType.TimestampTz});
+        q.Parameters.Add(new NpgsqlParameter{Value=membership.Revoked});
+        await q.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Shop rewards: stack in the bag when possible; non-stackables spill to storage when the bag is full (CANDIDATE cap 40).</summary>

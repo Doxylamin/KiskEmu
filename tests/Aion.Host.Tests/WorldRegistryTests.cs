@@ -125,4 +125,18 @@ public sealed class WorldRegistryTests
         Assert.Equal([1205], missing);
         Assert.Equal(0, await WorldLinks.SumOverAsync([], _ => Task.FromResult<long?>(1), _ => { }));
     }
+
+    [Fact]
+    public void Shop_quna_counts_only_the_world_the_account_plays_on()
+    {
+        WorldRecord[] worlds =
+        [
+            World(1204, "Alpha", 1361, 2361, WorldRecord.Managed, 13328, 18780),
+            World(1205, "Beta", 1362, 2362, WorldRecord.Managed, 13329, 18781),
+        ];
+        Assert.Equal([1205], WorldLinks.QunaWorlds(worlds, 1205).Select(w => w.WorldId));
+        // Not in a world, or in one that is not running: every running world.
+        Assert.Equal([1204, 1205], WorldLinks.QunaWorlds(worlds, null).Select(w => w.WorldId));
+        Assert.Equal([1204, 1205], WorldLinks.QunaWorlds(worlds, 1299).Select(w => w.WorldId));
+    }
 }

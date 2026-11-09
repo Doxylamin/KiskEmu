@@ -994,6 +994,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         await EnsureRolledStatsAsync(store, character, ct);
         var result = Layout(storedItems.Values.ToList(), selected?.WireId ?? 0, data, inventory, hints);
         await RefreshAccountQunaBalanceAsync(ct);
+        await LoadMembershipAsync(ct);
         return result;
     }
 

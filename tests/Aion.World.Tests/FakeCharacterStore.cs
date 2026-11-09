@@ -25,6 +25,26 @@ public sealed class FakeCharacterStore : INativeCharacterStore
     public List<(string Code, long Exp, int ItemCount)> Rewards { get; } = [];
     public List<SkillState> Skills { get; } = [];
     public List<(int Target, int GoodsId, string Period, int Count)> Purchases { get; } = [];
+    /// <summary>Ledger lines of successful shop purchases (game.shop_orders).</summary>
+    public List<ShopOrderLine> Orders { get; } = [];
+    /// <summary>The account's stored membership (game.account_memberships).</summary>
+    public StoredMembership? Membership { get; set; }
+
+    public Task<StoredMembership?> MembershipAsync(CancellationToken ct) => Task.FromResult(Membership);
+
+    public Task<bool> SaveMembershipAsync(StoredMembership membership, CancellationToken ct)
+    {
+        Membership = membership;
+        return Task.FromResult(true);
+    }
+
+    public async Task<bool> ShopBuyAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, IReadOnlyList<(int TemplateId, long Count)> goods,
+        IReadOnlyList<(int Target, int GoodsId, string Period, int Count, int Limit)> limits, IReadOnlyList<ShopOrderLine> orders, CancellationToken ct)
+    {
+        if (!await ShopBuyAsync(character, costs, goods, limits, ct)) return false;
+        Orders.AddRange(orders);
+        return true;
+    }
     public List<(int Target, int RecipeId, string Period, int Count)> ConversionCounts { get; } = [];
     public List<AchievementRecord> Achievements { get; } = [];
     public (int Level, long Exp) Progress { get; set; } = (1, 0);

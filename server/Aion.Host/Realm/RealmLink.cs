@@ -123,6 +123,9 @@ public static class RealmLinkEndpoints
             await accounts.SyncCharactersAsync(World(ctx).WorldId, input.Full, input.Upserts, input.Removed, ct);
             return Results.NoContent();
         });
+        // The custom shop goods this world sells (game.custom_shop_goods, staff dashboard: Shop).
+        link.MapGet("/shop/goods", async (IServiceProvider services, CancellationToken ct) =>
+            services.GetService<ICustomShopCatalog>() is { } shop ? Results.Ok(await shop.GoodsAsync(ct)) : Results.Ok(Array.Empty<CustomShopGoods>()));
         // This world's chat announcement (scheduled restart, staff announcement on that world) to its chat sessions.
         link.MapPost("/chat", async (LinkText input, HttpContext ctx, IServiceProvider services) =>
         {
@@ -219,6 +222,42 @@ public sealed class RealmLinkClient
     public Task<LinkCount?> TicketAsync(LinkTicket input, CancellationToken ct) => Send<LinkCount>(HttpMethod.Post, "tickets", input, ct);
     public Task SyncCharactersAsync(LinkCharacters input, CancellationToken ct) => Send<bool>(HttpMethod.Post, "characters", input, ct, repeatable: true);
     public async Task<int> ChatAsync(string text, CancellationToken ct) => (await Send<LinkCount>(HttpMethod.Post, "chat", new LinkText(text), ct))?.Value ?? 0;
+    public async Task<IReadOnlyList<CustomShopGoods>> ShopGoodsAsync(CancellationToken ct) =>
+        await Send<List<CustomShopGoods>>(HttpMethod.Get, "shop/goods", null, ct) ?? throw new RealmLinkException("The realm sent no shop goods.");
+}
+
+/// <summary>
+/// A world server's custom shop goods: the realm's, read over the realm link at most every 30 seconds; the last list
+/// stays in use while the realm cannot be reached.
+/// </summary>
+public sealed class LinkedCustomShopCatalog(RealmLinkClient link, ILogger<LinkedCustomShopCatalog> logger) : ICustomShopCatalog
+{
+    static readonly TimeSpan Fresh = TimeSpan.FromSeconds(30), Retry = TimeSpan.FromSeconds(5);
+    readonly SemaphoreSlim gate = new(1, 1);
+    IReadOnlyList<CustomShopGoods> goods = [];
+    DateTimeOffset nextRead = DateTimeOffset.MinValue;
+
+    public async Task<IReadOnlyList<CustomShopGoods>> GoodsAsync(CancellationToken ct = default)
+    {
+        if (DateTimeOffset.UtcNow < nextRead) return goods;
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (DateTimeOffset.UtcNow < nextRead) return goods;
+            try
+            {
+                goods = await link.ShopGoodsAsync(ct);
+                nextRead = DateTimeOffset.UtcNow + Fresh;
+            }
+            catch (Exception error) when (error is HttpRequestException or RealmLinkException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                logger.LogWarning("Custom shop goods from the realm: {Error}", error.Message);
+                nextRead = DateTimeOffset.UtcNow + Retry;
+            }
+            return goods;
+        }
+        finally { gate.Release(); }
+    }
 }
 
 public sealed class RealmLinkException(string message) : Exception(message);

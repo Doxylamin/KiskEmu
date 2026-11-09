@@ -84,6 +84,13 @@ public interface INativeCharacterStore : IAsyncDisposable
         Task.FromResult<IReadOnlyList<(int, int, string, int)>>([]);
     Task<bool> ShopBuyAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, IReadOnlyList<(int TemplateId, long Count)> goods,
         IReadOnlyList<(int Target, int GoodsId, string Period, int Count, int Limit)> limits, CancellationToken ct) => Task.FromResult(false);
+    /// <summary>A shop purchase with its ledger lines (game.shop_orders, written in the purchase's transaction).</summary>
+    Task<bool> ShopBuyAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, IReadOnlyList<(int TemplateId, long Count)> goods,
+        IReadOnlyList<(int Target, int GoodsId, string Period, int Count, int Limit)> limits, IReadOnlyList<Aion.Application.Gameplay.ShopOrderLine> orders, CancellationToken ct) =>
+        ShopBuyAsync(character, costs, goods, limits, ct);
+    /// <summary>The account's stored membership on this world, null when none was ever set.</summary>
+    Task<Aion.Application.Gameplay.StoredMembership?> MembershipAsync(CancellationToken ct) => Task.FromResult<Aion.Application.Gameplay.StoredMembership?>(null);
+    Task<bool> SaveMembershipAsync(Aion.Application.Gameplay.StoredMembership membership, CancellationToken ct) => Task.FromResult(false);
     Task<IReadOnlyList<(int Target, int RecipeId, string Period, int Count)>> ConversionCountsAsync(Guid character, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<(int, int, string, int)>>([]);
     Task<bool> ConversionAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, IReadOnlyList<(int TemplateId, long Count)> goods,

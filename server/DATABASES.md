@@ -7,8 +7,8 @@ own PostgreSQL, and no world can read another world's characters or the accounts
 
 | Database | Name | Holds | Used by |
 | --- | --- | --- | --- |
-| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`; the catalogue (dashboard) | auth host |
-| World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
+| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`); the catalogue (dashboard) | auth host |
+| World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests, shop purchases and limits, the purchase ledger `game.shop_orders`, memberships), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
 
 ## Migrations
 
@@ -70,6 +70,7 @@ Every request carries `X-World-Id: <id>` and `Authorization: Bearer <token>`:
 | `GET state`, `POST maintenance` | maintenance and active sanctions (cached 2 s) |
 | `POST tickets`, `POST chat` | `//report` tickets; announcements and staff chat |
 | `POST characters` | the character index sync |
+| `GET shop/goods` | the custom shop goods the world sells (cached 30 s by the world) |
 
 While a world's **realm socket** is open (`/internal/realm/socket`, the same sign-in), these calls and the auth
 host's calls to the world's control port ride one WebSocket the world dials, plus pushed events (account and state
@@ -84,8 +85,11 @@ The world server's settings: `Aion:Role=world`, `Aion:Native:WorldId`, `Connecti
 Chat stays on the auth host: the client learns the chat address from the bootstrap policy before it picks
 a world. Whisper blocks are world data, so the auth host asks the sender's world server
 (`/internal/world/blocked`). The platform's Quna balance (`virtual_currency/v2.0/me/balances`) is item data
-too: the auth host asks every running world server (`/internal/world/quna`) and adds the answers; a world
-that does not answer counts as 0.
+too: while one of the account's characters is in a world, the auth host asks only that world server
+(`/internal/world/quna`), because the in-game shop spends that world's Quna; otherwise it asks every
+running world server and adds the answers, and a world that does not answer counts as 0. Shop purchases,
+the purchase ledger (`game.shop_orders`), stored memberships and the pass unlock all run on the player's
+world server against its own database; the auth host only lists the custom goods.
 
 ## Not covered
 
