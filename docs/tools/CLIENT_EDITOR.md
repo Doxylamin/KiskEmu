@@ -32,7 +32,7 @@ dotnet publish editor/AionClientEditor -c Release -r win-x64 -o out/client-edito
 
 | Path | Purpose |
 |------|---------|
-| `AION2/Content/Data/Table/ServerName.dat` | Display names for world/server selection (grid shows **RowId** from the table header ids plus one column per struct field; nested values as JSON in the details pane) |
+| `AION2/Content/Data/Table/ServerName.dat` | Display names for world/server selection (grid shows each row's key, its `ID.Value` or `Name`, plus one column per struct field; nested values as JSON in the details pane) |
 | `AION2/Content/Data/Table/ServerList.dat` | Server list entries |
 | `AION2/Content/Data/Table/RegionList.dat` | Region list at selection |
 | `AION2/Content/Data/Table/CountryList.dat` | Country list at selection |
@@ -55,8 +55,52 @@ Modified **base** utoc/ucas/pak bytes **fail** quick/full checks — the editor 
 ### Game client (best-effort, not exhaustively reversed here)
 
 - IoStore containers ship with `.sig` sidecars; `tools/extract_iostore.py` notes signatures are **not** verified during extraction.
-- NCGuard / executable integrity beyond pak mounts was **not** fully reversed in this repo. Treat in-game rejection of unsigned patch paks as **possible** until validated on a live client.
+- NCGuard / executable integrity beyond pak mounts was **not** fully reversed in this repo. Treat in-game rejection of unsigned patch paks as **possible** until validated on a live client (CANDIDATE: the custom NPC pak is the first one to check in game).
 - UE mount order loads later `pakchunk*` / `z_*` names after base chunks; a separate patch pak is the intended modding path (same as other UE titles).
+
+## Headless tool (`kisk-client-tool`)
+
+`editor/AionClientEditor.Cli` runs the same core library without the window. It reads the local client, so run it on a PC with
+the game installed and keep its output out of the repository (`research/local/` is ignored).
+
+```bash
+dotnet run --project editor/AionClientEditor.Cli -- dump-schema --paks "<client>/Aion2/Content/Paks" --key <key.json> --oodle <oodle.dll> --table NpcData --rows 3 --out research/local/schema
+```
+
+```bash
+dotnet run --project editor/AionClientEditor.Cli -- custom-npcs --paks "<client>/Aion2/Content/Paks" --key <key.json> --oodle <oodle.dll> --definitions custom-npcs.json --out research/local/custom-npcs
+```
+
+- `dump-schema --table NpcData|NpcTalk|String|L10NString[:locale]` writes the columns and sample rows (`--rows`, `--id`, `--find`).
+- `custom-npcs` builds `z_KiskEmu_CustomNpcs-Windows_P.pak` (and an empty `.sig`) from the staff dashboard's export
+  (docs/CUSTOM_NPCS.md). It first re-serializes every table and L10N file it patches unmodified and refuses to go on unless
+  the bytes match the client's own. Then it mounts the written pak and reads every custom row and text back. It also
+  writes `custom-npcs.lock.json` (SHA-256, files, template ids, talk names).
+
+## Byte formats (OBSERVED in the supported build)
+
+- **Patch pak:** UE pak version 11 (Fnv64BugFix) like the client's own paks, with an encrypted index and an all-zero GUID.
+  - Each entry is stored uncompressed, AES-encrypted and padded to 16 bytes; its 53-byte record is repeated in front of the data.
+  - The index has a path-hash table (FNV-1a 64 over the lowercase UTF-16 path, seeded) and the full directory index.
+  - The mount point is `../../../AION2/`.
+- **Tables (`.dat`):**
+  - The version is 13, the same number as the encrypted-container magic, so on-disk bytes go to `FAion2DataTableFile`
+    as they are; decrypting first would decrypt them twice.
+  - The header's id list holds **one hash per column**, not one per row. Rows are keyed by `ID.Value` (a TableItemId struct)
+    or by `Name` (for example String.dat).
+  - In tables whose id string has a negative length (NpcData, NpcTalk, String), names (ids, NameProperty, EnumProperty)
+    are XORed UTF-16. The key `25 00 a8 00 7e 00 91 00` covers the characters only; the UTF-16 terminator stays `00 00`.
+    One-character names are ANSI.
+  - StrProperty values are plain UTF-8.
+  - The top-level row array has no struct tag. Nested struct arrays carry a full one: property name, `StructProperty`,
+    element byte size (int64), struct type, a 16-byte zero GUID and a 0 byte.
+- **L10N:**
+  - An encrypted file (header 2) holds an int32 1 and then plain Unreal FStrings (namespace, then the key/text map),
+    followed by one more int32 0.
+  - The unencrypted format XORs each string, except buffers of 4 bytes or fewer.
+  - `AION2/Content/Data/Table/L10N/<locale>/L10NString.dat` and `AION2/Content/L10N/Text/<locale>/L10NString.dat`
+    are identical per locale. Both are patched; the StartUpData copy (pre-login strings) is left alone.
+- **Row append:** `DataTableRows.AppendRow` clones a row, sets cells by path (`Desc.Key`, `Tags[1]`) and keeps the header ids.
 
 ## Serialization round-trip tests
 
@@ -69,8 +113,13 @@ Modified **base** utoc/ucas/pak bytes **fail** quick/full checks — the editor 
 | Small `.dat` stream container (`uint` 13, ≤4 KiB, XorAES) | encrypt → decrypt |
 | `MapHierarchy` binary | read → write → read |
 | Patch project JSON | save → load |
+| Patch pak (v11, encrypted index) | write → mount with CUE4Parse → read |
+| Encrypted L10N payload | write → read |
+| Row append and custom NPC rows | synthetic NpcData / NpcTalk / String tables |
+| Name encoding (UTF-16 XOR, ANSI one-character names) | byte-exact against the observed layout |
 
-Full encrypted **data table** property serialization round-trips require a mounted client + usmap and are validated manually after editing real tables.
+Real tables need a mounted client and usmap: `kisk-client-tool custom-npcs` checks every table it patches byte-exact
+before it writes anything (all 19 files of the supported build match).
 
 ## Shared probe library
 

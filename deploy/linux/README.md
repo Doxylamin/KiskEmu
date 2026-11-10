@@ -265,6 +265,12 @@ server's players already use when there is one). The account page's launcher dow
 `KiskLauncher.exe` (from the downloads folder) and a `launcher.json` the host writes from these settings, which adds
 this server at the launcher's first start; its account address is the one the player downloaded from, or
 `Aion:Launcher:AccountUrl`, and `Aion:Launcher:CertificateThumbprint` (40 hex) pins a self-signed certificate.
+Custom NPCs (staff dashboard: NPCs) need no setting: the auth host keeps them (migration 102) and every world server
+places them within a minute. Their own names and dialog lines need the client patch pak (docs/CUSTOM_NPCS.md). Until
+players get it from the launcher, a world treats every client as unpatched; `Aion__CustomNpcs__AssumePatchedClients=true`
+in `/etc/aion/local.env` treats every client as patched (testing only: a client without the pak is then sent an NPC
+template it does not know).
+
 Players who already have KiskLauncher add the server by its account address, or with the account page's
 `kisklauncher://add` link.
 
