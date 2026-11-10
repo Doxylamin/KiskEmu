@@ -140,9 +140,13 @@ public sealed class ServerControl(IStaffTools tools, IServiceProvider services, 
         {
             sampledAt = now;
             var presence = services.GetService<WorldPresence>();
-            var (players, connections) = services.GetService<Aion.Host.Worlds.WorldLinks>() is { } links
-                ? await links.PopulationAsync(ct) : (presence?.All.Count ?? 0, presence?.Connections ?? 0);
-            await tools.SamplePopulationAsync(players, connections, ct);
+            if (services.GetService<Aion.Host.Worlds.WorldLinks>() is { } links)
+            {
+                var worlds = await links.PopulationByWorldAsync(ct);
+                await tools.SamplePopulationAsync(worlds.Sum(w => w.Players), worlds.Sum(w => w.Connections), null, ct);
+                foreach (var w in worlds) await tools.SamplePopulationAsync(w.Players, w.Connections, w.WorldId, ct);
+            }
+            else await tools.SamplePopulationAsync(presence?.All.Count ?? 0, presence?.Connections ?? 0, null, ct);
         }
         if (now - cleanedAt >= TimeSpan.FromHours(24))
         {

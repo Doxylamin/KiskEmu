@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Aion.Application.Gameplay;
 using Aion.Core.Accounts;
+using Aion.Core.Security;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -36,13 +37,13 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
 
     static async Task<string[]> Roles(NpgsqlConnection c, NpgsqlTransaction t, Guid actor, CancellationToken ct)
     {
-        await using var q = Query(c, t, "SELECT array_agg(r.role ORDER BY r.role) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN ('gamemaster','admin')", actor);
+        await using var q = Query(c, t, "SELECT array_agg(r.role ORDER BY r.role) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN (" + StaffAccess.RoleSqlList + ")", actor);
         return await q.ExecuteScalarAsync(ct) as string[] ?? [];
     }
-    static async Task RequireStaff(NpgsqlConnection c, NpgsqlTransaction t, VerifiedAccount actor, CancellationToken ct, bool admin = false)
+    /// <summary>Throws forbidden unless the actor's rank holds the permission (Aion.Core/Security/StaffAccess.cs).</summary>
+    static async Task RequireStaff(NpgsqlConnection c, NpgsqlTransaction t, VerifiedAccount actor, CancellationToken ct, StaffPermission permission)
     {
-        var roles = await Roles(c, t, actor.AccountId, ct);
-        if (roles.Length == 0 || admin && !roles.Contains("admin")) throw new GameplayException("forbidden");
+        if (!StaffAccess.Can(await Roles(c, t, actor.AccountId, ct), permission)) throw new GameplayException("forbidden");
     }
     static async Task Audit(NpgsqlConnection c, NpgsqlTransaction t, VerifiedAccount actor, string action, object details, CancellationToken ct)
     {
@@ -92,7 +93,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
         if (message.Length > 200) throw new GameplayException("invalid_message");
         await InTransaction(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct, admin: true);
+            await RequireStaff(c, t, actor, ct, StaffPermission.ManageServer);
             await using (var q = Query(c, t, """
                 INSERT INTO game.server_settings(key,value,updated_at,updated_by) VALUES($3,$1::jsonb,now(),$2)
                 ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now(),updated_by=EXCLUDED.updated_by
@@ -131,7 +132,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
     public Task<IReadOnlyList<Sanction>> SanctionsAsync(VerifiedAccount actor, bool includeEnded, CancellationToken ct = default) =>
         InTransaction<IReadOnlyList<Sanction>>(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.ViewDashboard);
             await using var q = Query(c, t, $"""
                 SELECT {SanctionColumns} WHERE $1 OR (s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at>now()))
                 ORDER BY s.sanction_id DESC LIMIT 200
@@ -156,7 +157,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
     }
 
     public Task<AccountRef?> FindAccountAsync(VerifiedAccount actor, string characterOrAccount, CancellationToken ct = default) =>
-        InTransaction(async (c, t) => { await RequireStaff(c, t, actor, ct); return await Resolve(c, t, characterOrAccount, ct); }, ct);
+        InTransaction(async (c, t) => { await RequireStaff(c, t, actor, ct, StaffPermission.ViewDashboard); return await Resolve(c, t, characterOrAccount, ct); }, ct);
 
     public Task<Sanction> SanctionAsync(VerifiedAccount actor, string characterOrAccount, string kind, string reason, TimeSpan? duration, CancellationToken ct = default)
     {
@@ -165,11 +166,11 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
             throw new GameplayException("invalid_sanction");
         return InTransaction(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.Sanction);
             var target = await Resolve(c, t, characterOrAccount, ct) ?? throw new GameplayException("unknown_player");
             if (target.AccountId == actor.AccountId) throw new GameplayException("invalid_sanction");
-            // Staff are sanctioned only by admins.
-            if ((await Roles(c, t, target.AccountId, ct)).Length > 0 && !(await Roles(c, t, actor.AccountId, ct)).Contains("admin"))
+            // Staff are sanctioned only by administrators (ManageStaff).
+            if ((await Roles(c, t, target.AccountId, ct)).Length > 0 && !StaffAccess.Can(await Roles(c, t, actor.AccountId, ct), StaffPermission.ManageStaff))
                 throw new GameplayException("forbidden");
             long id;
             await using (var q = Query(c, t, "INSERT INTO game.sanctions(account_id,kind,reason,expires_at,created_by) VALUES($1,$2,$3,$4,$5) RETURNING sanction_id",
@@ -184,7 +185,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
     public Task<bool> RevokeSanctionAsync(VerifiedAccount actor, long id, CancellationToken ct = default) =>
         InTransaction(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.Sanction);
             await using var q = Query(c, t, "UPDATE game.sanctions SET revoked_at=now(),revoked_by=$2 WHERE sanction_id=$1 AND revoked_at IS NULL RETURNING kind", id, actor.AccountId);
             var kind = await q.ExecuteScalarAsync(ct) as string;
             if (kind is not null) await Audit(c, t, actor, "staff_un" + kind, new { sanction = id }, ct);
@@ -218,7 +219,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
         if (search.Length > 64 || sender.Length > 64 || limit is < 1 or > 500) throw new GameplayException("invalid_query");
         return InTransaction<IReadOnlyList<ChatLine>>(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.HandleTickets);
             var pattern = "%" + search.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_") + "%";
             await using var q = Query(c, t, """
                 SELECT message_id,sent_at,channel,sender,receiver,content,account_id FROM game.chat_log
@@ -269,7 +270,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
     public Task<IReadOnlyList<Ticket>> TicketsAsync(VerifiedAccount actor, string status, CancellationToken ct = default) =>
         InTransaction<IReadOnlyList<Ticket>>(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.HandleTickets);
             await using var q = Query(c, t, $"SELECT {TicketColumns} WHERE $1='all' OR t.status=$1 ORDER BY t.ticket_id DESC LIMIT 200", status is "open" or "closed" ? status : "all");
             return await ReadTickets(q, ct);
         }, ct);
@@ -280,7 +281,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
         if (status is not ("open" or "closed") || note.Length > 1000) throw new GameplayException("invalid_ticket");
         return InTransaction(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.HandleTickets);
             await using var q = Query(c, t, "UPDATE game.tickets SET status=$2,staff_note=$3,handled_by=$4,handled_at=now() WHERE ticket_id=$1", id, status, note, actor.AccountId);
             var changed = await q.ExecuteNonQueryAsync(ct) == 1;
             if (changed) await Audit(c, t, actor, "staff_ticket", new { ticket = id, status, note }, ct);
@@ -314,7 +315,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
     public Task<IReadOnlyList<ScheduledEvent>> EventsAsync(VerifiedAccount actor, CancellationToken ct = default) =>
         InTransaction<IReadOnlyList<ScheduledEvent>>(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.ViewDashboard);
             await using var q = Query(c, t, $"SELECT {EventColumns} WHERE e.cancelled_at IS NULL AND (e.ends_at IS NULL OR e.ends_at>now()-interval '1 day') OR e.created_at>now()-interval '7 days' ORDER BY e.starts_at DESC LIMIT 100");
             return await ReadEvents(q, ct);
         }, ct);
@@ -331,7 +332,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
         if (!valid || input.EndsAt is { } e && e <= input.StartsAt || input.StartsAt < DateTimeOffset.UtcNow.AddMinutes(-5)) throw new GameplayException("invalid_event");
         return InTransaction(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.ManageEvents);
             long id;
             await using (var q = Query(c, t, "INSERT INTO game.scheduled_events(kind,starts_at,ends_at,repeat_minutes,text,multiplier,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING event_id",
                 input.Kind, Time(input.StartsAt), Time(input.EndsAt), Int(input.RepeatMinutes), text, Num(input.Kind == "announce" ? null : input.Multiplier), actor.AccountId))
@@ -345,7 +346,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
     public Task<bool> CancelEventAsync(VerifiedAccount actor, long id, CancellationToken ct = default) =>
         InTransaction(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.ManageEvents);
             await using var q = Query(c, t, "UPDATE game.scheduled_events SET cancelled_at=now() WHERE event_id=$1 AND cancelled_at IS NULL", id);
             var changed = await q.ExecuteNonQueryAsync(ct) == 1;
             if (changed) await Audit(c, t, actor, "staff_event_cancelled", new { id }, ct);
@@ -368,29 +369,77 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
 
     // ---------- Population, economy, bulk rewards ----------
 
-    public async Task SamplePopulationAsync(int players, int connections, CancellationToken ct = default)
+    public async Task SamplePopulationAsync(int players, int connections, int? worldId = null, CancellationToken ct = default)
     {
         await using var c = await source.OpenConnectionAsync(ct);
-        await using var q = Query(c, null, "INSERT INTO game.population_samples(players,connections) VALUES($1,$2) ON CONFLICT DO NOTHING", players, connections);
+        await using var q = Query(c, null, "INSERT INTO game.population_samples(players,connections,world_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+            players, connections, new Typed(worldId, NpgsqlDbType.Integer));
         await q.ExecuteNonQueryAsync(ct);
     }
 
-    public Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, int? worldId = null, CancellationToken ct = default) =>
         InTransaction<IReadOnlyList<PopulationPoint>>(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
-            await using var q = Query(c, t, "SELECT sampled_at,players,connections FROM game.population_samples WHERE sampled_at>now()-make_interval(secs=>$1) ORDER BY sampled_at",
-                Math.Clamp(window.TotalSeconds, 3600, PopulationRetention.TotalSeconds));
+            await RequireStaff(c, t, actor, ct, StaffPermission.ViewDashboard);
+            await using var q = Query(c, t, "SELECT sampled_at,players,connections FROM game.population_samples WHERE sampled_at>now()-make_interval(secs=>$1) AND world_id IS NOT DISTINCT FROM $2 ORDER BY sampled_at",
+                Math.Clamp(window.TotalSeconds, 3600, PopulationRetention.TotalSeconds), new Typed(worldId, NpgsqlDbType.Integer));
             var list = new List<PopulationPoint>();
             await using var r = await q.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct)) list.Add(new(At(r, 0), r.GetInt32(1), r.GetInt32(2)));
             return list;
         }, ct);
 
+    public Task<RealmStats> RealmStatsAsync(VerifiedAccount actor, CancellationToken ct = default) =>
+        InTransaction(async (c, t) =>
+        {
+            await RequireStaff(c, t, actor, ct, StaffPermission.ViewDashboard);
+            const string Real = "a.account_id<>'00000000-0000-0000-0000-00000000dead'";
+            async Task<long> Scalar(string sql)
+            {
+                await using var q = Query(c, t, sql);
+                return Convert.ToInt64(await q.ExecuteScalarAsync(ct) ?? 0L);
+            }
+            async Task<List<NamedCount>> Counts(string sql)
+            {
+                var list = new List<NamedCount>();
+                await using var q = Query(c, t, sql);
+                await using var r = await q.ExecuteReaderAsync(ct);
+                while (await r.ReadAsync(ct)) list.Add(new(r.GetString(0), Convert.ToInt32(r.GetValue(1))));
+                return list;
+            }
+            var accounts = (int)await Scalar($"SELECT count(*) FROM auth.accounts a WHERE {Real}");
+            var staff = (int)await Scalar($"SELECT count(DISTINCT a.account_id) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE {Real} AND r.role IN ({StaffAccess.RoleSqlList})");
+            var disabled = (int)await Scalar($"SELECT count(*) FROM auth.accounts a WHERE {Real} AND a.disabled_at IS NOT NULL");
+            var recent = (int)await Scalar($"SELECT count(*) FROM auth.accounts a WHERE {Real} AND a.created_at>now()-interval '30 days'");
+            var days = new List<DayCount>();
+            await using (var q = Query(c, t, $"SELECT date_trunc('day',a.created_at)::date,count(*) FROM auth.accounts a WHERE {Real} AND a.created_at>now()-interval '30 days' GROUP BY 1 ORDER BY 1"))
+            {
+                await using var r = await q.ExecuteReaderAsync(ct);
+                while (await r.ReadAsync(ct)) days.Add(new(DateOnly.FromDateTime(r.GetDateTime(0)), Convert.ToInt32(r.GetValue(1))));
+            }
+            // Every world's characters, from the realm's character index (each world keeps it current).
+            const string Index = "game.character_index ch WHERE ch.account_id<>'00000000-0000-0000-0000-00000000dead'";
+            var characters = (int)await Scalar($"SELECT count(*) FROM {Index}");
+            var byWorld = await Counts($"SELECT ch.world_id::text,count(*) FROM {Index} GROUP BY ch.world_id ORDER BY ch.world_id");
+            var bands = await Counts($"""
+                SELECT CASE WHEN ch.level<10 THEN '1-9' WHEN ch.level<20 THEN '10-19' WHEN ch.level<30 THEN '20-29' WHEN ch.level<40 THEN '30-39'
+                            WHEN ch.level<50 THEN '40-49' ELSE '50+' END,count(*)
+                FROM {Index} GROUP BY 1 ORDER BY min(ch.level)
+                """);
+            var races = await Counts($"SELECT CASE ch.race WHEN 2 THEN 'Dark' ELSE 'Light' END,count(*) FROM {Index} GROUP BY 1 ORDER BY 1 DESC");
+            var quna = await Scalar("SELECT coalesce(sum(balance),0) FROM game.quna_wallets");
+            var open = (int)await Scalar("SELECT count(*) FROM game.tickets WHERE status='open'");
+            var waiting = (int)await Scalar("SELECT count(*) FROM game.tickets WHERE status='open' AND created_at<now()-interval '1 day'");
+            const string Active = "revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())";
+            var mutes = (int)await Scalar($"SELECT count(*) FROM game.sanctions WHERE kind='mute' AND {Active}");
+            var bans = (int)await Scalar($"SELECT count(*) FROM game.sanctions WHERE kind='ban' AND {Active}");
+            return new RealmStats(accounts, staff, disabled, recent, days, characters, byWorld, bands, races, quna, open, waiting, mutes, bans);
+        }, ct);
+
     public Task<EconomyReport> EconomyAsync(VerifiedAccount actor, CancellationToken ct = default) =>
         InTransaction(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct);
+            await RequireStaff(c, t, actor, ct, StaffPermission.ViewEconomy);
             const string Live = "ch.account_id<>'00000000-0000-0000-0000-00000000dead' AND ch.pending_delete_at IS NULL";
             async Task<long> Scalar(string sql, params object?[] args)
             {
@@ -443,7 +492,7 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
     public Task<IReadOnlyList<Guid>> AllCharactersAsync(VerifiedAccount actor, CancellationToken ct = default) =>
         InTransaction<IReadOnlyList<Guid>>(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct, admin: true);
+            await RequireStaff(c, t, actor, ct, StaffPermission.RewardEveryone);
             await using var q = Query(c, t, """
                 SELECT ch.character_id FROM game.characters ch JOIN auth.accounts a USING(account_id)
                 WHERE ch.account_id<>'00000000-0000-0000-0000-00000000dead' AND ch.pending_delete_at IS NULL AND a.disabled_at IS NULL ORDER BY ch.character_id

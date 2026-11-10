@@ -14,7 +14,8 @@ public interface ITotpAuthentication
     Task<(bool Ok, string[]? RecoveryCodes)> RegenerateRecoveryCodesAsync(Guid accountId, string password, CancellationToken ct);
     Task<bool> DisableAsync(Guid accountId, string password, string? code, string? recoveryCode, CancellationToken ct);
     Task<bool> VerifyForAccountAsync(Guid accountId, string? code, string? recoveryCode, CancellationToken ct);
-    Task<TotpLoginChallenge?> BeginLoginAsync(Guid accountId, CancellationToken ct);
+    /// <summary>A sign-in challenge; <paramref name="sessionLifetime"/> is the session length the completed sign-in gets (null = standard).</summary>
+    Task<TotpLoginChallenge?> BeginLoginAsync(Guid accountId, TimeSpan? sessionLifetime, CancellationToken ct);
     Task<AccountSession?> CompleteLoginAsync(string challengeToken, string? code, string? recoveryCode, CancellationToken ct);
     Task<bool> AdminResetAsync(Guid targetAccountId, CancellationToken ct);
     Task<bool> IsEnabledAsync(Guid accountId, CancellationToken ct);

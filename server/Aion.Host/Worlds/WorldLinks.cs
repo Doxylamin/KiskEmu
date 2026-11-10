@@ -110,6 +110,10 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
         return (players, connections);
     }
 
+    /// <summary>Each running world server's players and connections (their last reported status).</summary>
+    public async Task<IReadOnlyList<(int WorldId, int Players, int Connections)>> PopulationByWorldAsync(CancellationToken ct) =>
+        [.. (await RunningAsync(ct)).Select(w => supervisor.Runtime(w.WorldId) is var r ? (w.WorldId, r.Players ?? 0, r.Connections ?? 0) : default)];
+
     sealed record Blocked(bool Value);
 
     /// <summary>Whether either character blocks the other (a whisper between them on their world), asked of that world.</summary>

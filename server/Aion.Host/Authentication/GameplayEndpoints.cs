@@ -1,3 +1,4 @@
+using Aion.Core.Security;
 using Aion.Application.Authentication;
 using System.Text.Json;
 using Aion.Application.Gameplay;
@@ -57,7 +58,11 @@ public static class GameplayEndpoints
         admin.MapGet("/me",async(HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,CancellationToken ct) =>
         {
             var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
-            return Results.Ok(await game.AdminProfileAsync(account,ct));
+            var profile=await game.AdminProfileAsync(account,ct);
+            // The rank and its permissions: the dashboard hides what it cannot use (the server checks every request).
+            var rank=StaffAccess.RankOf(profile.Roles);
+            return Results.Ok(new {profile.Roles,profile.BuildId,rank=StaffAccess.RoleOf(rank),rankLabel=StaffAccess.Label(rank),
+                permissions=StaffAccess.PermissionNames(rank)});
         });
         admin.MapGet("/characters",async(string? q,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,CancellationToken ct) =>
         {
@@ -81,7 +86,7 @@ public static class GameplayEndpoints
             if (account is null) return Results.Unauthorized();
             try
             {
-                if (!(await game.AdminProfileAsync(account, ct)).Roles.Contains("admin")) return Results.StatusCode(403);
+                if (!StaffAccess.Can((await game.AdminProfileAsync(account, ct)).Roles, StaffPermission.ManageAccounts)) return Results.StatusCode(403);
             }
             catch (GameplayException) { return Results.StatusCode(403); }
             await totp.AdminResetAsync(id, ct);
@@ -90,6 +95,7 @@ public static class GameplayEndpoints
         admin.MapPost("/commands",async(AdminCommand input,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,CancellationToken ct) =>
         {
             var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
+            if(!StaffAccess.Can((await game.AdminProfileAsync(account,ct)).Roles,StaffPermission.EditCharacters)) return Results.StatusCode(403);
             return Results.Ok(await game.AdminAsync(account,input,ct));
         });
         // Minimap outlines: a map's subzone polygons (2D, cm), the same data that clears world-map fog.
@@ -129,7 +135,7 @@ public static class GameplayEndpoints
         admin.MapPost("/accounts/{id:guid}/quna",async(Guid id,QunaStaffChange input,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,IQunaWallet wallet,CancellationToken ct) =>
         {
             var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
-            if(!(await game.AdminProfileAsync(account,ct)).Roles.Contains("admin")) return Results.StatusCode(403);
+            if(!StaffAccess.Can((await game.AdminProfileAsync(account,ct)).Roles,StaffPermission.ManageQuna)) return Results.StatusCode(403);
             var note=(input.Note??"").Trim();
             if(input.RequestId==Guid.Empty || input.Amount==0 || Math.Abs(input.Amount)>QunaWalletRules.MaxAmount || note.Length>200)
                 return Results.BadRequest(new {error="invalid_quna_change"});

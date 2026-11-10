@@ -16,9 +16,11 @@ from urllib.error import HTTPError, URLError
 try:
     from .postgres_dev import ROOT, HOME, sql, migration_script, migration_files
     from .run_account_server import host_environment, connection_string
+    from .staff_signin import staff_session
 except ImportError:
     from postgres_dev import ROOT, HOME, sql, migration_script, migration_files
     from run_account_server import host_environment, connection_string
+    from staff_signin import staff_session
 
 
 def main():
@@ -60,7 +62,14 @@ def main():
         # The web host receives no administrative connection string.
         del env['AION_TEST_ADMIN']
 
+        # /api/admin needs a staff session (password + authenticator): a player token of a staff account is swapped for
+        # its staff session here, so the checks below read as one account.
+        staff_for = {}
+        authenticators = {}
+
         def request(path, method='GET', body=None, token=None, bridge=False):
+            if token in staff_for and path.startswith('/api/admin'):
+                token = staff_for[token]
             headers = {}
             if bridge:
                 headers['X-Aion-Bridge'] = env['Aion__BridgeSecret']
@@ -208,11 +217,18 @@ def main():
             check(request('/api/characters/' + character + '/inventory', token=second_token)[0] == 404, 'HTTP inventory owner scope')
             check(request('/api/characters/' + character + '/inventory', token=token)[0] == 200, 'HTTP inventory read')
             command = {'requestId': str(uuid.uuid4()), 'characterId': character, 'command': 'level', 'level': 8}
-            check(request('/api/admin/commands', 'POST', command, token)[0] == 403, 'HTTP ordinary user denied GM command')
-            check(request('/api/admin/me', token=token)[0] == 403, 'HTTP ordinary user has no staff profile')
-            check(request('/api/admin/characters', token=token)[0] == 403, 'HTTP ordinary user cannot search characters')
-            check(request('/api/admin/characters/' + character, token=token)[0] == 403, 'HTTP ordinary user cannot inspect characters')
+            # A player session is no staff session: every staff route answers 401 staff_session_required.
+            check(request('/api/admin/commands', 'POST', command, token)[0] == 401, 'HTTP ordinary user denied GM command')
+            check(request('/api/admin/me', token=token)[1] == {'error': 'staff_session_required'}, 'HTTP ordinary user has no staff profile')
+            check(request('/api/admin/characters', token=token)[0] == 401, 'HTTP ordinary user cannot search characters')
+            check(request('/api/admin/characters/' + character, token=token)[0] == 401, 'HTTP ordinary user cannot inspect characters')
+            check(request('/api/admin/session', 'POST', {'username': first['username'], 'password': first['password']})[0] == 403,
+                  'HTTP staff sign-in refuses an account without a staff role')
             sql(f"INSERT INTO auth.account_roles VALUES('{account}','admin');", database=name)
+            check(request('/api/admin/me', token=token)[0] == 401, 'HTTP a player session of a staff account opens no staff route')
+            staff_for[token] = staff_session(request, first['username'], first['password'], authenticators)
+            check(request('/api/accounts/totp/status', token=token)[1]['enabled'], 'HTTP staff sign-in set up an authenticator')
+            check(staff_session(request, first['username'], first['password'], authenticators) != staff_for[token], 'HTTP staff sign-in with a code')
             check(request('/api/admin/me', token=token)[1]['roles'] == ['admin'], 'HTTP staff profile lists role')
             check(request('/api/admin/commands', 'POST', command, token)[0] == 200, 'HTTP admin changes level')
             check(request('/api/characters/' + character, token=token)[1]['progress']['level'] == 8, 'HTTP level persisted')
@@ -245,9 +261,9 @@ def main():
             paged = request('/api/admin/items?category=Greatsword&offset=0&limit=1', token=token)[1]
             check(paged['total'] == 1 and paged['items'][0]['templateId'] == 102, 'HTTP catalogue category filter')
             check(request('/api/admin/items?limit=500', token=token)[0] == 400, 'HTTP catalogue page bound')
-            check(request('/api/admin/items', token=second_token)[0] == 403, 'HTTP ordinary user cannot browse the catalogue')
+            check(request('/api/admin/items', token=second_token)[0] == 401, 'HTTP ordinary user cannot browse the catalogue')
             new_account = {'username': 'made_by_admin', 'password': 'admin-made-password-1'}
-            check(request('/api/admin/accounts', 'POST', new_account, second_token)[0] == 403, 'HTTP ordinary user cannot create accounts')
+            check(request('/api/admin/accounts', 'POST', new_account, second_token)[0] == 401, 'HTTP ordinary user cannot create accounts')
             check(request('/api/admin/accounts', 'POST', new_account, token)[0] == 201, 'HTTP admin creates an account')
             check(request('/api/admin/accounts', 'POST', new_account, token)[1] == {'error': 'username_taken'}, 'HTTP admin account name taken')
             check(request('/api/admin/accounts', 'POST', {'username': 'x', 'password': 'short'}, token)[1] == {'error': 'invalid_account'}, 'HTTP admin account validation')
@@ -326,7 +342,7 @@ def main():
             check(request('/api/accounts/register', 'POST', {'username': 'late_user', 'password': password})[0] == 403, 'closed registration refuses sign-up')
             check(request('/wardrobe/data')[0] == 404 and request('/wardrobe/files/icons/a.webp')[0] == 404, 'staff-only wardrobe hidden anonymously')
             check(request('/wardrobe-viewer.js')[0] == 200, 'viewer module stays public')
-            staff = request('/api/accounts/login', 'POST', first)[1]['token']
+            staff = staff_session(request, first['username'], first['password'], authenticators)
             check(request('/api/admin/wardrobe-access', 'POST', token=second_token)[0] in (401, 403), 'ordinary user gets no wardrobe pass')
             granted = urlopen(Request(f'http://127.0.0.1:{port}/api/admin/wardrobe-access', method='POST', headers={'Authorization': 'Bearer ' + staff}), timeout=10)
             cookie = granted.headers.get('Set-Cookie', '')

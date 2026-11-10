@@ -41,7 +41,8 @@ public static class AccountEndpoints
             if (actor is null) return Results.Unauthorized();
             try
             {
-                if (!(await game.AdminProfileAsync(actor, ct)).Roles.Contains("admin")) return Results.StatusCode(403);
+                if (!Aion.Core.Security.StaffAccess.Can((await game.AdminProfileAsync(actor, ct)).Roles, Aion.Core.Security.StaffPermission.ManageAccounts))
+                    return Results.StatusCode(403);
             }
             catch (Aion.Application.Gameplay.GameplayException) { return Results.StatusCode(403); }
             if (!PostgresAccountAuthentication.ValidUsername(input.Username) || !PostgresAccountAuthentication.ValidPassword(input.Password))
@@ -54,14 +55,15 @@ public static class AccountEndpoints
         app.MapPost("/api/accounts/login", async (Credentials input, IAccountAuthentication auth, ITotpAuthentication totp, CancellationToken ct) =>
         {
             if (input.Username is null || input.Password is null) return Results.Unauthorized();
-            // "Keep me signed in" (the staff dashboard): a 30-day session instead of the standard 8 hours.
-            var session = input.Remember == true
-                ? await auth.SignInAsync(input.Username, input.Password, TimeSpan.FromDays(30), ct)
+            // "Keep me signed in": a 30-day session instead of the standard 8 hours (kept through the TOTP step).
+            TimeSpan? lifetime = input.Remember == true ? TimeSpan.FromDays(30) : null;
+            var session = lifetime is { } days
+                ? await auth.SignInAsync(input.Username, input.Password, days, ct)
                 : await auth.SignInAsync(input.Username, input.Password, ct);
             if (session is null) return Results.Unauthorized();
             if (!await totp.IsEnabledAsync(session.AccountId, ct)) return Results.Ok(session);
             await auth.SignOutAsync(session.Token, ct);
-            var challenge = await totp.BeginLoginAsync(session.AccountId, ct);
+            var challenge = await totp.BeginLoginAsync(session.AccountId, lifetime, ct);
             return challenge is null ? Results.Unauthorized() : Results.Ok(new
             {
                 requiresTotp = true,
@@ -75,10 +77,22 @@ public static class AccountEndpoints
             await auth.SignOutAsync(Bearer(context), ct);
             return Results.NoContent();
         });
-        app.MapGet("/api/accounts/me", async (HttpContext context, IAccountAuthentication auth, CancellationToken ct) =>
+        // The account page's overview: name, since when, two-step verification and the Quna balance (where this host
+        // keeps the accounts; a world server answers the id only).
+        app.MapGet("/api/accounts/me", async (HttpContext context, IAccountAuthentication auth, IServiceProvider services, CancellationToken ct) =>
         {
             var account = await auth.AuthenticateAsync(Bearer(context), ct);
-            return account is null ? Results.Unauthorized() : Results.Ok(new { accountId = account.AccountId });
+            if (account is null) return Results.Unauthorized();
+            if (services.GetService<IAccountDirectory>() is not { } directory || await directory.ProfileAsync(account.AccountId, ct) is not { } profile)
+                return Results.Ok(new { accountId = account.AccountId });
+            var totp = services.GetService<ITotpAuthentication>() is { } t && await t.IsEnabledAsync(account.AccountId, ct);
+            long? quna = null;
+            if (services.GetService<Aion.Application.Gameplay.IQunaWallet>() is { } wallet)
+            {
+                try { quna = (await wallet.BalanceAsync(account.AccountId, ct)).Balance; }
+                catch (System.Data.Common.DbException) { quna = null; }
+            }
+            return Results.Ok(new { accountId = account.AccountId, username = profile.Username, createdAt = profile.CreatedAt, totpEnabled = totp, quna });
         });
         app.MapGet("/api/characters", async (HttpContext context, IAccountAuthentication auth, CharacterService characters, CancellationToken ct) =>
         {

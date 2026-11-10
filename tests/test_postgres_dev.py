@@ -249,6 +249,7 @@ class RoleStatementTests(unittest.TestCase):
         self.assertIn("'admin'", grant)
         self.assertIn('ON CONFLICT DO NOTHING', grant)
         self.assertTrue(role_statement('staffuser', 'gamemaster', revoke=True).startswith('DELETE FROM auth.account_roles'))
+        self.assertIn("'moderator'", role_statement('staffuser', 'moderator'))
 
     def test_role_statement_rejects_unsafe_input(self):
         for username, role in [("x' OR '1'='1", 'admin'), ('staffuser', 'owner'), ('', 'gamemaster'), ('a' * 33, 'gamemaster'), ('staffuser', 'gm')]:

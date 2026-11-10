@@ -13,7 +13,12 @@ export default defineConfig({
     outDir: resolve(__dirname, '../server/Aion.Host/wwwroot'),
     emptyOutDir: false,
     assetsDir: 'assets',
-    rollupOptions: { input: { index: resolve(__dirname, 'index.html'), admin: resolve(__dirname, 'admin.html') } },
+    // Entry files are assets/index-* (player site) and assets/admin-* (staff site); every shared chunk and asset is
+    // named shared-* so the host can tell them apart when the sites run on separate ports (server: WebSites.cs).
+    rollupOptions: {
+      input: { index: resolve(__dirname, 'index.html'), admin: resolve(__dirname, 'admin.html') },
+      output: { chunkFileNames: 'assets/shared-[name]-[hash].js', assetFileNames: info => (info.names?.[0] ?? '').match(/^(index|admin)\.css$/) ? 'assets/[name]-[hash][extname]' : 'assets/shared-[name]-[hash][extname]' },
+    },
   },
   server: { proxy: { '/api': host, '/wardrobe': host, '/wardrobe-viewer.js': host } },
 });

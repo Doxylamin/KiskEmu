@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Aion.Application.Authentication;
 using Aion.Application.Gameplay;
 using Aion.Core.Accounts;
+using Aion.Core.Security;
 using Aion.Protocol.Native;
 using Aion.World;
 
@@ -117,8 +118,11 @@ public static partial class StaffToolsEndpoints
         });
 
         // ---------- Population, economy and anti-cheat ----------
-        staff.MapGet("/population", async (double? hours, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
-            await Signed(ctx, auth, ct) is { } a ? Results.Ok(await tools.PopulationAsync(a, TimeSpan.FromHours(hours ?? 24), ct)) : Results.Unauthorized());
+        // worldId, not world: "?world=" sends the call to that world server (Program.cs), and the samples are the realm's.
+        staff.MapGet("/population", async (double? hours, int? worldId, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
+            await Signed(ctx, auth, ct) is { } a ? Results.Ok(await tools.PopulationAsync(a, TimeSpan.FromHours(hours ?? 24), worldId, ct)) : Results.Unauthorized());
+        staff.MapGet("/stats", async (HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
+            await Signed(ctx, auth, ct) is { } a ? Results.Ok(await tools.RealmStatsAsync(a, ct)) : Results.Unauthorized());
         staff.MapGet("/economy", async (HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, IServiceProvider services, CancellationToken ct) =>
         {
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();
@@ -143,6 +147,9 @@ public static partial class StaffToolsEndpoints
         {
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();
             var profile = await game.AdminProfileAsync(a, ct);
+            // One character: moderators; every character: administrators (the store checks that too).
+            if (!StaffAccess.Can(profile.Roles, input.Target == "all" ? StaffPermission.RewardEveryone : StaffPermission.RewardCharacters))
+                throw new GameplayException("forbidden");
             if (profile.BuildId is not { } build) return Results.BadRequest(new { error = "no_catalogue" });
             var items = (input.Items ?? []).Where(i => i.Quantity > 0).Select(i => (i.TemplateId, i.Quantity)).ToList();
             if (input.Kina > 0) items.Add((KinaItemId, input.Kina));
@@ -215,7 +222,7 @@ public static partial class StaffToolsEndpoints
         });
         staff.MapPost("/maps/{id:int}/monsters/respawn", async (int id, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, IServiceProvider services, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageMonsters) is not { } a) return Results.Unauthorized();
             var count = await OnMapAsync(services, id, map => (int?)map.RespawnAll(Now()), ct);
             if (count is null) return Results.NotFound(new { error = "map_not_loaded" });
             await game.AdminRecordAsync(a, "staff_monsters_respawn", null, new { map = id, count }, ct);
@@ -223,7 +230,7 @@ public static partial class StaffToolsEndpoints
         });
         staff.MapPost("/maps/{id:int}/monsters/clear", async (int id, AreaRequest input, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, IServiceProvider services, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageMonsters) is not { } a) return Results.Unauthorized();
             if (!double.IsFinite(input.X) || !double.IsFinite(input.Y) || input.Radius is < 100 or > 20000) return Results.BadRequest(new { error = "invalid_area" });
             var count = await OnMapAsync(services, id, map => (int?)map.ClearArea(input.X, input.Y, input.Radius, Now(), GameSession.RespawnMs), ct);
             if (count is null) return Results.NotFound(new { error = "map_not_loaded" });
@@ -232,7 +239,7 @@ public static partial class StaffToolsEndpoints
         });
         staff.MapPost("/maps/{id:int}/monsters/spawn", async (int id, SpawnRequest input, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, IServiceProvider services, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageMonsters) is not { } a) return Results.Unauthorized();
             if (input.Count is < 1 or > 20 || !double.IsFinite(input.X) || !double.IsFinite(input.Y)) return Results.BadRequest(new { error = "invalid_spawn" });
             if (GameData.Embedded.NpcPlaced(input.NpcId, id) is not { } template) return Results.BadRequest(new { error = "unknown_npc" });
             var keys = await OnMapAsync(services, id, map =>
@@ -248,7 +255,7 @@ public static partial class StaffToolsEndpoints
         });
         staff.MapDelete("/maps/{id:int}/monsters/staff", async (int id, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, IServiceProvider services, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageMonsters) is not { } a) return Results.Unauthorized();
             var count = await OnMapAsync(services, id, map => (int?)map.RemoveStaffSpawns(), ct);
             if (count is null) return Results.NotFound(new { error = "map_not_loaded" });
             await game.AdminRecordAsync(a, "staff_monsters_removed", null, new { map = id, count }, ct);
@@ -258,7 +265,7 @@ public static partial class StaffToolsEndpoints
         // ---------- Database backups (admins) ----------
         staff.MapGet("/backups", async (HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, IConfiguration config, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is null) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageServer) is null) return Results.Unauthorized();
             var dir = config["Aion:Backups:Directory"];
             var configured = dir is { Length: > 0 } && config["Aion:Backups:Tool"] is { Length: > 0 };
             var files = configured && Directory.Exists(dir)
@@ -269,7 +276,7 @@ public static partial class StaffToolsEndpoints
         });
         staff.MapPost("/backups", async (HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, IConfiguration config, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageServer) is not { } a) return Results.Unauthorized();
             if (config["Aion:Backups:Directory"] is not { Length: > 0 } dir || config["Aion:Backups:Tool"] is not { Length: > 0 } tool) return Results.NotFound(new { error = "backups_not_configured" });
             Directory.CreateDirectory(dir);
             var name = $"aion-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.dump";
@@ -289,7 +296,7 @@ public static partial class StaffToolsEndpoints
         });
         staff.MapGet("/backups/{name}", async (string name, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, IConfiguration config, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageServer) is not { } a) return Results.Unauthorized();
             if (config["Aion:Backups:Directory"] is not { Length: > 0 } dir || !BackupName().IsMatch(name)) return Results.NotFound();
             var path = Path.Combine(dir, name);
             if (!File.Exists(path)) return Results.NotFound();
@@ -318,10 +325,10 @@ public static partial class StaffToolsEndpoints
             }),
         };
         staff.MapGet("/debug", async (HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, CancellationToken ct) =>
-            await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is null ? Results.Unauthorized() : Results.Ok(State()));
+            await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageServer) is null ? Results.Unauthorized() : Results.Ok(State()));
         staff.MapPost("/debug", async (DebugRequest input, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageServer) is not { } a) return Results.Unauthorized();
             if (input.MapEvents is { } mapEvents && !WorldDebug.SetMapEventLog(mapEvents)) return Results.BadRequest(new { error = "debug_not_configured" });
             if (input.Traces is { } traces && !WorldDebug.SetTraces(traces)) return Results.BadRequest(new { error = "debug_not_configured" });
             await game.AdminRecordAsync(a, "staff_debug_changed", null, new { input.MapEvents, input.Traces }, ct);
@@ -329,7 +336,7 @@ public static partial class StaffToolsEndpoints
         });
         staff.MapGet("/debug/files/{name}", async (string name, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageServer) is not { } a) return Results.Unauthorized();
             if (WorldDebug.File(name) is not { } file) return Results.NotFound();
             await game.AdminRecordAsync(a, "staff_debug_downloaded", null, new { name }, ct);
             // Read through a shared handle: the game may be appending to the file right now.
@@ -338,7 +345,7 @@ public static partial class StaffToolsEndpoints
         });
         staff.MapDelete("/debug/files/{name}", async (string name, HttpContext ctx, IAccountAuthentication auth, IGameplayStore game, CancellationToken ct) =>
         {
-            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, admin: true) is not { } a) return Results.Unauthorized();
+            if (await StaffEndpoints.StaffAsync(ctx, auth, game, ct, StaffPermission.ManageServer) is not { } a) return Results.Unauthorized();
             if (WorldDebug.File(name) is not { } file) return Results.NotFound();
             file.Delete();
             await game.AdminRecordAsync(a, "staff_debug_deleted", null, new { name }, ct);

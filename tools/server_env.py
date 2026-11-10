@@ -110,8 +110,12 @@ def environment(args, credentials):
     else:
         env['Aion__Https__CertificateFile'] = args.certificate.resolve()
         env['Aion__Https__KeyFile'] = args.key.resolve()
-    # The staff dashboard's private address; kept across updates (install.sh passes the current one).
-    env['Aion__Web__StaffPath'] = getattr(args, 'staff_path', None) or '/' + ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(16))
+    if getattr(args, 'staff_port', None):
+        # The staff dashboard on a port of its own (its own hostname behind the proxy); no private address needed.
+        env['Aion__Web__StaffPort'] = args.staff_port
+    else:
+        # The staff dashboard's private address on the account port; kept across updates (install.sh passes it).
+        env['Aion__Web__StaffPath'] = getattr(args, 'staff_path', None) or '/' + ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(16))
     for index, map_id in enumerate(args.preload):
         env[f'Aion__Native__PreloadMaps__{index}'] = map_id
     return env
@@ -166,6 +170,8 @@ def main(argv=None):
     parser.add_argument('--key', type=Path, help='PEM private key for --certificate')
     parser.add_argument('--open-registration', action='store_true', help='let anyone create an account on the account page')
     parser.add_argument('--staff-path', help='staff dashboard address, e.g. /k3x9... (default: a new random one)')
+    parser.add_argument('--staff-port', type=int, help='serve the staff dashboard on this port instead (e.g. 8781), '
+                                                       'so a proxy can give it a hostname of its own')
     parser.add_argument('--max-connections', type=int, default=200, help='per native port')
     parser.add_argument('--preload', type=int, nargs='*', default=[1000], help='maps loaded at startup')
     parser.add_argument('--geolocation', default='59.9139,10.7522,NO', metavar='LAT,LON,CC',
@@ -207,6 +213,9 @@ def main(argv=None):
     if args.staff_path is not None and (len(args.staff_path) < 9 or not args.staff_path.startswith('/')
                                         or not all(c.isalnum() or c in '-_' for c in args.staff_path[1:])):
         parser.error('--staff-path must be / followed by at least 8 letters, digits, - or _')
+    if args.staff_port is not None and (not 1024 <= args.staff_port <= 65535 or args.staff_port in PORTS.values()
+                                        or args.staff_port == 8780):
+        parser.error('--staff-port must be 1024-65535 and not a port the server already uses (e.g. 8781)')
     credentials = json.loads((HOME / 'credentials.json').read_text(encoding='utf-8'))
     try:
         env = environment(args, credentials)

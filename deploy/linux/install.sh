@@ -14,7 +14,7 @@ set -euo pipefail
 
 ARGS=("$@")
 PUBLIC_ADDRESS="" DATA_ARCHIVE="" TLS="" CERT="" KEY="" DOMAIN="" EMAIL="" SKIP_PACKAGES=0
-WORLD="" REALM_URL="" REALM_TOKEN="" REALM_CERT="" GAME_PORT=13328 CONTROL_PORT=13400
+WORLD="" REALM_URL="" REALM_TOKEN="" REALM_CERT="" GAME_PORT=13328 CONTROL_PORT=13400 STAFF_PORT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --public-address) PUBLIC_ADDRESS="$2"; shift 2 ;;
@@ -32,6 +32,7 @@ while [[ $# -gt 0 ]]; do
     --realm-cert-sha256) REALM_CERT="$2"; shift 2 ;;
     --game-port) GAME_PORT="$2"; shift 2 ;;
     --control-port) CONTROL_PORT="$2"; shift 2 ;;
+    --staff-port) STAFF_PORT="$2"; shift 2 ;;
     *) echo "Unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -147,9 +148,13 @@ systemctl try-restart aion-host
 esac
 if [[ $TLS == proxy ]]; then TLS_ARGS=(--proxy); else TLS_ARGS=(--certificate $TLS_DIR/cert.pem --key $TLS_DIR/key.pem); fi
 
-# Keep the staff dashboard's private address across updates.
-STAFF_PATH="$(grep -s '^Aion__Web__StaffPath=' $CONFIG/aion.env | cut -d= -f2- || true)"
-[[ -n "$STAFF_PATH" ]] && TLS_ARGS+=(--staff-path "$STAFF_PATH")
+# The staff dashboard on its own port (--staff-port, a hostname of its own behind the proxy), or else at a private
+# address on the account site, kept across updates.
+if [[ -n "$STAFF_PORT" ]]; then TLS_ARGS+=(--staff-port "$STAFF_PORT")
+else
+  STAFF_PATH="$(grep -s '^Aion__Web__StaffPath=' $CONFIG/aion.env | cut -d= -f2- || true)"
+  [[ -n "$STAFF_PATH" ]] && TLS_ARGS+=(--staff-path "$STAFF_PATH")
+fi
 as_aion python3 $SRC/tools/server_env.py --public-address "$PUBLIC_ADDRESS" --data $DATA --state $STATE "${TLS_ARGS[@]}" > $CONFIG/aion.env.new
 fi
 chown root:aion $CONFIG/aion.env.new && chmod 640 $CONFIG/aion.env.new && mv $CONFIG/aion.env.new $CONFIG/aion.env
@@ -172,6 +177,8 @@ elif command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
   # Game ports of further worlds started from the staff dashboard (World Management picks 13329 upwards).
   ufw allow 13329:13340/tcp
   [[ $TLS == proxy ]] || ufw allow 8780/tcp
+  # Behind a proxy the staff port listens on loopback only; without one it is a TLS port of its own.
+  [[ -n "$STAFF_PORT" && $TLS != proxy ]] && ufw allow "$STAFF_PORT"/tcp
 fi
 # update.sh repeats this install with the same options (without --data: the data stays unpacked).
 SAVED=()
@@ -185,5 +192,6 @@ echo "Installed. Status: systemctl status aion-host; logs: journalctl -u aion-ho
 if [[ -n "$WORLD" ]]; then
   echo "World $WORLD signs in to $REALM_URL within a minute; World Management shows it."
 else
-  echo "Staff dashboard: $(grep '^Aion__Web__StaffPath=' $CONFIG/aion.env | cut -d= -f2-) on the account site (port 8780)"
+  if [[ -n "$STAFF_PORT" ]]; then echo "Staff dashboard: port $STAFF_PORT (point the staff hostname of your proxy at 127.0.0.1:$STAFF_PORT)"
+  else echo "Staff dashboard: $(grep '^Aion__Web__StaffPath=' $CONFIG/aion.env | cut -d= -f2-) on the account site (port 8780)"; fi
 fi

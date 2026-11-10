@@ -96,7 +96,7 @@ if (accountsReady && worldProcess is null)
 {
     builder.Services.AddSingleton<PostgresAccountAuthentication>(provider =>
     {
-        var auth = new PostgresAccountAuthentication(authConnectionString!);
+        var auth = new PostgresAccountAuthentication(authConnectionString!) { TotpIssuer = SiteName(builder.Configuration) };
         var totpKey = builder.Configuration["Aion:Totp:EncryptionKey"];
         if (string.IsNullOrWhiteSpace(totpKey) && builder.Configuration["Aion:BridgeSecret"] is { Length: >= 32 } bridge)
             totpKey = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(bridge)));
@@ -107,6 +107,10 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddSingleton<IClientHandoff>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IAccountManagement>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<ITotpAuthentication>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
+    // Staff dashboard sessions: password, staff role and authenticator code (migration 098).
+    builder.Services.AddSingleton<IStaffSessions>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
+    // Accounts for the account page and the staff Accounts page (migration 099).
+    builder.Services.AddSingleton<IAccountDirectory>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IPlatformSecondaryAuth>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IWorldSessions>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddHostedService<AuthenticationCleanup>();
@@ -171,6 +175,9 @@ static IChatDirectory? ChatDirectory(IServiceProvider provider, int world) =>
     : provider.GetService<IWireCharacterRepository>() is { } characters && provider.GetService<Aion.World.WorldPresence>() is { } presence
         ? new WorldChatDirectory(presence, characters, world) : null;
 builder.Services.AddSingleton(provider => new ChatRelay(provider.GetRequiredService<TimeProvider>(), ChatDirectory(provider, chatWorldId)));
+// The server's name (Aion:Web:SiteName) on both web sites and in authenticator apps; trimmed, at most 40 characters.
+static string SiteName(IConfiguration configuration) =>
+    configuration["Aion:Web:SiteName"]?.Trim() is { Length: > 0 } name ? name[..Math.Min(name.Length, 40)] : "A2Core";
 builder.Services.AddSingleton<StompHub>();
 if (builder.Configuration.GetValue<bool>("Aion:ChatDevelopmentLogins"))
     builder.Services.AddSingleton<IChatLoginVerifier, DevelopmentChatLoginVerifier>();
@@ -364,6 +371,11 @@ if (ncGuard.Port is not null)
 // Account site and API (sign-in, launches, staff dashboard). A public host serves it over HTTPS
 // (Aion:Https PEM certificate) unless a TLS proxy in front of it is declared (Aion:Https:Proxy).
 var port = builder.Configuration.GetValue<int?>("Aion:LocalPort") ?? 8780;
+// The staff dashboard on a port of its own (Aion:Web:StaffPort; WebSites.cs), same TLS and bind rules as the account
+// port. Unset: the dashboard stays on the account port at Aion:Web:StaffPath. Never on a world server.
+var staffPort = worldProcess is null ? builder.Configuration.GetValue<int?>("Aion:Web:StaffPort") : null;
+if (staffPort is { } chosenStaffPort && (chosenStaffPort == port || chosenStaffPort is < 1 or > 65535))
+    throw new InvalidOperationException("Aion:Web:StaffPort must be a free port other than the account port (Aion:LocalPort).");
 var https = builder.Configuration.GetSection(AionConfiguration.Https).Get<HttpsOptions>() ?? new HttpsOptions();
 // A world server's HTTP port (status and control for the auth host, staff tools of this world) is plain HTTP on
 // Aion:WorldProcess:ListenAddress (loopback unless a remote world server is reached over the network).
@@ -384,6 +396,11 @@ builder.WebHost.ConfigureKestrel(options =>
     {
         if (accountCertificate is not null) listener.UseHttps(accountCertificate);
     });
+    if (staffPort is { } dashboardPort)
+        options.Listen(https.Proxy ? IPAddress.Loopback : network.Bind, dashboardPort, listener =>
+        {
+            if (accountCertificate is not null) listener.UseHttps(accountCertificate);
+        });
     // The client's own bootstrap and chat requests are plain HTTP (observed policy URLs).
     foreach (var httpPort in new[] { chatPort, platform.Port }.OfType<int>().Where(p => p != port).Distinct())
         options.Listen(network.Bind, httpPort);
@@ -458,6 +475,9 @@ app.Use(async (context, next) =>
     if (context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/internal")) context.Response.Headers.CacheControl = "no-store";
     await next();
 });
+// Player site and staff dashboard on separate ports (Aion:Web:StaffPort): each port answers only its own site.
+if (staffPort is { } siteStaffPort)
+    app.UseSiteSplit(port, siteStaffPort, app.Environment.WebRootPath ?? "wwwroot");
 if (platform.Port is { } platformPort)
 {
     var accountTls = https.Proxy || https.CertificateFile is not null;
@@ -467,6 +487,8 @@ if (platform.Port is { } platformPort)
     app.UsePlatformBootstrap(platformPort, platformResponses!, platform.RequestLog, network, accountPageBase);
 }
 app.UseRateLimiter();
+// Auth host: every /api/admin request needs a staff session (before the world proxy below).
+Aion.Host.Authentication.StaffSessionEndpoints.UseStaffSessions(app);
 // Auth host: the staff dashboard's world tools (?world=<id>) are answered by that world server.
 if (app.Services.GetService<Aion.Host.Worlds.WorldLinks>() is { } worldLinks)
     app.Use(async (context, next) =>
@@ -480,9 +502,9 @@ if (app.Services.GetService<Aion.Host.Worlds.WorldLinks>() is { } worldLinks)
 if (debugOptions.Enabled) app.UsePlaytestHttpLogging();
 app.UseWebSockets();
 app.MapSynapseStub();
-// The staff dashboard can live at a private address (Aion:Web:StaffPath, e.g. "/k3x9..."); then
-// /admin.html is not found. Obscurity only: every staff API call still needs a staff sign-in.
-if (builder.Configuration["Aion:Web:StaffPath"] is { Length: > 1 } staffPath && staffPath.StartsWith('/') && staffPath != "/admin.html")
+// Without a staff port the staff dashboard can live at a private address on the account port (Aion:Web:StaffPath,
+// e.g. "/k3x9..."); then /admin.html is not found. Obscurity only: every staff API call still needs a staff sign-in.
+if (staffPort is null && builder.Configuration["Aion:Web:StaffPath"] is { Length: > 1 } staffPath && staffPath.StartsWith('/') && staffPath != "/admin.html")
 {
     var dashboardFile = Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "admin.html");
     app.Use(async (context, next) =>
@@ -526,12 +548,16 @@ var downloads = accountsReady && builder.Configuration["Aion:Web:Downloads"] is 
     ? new Downloads(Path.GetFullPath(downloadPath), TimeProvider.System) : null;
 downloads?.Map(app);
 var registrationOpen = builder.Configuration.GetValue<bool?>("Aion:Accounts:Registration") ?? true;
+// siteName (Aion:Web:SiteName): the server's name on the player site and the staff dashboard, read per request so a
+// changed setting needs no new web build.
 app.MapGet("/api/status", () => Results.Ok(new { accountsConfigured = accountsReady, registrationOpen = accountsReady && registrationOpen,
-    launcherAvailable = downloads?.LauncherAvailable ?? false, gameReady = false }));
+    launcherAvailable = downloads?.LauncherAvailable ?? false, gameReady = false, siteName = SiteName(app.Configuration) }));
 if (accountsReady)
 {
     app.MapAccountEndpoints(registrationOpen);
     app.MapTotpEndpoints();
+    Aion.Host.Authentication.StaffSessionEndpoints.MapStaffSessionEndpoints(app);
+    Aion.Host.Authentication.StaffAccountEndpoints.MapStaffAccountEndpoints(app);
     app.MapGameplayEndpoints();
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);

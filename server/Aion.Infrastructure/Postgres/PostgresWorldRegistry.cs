@@ -169,7 +169,7 @@ public sealed class PostgresWorldRegistry(NpgsqlDataSource source) : IWorldRegis
         await using var c = await source.OpenConnectionAsync(ct);
         await using (var roles = new NpgsqlCommand("""
             SELECT 1 FROM auth.accounts a JOIN auth.account_roles r USING(account_id)
-            WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN ('gamemaster','admin')
+            WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN ('gamemaster','moderator','admin')
             """, c))
         {
             roles.Parameters.AddWithValue(actor.AccountId);
