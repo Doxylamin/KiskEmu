@@ -191,6 +191,34 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
         await t.CommitAsync(ct); return added;
     }
 
+    public async Task<IReadOnlyDictionary<int, int>?> WingEnchantsAsync(VerifiedAccount account, Guid character, CancellationToken ct=default)
+    {
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        if(!await Own(c,t,account.AccountId,character,ct)) return null;
+        var levels=new Dictionary<int,int>();
+        await using(var q=Query(c,t,"SELECT wing_id,enchant_level FROM game.character_wings WHERE character_id=$1",character))
+        await using(var r=await q.ExecuteReaderAsync(ct))
+            while(await r.ReadAsync(ct)) levels[r.GetInt32(0)]=r.GetInt16(1);
+        await t.CommitAsync(ct); return levels;
+    }
+
+    public async Task<int> EquippedWingAsync(VerifiedAccount account, Guid character, CancellationToken ct=default)
+    {
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        if(!await Own(c,t,account.AccountId,character,ct)) return 0;
+        var wing=await Scalar(c,t,"SELECT equipped_wing_id FROM game.characters WHERE character_id=$1",ct,character) as int? ?? 0;
+        await t.CommitAsync(ct); return wing;
+    }
+
+    public async Task<bool> SetEquippedWingAsync(VerifiedAccount account, Guid character, int wingId, CancellationToken ct=default)
+    {
+        if(wingId<0) throw new GameplayException("invalid_wings");
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        if(!await Own(c,t,account.AccountId,character,ct)) return false;
+        await Execute(c,t,"UPDATE game.characters SET equipped_wing_id=$2 WHERE character_id=$1",ct,character,wingId);
+        await t.CommitAsync(ct); return true;
+    }
+
     public async Task<bool> GrantTitleAsync(VerifiedAccount account, Guid character, int titleId, CancellationToken ct=default)
     {
         if(titleId<=0) throw new GameplayException("invalid_title");

@@ -1,4 +1,4 @@
-﻿using Aion.Application.Gameplay;
+using Aion.Application.Gameplay;
 using Aion.Core.Characters;
 using Aion.Protocol.Native;
 
@@ -204,6 +204,7 @@ public sealed partial class GameSession
         var replies = Used(row, reply);
         replies.AddRange(await InventoryChangesAsync(ct, 0, DecreaseItemUse));
         replies.Add(GamePackets.WingList(OwnedWings()));
+        replies.AddRange(RefreshStats());   // owned-wing stats
         return replies;
     }
 

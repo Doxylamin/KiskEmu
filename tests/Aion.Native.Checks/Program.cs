@@ -1184,10 +1184,10 @@ Check(staffSession.Resource.HpMax != 1500 && staffAppear.AsSpan().IndexOf(hpPair
 var fpWing = BitConverter.GetBytes(GameSession.FpMax).Concat(BitConverter.GetBytes(GameSession.FpMax)).Append((byte)1).Concat(wingBytes).ToArray();
 Check(staffAppear.AsSpan().IndexOf(fpWing) > 0, "staff appear carries fp/fp_max, the relationship (Light) then the default Light wing");
 Check(staffEntry.Any(b => b.SequenceEqual(GamePackets.WingList([(30200600, 0)]))), "staff world entry sends WingList with the wing");
-Check(staffSession.AcquireAllWings().Single().SequenceEqual(GamePackets.WingList(GamePackets.LightWings.Select(id => (id, (byte)0)).ToList())),
-      "AcquireWingAll sends every Light wing (41) as the WingList");
+Check(staffSession.AcquireAllWings()[0].SequenceEqual(GamePackets.WingList(GamePackets.LightWings.Select(id => (id, (byte)0)).ToList())),
+      "AcquireWingAll sends every Light wing (42) as the WingList, then the stats with the owned wings");
 var wingChange = await staffSession.HandleAsync(new PacketWriter().U16(0x5674).U8(0).I32(30100300).ToArray(), Now);
-Check(wingChange.Count == 2 && wingChange[0].SequenceEqual(GamePackets.WingChangeReply(30100300, false))
+Check(wingChange.Count >= 2 && wingChange[0].SequenceEqual(GamePackets.WingChangeReply(30100300, false))
       && wingChange[1].SequenceEqual(GamePackets.WingChangeNotice(1, 30100300, false)), "changing to a registered wing (0x5674 -> 0x5675 + 0x5676)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5674).U8(0).I32(40100300).ToArray(), Now)).Single()
       .SequenceEqual(GamePackets.WingChangeReply(40100300, false, 1)), "an unregistered wing is refused");

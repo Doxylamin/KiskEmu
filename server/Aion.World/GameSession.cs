@@ -173,15 +173,42 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     readonly SortedSet<int> registeredWings = [];
     public IReadOnlyCollection<int> RegisteredWings => registeredWings;
 
+    /// <summary>Enchant level per registered wing (game.character_wings.enchant_level; missing = +0).</summary>
+    readonly Dictionary<int, int> wingEnchants = [];
+    /// <summary>The stored equipped wing (game.characters.equipped_wing_id), restored on map loads; 0 = race default.</summary>
+    int storedWingId;
+
+    // TODO(wing enchant): the WingEnchant request opcode is unknown (no capture). Once known: check the WingEnchant.dat
+    // group/cost/rate, update game.character_wings.enchant_level and wingEnchants, resend WingList and RefreshStats.
     List<(int Id, byte Enchant)> OwnedWings() =>
-        registeredWings.Concat(wingId != 0 ? [wingId] : []).Distinct().Order().Select(id => (id, (byte)0)).ToList();
+        registeredWings.Concat(wingId != 0 ? [wingId] : []).Concat(HasDefaultWing ? [GamePackets.DefaultWing(profileRace)] : []).Distinct().Order()
+            .Select(id => (id, (byte)Math.Clamp(wingEnchants.GetValueOrDefault(id), 0, 255))).ToList();
+
+    static WingTables Wings => WingTables.Embedded;
+
+    /// <summary>Staff and ascended characters own their race's default wing (implied, not stored).</summary>
+    bool HasDefaultWing => resources is not null && (IsAdmin || (selected?.Ascension ?? 1) >= 2);
+
+    /// <summary>Wing stats (from A2Core-ChanAge): the equipped wing's equip stats plus every owned wing's owned stats at its enchant level.</summary>
+    int WingStat(string stat)
+    {
+        var total = Wings.EquipStat(wingId, stat);
+        foreach (var (id, enchant) in OwnedWings()) total += Wings.OwnedStat(id, enchant, stat);
+        return total;
+    }
+
+    /// <summary>The flight gauge maximum: owned wings' FPMax (client raw values; the default wing alone gives 250,000).</summary>
+    int FlightMax => WingStat("FPMax") is > 0 and var fp ? fp : FpMax;
+
+    internal int WingStatForTests(string stat) => WingStat(stat);
+    internal int EquippedWingForTests => wingId;
 
     /// <summary>Builder AcquireWingAll: every wing of the character's race, sent as the new WingList (0x5672).</summary>
     public List<byte[]> AcquireAllWings()
     {
         if (resources is null) return [];
         registeredWings.UnionWith(GamePackets.Wings(profileRace));
-        return [GamePackets.WingList(OwnedWings())];
+        return [GamePackets.WingList(OwnedWings()), .. RefreshStats()];
     }
     int profileRace = 1;
     /// <summary>Light (1) or Dark (2) for chat and social packets.</summary>
@@ -417,14 +444,21 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 return HandleBasicAtkToggleOff();
             case 0x5610: return await InventoryListAsync(ct);
             // WingChange_RQ: packed is_wing_skin, i32 wing (live 2026-10-15, 7 bytes). A registered
-            // wing becomes the equipped one for this connection (the equipped wing is not stored yet).
+            // wing becomes the equipped one and is stored (game.characters.equipped_wing_id) for the next login.
             case 0x5674 when plain.Length == 7 && resources is not null:
             {
                 var skin = (plain[2] & 1) != 0;
                 var wanted = BitConverter.ToInt32(plain, 3);
                 if (!OwnedWings().Any(w => w.Id == wanted)) return [GamePackets.WingChangeReply(wanted, skin, 1)];
-                if (!skin) wingId = wanted;
-                return [GamePackets.WingChangeReply(wanted, skin), GamePackets.WingChangeNotice(playerKey, wanted, skin)];
+                List<byte[]> changed = [GamePackets.WingChangeReply(wanted, skin), GamePackets.WingChangeNotice(playerKey, wanted, skin)];
+                if (!skin)
+                {
+                    wingId = storedWingId = wanted;
+                    if (Store is { } wingStore && CharacterId is { } wingChar)
+                        await Stored(async () => await wingStore.SetEquippedWingAsync(wingChar, wanted, ct) ? [[]] : []);
+                    changed.AddRange(RefreshStats());
+                }
+                return changed;
             }
             // Soul binding before equipping: start (0x562b uid, cost uid, cost id), cancel and
             // complete (0x562d / 0x562f uid). Only items the client was sent can be bound.
@@ -1349,6 +1383,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 experience = state.Progress.Experience;
                 registeredWings.Clear();
                 registeredWings.UnionWith(await store.WingsAsync(state.Summary.CharacterId, ct));
+                wingEnchants.Clear();
+                foreach (var (wing, enchant) in await store.WingEnchantsAsync(state.Summary.CharacterId, ct)) wingEnchants[wing] = enchant;
+                storedWingId = await store.EquippedWingAsync(state.Summary.CharacterId, ct);
                 var extras = await store.ExtrasAsync(state.Summary.CharacterId, ct);
                 LoadAchievements(await store.AchievementsAsync(state.Summary.CharacterId, ct), await store.GroupRewardsTakenAsync(state.Summary.CharacterId, ct), now);
                 LoadCollections(await store.CollectionsAsync(state.Summary.CharacterId, ct));
@@ -1510,8 +1547,11 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         // Flight needs an equipped wing: staff and ascended characters (grade 2+) get their race's default wing and the
         // flight gauge (OBSERVED 250,000 at the ascension; drained and refilled on the ticks).
         var race = profileRace = profile?.Race ?? 1;
-        wingId = IsAdmin || (selected?.Ascension ?? 1) >= 2 ? GamePackets.DefaultWing(race) : 0;
-        resources.FpMax = resources.Fp = wingId != 0 ? FpMax : 0;
+        var flies = IsAdmin || (selected?.Ascension ?? 1) >= 2;
+        wingId = !flies ? 0 : storedWingId != 0 && (registeredWings.Contains(storedWingId) || storedWingId == GamePackets.DefaultWing(race))
+            ? storedWingId : GamePackets.DefaultWing(race);
+        RefreshStats();   // wing equip/owned stats (HP, defense, ...) now that the wing is known
+        resources.FpMax = resources.Fp = wingId != 0 ? FlightMax : 0;
         // An instance-layer move in or out (the level stays loaded): the official load is the short list, not the world-entry
         // set (OBSERVED entry #9676-9702: 0x3623, 0x3633, 0x3646, 0x382a, 0x364a, 0x8d00, 0x4001, 0x4002, 0x6100.., 0x922e, spawns;
         // exit #14305-14345: the same with 0x3722 and 0x3742 after 0x4002 and no dungeon state). Live 2026-10-19: with the
@@ -2113,13 +2153,13 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     /// <summary>Defense against NPC hits: PcStatLevel Defense plus equipped items' defense stats.</summary>
     public int Defense => data.BaseStats(className, level).GetValueOrDefault("Defense") + EquipStat("ArmorDefense") + EquipStat("Defense")
         + EnchantStat("ArmorDefense") + EnchantStat("Defense") + ExceedStat("ArmorDefense") + ExceedStat("Defense") + BuffStat("Defense")
-        + BoardStat("Defense") + TitleStat("Defense") + SetStat("Defense") + DaevanionWireStat(52);
+        + BoardStat("Defense") + TitleStat("Defense") + SetStat("Defense") + WingStat("Defense") + DaevanionWireStat(52);
 
     /// <summary>
     /// The MP pool: MPMax 1500 plus gear, buffs, board, titles, sets and Daevanion, as HPMax. Not fixed (OBSERVED: a level-45
     /// Chanter had 2,599); PcStatLevel has no MPMax, so the level-1 base stays the sample's.
     /// </summary>
-    int MpMax => MpMaxBase + EquipStat("MPMax") + EnchantStat("MPMax") + ExceedStat("MPMax") + RideStat("MPMax")
+    int MpMax => MpMaxBase + EquipStat("MPMax") + EnchantStat("MPMax") + ExceedStat("MPMax") + RideStat("MPMax") + WingStat("MPMax")
         + BuffStat("MPMax") + BoardStat("MPMax") + TitleStat("MPMax") + SetStat("MPMax") + DaevanionWireStat(199);
 
     /// <summary>
@@ -2130,7 +2170,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         var basis = data.BaseStats(className, level);
         var daevanion = DaevanionWireStats();
         int D(int wire) => daevanion.GetValueOrDefault(wire);
-        var hpMax = Math.Max(1, (basis.GetValueOrDefault("HPMax") is > 0 and var hp ? hp : GamePackets.SpawnHpMax) + EquipStat("HPMax") + EnchantStat("HPMax") + ExceedStat("HPMax") + RideStat("HPMax")
+        var hpMax = Math.Max(1, (basis.GetValueOrDefault("HPMax") is > 0 and var hp ? hp : GamePackets.SpawnHpMax) + EquipStat("HPMax") + EnchantStat("HPMax") + ExceedStat("HPMax") + RideStat("HPMax") + WingStat("HPMax")
             + BuffStat("HPMax") + BoardStat("HPMax") + TitleStat("HPMax") + SetStat("HPMax") + D(193));
         var weapon = data.WeaponStatsOf(equippedWeapon);
         int WeaponLine(string name, int wire, int fallback) =>
@@ -2160,6 +2200,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         }
         if (wingId != 0 && resources is { FpMax: > 0 })
         {
+            resources.FpMax = FlightMax;
+            resources.Fp = Math.Min(resources.Fp, resources.FpMax);
             byType[247] = resources.Fp;   // FlyCost: current flight time (usmap; pairs with FPMax on the gauge)
             byType[298] = resources.FpMax;
         }

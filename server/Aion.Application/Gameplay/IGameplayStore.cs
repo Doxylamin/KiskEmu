@@ -137,6 +137,13 @@ public interface IGameplayStore
     Task<bool> EngraveTeleportArtifactAsync(VerifiedAccount account, Guid character, int artifactId, CancellationToken ct = default);
     /// <summary>A title acquired (false when owned already or the character is not the account's).</summary>
     Task<bool> GrantWingAsync(VerifiedAccount account, Guid character, int wingId, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>Enchant level per registered wing (game.character_wings.enchant_level); null when not owned.</summary>
+    Task<IReadOnlyDictionary<int, int>?> WingEnchantsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<int, int>?>(null);
+    /// <summary>The stored equipped wing (game.characters.equipped_wing_id, world databases; 0 none).</summary>
+    Task<int> EquippedWingAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult(0);
+    /// <summary>Stores the equipped wing (0 clears); false when the character is not the account's.</summary>
+    Task<bool> SetEquippedWingAsync(VerifiedAccount account, Guid character, int wingId, CancellationToken ct = default) => Task.FromResult(false);
     Task<bool> GrantTitleAsync(VerifiedAccount account, Guid character, int titleId, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>The equipped title of a category (1..3) or the shown one (0); 0 clears. The title must be owned.</summary>
     Task<bool> SetTitleAsync(VerifiedAccount account, Guid character, int category, int titleId, CancellationToken ct = default) => Task.FromResult(false);

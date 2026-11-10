@@ -252,6 +252,20 @@ public sealed class FakeCharacterStore : INativeCharacterStore
     public Task<IReadOnlyList<int>> WingsAsync(Guid character, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<int>>(Wings.ToList());
 
+    public Dictionary<int, int> WingEnchants { get; } = [];
+    public int EquippedWing { get; set; }
+
+    public Task<IReadOnlyDictionary<int, int>> WingEnchantsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>(WingEnchants));
+
+    public Task<int> EquippedWingAsync(Guid character, CancellationToken ct) => Task.FromResult(EquippedWing);
+
+    public Task<bool> SetEquippedWingAsync(Guid character, int wingId, CancellationToken ct)
+    {
+        EquippedWing = wingId;
+        return Task.FromResult(true);
+    }
+
     public SortedSet<int> Titles { get; } = [];
     public Dictionary<int, int> TitleEquips { get; } = [];
 

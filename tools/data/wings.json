@@ -1,0 +1,4283 @@
+{
+ "source": "Client Wing.dat / WingEnchantEffect.dat export (2026-11-02). equip: stats while equipped; owned_by_level[n]: stats for owning the wing at enchant +n.",
+ "wings": [
+  {
+   "id": 30100300,
+   "key": "Wing_L_WingA_003",
+   "race": "Light",
+   "name": "Brawler Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "AbnormalResistance": 300,
+    "AbnormalAccuracy": 300,
+    "HPMax": 500,
+    "Defense": 400
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 21000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 22000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 23000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 24000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 25000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 26000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 27000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 28000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 29000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 30000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    }
+   ]
+  },
+  {
+   "id": 30100301,
+   "key": "Wing_L_WingA_003A",
+   "race": "Light",
+   "name": "Warrior Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "AbnormalAccuracy": 300,
+    "Defense": 300,
+    "MPMax": 200
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 21000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 22000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 23000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 24000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 25000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 26000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 27000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 28000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 29000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 30000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    }
+   ]
+  },
+  {
+   "id": 30100500,
+   "key": "Wing_L_WingA_005",
+   "race": "Light",
+   "name": "Nightmare Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "BossNpcAmplifyDamage": 350,
+    "FixingDamage": 60,
+    "Critical": 35,
+    "Accuracy": 35
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 21000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 22000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 23000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 24000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 25000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 26000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 27000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 28000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 29000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 30000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    }
+   ]
+  },
+  {
+   "id": 30101000,
+   "key": "Wing_L_WingA_010",
+   "race": "Light",
+   "name": "Forest Spirit Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "DecreaseDamage": 250,
+    "Defense": 400,
+    "BossNpcAddDamage": 95,
+    "BossNpcAmplifyDamage": 350
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 21000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 22000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 23000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 24000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 25000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 26000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 27000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 28000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 29000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 30000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    }
+   ]
+  },
+  {
+   "id": 30101100,
+   "key": "Wing_L_WingA_011",
+   "race": "Light",
+   "name": "Talisra Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "FixingDamage": 60,
+    "Accuracy": 35,
+    "CoolTimeDecrease": 400,
+    "Defense": 400
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 21000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 22000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 23000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 24000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 25000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 26000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 27000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 28000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 29000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 30000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    }
+   ]
+  },
+  {
+   "id": 30101200,
+   "key": "Wing_L_WingA_012",
+   "race": "Light",
+   "name": "Black Fragment Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "Critical": 35,
+    "CriticalAddDamage": 95,
+    "HPMax": 500,
+    "HPRegen": 250
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 21000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 22000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 23000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 24000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 25000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 26000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 27000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 28000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 29000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 30000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    }
+   ]
+  },
+  {
+   "id": 30200101,
+   "key": "Wing_L_WingB_001A",
+   "race": "Light",
+   "name": "Ultimate Daeva Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "HPMax": 500,
+    "MPMax": 250,
+    "DefensePierce": 500,
+    "Critical": 35
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    }
+   ]
+  },
+  {
+   "id": 30200400,
+   "key": "Wing_L_WingB_004",
+   "race": "Light",
+   "name": "Aullaeu Wings",
+   "rarity": "Rare",
+   "shown": true,
+   "equip": {
+    "MPMax": 200,
+    "MPRegen": 50
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "HPMax": 50,
+     "HPRegen": 5
+    },
+    {
+     "FPMax": 22000,
+     "HPMax": 50,
+     "HPRegen": 10
+    },
+    {
+     "FPMax": 23000,
+     "HPMax": 50,
+     "HPRegen": 15
+    },
+    {
+     "FPMax": 24000,
+     "HPMax": 50,
+     "HPRegen": 20
+    },
+    {
+     "FPMax": 25000,
+     "HPMax": 50,
+     "HPRegen": 25
+    },
+    {
+     "FPMax": 26000,
+     "HPMax": 50,
+     "HPRegen": 30
+    },
+    {
+     "FPMax": 27000,
+     "HPMax": 50,
+     "HPRegen": 35
+    },
+    {
+     "FPMax": 28000,
+     "HPMax": 50,
+     "HPRegen": 40
+    },
+    {
+     "FPMax": 29000,
+     "HPMax": 50,
+     "HPRegen": 45
+    },
+    {
+     "FPMax": 30000,
+     "HPMax": 50,
+     "HPRegen": 50
+    }
+   ]
+  },
+  {
+   "id": 30200500,
+   "key": "Wing_L_WingB_005",
+   "race": "Light",
+   "name": "Intermediate Daeva Wings",
+   "rarity": "Rare",
+   "shown": true,
+   "equip": {
+    "HPMax": 300,
+    "Defense": 200
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 100
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 150
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 200
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 250
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 300
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 350
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 400
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 450
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 500
+    }
+   ]
+  },
+  {
+   "id": 30200600,
+   "key": "Wing_L_WingB_006",
+   "race": "Light",
+   "name": "Lesser Daeva Wings",
+   "rarity": "Common",
+   "shown": true,
+   "equip": {
+    "HPMax": 200
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    }
+   ]
+  },
+  {
+   "id": 30200703,
+   "key": "Wing_L_WingB_007C",
+   "race": "Light",
+   "name": "Superior Daeva Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "HPMax": 400,
+    "MPMax": 200,
+    "Accuracy": 25
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 10
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 20
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 30
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 40
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 50
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 60
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 70
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 80
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 90
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 100
+    }
+   ]
+  },
+  {
+   "id": 30201400,
+   "key": "Wing_L_WingB_014",
+   "race": "Light",
+   "name": "Kromede Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "FixingDamage": 60,
+    "Critical": 35,
+    "HPMax": 500,
+    "HPRegen": 250
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 21000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 22000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 23000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 24000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 25000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 26000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 27000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 28000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 29000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 30000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    }
+   ]
+  },
+  {
+   "id": 30201500,
+   "key": "Wing_L_WingB_015",
+   "race": "Light",
+   "name": "Blazing Sun Wings",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30201900,
+   "key": "Wing_L_WingB_019",
+   "race": "Light",
+   "name": "Dark Veil Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "AmplifyAllDamage": 250,
+    "FixingDamage": 60,
+    "BossNpcDefense": 500,
+    "BossNpcDecreaseDamage": 350
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 21000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 22000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 23000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 24000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 25000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 26000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 27000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 28000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 29000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 30000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    }
+   ]
+  },
+  {
+   "id": 30202100,
+   "key": "Wing_L_WingB_021",
+   "race": "Light",
+   "name": "Abyssal Waves Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202101,
+   "key": "Wing_L_WingB_021A",
+   "race": "Light",
+   "name": "Mystic Night Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202102,
+   "key": "Wing_L_WingB_021B",
+   "race": "Light",
+   "name": "Fiery Darkness Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202200,
+   "key": "Wing_L_WingB_022",
+   "race": "Light",
+   "name": "Azure Waves Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202300,
+   "key": "Wing_L_WingB_023",
+   "race": "Light",
+   "name": "Starsparkle Waves Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202400,
+   "key": "Wing_L_WingB_024",
+   "race": "Light",
+   "name": "Black Waves Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202500,
+   "key": "Wing_L_WingB_025",
+   "race": "Light",
+   "name": "Silver Starbreeze Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202501,
+   "key": "Wing_L_WingB_025A",
+   "race": "Light",
+   "name": "Sunset Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202502,
+   "key": "Wing_L_WingB_025B",
+   "race": "Light",
+   "name": "Radiant Light Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202600,
+   "key": "Wing_L_WingB_026",
+   "race": "Light",
+   "name": "Azure Wind Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202700,
+   "key": "Wing_L_WingB_027",
+   "race": "Light",
+   "name": "Starsparkle Wind Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30202800,
+   "key": "Wing_L_WingB_028",
+   "race": "Light",
+   "name": "Starbreeze Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30203300,
+   "key": "Wing_L_WingB_033",
+   "race": "Light",
+   "name": "Void Rending Wings",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30300300,
+   "key": "Wing_L_WingC_003",
+   "race": "Light",
+   "name": "Conqueror Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "Defense": 300,
+    "BossNpcAddDamage": 80,
+    "BossNpcDefense": 400
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100
+    },
+    {
+     "FPMax": 21000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 10
+    },
+    {
+     "FPMax": 22000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 20
+    },
+    {
+     "FPMax": 23000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 30
+    },
+    {
+     "FPMax": 24000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 40
+    },
+    {
+     "FPMax": 25000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 50
+    },
+    {
+     "FPMax": 26000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 60
+    },
+    {
+     "FPMax": 27000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 70
+    },
+    {
+     "FPMax": 28000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 80
+    },
+    {
+     "FPMax": 29000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 90
+    },
+    {
+     "FPMax": 30000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 100
+    }
+   ]
+  },
+  {
+   "id": 30400200,
+   "key": "Wing_L_WingD_002",
+   "race": "Light",
+   "name": "Spirit Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "HPMax": 400,
+    "Defense": 300,
+    "Block": 50
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Defense": 100,
+     "MPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 30
+    },
+    {
+     "FPMax": 22000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 60
+    },
+    {
+     "FPMax": 23000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 90
+    },
+    {
+     "FPMax": 24000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 120
+    },
+    {
+     "FPMax": 25000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 150
+    },
+    {
+     "FPMax": 26000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 180
+    },
+    {
+     "FPMax": 27000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 210
+    },
+    {
+     "FPMax": 28000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 240
+    },
+    {
+     "FPMax": 29000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 270
+    },
+    {
+     "FPMax": 30000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 300
+    }
+   ]
+  },
+  {
+   "id": 30400300,
+   "key": "Wing_L_WingD_003",
+   "race": "Light",
+   "name": "Radiant Love Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "Defense": 400,
+    "Evasion": 35,
+    "HpPotionRate": 550,
+    "MPRegen": 90
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 21000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 22000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 23000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 24000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 25000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 26000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 27000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 28000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 29000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 30000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    }
+   ]
+  },
+  {
+   "id": 30400400,
+   "key": "Wing_L_WingD_004",
+   "race": "Light",
+   "name": "Blue Wave Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "Evasion": 35,
+    "CriticalResist": 35,
+    "MPMax": 250,
+    "MPRegen": 90
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 21000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 22000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 23000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 24000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 25000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 26000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 27000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 28000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 29000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 30000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    }
+   ]
+  },
+  {
+   "id": 30400500,
+   "key": "Wing_L_WingD_005",
+   "race": "Light",
+   "name": "Springflower Butterfly Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "DefensePierce": 500,
+    "BlockPierce": 60,
+    "FixingDamage": 60,
+    "Accuracy": 35
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 21000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 22000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 23000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 24000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 25000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 26000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 27000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 28000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 29000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 30000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    }
+   ]
+  },
+  {
+   "id": 30400900,
+   "key": "Wing_L_WingD_009",
+   "race": "Light",
+   "name": "Violet Butterfly Wings",
+   "rarity": "Rare",
+   "shown": true,
+   "equip": {
+    "FixingDamage": 40,
+    "Defense": 200
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "HPMax": 50,
+     "HPRegen": 5
+    },
+    {
+     "FPMax": 22000,
+     "HPMax": 50,
+     "HPRegen": 10
+    },
+    {
+     "FPMax": 23000,
+     "HPMax": 50,
+     "HPRegen": 15
+    },
+    {
+     "FPMax": 24000,
+     "HPMax": 50,
+     "HPRegen": 20
+    },
+    {
+     "FPMax": 25000,
+     "HPMax": 50,
+     "HPRegen": 25
+    },
+    {
+     "FPMax": 26000,
+     "HPMax": 50,
+     "HPRegen": 30
+    },
+    {
+     "FPMax": 27000,
+     "HPMax": 50,
+     "HPRegen": 35
+    },
+    {
+     "FPMax": 28000,
+     "HPMax": 50,
+     "HPRegen": 40
+    },
+    {
+     "FPMax": 29000,
+     "HPMax": 50,
+     "HPRegen": 45
+    },
+    {
+     "FPMax": 30000,
+     "HPMax": 50,
+     "HPRegen": 50
+    }
+   ]
+  },
+  {
+   "id": 30401100,
+   "key": "Wing_L_WingD_011",
+   "race": "Light",
+   "name": "Wing_L_WingD_011",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30500100,
+   "key": "Wing_L_WingE_001",
+   "race": "Light",
+   "name": "Sealing Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "HPMax": 400,
+    "HPRegen": 200,
+    "AmplifyHpHealGet": 500
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 21000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 10
+    },
+    {
+     "FPMax": 22000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 20
+    },
+    {
+     "FPMax": 23000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 30
+    },
+    {
+     "FPMax": 24000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 40
+    },
+    {
+     "FPMax": 25000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 50
+    },
+    {
+     "FPMax": 26000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 60
+    },
+    {
+     "FPMax": 27000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 70
+    },
+    {
+     "FPMax": 28000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 80
+    },
+    {
+     "FPMax": 29000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 90
+    },
+    {
+     "FPMax": 30000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 100
+    }
+   ]
+  },
+  {
+   "id": 30500101,
+   "key": "Wing_L_WingE_001A",
+   "race": "Light",
+   "name": "Glorious Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "MPUseDecrease": 300,
+    "MPMax": 200,
+    "MPRegen": 80
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Defense": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 21000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 30
+    },
+    {
+     "FPMax": 22000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 60
+    },
+    {
+     "FPMax": 23000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 90
+    },
+    {
+     "FPMax": 24000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 120
+    },
+    {
+     "FPMax": 25000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 150
+    },
+    {
+     "FPMax": 26000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 180
+    },
+    {
+     "FPMax": 27000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 210
+    },
+    {
+     "FPMax": 28000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 240
+    },
+    {
+     "FPMax": 29000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 270
+    },
+    {
+     "FPMax": 30000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 300
+    }
+   ]
+  },
+  {
+   "id": 30500200,
+   "key": "Wing_L_WingE_002",
+   "race": "Light",
+   "name": "Ancient Aullaeu Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "FixingDamage": 60,
+    "Defense": 400,
+    "MPMax": 250,
+    "MPRegen": 90
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 21000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 22000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 23000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 24000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 25000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 26000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 27000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 28000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 29000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 30000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    }
+   ]
+  },
+  {
+   "id": 30600100,
+   "key": "Wing_L_WingF_001",
+   "race": "Light",
+   "name": "Fairy's Dream Wings",
+   "rarity": "Rare",
+   "shown": true,
+   "equip": {
+    "HpPotionRegen": 300,
+    "HpPotionRate": 500
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 22000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 23000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 24000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 25000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 26000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 27000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 28000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 29000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 30000,
+     "HPMax": 50
+    }
+   ]
+  },
+  {
+   "id": 30600200,
+   "key": "Wing_L_WingF_002",
+   "race": "Light",
+   "name": "Odyle Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "HPMax": 400,
+    "MPMax": 200,
+    "MPRegen": 80
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "FixingDamage": 10,
+     "MPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 30
+    },
+    {
+     "FPMax": 22000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 60
+    },
+    {
+     "FPMax": 23000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 90
+    },
+    {
+     "FPMax": 24000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 120
+    },
+    {
+     "FPMax": 25000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 150
+    },
+    {
+     "FPMax": 26000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 180
+    },
+    {
+     "FPMax": 27000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 210
+    },
+    {
+     "FPMax": 28000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 240
+    },
+    {
+     "FPMax": 29000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 270
+    },
+    {
+     "FPMax": 30000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 300
+    }
+   ]
+  },
+  {
+   "id": 30600300,
+   "key": "Wing_L_WingF_003",
+   "race": "Light",
+   "name": "Blue Butterfly Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "Defense": 400,
+    "HPMax": 500,
+    "HpPotionRegen": 300,
+    "HpPotionRate": 500
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 21000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 22000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 23000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 24000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 25000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 26000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 27000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 28000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 29000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 30000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    }
+   ]
+  },
+  {
+   "id": 30700400,
+   "key": "Wing_L_WingZ_004",
+   "race": "Light",
+   "name": "Punk Bunny Bag Wings",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 30701000,
+   "key": "Wing_L_WingZ_010",
+   "race": "Light",
+   "name": "Wing_L_WingZ_010",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40100300,
+   "key": "Wing_D_WingA_003",
+   "race": "Dark",
+   "name": "Brawler Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "AbnormalResistance": 300,
+    "AbnormalAccuracy": 300,
+    "HPMax": 500,
+    "Defense": 400
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 21000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 22000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 23000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 24000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 25000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 26000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 27000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 28000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 29000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    },
+    {
+     "FPMax": 30000,
+     "AbnormalAccuracy": 250,
+     "PvPAmplifyDamage": 100,
+     "PvPDamageDefense": 100
+    }
+   ]
+  },
+  {
+   "id": 40100301,
+   "key": "Wing_D_WingA_003A",
+   "race": "Dark",
+   "name": "Warrior Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "AbnormalAccuracy": 300,
+    "Defense": 300,
+    "MPMax": 200
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 21000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 22000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 23000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 24000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 25000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 26000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 27000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 28000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 29000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    },
+    {
+     "FPMax": 30000,
+     "AbnormalResistance": 250,
+     "PvPDecreaseDamage": 100
+    }
+   ]
+  },
+  {
+   "id": 40100500,
+   "key": "Wing_D_WingA_005",
+   "race": "Dark",
+   "name": "Nightmare Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "BossNpcAmplifyDamage": 350,
+    "FixingDamage": 60,
+    "Critical": 35,
+    "Accuracy": 35
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 21000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 22000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 23000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 24000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 25000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 26000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 27000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 28000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 29000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    },
+    {
+     "FPMax": 30000,
+     "BossNpcAddDamage": 20,
+     "BossNpcDefense": 300,
+     "PvEAmplifyDamage": 100
+    }
+   ]
+  },
+  {
+   "id": 40101000,
+   "key": "Wing_D_WingA_010",
+   "race": "Dark",
+   "name": "Forest Spirit Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "DecreaseDamage": 250,
+    "Defense": 400,
+    "BossNpcAddDamage": 95,
+    "BossNpcAmplifyDamage": 350
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 21000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 22000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 23000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 24000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 25000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 26000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 27000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 28000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 29000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 30000,
+     "DecreaseDamage": 100,
+     "BossNpcAddDamage": 30,
+     "Accuracy": 20
+    }
+   ]
+  },
+  {
+   "id": 40101100,
+   "key": "Wing_D_WingA_011",
+   "race": "Dark",
+   "name": "Talisra Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "FixingDamage": 60,
+    "Accuracy": 35,
+    "CoolTimeDecrease": 400,
+    "Defense": 400
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 21000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 22000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 23000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 24000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 25000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 26000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 27000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 28000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 29000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 30000,
+     "Defense": 100,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    }
+   ]
+  },
+  {
+   "id": 40101200,
+   "key": "Wing_D_WingA_012",
+   "race": "Dark",
+   "name": "Black Fragment Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "Critical": 35,
+    "CriticalAddDamage": 95,
+    "HPMax": 500,
+    "HPRegen": 250
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 21000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 22000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 23000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 24000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 25000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 26000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 27000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 28000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 29000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 30000,
+     "Evasion": 20,
+     "Block": 20,
+     "FixingDamage": 10
+    }
+   ]
+  },
+  {
+   "id": 40200100,
+   "key": "Wing_D_WingB_001",
+   "race": "Dark",
+   "name": "Ultimate Daeva Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "HPMax": 500,
+    "MPMax": 250,
+    "DefensePierce": 500,
+    "Critical": 35
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "DefensePierce": 100,
+     "Accuracy": 20,
+     "FixingDamage": 10
+    }
+   ]
+  },
+  {
+   "id": 40200400,
+   "key": "Wing_D_WingB_004",
+   "race": "Dark",
+   "name": "Aullaeu Wings",
+   "rarity": "Rare",
+   "shown": true,
+   "equip": {
+    "MPMax": 200,
+    "MPRegen": 50
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "HPMax": 50,
+     "HPRegen": 5
+    },
+    {
+     "FPMax": 22000,
+     "HPMax": 50,
+     "HPRegen": 10
+    },
+    {
+     "FPMax": 23000,
+     "HPMax": 50,
+     "HPRegen": 15
+    },
+    {
+     "FPMax": 24000,
+     "HPMax": 50,
+     "HPRegen": 20
+    },
+    {
+     "FPMax": 25000,
+     "HPMax": 50,
+     "HPRegen": 25
+    },
+    {
+     "FPMax": 26000,
+     "HPMax": 50,
+     "HPRegen": 30
+    },
+    {
+     "FPMax": 27000,
+     "HPMax": 50,
+     "HPRegen": 35
+    },
+    {
+     "FPMax": 28000,
+     "HPMax": 50,
+     "HPRegen": 40
+    },
+    {
+     "FPMax": 29000,
+     "HPMax": 50,
+     "HPRegen": 45
+    },
+    {
+     "FPMax": 30000,
+     "HPMax": 50,
+     "HPRegen": 50
+    }
+   ]
+  },
+  {
+   "id": 40200503,
+   "key": "Wing_D_WingB_005C",
+   "race": "Dark",
+   "name": "Intermediate Daeva Wings",
+   "rarity": "Rare",
+   "shown": true,
+   "equip": {
+    "HPMax": 300,
+    "Defense": 200
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 100
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 150
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 200
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 250
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 300
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 350
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 400
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 450
+    },
+    {
+     "FPMax": 100000,
+     "FixingDamage": 10,
+     "HPMax": 500
+    }
+   ]
+  },
+  {
+   "id": 40200601,
+   "key": "Wing_D_WingB_006A",
+   "race": "Dark",
+   "name": "Lesser Daeva Wings",
+   "rarity": "Common",
+   "shown": true,
+   "equip": {
+    "HPMax": 200
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 250000,
+     "HPMax": 50
+    }
+   ]
+  },
+  {
+   "id": 40200700,
+   "key": "Wing_D_WingB_007",
+   "race": "Dark",
+   "name": "Superior Daeva Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "HPMax": 400,
+    "MPMax": 200,
+    "Accuracy": 25
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 10
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 20
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 30
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 40
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 50
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 60
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 70
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 80
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 90
+    },
+    {
+     "FPMax": 100000,
+     "Defense": 100,
+     "FrontAttackCriticalResist": 40,
+     "CriticalResist": 100
+    }
+   ]
+  },
+  {
+   "id": 40201400,
+   "key": "Wing_D_WingB_014",
+   "race": "Dark",
+   "name": "Kromede Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "FixingDamage": 60,
+    "Critical": 35,
+    "HPMax": 500,
+    "HPRegen": 250
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 21000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 22000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 23000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 24000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 25000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 26000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 27000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 28000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 29000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    },
+    {
+     "FPMax": 30000,
+     "HPMax": 50,
+     "HPRegen": 50,
+     "FixingDamage": 10
+    }
+   ]
+  },
+  {
+   "id": 40201500,
+   "key": "Wing_D_WingB_015",
+   "race": "Dark",
+   "name": "Blazing Sun Wings",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40201900,
+   "key": "Wing_D_WingB_019",
+   "race": "Dark",
+   "name": "Dark Veil Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "AmplifyAllDamage": 250,
+    "FixingDamage": 60,
+    "BossNpcDefense": 500,
+    "BossNpcDecreaseDamage": 350
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 21000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 22000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 23000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 24000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 25000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 26000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 27000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 28000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 29000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 30000,
+     "AmplifyAllDamage": 100,
+     "BossNpcDefense": 300,
+     "PvEAddDamage": 20
+    }
+   ]
+  },
+  {
+   "id": 40202100,
+   "key": "Wing_D_WingB_021",
+   "race": "Dark",
+   "name": "Abyssal Waves Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202101,
+   "key": "Wing_D_WingB_021A",
+   "race": "Dark",
+   "name": "Mystic Night Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202102,
+   "key": "Wing_D_WingB_021B",
+   "race": "Dark",
+   "name": "Fiery Darkness Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202200,
+   "key": "Wing_D_WingB_022",
+   "race": "Dark",
+   "name": "Azure Waves Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202300,
+   "key": "Wing_D_WingB_023",
+   "race": "Dark",
+   "name": "Starsparkle Waves Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202400,
+   "key": "Wing_D_WingB_024",
+   "race": "Dark",
+   "name": "Black Waves Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202500,
+   "key": "Wing_D_WingB_025",
+   "race": "Dark",
+   "name": "Silver Starbreeze Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202501,
+   "key": "Wing_D_WingB_025A",
+   "race": "Dark",
+   "name": "Sunset Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202502,
+   "key": "Wing_D_WingB_025B",
+   "race": "Dark",
+   "name": "Radiant Light Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202600,
+   "key": "Wing_D_WingB_026",
+   "race": "Dark",
+   "name": "Azure Wind Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202700,
+   "key": "Wing_D_WingB_027",
+   "race": "Dark",
+   "name": "Starsparkle Wind Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40202800,
+   "key": "Wing_D_WingB_028",
+   "race": "Dark",
+   "name": "Starbreeze Wings",
+   "rarity": "Special",
+   "shown": false,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40203300,
+   "key": "Wing_D_WingB_033",
+   "race": "Dark",
+   "name": "Void Rending Wings",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40300300,
+   "key": "Wing_D_WingC_003",
+   "race": "Dark",
+   "name": "Conqueror Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "Defense": 300,
+    "BossNpcAddDamage": 80,
+    "BossNpcDefense": 400
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100
+    },
+    {
+     "FPMax": 21000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 10
+    },
+    {
+     "FPMax": 22000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 20
+    },
+    {
+     "FPMax": 23000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 30
+    },
+    {
+     "FPMax": 24000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 40
+    },
+    {
+     "FPMax": 25000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 50
+    },
+    {
+     "FPMax": 26000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 60
+    },
+    {
+     "FPMax": 27000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 70
+    },
+    {
+     "FPMax": 28000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 80
+    },
+    {
+     "FPMax": 29000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 90
+    },
+    {
+     "FPMax": 30000,
+     "BossNpcAddDamage": 20,
+     "PvEDecreaseDamage": 100,
+     "Evasion": 100
+    }
+   ]
+  },
+  {
+   "id": 40400200,
+   "key": "Wing_D_WingD_002",
+   "race": "Dark",
+   "name": "Spirit Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "HPMax": 400,
+    "Defense": 300,
+    "Block": 50
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Defense": 100,
+     "MPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 30
+    },
+    {
+     "FPMax": 22000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 60
+    },
+    {
+     "FPMax": 23000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 90
+    },
+    {
+     "FPMax": 24000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 120
+    },
+    {
+     "FPMax": 25000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 150
+    },
+    {
+     "FPMax": 26000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 180
+    },
+    {
+     "FPMax": 27000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 210
+    },
+    {
+     "FPMax": 28000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 240
+    },
+    {
+     "FPMax": 29000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 270
+    },
+    {
+     "FPMax": 30000,
+     "Defense": 100,
+     "MPMax": 50,
+     "PvEDamageDefense": 300
+    }
+   ]
+  },
+  {
+   "id": 40400300,
+   "key": "Wing_D_WingD_003",
+   "race": "Dark",
+   "name": "Radiant Love Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "Defense": 400,
+    "Evasion": 35,
+    "HpPotionRate": 550,
+    "MPRegen": 90
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 21000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 22000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 23000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 24000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 25000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 26000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 27000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 28000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 29000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 30000,
+     "BackAttackDamage": 10,
+     "Critical": 25,
+     "Accuracy": 20
+    }
+   ]
+  },
+  {
+   "id": 40400400,
+   "key": "Wing_D_WingD_004",
+   "race": "Dark",
+   "name": "Blue Wave Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "Evasion": 35,
+    "CriticalResist": 35,
+    "MPMax": 250,
+    "MPRegen": 90
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 21000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 22000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 23000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 24000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 25000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 26000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 27000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 28000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 29000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    },
+    {
+     "FPMax": 30000,
+     "CriticalResist": 20,
+     "BackAttackCriticalResist": 40,
+     "PvEAddDamage": 20
+    }
+   ]
+  },
+  {
+   "id": 40400500,
+   "key": "Wing_D_WingD_005",
+   "race": "Dark",
+   "name": "Springflower Butterfly Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "DefensePierce": 500,
+    "BlockPierce": 60,
+    "FixingDamage": 60,
+    "Accuracy": 35
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 21000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 22000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 23000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 24000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 25000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 26000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 27000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 28000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 29000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    },
+    {
+     "FPMax": 30000,
+     "Evasion": 20,
+     "Block": 20,
+     "FrontAttackDamage": 20
+    }
+   ]
+  },
+  {
+   "id": 40400900,
+   "key": "Wing_D_WingD_009",
+   "race": "Dark",
+   "name": "Violet Butterfly Wings",
+   "rarity": "Rare",
+   "shown": true,
+   "equip": {
+    "FixingDamage": 40,
+    "Defense": 200
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "HPMax": 50,
+     "HPRegen": 5
+    },
+    {
+     "FPMax": 22000,
+     "HPMax": 50,
+     "HPRegen": 10
+    },
+    {
+     "FPMax": 23000,
+     "HPMax": 50,
+     "HPRegen": 15
+    },
+    {
+     "FPMax": 24000,
+     "HPMax": 50,
+     "HPRegen": 20
+    },
+    {
+     "FPMax": 25000,
+     "HPMax": 50,
+     "HPRegen": 25
+    },
+    {
+     "FPMax": 26000,
+     "HPMax": 50,
+     "HPRegen": 30
+    },
+    {
+     "FPMax": 27000,
+     "HPMax": 50,
+     "HPRegen": 35
+    },
+    {
+     "FPMax": 28000,
+     "HPMax": 50,
+     "HPRegen": 40
+    },
+    {
+     "FPMax": 29000,
+     "HPMax": 50,
+     "HPRegen": 45
+    },
+    {
+     "FPMax": 30000,
+     "HPMax": 50,
+     "HPRegen": 50
+    }
+   ]
+  },
+  {
+   "id": 40401100,
+   "key": "Wing_D_WingD_011",
+   "race": "Dark",
+   "name": "Wing_D_WingD_011",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40500100,
+   "key": "Wing_D_WingE_001",
+   "race": "Dark",
+   "name": "Sealing Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "HPMax": 400,
+    "HPRegen": 200,
+    "AmplifyHpHealGet": 500
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "FixingDamage": 10,
+     "Accuracy": 20
+    },
+    {
+     "FPMax": 21000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 10
+    },
+    {
+     "FPMax": 22000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 20
+    },
+    {
+     "FPMax": 23000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 30
+    },
+    {
+     "FPMax": 24000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 40
+    },
+    {
+     "FPMax": 25000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 50
+    },
+    {
+     "FPMax": 26000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 60
+    },
+    {
+     "FPMax": 27000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 70
+    },
+    {
+     "FPMax": 28000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 80
+    },
+    {
+     "FPMax": 29000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 90
+    },
+    {
+     "FPMax": 30000,
+     "FixingDamage": 10,
+     "Accuracy": 20,
+     "Block": 100
+    }
+   ]
+  },
+  {
+   "id": 40500101,
+   "key": "Wing_D_WingE_001A",
+   "race": "Dark",
+   "name": "Glorious Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "MPUseDecrease": 300,
+    "MPMax": 200,
+    "MPRegen": 80
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Defense": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 21000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 30
+    },
+    {
+     "FPMax": 22000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 60
+    },
+    {
+     "FPMax": 23000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 90
+    },
+    {
+     "FPMax": 24000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 120
+    },
+    {
+     "FPMax": 25000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 150
+    },
+    {
+     "FPMax": 26000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 180
+    },
+    {
+     "FPMax": 27000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 210
+    },
+    {
+     "FPMax": 28000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 240
+    },
+    {
+     "FPMax": 29000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 270
+    },
+    {
+     "FPMax": 30000,
+     "Defense": 100,
+     "Critical": 25,
+     "AmplifyHpHealGet": 300
+    }
+   ]
+  },
+  {
+   "id": 40500200,
+   "key": "Wing_D_WingE_002",
+   "race": "Dark",
+   "name": "Ancient Aullaeu Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "FixingDamage": 60,
+    "Defense": 400,
+    "MPMax": 250,
+    "MPRegen": 90
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 21000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 22000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 23000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 24000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 25000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 26000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 27000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 28000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 29000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 30000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    }
+   ]
+  },
+  {
+   "id": 40600100,
+   "key": "Wing_D_WingF_001",
+   "race": "Dark",
+   "name": "Fairy's Dream Wings",
+   "rarity": "Rare",
+   "shown": true,
+   "equip": {
+    "HpPotionRegen": 300,
+    "HpPotionRate": 500
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 22000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 23000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 24000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 25000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 26000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 27000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 28000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 29000,
+     "HPMax": 50
+    },
+    {
+     "FPMax": 30000,
+     "HPMax": 50
+    }
+   ]
+  },
+  {
+   "id": 40600200,
+   "key": "Wing_D_WingF_002",
+   "race": "Dark",
+   "name": "Odyle Wings",
+   "rarity": "Legend",
+   "shown": true,
+   "equip": {
+    "HPMax": 400,
+    "MPMax": 200,
+    "MPRegen": 80
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "FixingDamage": 10,
+     "MPMax": 50
+    },
+    {
+     "FPMax": 21000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 30
+    },
+    {
+     "FPMax": 22000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 60
+    },
+    {
+     "FPMax": 23000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 90
+    },
+    {
+     "FPMax": 24000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 120
+    },
+    {
+     "FPMax": 25000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 150
+    },
+    {
+     "FPMax": 26000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 180
+    },
+    {
+     "FPMax": 27000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 210
+    },
+    {
+     "FPMax": 28000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 240
+    },
+    {
+     "FPMax": 29000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 270
+    },
+    {
+     "FPMax": 30000,
+     "FixingDamage": 10,
+     "MPMax": 50,
+     "Restoration": 300
+    }
+   ]
+  },
+  {
+   "id": 40600300,
+   "key": "Wing_D_WingF_003",
+   "race": "Dark",
+   "name": "Blue Butterfly Wings",
+   "rarity": "Unique",
+   "shown": true,
+   "equip": {
+    "Defense": 400,
+    "HPMax": 500,
+    "HpPotionRegen": 300,
+    "HpPotionRate": 500
+   },
+   "owned_by_level": [
+    {
+     "FPMax": 20000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 21000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 22000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 23000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 24000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 25000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 26000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 27000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 28000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 29000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    },
+    {
+     "FPMax": 30000,
+     "Accuracy": 20,
+     "DefensePierce": 100,
+     "Critical": 25
+    }
+   ]
+  },
+  {
+   "id": 40700400,
+   "key": "Wing_D_WingZ_004",
+   "race": "Dark",
+   "name": "Punk Bunny Bag Wings",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  },
+  {
+   "id": 40701000,
+   "key": "Wing_D_WingZ_010",
+   "race": "Dark",
+   "name": "Wing_D_WingZ_010",
+   "rarity": "Special",
+   "shown": true,
+   "equip": {},
+   "owned_by_level": [
+    {}
+   ]
+  }
+ ]
+}
