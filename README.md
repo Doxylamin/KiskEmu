@@ -7,6 +7,8 @@ KiskEmu is a community project for learning and interoperability. It is not affi
 to NCSoft. You need your own copy of the game; the client is not included. See [NOTICE.md](NOTICE.md).
 KiskEmu began as a fork of [A2Core](https://github.com/Addiboii/A2Core).
 
+Questions, bug reports and help: join the [KiskEmu Discord](https://discord.gg/7XDVga5N3t).
+
 ## What it does
 
 - **Game:** login, character creation, the world (NPCs, monsters, objects, quests, map events, dungeons), combat,
