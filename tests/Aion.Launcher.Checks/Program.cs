@@ -99,6 +99,64 @@ Check(build.ManifestId == "1699273097574069541" && build.Files.Count == build.Fi
 Check(build.Files.Single(f => f.Path == build.Executable).Sha256 == "d93b050d623550fcf509888a9afe9cb8bd3864869f06dd3fe9ecaa697337f1ba", "supported AION2.exe hash");
 Check(build.Files.Count(f => f.Quick) > 500 && build.DownloadCommand == "download_depot 3393110 3393111 1699273097574069541", "quick set and download command");
 
+// ---------- Generic launcher: server setup, build references, the default server ----------
+Check(ServerSetup.Normalize("world.example.com").ToString() == "https://world.example.com/", "bare host gets https");
+Check(ServerSetup.Normalize(" https://world.example.com:8780/account/ ").ToString() == "https://world.example.com:8780/", "path dropped, port kept");
+foreach (var bad in new[] { "", "http://world.example.com", "https://user@world.example.com", "not a host at all" })
+{
+    try { ServerSetup.Normalize(bad); Check(false, "bad address accepted: " + bad); } catch (InvalidDataException) { checks++; }
+}
+Check(ServerSetup.Candidates("world.example.com").Select(u => u.Port).SequenceEqual([443, 8780]), "no port tries 443 then 8780");
+Check(ServerSetup.Candidates("world.example.com:9000").Select(u => u.Port).SequenceEqual([9000]), "typed port only");
+Check(ServerSetup.AddressFromLink("kisklauncher://add?url=https%3A%2F%2Fworld.example.com%3A8780") == "https://world.example.com:8780", "link carries the address");
+Check(ServerSetup.AddressFromLink("kisklauncher://remove?url=x") is null && ServerSetup.AddressFromLink("https://add?url=x") is null, "other links ignored");
+{
+    var url = new Uri("https://world.example.com:8780/");
+    var reply = new ServerReply("World", "203.0.113.5", 8788);
+    var first = ServerSetup.Apply(null, url, reply, new string('a', 40));
+    Check(first.AccountUrl == "https://world.example.com:8780" && first.SavedDirSuffix == ServerSetup.DerivedSuffix(url) && first.SavedDirSuffix.Length == 32, "derived saved-folder suffix");
+    var moved = ServerSetup.Apply(first, url, reply with { ServerAddress = "203.0.113.6", SavedDirSuffix = "Other", Name = "Renamed" }, null);
+    Check(moved.ServerAddress == "203.0.113.6" && moved.Name == "Renamed" && moved.SavedDirSuffix == first.SavedDirSuffix && moved.CertificateThumbprint == first.CertificateThumbprint,
+        "server moves address and name; suffix and pin stay");
+    Check(ServerSetup.DerivedSuffix(url) != ServerSetup.DerivedSuffix(new Uri("https://other.example.com/")), "suffix differs per server");
+    try { ServerSetup.Apply(null, url, reply with { ServerAddress = "world.example.com" }, null); Check(false, "hostname game address accepted"); } catch (InvalidDataException) { checks++; }
+    Check(ServerSetup.Readable("ab12cd") == "AB:12:CD", "readable thumbprint");
+}
+{
+    var probes = 0;
+    var probe = await ServerSetup.ProbeAsync("world.example.com", new StubHandler(request =>
+    {
+        probes++;
+        return Task.FromResult(request.RequestUri!.Port == 8780 && request.RequestUri.AbsolutePath == ServerSetup.ConfigPath
+            ? Json(200, """{"name":"World","serverAddress":"203.0.113.5","bootstrapPort":8788}""")
+            : throw new HttpRequestException("refused"));
+    }));
+    Check(probes == 2 && probe.AccountUrl.Port == 8780 && probe.Reply.Name == "World" && probe.UntrustedThumbprint is null, "probe falls back to 8780");
+    try
+    {
+        await ServerSetup.ProbeAsync("world.example.com:8780", new StubHandler(_ => Task.FromResult(Json(404, "{}"))));
+        Check(false, "server without the setup accepted");
+    }
+    catch (AccountException) { checks++; }
+}
+{
+    var files = build.Files;
+    var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(build);
+    Check(SupportedBuild.Parse(json, build.Fingerprint).Fingerprint == build.Fingerprint && SupportedBuild.ComputeFingerprint(files) == build.Fingerprint, "build reference round trip");
+    try { SupportedBuild.Parse(json, new string('0', 64)); Check(false, "wrong fingerprint accepted"); } catch (InvalidDataException) { checks++; }
+    var escaping = build with { Files = [.. files.Take(1).Select(f => f with { Path = @"..\evil.dll" })] };
+    var escapingJson = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(escaping with { Fingerprint = SupportedBuild.ComputeFingerprint(escaping.Files) });
+    try { SupportedBuild.Parse(escapingJson, SupportedBuild.ComputeFingerprint(escaping.Files)); Check(false, "path outside the game folder accepted"); } catch (InvalidDataException) { checks++; }
+}
+{
+    var temp = Directory.CreateTempSubdirectory("a2default").FullName;
+    var file = Path.Combine(temp, "launcher.json");
+    Check(LauncherConfig.LoadDefault(file)?.AccountUrl == config.AccountUrl, "embedded default server when no file");
+    File.WriteAllText(file, System.Text.Json.JsonSerializer.Serialize(config with { Name = "Override" }));
+    Check(LauncherConfig.LoadDefault(file)?.Name == "Override", "launcher.json next to the exe wins");
+    Directory.Delete(temp, true);
+}
+
 // ---------- Text KeyValues ----------
 var kv = KeyValuesText.Parse("""
 "libraryfolders"

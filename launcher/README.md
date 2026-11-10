@@ -17,8 +17,9 @@ Design and evidence: `research/client-installer.md`.
 - `supported-build.json`: every file of Steam depot 3393111 manifest 1699273097574069541 (path, size,
   SHA-256; `tools/launcher_build.py --depot-manifest <Steam>/depotcache/3393111_1699273097574069541.manifest`
   from `research/local/dev-client/verification.json`, keeping only the depot's 1218 files).
-- `launcher.json`: the server (account URL, IPv4 address, bootstrap port, private saved-folder suffix).
-  Embedded; a `launcher.json` next to the exe overrides it.
+- `launcher.json`: the default server (account URL, IPv4 address, bootstrap port, private saved-folder suffix).
+  Embedded; a `launcher.json` next to the exe overrides it. A generic build (`-p:GenericLauncher=true`) embeds
+  none and starts by asking for a server (see Servers).
 - `AionLauncher/icon.ico` (exe, window, taskbar, shortcuts) and `AionLauncher/emblem.png` (the rail): the KiskEmu
   icon (`web/src/shared/kiskemu-icon.svg`, also the client editor's icon) rendered with resvg; emblem.png is
   1024 px, the ico holds 16-256 px as PNG entries.
@@ -75,11 +76,38 @@ The session stays signed in for further plays; it signs out when the launcher cl
 Uninstall (the Play page, or Apps & features) removes the firewall rules, any hosts lines, the settings,
 the installed program with its shortcuts and (if chosen) the private copy.
 
+## Servers
+
+The launcher keeps a list of servers (`launcher-settings.json`), each with its own sign-in, kept session and
+chosen client version. A build with an embedded `launcher.json` adds that server once (an older launcher's
+sign-in and game copy move into the new layout then); a generic build has no server until the player adds one.
+
+- **Add a server**: the player types the account site's address (`world.example.com`, `host:port` or
+  `https://...`; without a port the launcher also tries 8780). The launcher reads `GET /api/launcher/config`
+  (no sign-in) and shows the server's name, account site and game address before it is added. A certificate
+  Windows does not trust (self-signed) is shown as its SHA-1 fingerprint, `AB:CD:...`; the player compares it
+  with the one the server's owner published, and the launcher pins it. A saved server whose certificate later
+  differs from its pin is refused.
+- **`kisklauncher://add?url=<account site>`** links open the installed launcher on that page with the address
+  filled in (the account site's "Already have KiskLauncher? Add this server" link). The installed exe registers
+  the scheme for the Windows user (`HKCU\Software\Classes\kisklauncher`); the uninstall removes it. A link
+  clicked while the launcher is open starts a second window.
+- At every start the launcher fetches the server's settings again: name, game address, bootstrap port and
+  client versions follow the server; the saved-folder suffix (the server's `savedDirSuffix`, else 32 letters
+  derived from the account address) and the pin never change once set.
+- Each private client version names its build by fingerprint (SHA-256 over the quick-check files' `path\0size\0sha256\n`
+  lines, `tools/launcher_build.py`). The embedded `supported-build.json` is used when it matches; another build's
+  reference comes from `GET /api/launcher/builds/<fingerprint>`, is checked against the fingerprint (and that
+  every path stays inside the game folder) and cached under `%LOCALAPPDATA%\A2CorePrivateuilds`. The server
+  sends only this checklist: the game files always come from the player's own Steam install or Steam account.
+- Game copies are per build and shared by every server on it (`AION2` for the embedded build, `AION2-<fingerprint>`
+  otherwise). The firewall rules allow one server address; playing on a server with another address re-points
+  them (one UAC prompt).
+
 ## Client versions
 
-The Play page has a **Client version** dropdown (dark theme, like the rest). The choice is stored as
-`selectedClientVersion` in the `launcher.json` next to the exe (created from the embedded one if missing;
-other keys are kept).
+The Play page has a **Client version** dropdown (dark theme, like the rest). The versions are the server's
+(`clientVersions` from `/api/launcher/config`); the choice is kept per server in the launcher's settings.
 
 - `2.0.6.0` (default): the launcher's private copy, checked against `supported-build.json`, with the
   firewall rules and the optional Client Editor patch paks, exactly as before.
@@ -115,6 +143,8 @@ used) download the same manifest.
 ```powershell
 dotnet run --project tests/Aion.Launcher.Checks
 dotnet publish launcher/AionLauncher -c Release -r win-x64 -o research/local/launcher-publish -p:DebugType=none
+# or a launcher for any KiskEmu server (no embedded launcher.json; the player adds servers):
+dotnet publish launcher/AionLauncher -c Release -r win-x64 -o research/local/launcher-generic -p:DebugType=none -p:GenericLauncher=true
 echo 0.4.1 > "research/local/launcher-publish/KiskLauncher.exe.version"
 scp "research/local/launcher-publish/KiskLauncher.exe" "research/local/launcher-publish/KiskLauncher.exe.version" root@<server>:/var/lib/aion/downloads/
 ```

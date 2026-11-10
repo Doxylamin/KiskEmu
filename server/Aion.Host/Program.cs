@@ -552,6 +552,10 @@ var registrationOpen = builder.Configuration.GetValue<bool?>("Aion:Accounts:Regi
 // changed setting needs no new web build.
 app.MapGet("/api/status", () => Results.Ok(new { accountsConfigured = accountsReady, registrationOpen = accountsReady && registrationOpen,
     launcherAvailable = downloads?.LauncherAvailable ?? false, gameReady = false, siteName = SiteName(app.Configuration) }));
+// KiskLauncher's server settings and the client build it checks against (one launcher build plays on any server): on the
+// host that serves the platform bootstrap, i.e. the auth host.
+if (accountsReady && platform.Port is { } launcherBootstrapPort)
+    LauncherEndpoints.Embedded()?.Map(app, () => SiteName(app.Configuration), network.PublicAddress, launcherBootstrapPort);
 if (accountsReady)
 {
     app.MapAccountEndpoints(registrationOpen);

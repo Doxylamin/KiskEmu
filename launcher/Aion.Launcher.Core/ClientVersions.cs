@@ -7,13 +7,16 @@ namespace Aion.Launcher;
 /// One client the launcher can start. "private": the launcher's own copy of the supported build
 /// (downloaded or linked, checked against supported-build.json). "steam": the player's own Steam
 /// install, used read-only in place (no file is written there; no pak patch, no firewall rules).
+/// <paramref name="Build"/>: a private version's build fingerprint (the server's /api/launcher/builds/{fingerprint});
+/// none means the build embedded in the launcher.
 /// </summary>
 public sealed record ClientVersion(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("kind")] string Kind,
     [property: JsonPropertyName("clientPath")] string? ClientPath = null,
-    [property: JsonPropertyName("launchArgs")] string[]? LaunchArgs = null)
+    [property: JsonPropertyName("launchArgs")] string[]? LaunchArgs = null,
+    [property: JsonPropertyName("build"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Build = null)
 {
     public const string PrivateKind = "private", SteamKind = "steam";
     public const string DefaultId = "2.0.6.0", SteamLatestId = "steam-latest";

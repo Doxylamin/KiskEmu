@@ -26,7 +26,11 @@ sealed class MainForm : Form
     static readonly string[] Steps = ["Sign in", "Get the game", "Install", "Play"];
     const int SignInStep = 0, GameStep = 1, InstallStep = 2, PlayStep = 3;
 
-    readonly Workflow workflow;
+    /// <summary>The saved server in use; null until the player adds one (a generic launcher's first start).</summary>
+    Workflow workflow;
+    readonly LauncherSettings settings;
+    /// <summary>A kisklauncher://add link the launcher was started with: shown once the launcher is ready.</summary>
+    string? pendingLink;
     SteamInstall? steam = Workflow.FindSteam();
     readonly Rail rail = new() { Dock = DockStyle.Left };
     readonly Label heading = new() { Dock = DockStyle.Top, Font = new Font("Segoe UI Semibold", 17F) };
@@ -46,11 +50,13 @@ sealed class MainForm : Form
 
     readonly bool uninstall;
 
-    public MainForm(Workflow workflow, bool uninstall = false)
+    public MainForm(LauncherSettings settings, bool uninstall = false, string? link = null)
     {
-        this.workflow = workflow;
+        this.settings = settings;
+        workflow = settings.Current is { } server ? new Workflow(server, settings) : null!;
         this.uninstall = uninstall;
-        Text = $"{workflow.Config.Name} {Install.Version}";
+        pendingLink = link;
+        Text = Title;
         // The exe's icon (icon.ico) in the title bar and taskbar.
         try { if (Environment.ProcessPath is { } exe) Icon = Icon.ExtractAssociatedIcon(exe); } catch (Exception error) when (error is ArgumentException or IOException) { }
         ClientSize = new Size(S(800), S(540));
@@ -83,12 +89,13 @@ sealed class MainForm : Form
             if (work is not null && MessageBox.Show(this, "Stop the current task and close?", Text, MessageBoxButtons.YesNo) == DialogResult.No) { e.Cancel = true; return; }
             work?.Cancel();
             // A kept session ("Keep me signed in") stays valid for the next start; otherwise the session ends here.
-            if (workflow.Account.SignedIn && !handingOver && workflow.Settings.Session() is null) Task.Run(() => workflow.Account.SignOutAsync()).Wait(TimeSpan.FromSeconds(3));
+            if (workflow is not null && workflow.Account.SignedIn && !handingOver && workflow.Profile.Session() is null) Task.Run(() => workflow.Account.SignOutAsync()).Wait(TimeSpan.FromSeconds(3));
         };
         Shown += async (_, _) => { Fit(); if (uninstall) ShowUninstall(); else await StartAsync(); };
     }
 
     int S(int pixels) => LogicalToDeviceUnits(pixels);
+    string Title => workflow is null ? $"{Install.Name} {Install.Version}" : $"{workflow.Config.Name} {Install.Version}";
     /// <summary>The width page controls take: the page's current width (so they follow the window), at least a readable minimum.</summary>
     int ContentWidth => Math.Max(S(320), stack.ClientSize.Width - S(8));
 
@@ -185,7 +192,7 @@ sealed class MainForm : Form
     async Task StartAsync()
     {
         if (Install.RunningLegacy) { await MoveFromLegacyAsync(); return; }
-        if (!Install.Running && !workflow.Settings.NoInstall) { ShowInstallOffer(); return; }
+        if (!Install.Running && !settings.NoInstall) { ShowInstallOffer(); return; }
         await ContinueAsync();
     }
 
@@ -211,8 +218,8 @@ sealed class MainForm : Form
         var install = AddButton("Install", primary: true, null, wide: true);
         AddLink("Run without installing", async () =>
         {
-            workflow.Settings.NoInstall = true;
-            workflow.Settings.Save();
+            settings.NoInstall = true;
+            settings.Save();
             await ContinueAsync();
         });
         AcceptButton = install;
@@ -222,7 +229,9 @@ sealed class MainForm : Form
             var ok = await RunAsync(async _ => { SetStatus("Installing…"); installed = await Task.Run(Install.Run); }, install);
             if (!ok) return;
             handingOver = true;
-            Process.Start(new ProcessStartInfo(installed!) { UseShellExecute = true, WorkingDirectory = Install.Folder });
+            var start = new ProcessStartInfo(installed!) { UseShellExecute = false, WorkingDirectory = Install.Folder };
+            if (pendingLink is not null) start.ArgumentList.Add(pendingLink);
+            Process.Start(start);
             Close();
         };
     }
@@ -243,42 +252,62 @@ sealed class MainForm : Form
     /// </summary>
     async Task<bool> UninstallAsync(params Control[] disable)
     {
-        var answer = workflow.Settings.InstallFolder is { } copy && Directory.Exists(copy)
-            ? MessageBox.Show(this, $"Also delete the private game copy ({copy})?\n\nYes deletes it (it can be set up again later). No keeps the files.",
-                Text, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question)
+        var copies = settings.Copies.Values.Select(c => c.Folder).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists).ToList();
+        var answer = copies.Count > 0
+            ? MessageBox.Show(this, $"Also delete the private game {(copies.Count == 1 ? "copy" : "copies")} ({string.Join(", ", copies)})?\n\n"
+                + "Yes deletes them (they can be set up again later). No keeps the files.", Text, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question)
             : DialogResult.No;
         if (answer == DialogResult.Cancel) return false;
         return await RunAsync(async _ =>
         {
             SetStatus("Removing the firewall rules (approve the Windows prompt)…");
             await Elevated.RunAsync("--cleanup");
-            if (answer == DialogResult.Yes && workflow.Settings.InstallFolder is { } folder && Directory.Exists(folder))
-            {
-                SetStatus("Deleting the private copy…");
-                await Task.Run(() => Directory.Delete(folder, recursive: true));
-            }
-            if (workflow.Account.SignedIn) await workflow.Account.SignOutAsync();
+            if (answer == DialogResult.Yes)
+                foreach (var folder in copies)
+                {
+                    SetStatus($"Deleting the private copy {folder}…");
+                    await Task.Run(() => Directory.Delete(folder, recursive: true));
+                }
+            if (workflow is not null && workflow.Account.SignedIn) await workflow.Account.SignOutAsync();
             LauncherSettings.Delete();
-            workflow.Settings.InstallFolder = null;
-            workflow.Settings.VerifiedStamp = null;
-            workflow.Settings.SetSession(null, null);
+            settings.Copies.Clear();
+            settings.Servers.Clear();
             if (Install.Present || Install.Running) { SetStatus("Removing the program…"); Install.Remove(); }
             SetStatus("Removed.");
         }, disable);
     }
 
-    /// <summary>A kept session continues without the sign-in page; then the program looks for its own update.</summary>
+    /// <summary>
+    /// A kisklauncher:// link or no saved server leads to adding one; otherwise the server's current settings and build
+    /// are fetched, a kept session continues without the sign-in page, and the program looks for its own update.
+    /// </summary>
     async Task ContinueAsync()
     {
-        if (workflow.Settings.Session() is { } saved)
+        if (pendingLink is { } link)
+        {
+            pendingLink = null;
+            if (ServerSetup.AddressFromLink(link) is { } address) { ShowAddServer(address); return; }
+        }
+        if (workflow is null) { ShowAddServer(); return; }
+        Page(SignInStep, $"Connecting to {workflow.Config.Name}", null);
+        SetStatus("Getting the server's settings…");
+        if (!await RunAsync(ct => workflow.PrepareAsync(ct)))
+        {
+            AddButton("Try again", primary: true, async () => await ContinueAsync());
+            AddLink("Choose another server", ShowServers);
+            return;
+        }
+        Text = Title;
+        rail.Invalidate();
+        if (workflow.Profile.Session() is { } saved)
         {
             Page(SignInStep, "Signing in", null);
-            SetStatus($"Continuing as {workflow.Settings.Username}…");
+            SetStatus($"Continuing as {workflow.Profile.Username} on {workflow.Config.Name}…");
             var resumed = false;
             var ok = await RunAsync(async ct => resumed = await workflow.Account.ResumeAsync(saved, ct));
             if (ok && !resumed)
             {
-                workflow.Settings.SetSession(null, null);
+                workflow.Profile.SetSession(null, null);
                 workflow.Settings.Save();
                 ShowSignIn("Your saved sign-in has ended. Sign in again.");
                 return;
@@ -317,14 +346,15 @@ sealed class MainForm : Form
 
     void ShowSignIn(string? message = null)
     {
-        Page(SignInStep, "Sign in", "Use the account you were given for this server.");
+        Page(SignInStep, "Sign in", $"Sign in with your account on {workflow.Config.Name}.");
         AddLabel("Username");
-        var username = AddInput(); username.Text = workflow.Settings.Username ?? "";
+        var username = AddInput(); username.Text = workflow.Profile.Username ?? "";
         AddLabel("Password");
         var password = AddInput(password: true);
-        var keep = AddCheck("Keep me signed in on this PC", workflow.Settings.KeepSignedIn);
+        var keep = AddCheck("Keep me signed in on this PC", workflow.Profile.KeepSignedIn);
         var signIn = AddButton("Sign in", primary: true, null, wide: true);
         AddLink("Forgot your password or need help? Open the account page", () => Open(workflow.Config.AccountUrl));
+        AddLink($"Not your server? Choose or add another ({settings.Servers.Count} saved)", ShowServers);
         AcceptButton = signIn;
         ActiveControl = username.Text.Length > 0 ? password : username;
         if (message is not null) SetStatus(message, error: true);
@@ -348,9 +378,9 @@ sealed class MainForm : Form
 
     void SignedIn(string username, bool keep)
     {
-        workflow.Settings.Username = username;
-        workflow.Settings.KeepSignedIn = keep;
-        workflow.Settings.SetSession(keep ? workflow.Account.Token : null, workflow.Account.ExpiresAt);
+        workflow.Profile.Username = username;
+        workflow.Profile.KeepSignedIn = keep;
+        workflow.Profile.SetSession(keep ? workflow.Account.Token : null, workflow.Account.ExpiresAt);
         workflow.Settings.Save();
     }
 
@@ -441,6 +471,115 @@ sealed class MainForm : Form
         handingOver = true;
         Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe)! });
         Close();
+    }
+
+    // ---------- Servers ----------
+
+    /// <summary>The saved servers: play on another one, add one, or remove the current one.</summary>
+    void ShowServers()
+    {
+        Page(SignInStep, "Servers", "Each server keeps its own sign-in and settings. Servers on the same game version share one game copy.");
+        foreach (var server in settings.Servers.ToList())
+        {
+            var current = workflow is not null && server.Url.Equals(workflow.Config.AccountUrl, StringComparison.OrdinalIgnoreCase);
+            var button = AddButton($"{server.Config.Name}   ·   {new Uri(server.Url).Authority}" + (current ? "   (current)" : ""), primary: false, async () => await SwitchToAsync(server), wide: true);
+            button.TextAlign = ContentAlignment.MiddleLeft;
+            button.Margin = new Padding(0, 0, 0, S(6));
+        }
+        AddButton("Add a server", primary: settings.Servers.Count == 0, () => { ShowAddServer(); return Task.CompletedTask; });
+        if (workflow is not null)
+            AddLink($"Remove {workflow.Config.Name} from this list", async () =>
+            {
+                if (MessageBox.Show(this, $"Remove {workflow.Config.Name} from {Install.Name}?\n\nYour account there is not touched; you can add the server again later. "
+                    + "Game copies stay.", Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+                if (workflow.Account.SignedIn) await workflow.Account.SignOutAsync();
+                settings.Servers.RemoveAll(s => s.Url.Equals(workflow.Config.AccountUrl, StringComparison.OrdinalIgnoreCase));
+                settings.CurrentServer = settings.Servers.FirstOrDefault()?.Url;
+                settings.Save();
+                workflow = settings.Current is { } next ? new Workflow(next, settings) : null!;
+                Text = Title;
+                await ContinueAsync();
+            });
+    }
+
+    /// <summary>The player types the server's address (or a kisklauncher:// link filled it in); the server is shown before it is added.</summary>
+    void ShowAddServer(string? address = null, string? message = null)
+    {
+        Page(SignInStep, "Add a server", "Enter the address of the server's account site, as its owner gave it to you "
+            + "(for example world.example.com or https://world.example.com:8780).");
+        AddLabel("Server address");
+        var input = AddInput(); input.Text = address ?? "";
+        var connect = AddButton("Continue", primary: true, null, wide: true);
+        if (workflow is not null) AddLink("Back", async () => await ContinueAsync());
+        AcceptButton = connect;
+        ActiveControl = input;
+        if (message is not null) SetStatus(message, error: true);
+        connect.Click += async (_, _) =>
+        {
+            ServerProbe? probe = null;
+            var ok = await RunAsync(async ct =>
+            {
+                SetStatus("Looking for the server…");
+                probe = await ServerSetup.ProbeAsync(input.Text, null, ct);
+            }, input, connect);
+            if (ok) ShowConfirmServer(probe!);
+        };
+    }
+
+    /// <summary>What the server says about itself, and its certificate's fingerprint when Windows does not trust it: the player decides.</summary>
+    void ShowConfirmServer(ServerProbe probe)
+    {
+        var known = settings.Find(probe.AccountUrl.GetLeftPart(UriPartial.Authority));
+        Page(SignInStep, known is null ? $"Add {probe.Reply.Name}?" : $"{probe.Reply.Name} is already saved", null);
+        AddLabel($"Account site: {probe.AccountUrl.GetLeftPart(UriPartial.Authority)}");
+        AddLabel($"Game server: {probe.Reply.ServerAddress}", muted: true);
+        var pin = known?.Config.CertificateThumbprint;
+        if (probe.UntrustedThumbprint is { } thumbprint)
+        {
+            if (known is not null && pin is not null && !pin.Equals(thumbprint, StringComparison.OrdinalIgnoreCase))
+            {
+                AddLabel("This server's certificate is not the one saved for it. Someone may be pretending to be the server, "
+                    + "or its owner replaced the certificate. Ask the server's owner before you continue.").ForeColor = Danger;
+                AddButton("Back", primary: true, async () => await ContinueAsync());
+                return;
+            }
+            AddLabel("Windows does not know this server's certificate (the server made its own). Add the server only if its owner "
+                + "gave you this fingerprint and it matches exactly:").ForeColor = Danger;
+            AddLabel(ServerSetup.Readable(thumbprint)).Font = new Font("Consolas", 10F);
+        }
+        else if (known?.Config.CertificateThumbprint is not null)
+            AddLabel("The server now has a certificate Windows trusts.", muted: true);
+        var add = AddButton(known is null ? "Add server" : "Use this server", primary: true, null, wide: true);
+        AddButton("Cancel", primary: false, async () => { if (workflow is null) ShowAddServer(); else await ContinueAsync(); });
+        AcceptButton = add;
+        add.Click += async (_, _) =>
+        {
+            ServerEntry entry;
+            try
+            {
+                var config = ServerSetup.Apply(known?.Config, probe.AccountUrl, probe.Reply, probe.UntrustedThumbprint);
+                // A trusted certificate needs no pin; an untrusted one is pinned to what the player confirmed.
+                config = config with { CertificateThumbprint = probe.UntrustedThumbprint };
+                entry = known ?? new ServerEntry { Config = config };
+                entry.Config = config;
+            }
+            catch (InvalidDataException error) { SetStatus("The server's settings are not usable: " + error.Message, error: true); return; }
+            if (known is null) settings.Servers.Add(entry);
+            await SwitchToAsync(entry);
+        };
+    }
+
+    /// <summary>Plays on another saved server: its own sign-in, version and settings; this server's session stays kept or ends.</summary>
+    async Task SwitchToAsync(ServerEntry server)
+    {
+        if (workflow is not null && workflow.Account.SignedIn && workflow.Profile.Session() is null && workflow.Profile != server)
+            await workflow.Account.SignOutAsync();
+        settings.CurrentServer = server.Url;
+        settings.Save();
+        if (workflow?.Profile != server) workflow = new Workflow(server, settings);
+        Text = Title;
+        rail.Invalidate();
+        await ContinueAsync();
     }
 
     // ---------- Get the game ----------
@@ -584,7 +723,7 @@ sealed class MainForm : Form
     void ShowInstall(ClientSource source)
     {
         Page(InstallStep, "Installing", $"Found the server's version in {source.Description}. KiskLauncher puts it in its own folder "
-            + $"({Workflow.TargetFor(source.Folder)}) and adds firewall rules so the game can reach only this server.");
+            + $"({workflow.TargetFor(source.Folder)}) and adds firewall rules so the game can reach only this server.");
         AddLabel("Windows asks for permission once at the end: choose Yes.", muted: true);
         async Task Install()
         {
@@ -600,9 +739,11 @@ sealed class MainForm : Form
     {
         Page(PlayStep, "Ready to play", null);
         var who = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, S(14)) };
-        var signedIn = new Label { AutoSize = true, ForeColor = Muted, Text = $"Signed in as {workflow.Settings.Username}.", Margin = new Padding(0, S(2), S(6), 0) };
-        var signOut = new LinkLabel { AutoSize = true, Text = "Sign out", LinkColor = Accent, ActiveLinkColor = Accent, Margin = new Padding(0, S(2), 0, 0) };
-        who.Controls.AddRange([signedIn, signOut]);
+        var signedIn = new Label { AutoSize = true, ForeColor = Muted, Text = $"Signed in as {workflow.Profile.Username} on {workflow.Config.Name}.", Margin = new Padding(0, S(2), S(6), 0) };
+        var signOut = new LinkLabel { AutoSize = true, Text = "Sign out", LinkColor = Accent, ActiveLinkColor = Accent, Margin = new Padding(0, S(2), S(10), 0) };
+        var servers = new LinkLabel { AutoSize = true, Text = "Change server", LinkColor = Accent, ActiveLinkColor = Accent, Margin = new Padding(0, S(2), 0, 0) };
+        servers.LinkClicked += (_, _) => ShowServers();
+        who.Controls.AddRange([signedIn, signOut, servers]);
         stack.Controls.Add(who);
         AddLabel("Client version", muted: true, size: 9F).Margin = new Padding(0, 0, 0, S(4));
         var versions = ClientVersions.All(workflow.Config);
@@ -618,20 +759,19 @@ sealed class MainForm : Form
         void DescribeVersion()
         {
             var version = workflow.Version;
-            var folder = version.IsSteam ? ClientVersions.SteamFolder(version, workflow.Config, steam ??= Workflow.FindSteam()) : version.ClientPath ?? workflow.Settings.InstallFolder;
+            var folder = version.IsSteam ? ClientVersions.SteamFolder(version, workflow.Config, steam ??= Workflow.FindSteam()) : version.ClientPath ?? workflow.InstallFolder;
             versionNote.Text = version.IsSteam
-                ? $"Game files: {folder ?? "Steam copy not found (set steamClientPath in launcher.json)"}. Used as-is: not changed, no patch paks; the server supports 2.0.6.0, so a newer client may not connect."
+                ? $"Game files: {folder ?? "Steam copy not found (set steamClientPath in launcher.json)"}. Used as-is: not changed, no patch paks; the server supports {versions.FirstOrDefault(v => !v.IsSteam)?.Name ?? "another version"}, so a newer client may not connect."
                 : $"Game files: {folder}";
         }
         DescribeVersion();
-        versionBox.SelectedIndexChanged += (_, _) =>
+        versionBox.SelectedIndexChanged += async (_, _) =>
         {
-            workflow.Version = versions[versionBox.SelectedIndex];
-            // Saved with the player's settings: a launcher.json written next to the exe would override the embedded
-            // server config, so later self-updates could no longer move accountUrl, serverAddress or the pin.
-            workflow.Settings.SelectedClientVersion = workflow.Version.Id;
-            try { workflow.Settings.Save(); }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { SetStatus("The choice was not saved: " + error.Message, true); }
+            // Kept per server; another private version may need its build reference from the server, and its own copy.
+            var chosen = versions[versionBox.SelectedIndex];
+            if (chosen == workflow.Version) return;
+            if (!await RunAsync(ct => workflow.ChooseVersionAsync(chosen, ct), versionBox)) return;
+            if (!workflow.Version.IsSteam && !workflow.Installed) { await NextAsync(); return; }
             DescribeVersion();
         };
         var patchPaks = AddCheck("Apply client patch paks (z_A2Core_Patch-Windows_P) before launch", workflow.Settings.AllowClientPatchPaks);
@@ -647,12 +787,12 @@ sealed class MainForm : Form
         foreach (var button in new[] { verify, repair, uninstall }) { button.Width = S(150); button.Height = S(34); }
         tools.Controls.AddRange([verify, repair, uninstall]);
         stack.Controls.Add(tools);
-        Control[] all = [play, verify, repair, uninstall, signOut, versionBox];
+        Control[] all = [play, verify, repair, uninstall, signOut, servers, versionBox];
 
         signOut.LinkClicked += async (_, _) =>
         {
             await workflow.Account.SignOutAsync();
-            workflow.Settings.SetSession(null, null);
+            workflow.Profile.SetSession(null, null);
             workflow.Settings.Save();
             ShowSignIn();
         };
@@ -668,7 +808,7 @@ sealed class MainForm : Form
                 WindowState = FormWindowState.Minimized;
                 await game.WaitForExitAsync(CancellationToken.None);
                 // The client may hand over to child processes; wait for the whole copy to close.
-                while (Elevated.GameRunning(workflow.GameFolder ?? workflow.Settings.InstallFolder!)) await Task.Delay(2000, CancellationToken.None);
+                while (Elevated.GameRunning(workflow.GameFolder ?? workflow.InstallFolder!)) await Task.Delay(2000, CancellationToken.None);
                 WindowState = FormWindowState.Normal;
                 SetStatus("Game closed.");
             }, all);
@@ -837,10 +977,10 @@ sealed class MainForm : Form
         work = cancel;
         try { await action(cancel.Token); return true; }
         catch (OperationCanceledException) { SetStatus("Cancelled."); return false; }
-        catch (AccountException error) when (!workflow.Account.SignedIn && step != SignInStep)
+        catch (AccountException error) when (workflow is not null && !workflow.Account.SignedIn && step != SignInStep)
         {
             // The server ended the session (or it was signed out elsewhere): a kept one is no use any more.
-            workflow.Settings.SetSession(null, null);
+            workflow.Profile.SetSession(null, null);
             workflow.Settings.Save();
             ShowSignIn(error.Message);
             return false;
@@ -900,7 +1040,7 @@ sealed class MainForm : Form
             g.DrawImage(Emblem, new Rectangle(S(24), S(18), S(72), S(72)));
         }
         TextRenderer.DrawText(g, Game, new Font("Segoe UI Black", 15F), new Point(S(22), textTop), Accent);
-        TextRenderer.DrawText(g, workflow.Config.Name, new Font("Segoe UI Semibold", 11F), new Rectangle(S(24), textTop + S(34), rail.Width - S(36), S(44)), Text1,
+        TextRenderer.DrawText(g, workflow?.Config.Name ?? "No server yet", new Font("Segoe UI Semibold", 11F), new Rectangle(S(24), textTop + S(34), rail.Width - S(36), S(44)), Text1,
             TextFormatFlags.WordBreak);
         TextRenderer.DrawText(g, "v" + Install.Version, new Font("Segoe UI", 8.5F), new Point(S(24), textTop + S(62)), Muted);
         var top = RailStepsTop; var gap = RailStepGap; var size = S(28); var x = S(24);

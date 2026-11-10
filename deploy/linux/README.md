@@ -255,6 +255,14 @@ the newest launch requested from its own IP address (players sharing one address
 CANDIDATE: that the client keeps the path of ConfigurationServerUrl (the api_gate path is
 observed to be kept). The address pairing above covers the case where it does not.
 
+KiskLauncher sets itself up from the account site: `GET /api/launcher/config` (public) gives the site's name,
+`Network:PublicAddress`, the bootstrap port and the client versions, each private one naming its build by
+fingerprint; `GET /api/launcher/builds/<fingerprint>` serves that build's file checklist (`launcher/supported-build.json`,
+built into the host). Optional settings: `Aion:Launcher:ClientVersion` (the version's name, default `2.0.6.0`),
+`Aion:Launcher:AllowSteam` (offer "Official latest (Steam)", default true), `Aion:Launcher:SavedDirSuffix` (the
+client's private saved folder; unset, each launcher derives one from the account site's address). Players add the
+server by its account address, or with the account page's `kisklauncher://add` link.
+
 Players also need hosts-file lines pointing the six NC hostnames at this server's address
 (`research/client-installer.md`); the installer/launcher sets those up.
 

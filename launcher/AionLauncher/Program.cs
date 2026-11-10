@@ -12,15 +12,22 @@ static class Program
         // After a self-update: the previous exe (still closing) and any unfinished download.
         if (Environment.ProcessPath is { } exe) _ = LauncherUpdate.RemoveLeftoversAsync(exe);
         ApplicationConfiguration.Initialize();
-        LauncherConfig config;
-        try { config = LauncherConfig.Load(Path.Combine(AppContext.BaseDirectory, "launcher.json")); }
+        // The server this build was made for (launcher.json next to the exe, else the embedded one); a generic build has none.
+        LauncherConfig? defaultServer;
+        try { defaultServer = LauncherConfig.LoadDefault(Path.Combine(AppContext.BaseDirectory, "launcher.json")); }
         catch (Exception error) when (error is InvalidDataException or System.Text.Json.JsonException)
         {
-            MessageBox.Show("launcher.json is invalid: " + error.Message, "Launcher", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show("launcher.json is invalid: " + error.Message, Install.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
-        // "--uninstall" is what the Apps & features entry runs.
-        Application.Run(new MainForm(new Workflow(config, LauncherSettings.Load()), uninstall: args is ["--uninstall"]));
+        var settings = LauncherSettings.Load();
+        if (settings.Migrate(defaultServer, SupportedBuild.Embedded.Fingerprint))
+            try { settings.Save(); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        if (Install.Running) Install.RegisterLinks();
+        // "--uninstall" is what the Apps & features entry runs; a kisklauncher:// link is what an account site's button opens.
+        var link = args.FirstOrDefault(a => a.StartsWith(ServerSetup.LinkScheme + ":", StringComparison.OrdinalIgnoreCase));
+        Application.Run(new MainForm(settings, uninstall: args is ["--uninstall"], link));
         return 0;
     }
 }
