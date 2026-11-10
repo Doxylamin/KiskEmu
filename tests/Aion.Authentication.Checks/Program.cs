@@ -124,15 +124,24 @@ Check(await auth.RevokeSessionsAsync(managed.Token),"revoke all sessions");
 Check(await auth.AuthenticateAsync(otherSession.Token,default) is null,"other device revoked");
 await Execute($"INSERT INTO auth.account_roles VALUES('{manager.AccountId}','admin')");
 managed=(await auth.SignInAsync("managed",password+"new",default))!;
-// Staff roles: admins only, through auth.set_staff_role, audited.
+// Staff roles: admins only, through auth.set_staff_role with a staff session (migration 098), audited.
+Check(!await auth.SetStaffRoleAsync(manager.Token,managed.AccountId,"gamemaster",true),"a player session of an admin cannot grant roles");
+Check(!await auth.DisableAccountAsync(manager.Token,managed.AccountId),"a player session of an admin cannot disable accounts");
+Check(await ((Aion.Application.Authentication.IStaffSessions)auth).AuthenticateAsync(manager.Token,default) is null,"a player session is no staff session");
+// The staff sign-in needs an authenticator (StaffSessionEndpoints); here the session row stands in for it.
+await Execute($"UPDATE auth.sessions SET kind='staff' WHERE account_id='{manager.AccountId}'");
+Check((await ((Aion.Application.Authentication.IStaffSessions)auth).AuthenticateAsync(manager.Token,default))?.AccountId==manager.AccountId,"staff session of a staff account");
+Check(await auth.AuthenticateAsync(manager.Token,default) is not null,"a staff session also works the account API");
 Check(!await auth.SetStaffRoleAsync(managed.Token,managed.AccountId,"admin",true),"ordinary user cannot grant roles");
 Check(await auth.SetStaffRoleAsync(manager.Token,managed.AccountId,"gamemaster",true),"admin grants gamemaster");
 Check(await Scalar<string>($"SELECT string_agg(role,',') FROM auth.account_roles WHERE account_id='{managed.AccountId}'")=="gamemaster","granted role stored");
 Check(!await auth.SetStaffRoleAsync(manager.Token,managed.AccountId,"gm",true),"retired gm role rejected");
 Check(!await auth.SetStaffRoleAsync(manager.Token,manager.AccountId,"admin",false),"admin cannot remove own admin role");
+Check(await auth.SetStaffRoleAsync(manager.Token,managed.AccountId,"moderator",true),"admin grants moderator");
+Check(await auth.SetStaffRoleAsync(manager.Token,managed.AccountId,"moderator",false),"admin revokes moderator");
 Check(await auth.SetStaffRoleAsync(manager.Token,managed.AccountId,"gamemaster",false),"admin revokes gamemaster");
 Check(await Scalar<long>($"SELECT count(*) FROM auth.account_roles WHERE account_id='{managed.AccountId}'")==0,"revoked role removed");
-Check(await Scalar<long>("SELECT count(*) FROM audit.events WHERE action IN ('role_granted','role_revoked')")==2,"role changes audited");
+Check(await Scalar<long>("SELECT count(*) FROM audit.events WHERE action IN ('role_granted','role_revoked')")==4,"role changes audited");
 await Denied(authSource, $"INSERT INTO auth.account_roles VALUES('{managed.AccountId}','admin')", "auth role cannot write roles directly");
 Check(!await auth.DisableAccountAsync(manager.Token,manager.AccountId),"self disable prevented");
 Check(await auth.DisableAccountAsync(manager.Token,managed.AccountId),"admin disables target");

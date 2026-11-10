@@ -325,3 +325,4 @@ code { padding: 1px 5px; border-radius: 4px; background: var(--panel-2); font-si
   .data-table td { border: 0; padding: 3px 14px; }
   .data-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: var(--faint); }
 }
+.break { word-break: break-all; overflow-wrap: anywhere; }

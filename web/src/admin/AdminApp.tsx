@@ -4,9 +4,9 @@
 // session); otherwise it lives in sessionStorage until the tab closes. The world picker chooses the world server the
 // world tools act on (live map, players, characters, rewards, maintenance, announcements, server health, restart): the auth host forwards
 // those requests (?world=…) to that world server; everything else is the realm's.
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
-import { Button, Icon, Status, type StatusMessage } from '../ui/components';
+import { Button, Icon, type StatusMessage } from '../ui/components';
 import { readSession, writeSession, type SavedSession } from '../ui/session';
 import { Activity } from './Activity';
 import { Broadcast } from './Broadcast';
@@ -20,6 +20,7 @@ import { Rewards } from './Rewards';
 import { Shop } from './Shop';
 import { ServerView } from './Server';
 import { Worlds } from './Worlds';
+import { SignIn } from './SignIn';
 import { ERRORS, can, type StaffProfile, type WorldList } from './types';
 
 export function describe(error: unknown): string {
@@ -113,7 +114,7 @@ export function AdminApp() {
 
   async function logout() {
     await api('/api/admin/wardrobe-access', { method: 'DELETE' }).catch(() => {});
-    if (session) await api('/api/accounts/logout', { method: 'POST', token: session.token }).catch(() => {});
+    if (session) await api('/api/admin/session', { method: 'DELETE', token: session.token }).catch(() => {});
     signedOut('Signed out.');
   }
 
@@ -186,87 +187,5 @@ export function AdminApp() {
       </div>
       <NewAccountDialog open={creating} call={call} onClose={() => setCreating(false)} />
     </div>
-  );
-}
-
-function SignIn({ message, onSignedIn, onMessage }:
-  { message: StatusMessage | null; onSignedIn: (s: Session, remember: boolean) => void; onMessage: (m: StatusMessage) => void }) {
-  const [busy, setBusy] = useState(false);
-  // Accounts with an authenticator answer the password with a challenge; the code finishes the sign-in.
-  const [challenge, setChallenge] = useState<{ token: string; username: string; remember: boolean } | null>(null);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const username = challenge?.username ?? String(data.get('username'));
-    const remember = challenge?.remember ?? data.get('remember') === 'on';
-    setBusy(true);
-    try {
-      let token: string;
-      if (challenge) {
-        const code = String(data.get('code') ?? '').trim();
-        const isCode = /^[0-9]{6}$/.test(code);
-        ({ token } = await api<{ token: string }>('/api/accounts/login/totp', {
-          method: 'POST', body: { challengeToken: challenge.token, code: isCode ? code : null, recoveryCode: isCode ? null : code.toUpperCase() },
-        }));
-        setChallenge(null);
-      } else {
-        const reply = await api<{ token?: string; requiresTotp?: boolean; challengeToken?: string }>('/api/accounts/login',
-          { method: 'POST', body: { username, password: data.get('password'), remember } });
-        if (reply.requiresTotp && reply.challengeToken) { setChallenge({ token: reply.challengeToken, username, remember }); return; }
-        if (!reply.token) throw new Error('The server sent no session.');
-        token = reply.token;
-      }
-      try {
-        const profile = await api<StaffProfile>('/api/admin/me', { token });
-        onSignedIn({ token, username, profile }, remember);
-      } catch (error) {
-        await api('/api/accounts/logout', { method: 'POST', token }).catch(() => {});
-        onMessage({ text: error instanceof ApiError && error.code === 'forbidden' ? ERRORS.forbidden : describe(error), kind: 'error' });
-      }
-    } catch (error) {
-      if (challenge) setChallenge(null);
-      onMessage({ text: error instanceof ApiError && error.status === 401 ? 'Sign-in failed. Check your details.' : describe(error), kind: 'error' });
-    } finally {
-      setBusy(false);
-      const password = form.elements.namedItem('password');
-      if (password instanceof HTMLInputElement) password.value = '';
-    }
-  }
-  return (
-    <main className="signin">
-      <form className="card card-body stack signin-card" onSubmit={submit}>
-        <div className="brand brand-center">
-          <span className="brand-mark" aria-hidden="true" />
-        </div>
-        <div className="stack-sm center">
-          <h2>Staff sign-in</h2>
-          <p className="muted">Use an account with a Gamemaster, Moderator or Administrator role.</p>
-        </div>
-        {challenge ? (
-          <div className="field">
-            <label htmlFor="code">Authenticator code or recovery code</label>
-            <input id="code" name="code" className="input" autoComplete="one-time-code" required maxLength={32} autoFocus />
-          </div>
-        ) : (
-          <>
-            <div className="field">
-              <label htmlFor="username">Username</label>
-              <input id="username" name="username" className="input" autoComplete="username" required maxLength={32} />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input id="password" name="password" type="password" className="input" autoComplete="current-password" required maxLength={256} />
-            </div>
-            <label className="check">
-              <input type="checkbox" name="remember" defaultChecked />
-              <span>Keep me signed in on this computer (30 days)</span>
-            </label>
-          </>
-        )}
-        <Button type="submit" variant="primary" block busy={busy}>{challenge ? 'Verify' : 'Sign in'}</Button>
-        <Status message={message} />
-      </form>
-    </main>
   );
 }

@@ -125,15 +125,26 @@ public sealed partial class PostgresAccountAuthentication : IAccountAuthenticati
                 ? hasher.HashPassword(new(account), password) : storedHash);
             await reset.ExecuteNonQueryAsync(cancellationToken);
         }
+        var created = await InsertSessionAsync(connection, transaction, account, lifetime, SessionAccount, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return created;
+    }
+
+    /// <summary>Session kinds (auth.sessions.kind, migration 098): player sessions and staff dashboard sessions.</summary>
+    const string SessionAccount = "account", SessionStaff = "staff";
+
+    static async Task<AccountSession> InsertSessionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid account, TimeSpan lifetime,
+        string kind, CancellationToken ct)
+    {
         var token = Token();
         await using var session = new NpgsqlCommand("""
-            INSERT INTO auth.sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+make_interval(secs=>$3)) RETURNING expires_at
+            INSERT INTO auth.sessions(token_hash,account_id,expires_at,kind) VALUES($1,$2,now()+make_interval(secs=>$3),$4) RETURNING expires_at
             """, connection, transaction);
         session.Parameters.AddWithValue(Hash(token));
         session.Parameters.AddWithValue(account);
         session.Parameters.AddWithValue(lifetime.TotalSeconds);
-        var expires = (DateTime)(await session.ExecuteScalarAsync(cancellationToken))!;
-        await transaction.CommitAsync(cancellationToken);
+        session.Parameters.AddWithValue(kind);
+        var expires = (DateTime)(await session.ExecuteScalarAsync(ct))!;
         return new(token, account, new DateTimeOffset(expires));
     }
 

@@ -145,24 +145,41 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
         return false;
     }
 
-    public async Task<TotpLoginChallenge?> BeginLoginAsync(Guid accountId, TimeSpan? sessionLifetime, CancellationToken ct)
+    public async Task<TotpLoginChallenge?> BeginLoginAsync(Guid accountId, TimeSpan? sessionLifetime, CancellationToken ct) =>
+        await IsEnabledAsync(accountId, ct) ? await BeginChallengeAsync(accountId, sessionLifetime, ChallengeAccount, TimeSpan.FromMinutes(5), ct) : null;
+
+    /// <summary>
+    /// A sign-in challenge (auth.totp_login_challenges): purpose 'account' (player sign-in), 'staff' (staff sign-in, the
+    /// code step) or 'staff_enroll' (staff sign-in that sets up an authenticator first; migration 098).
+    /// </summary>
+    async Task<TotpLoginChallenge?> BeginChallengeAsync(Guid accountId, TimeSpan? sessionLifetime, string purpose, TimeSpan valid, CancellationToken ct)
     {
-        if (!await IsEnabledAsync(accountId, ct)) return null;
         var token = Token();
         await using var command = source.CreateCommand("""
-            INSERT INTO auth.totp_login_challenges(token_hash,account_id,expires_at,session_seconds)
-            VALUES($1,$2,now()+interval '5 minutes',$3)
+            INSERT INTO auth.totp_login_challenges(token_hash,account_id,expires_at,session_seconds,purpose)
+            VALUES($1,$2,now()+make_interval(secs=>$4),$3,$5)
             ON CONFLICT (token_hash) DO NOTHING RETURNING expires_at
             """);
         command.Parameters.AddWithValue(Hash(token));
         command.Parameters.AddWithValue(accountId);
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer,
             Value = sessionLifetime is { } life ? (object)(int)SessionLifetime(life).TotalSeconds : DBNull.Value });
+        command.Parameters.AddWithValue(valid.TotalSeconds);
+        command.Parameters.AddWithValue(purpose);
         var expires = await command.ExecuteScalarAsync(ct);
         return expires is DateTime date ? new(token, new DateTimeOffset(date)) : null;
     }
 
-    public async Task<AccountSession?> CompleteLoginAsync(string challengeToken, string? code, string? recoveryCode, CancellationToken ct)
+    const string ChallengeAccount = "account", ChallengeStaff = "staff", ChallengeStaffEnroll = "staff_enroll";
+
+    public Task<AccountSession?> CompleteLoginAsync(string challengeToken, string? code, string? recoveryCode, CancellationToken ct) =>
+        CompleteChallengeAsync(challengeToken, code, recoveryCode, ChallengeAccount, ct);
+
+    /// <summary>
+    /// The code step of a challenge of this purpose: a session ('staff' purpose: a staff session, and only while the account
+    /// still holds a staff role). Five wrong codes lock the challenge for five minutes.
+    /// </summary>
+    async Task<AccountSession?> CompleteChallengeAsync(string challengeToken, string? code, string? recoveryCode, string purpose, CancellationToken ct)
     {
         if (!ValidToken(challengeToken)) return null;
         await using var connection = await source.OpenConnectionAsync(ct);
@@ -173,10 +190,11 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
         TimeSpan lifetime;
         await using (var query = new NpgsqlCommand("""
             SELECT account_id, failed_attempts, locked_until, session_seconds FROM auth.totp_login_challenges
-            WHERE token_hash=$1 AND expires_at>now() FOR UPDATE
+            WHERE token_hash=$1 AND expires_at>now() AND purpose=$2 FOR UPDATE
             """, connection, transaction))
         {
             query.Parameters.AddWithValue(Hash(challengeToken));
+            query.Parameters.AddWithValue(purpose);
             await using var reader = await query.ExecuteReaderAsync(ct);
             if (!await reader.ReadAsync(ct)) return null;
             account = reader.GetGuid(0);
@@ -185,6 +203,7 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
             lifetime = reader.IsDBNull(3) ? DefaultSessionLifetime : SessionLifetime(TimeSpan.FromSeconds(reader.GetInt32(3)));
         }
         if (lockedUntil is { } until && until > DateTimeOffset.UtcNow) return null;
+        if (purpose == ChallengeStaff && !await IsStaffAsync(connection, transaction, account, ct)) return null;
         if (!await VerifyForAccountAsync(account, code, recoveryCode, ct))
         {
             await using var fail = new NpgsqlCommand("""
@@ -204,18 +223,9 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
             done.Parameters.AddWithValue(Hash(challengeToken));
             await done.ExecuteNonQueryAsync(ct);
         }
-        var sessionToken = Token();
-        await using (var session = new NpgsqlCommand("""
-            INSERT INTO auth.sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+make_interval(secs=>$3)) RETURNING expires_at
-            """, connection, transaction))
-        {
-            session.Parameters.AddWithValue(Hash(sessionToken));
-            session.Parameters.AddWithValue(account);
-            session.Parameters.AddWithValue(lifetime.TotalSeconds);
-            var expires = (DateTime)(await session.ExecuteScalarAsync(ct))!;
-            await transaction.CommitAsync(ct);
-            return new(sessionToken, account, new DateTimeOffset(expires));
-        }
+        var created = await InsertSessionAsync(connection, transaction, account, lifetime, purpose == ChallengeStaff ? SessionStaff : SessionAccount, ct);
+        await transaction.CommitAsync(ct);
+        return created;
     }
 
     public async Task<bool> AdminResetAsync(Guid targetAccountId, CancellationToken ct)

@@ -107,6 +107,8 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddSingleton<IClientHandoff>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IAccountManagement>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<ITotpAuthentication>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
+    // Staff dashboard sessions: password, staff role and authenticator code (migration 098).
+    builder.Services.AddSingleton<IStaffSessions>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IPlatformSecondaryAuth>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IWorldSessions>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddHostedService<AuthenticationCleanup>();
@@ -467,6 +469,8 @@ if (platform.Port is { } platformPort)
     app.UsePlatformBootstrap(platformPort, platformResponses!, platform.RequestLog, network, accountPageBase);
 }
 app.UseRateLimiter();
+// Auth host: every /api/admin request needs a staff session (before the world proxy below).
+Aion.Host.Authentication.StaffSessionEndpoints.UseStaffSessions(app);
 // Auth host: the staff dashboard's world tools (?world=<id>) are answered by that world server.
 if (app.Services.GetService<Aion.Host.Worlds.WorldLinks>() is { } worldLinks)
     app.Use(async (context, next) =>
@@ -532,6 +536,7 @@ if (accountsReady)
 {
     app.MapAccountEndpoints(registrationOpen);
     app.MapTotpEndpoints();
+    Aion.Host.Authentication.StaffSessionEndpoints.MapStaffSessionEndpoints(app);
     app.MapGameplayEndpoints();
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);

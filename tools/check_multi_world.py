@@ -38,6 +38,7 @@ import tools.postgres_dev as postgres_dev  # noqa: E402
 from tools.postgres_dev import HOME, ROOT, create_world, import_catalog, migrate_realm, sql  # noqa: E402
 from tools.probe_login_reply import RC4  # noqa: E402
 from tools.run_account_server import connection_string  # noqa: E402
+from tools.staff_signin import staff_session  # noqa: E402
 
 LOGIN_GREETING, GAME_GREETING = 0x3900, 0x3610
 
@@ -239,7 +240,8 @@ def main():
             password = secrets.token_urlsafe(18)
             check(request('/api/accounts/register', 'POST', {'username': 'mw_admin', 'password': password})[0] == 201, 'account registered')
             sql("INSERT INTO auth.account_roles SELECT account_id,'admin' FROM auth.accounts WHERE subject='mw_admin';", database=name)
-            token = request('/api/accounts/login', 'POST', {'username': 'mw_admin', 'password': password})[1]['token']
+            # The dashboard needs a staff session: password and authenticator (set up here on the first sign-in).
+            token = staff_session(request, 'mw_admin', password)
 
             def runtime(world):
                 worlds = request('/api/admin/worlds', token=token)[1]['worlds']

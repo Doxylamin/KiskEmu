@@ -108,9 +108,10 @@ public static class RealmLinkEndpoints
             return Results.NoContent();
         });
 
-        // A staff (or player) sign-in on a request the auth host forwarded to this world: the account, for the mirror.
-        link.MapPost("/authenticate", async (LinkToken input, IAccountAuthentication auth, IRealmAccounts accounts, CancellationToken ct) =>
-            await auth.AuthenticateAsync(input.Token, ct) is { } account && await accounts.SnapshotAsync(account.AccountId, ct) is { } snapshot
+        // A staff sign-in on a request the auth host forwarded to this world: the account, for the mirror. Only staff
+        // sessions (IStaffSessions): a player session never works a world's staff tools.
+        link.MapPost("/authenticate", async (LinkToken input, IStaffSessions staff, IRealmAccounts accounts, CancellationToken ct) =>
+            await staff.AuthenticateAsync(input.Token, ct) is { } account && await accounts.SnapshotAsync(account.AccountId, ct) is { } snapshot
                 ? Results.Ok(snapshot) : Results.Unauthorized());
         link.MapGet("/accounts/{id:guid}", async (Guid id, IRealmAccounts accounts, CancellationToken ct) =>
             await accounts.SnapshotAsync(id, ct) is { } snapshot ? Results.Ok(snapshot) : Results.NotFound());

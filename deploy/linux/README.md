@@ -144,6 +144,8 @@ systemctl status aion-host aion-postgres
 journalctl -u aion-host -f
 # Staff roles (after the account has registered on the account site): gamemaster < moderator < admin
 # (each rank has what the ranks below it have; the matrix is server/Aion.Core/Security/StaffAccess.cs):
+# Staff sign in to the dashboard with password and authenticator code; an account without an authenticator
+# sets one up at its first dashboard sign-in. Player sessions do not open the dashboard.
 sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres python3 /opt/aion/src/tools/postgres_dev.py role USERNAME admin
 ```
 
