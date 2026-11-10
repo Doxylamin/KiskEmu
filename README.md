@@ -1,6 +1,7 @@
 <p align="center"><img src="web/src/shared/kiskemu-icon.svg" alt="" width="128" height="128"></p>
 
 <p align="center">
+  <a href="https://kisk.dev/"><img alt="Website" src="https://img.shields.io/badge/Website-kisk.dev-4DEBFF?style=for-the-badge"></a>
   <a href="https://discord.gg/7XDVga5N3t"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
   <a href="deploy/linux/README.md"><img alt="Run a server" src="https://img.shields.io/badge/Server-host_one-4166D8?style=for-the-badge"></a>
   <a href="launcher/README.md"><img alt="KiskLauncher" src="https://img.shields.io/badge/KiskLauncher-play-4DA6E8?style=for-the-badge"></a>
