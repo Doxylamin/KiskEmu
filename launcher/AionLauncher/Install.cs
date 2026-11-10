@@ -19,6 +19,8 @@ static class Install
     public const string Name = "KiskLauncher";
     public const string FileName = Name + ".exe";
     const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\KiskLauncher";
+    /// <summary>kisklauncher://add?url=... links (an account site's "Play with KiskLauncher" button) open the installed exe.</summary>
+    const string LinkKey = @"Software\Classes\" + Aion.Launcher.ServerSetup.LinkScheme;
     // The install before the rename (A2Core Launcher). An installed copy updates itself in place, so after the update it
     // still runs from there; it then installs itself under the new name and removes the old folder, shortcuts and entry.
     const string LegacyName = "A2Core Launcher";
@@ -68,6 +70,7 @@ static class Install
         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
         key.SetValue("EstimatedSize", (int)(new FileInfo(ExePath).Length / 1024), RegistryValueKind.DWord);
+        RegisterLinks();
         RemoveLegacy();
         return ExePath;
     }
@@ -95,6 +98,25 @@ static class Install
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
     }
 
+    /// <summary>
+    /// Makes kisklauncher:// links open the installed exe (current user only). Also run on every start of the installed
+    /// exe, so installs from before the links get them after their self-update.
+    /// </summary>
+    public static void RegisterLinks()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(LinkKey);
+            key.SetValue("", "URL:" + Name);
+            key.SetValue("URL Protocol", "");
+            using var icon = key.CreateSubKey("DefaultIcon");
+            icon.SetValue("", $"\"{ExePath}\",0");
+            using var command = key.CreateSubKey(@"shell\open\command");
+            command.SetValue("", $"\"{ExePath}\" \"%1\"");
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+    }
+
     public static string Version => Application.ProductVersion.Split('+')[0];
 
     /// <summary>
@@ -106,6 +128,7 @@ static class Install
         foreach (var shortcut in new[] { DesktopShortcut, StartMenuShortcut })
             if (File.Exists(shortcut)) File.Delete(shortcut);
         Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false);
+        Registry.CurrentUser.DeleteSubKeyTree(LinkKey, throwOnMissingSubKey: false);
         if (!Directory.Exists(Folder)) return;
         if (Running)
             Process.Start(new ProcessStartInfo("cmd.exe", $"/c ping -n 4 127.0.0.1 >nul & rmdir /s /q \"{Folder}\"")

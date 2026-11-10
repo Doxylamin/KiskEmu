@@ -338,6 +338,8 @@ function LauncherDownload({ token }: { token: string }) {
   return (
     <div className="stack-sm launcher">
       <Button variant="primary" busy={busy} onClick={download}><DownloadIcon /> Download launcher</Button>
+      {/* KiskLauncher already installed (for this or another server): the link adds this server; the player still confirms it there. */}
+      <a className="small" href={`kisklauncher://add?url=${encodeURIComponent(window.location.origin)}`}>Already have KiskLauncher? Add this server</a>
       {failed && <span className="status status-error">The download could not start. Try again.</span>}
     </div>
   );

@@ -11,7 +11,11 @@ public sealed record BuildFile(
     [property: JsonPropertyName("sha256")] string Sha256,
     [property: JsonPropertyName("quick")] bool Quick);
 
-/// <summary>The one client build the server supports (embedded supported-build.json, tools/launcher_build.py).</summary>
+/// <summary>
+/// A client build a server supports (tools/launcher_build.py): the embedded supported-build.json, or one a server
+/// serves by its fingerprint (/api/launcher/builds/{fingerprint}), checked with <see cref="Parse"/>. It lists what the
+/// player's own copy must hold; the game files themselves never come from a server.
+/// </summary>
 public sealed record SupportedBuild(
     [property: JsonPropertyName("appId")] int AppId,
     [property: JsonPropertyName("depotId")] int DepotId,
@@ -29,6 +33,30 @@ public sealed record SupportedBuild(
         using var stream = typeof(SupportedBuild).Assembly.GetManifestResourceStream("supported-build.json")
             ?? throw new InvalidOperationException("supported-build.json is not embedded");
         return JsonSerializer.Deserialize<SupportedBuild>(stream) ?? throw new InvalidDataException("supported-build.json");
+    }
+
+    /// <summary>
+    /// A downloaded build reference, trusted only when its files give its fingerprint (the SHA-256 over the quick files'
+    /// "path\0size\0sha256\n" lines) and that is the fingerprint asked for.
+    /// </summary>
+    public static SupportedBuild Parse(byte[] json, string expectedFingerprint)
+    {
+        var build = JsonSerializer.Deserialize<SupportedBuild>(json) ?? throw new InvalidDataException("The build reference is empty.");
+        if (build.Files is not { Count: > 0 } || string.IsNullOrEmpty(build.Executable)) throw new InvalidDataException("The build reference lists no files.");
+        var computed = ComputeFingerprint(build.Files);
+        if (!computed.Equals(build.Fingerprint, StringComparison.OrdinalIgnoreCase) || !computed.Equals(expectedFingerprint, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("The server's build reference does not match its fingerprint.");
+        if (build.Files.Any(f => Path.IsPathRooted(f.Path) || f.Path.Split('/', '\\').Contains("..")))
+            throw new InvalidDataException("The build reference names a file outside the game folder.");
+        return build;
+    }
+
+    public static string ComputeFingerprint(IEnumerable<BuildFile> files)
+    {
+        using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var file in files.Where(f => f.Quick))
+            digest.AppendData(System.Text.Encoding.UTF8.GetBytes($"{file.Path.ToLowerInvariant()}\0{file.Size}\0{file.Sha256}\n"));
+        return Convert.ToHexStringLower(digest.GetHashAndReset());
     }
 
     /// <summary>Steam console command that downloads exactly this build with the player's own Steam account.</summary>

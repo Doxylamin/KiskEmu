@@ -6,7 +6,9 @@ using System.Text.Json.Serialization;
 namespace Aion.Launcher;
 
 /// <summary>
-/// The server this launcher plays on (embedded launcher.json; a launcher.json next to the exe overrides it).
+/// One server the launcher plays on. The launcher keeps one per saved server (from the server's /api/launcher/config,
+/// <see cref="ServerSetup"/>). A launcher built with a launcher.json (embedded, or a launcher.json next to the exe) starts
+/// with that server; a generic build (GenericLauncher=true) asks for one.
 /// </summary>
 public sealed record LauncherConfig(
     [property: JsonPropertyName("name")] string Name,
@@ -32,6 +34,16 @@ public sealed record LauncherConfig(
         }
         config.Validate();
         return config;
+    }
+
+    /// <summary>
+    /// The server this build was made for (launcher.json next to the exe, else the embedded one); null for a generic
+    /// build. An invalid file throws, as before.
+    /// </summary>
+    public static LauncherConfig? LoadDefault(string? overridePath = null)
+    {
+        if (overridePath is not null && File.Exists(overridePath)) return Load(overridePath);
+        return typeof(LauncherConfig).Assembly.GetManifestResourceInfo("launcher.json") is null ? null : Load();
     }
 
     [JsonIgnore] public IPAddress Server => IPAddress.Parse(ServerAddress);

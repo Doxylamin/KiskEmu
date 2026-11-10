@@ -108,6 +108,10 @@ migrations.
    KiskLauncher and move themselves to the new name; the server serves `A2Core Launcher.exe` until a
    `KiskLauncher.exe` is there.)
 
+Or skip the per-server build: `-p:GenericLauncher=true` makes a launcher with no server built in. Players add your
+server by its account address (or the account page's "Add this server" link); the launcher gets the name, game
+address and supported client build from `/api/launcher/config`.
+
 Players need a Steam account that owns the game; the launcher downloads the supported build with it.
 
 > **Do not run the launcher as administrator** (no right-click → "Run as administrator", no compatibility setting).

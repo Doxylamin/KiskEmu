@@ -128,6 +128,26 @@ public sealed class AccountClient : IDisposable
         return manifest;
     }
 
+    /// <summary>The server's current launcher settings (address, port, versions); null when the server predates them.</summary>
+    public async Task<ServerReply?> ServerConfigAsync(CancellationToken ct = default)
+    {
+        using var response = await Send(HttpMethod.Get, ServerSetup.ConfigPath, null, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound) return null;
+        if (!response.IsSuccessStatusCode) throw new AccountException($"The account server answered {(int)response.StatusCode}.");
+        return await response.Content.ReadFromJsonAsync<ServerReply>(ct) ?? throw new AccountException("The server sent no settings.");
+    }
+
+    /// <summary>The reference of a build the server supports, checked against its fingerprint (<see cref="SupportedBuild.Parse"/>).</summary>
+    public async Task<(SupportedBuild Build, byte[] Json)> BuildReferenceAsync(string fingerprint, CancellationToken ct = default)
+    {
+        if (fingerprint.Length != 64 || !fingerprint.All(char.IsAsciiHexDigit)) throw new AccountException("The server named an invalid build.");
+        using var response = await Send(HttpMethod.Get, "/api/launcher/builds/" + fingerprint.ToLowerInvariant(), null, ct);
+        if (!response.IsSuccessStatusCode) throw new AccountException($"The server's game version list answered {(int)response.StatusCode}.");
+        var json = await response.Content.ReadAsByteArrayAsync(ct);
+        try { return (SupportedBuild.Parse(json, fingerprint), json); }
+        catch (Exception error) when (error is InvalidDataException or System.Text.Json.JsonException) { throw new AccountException(error.Message); }
+    }
+
     /// <summary>Downloads the server's launcher (signed in: through a ticket link) to a file. The caller checks its hash.</summary>
     public async Task DownloadLauncherAsync(string to, IProgress<(long Done, long Total)>? progress, CancellationToken ct = default)
     {

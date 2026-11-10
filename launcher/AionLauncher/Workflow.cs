@@ -11,15 +11,18 @@ sealed class LauncherException(string message) : Exception(message);
 /// <summary>Where the supported client build can come from on this PC.</summary>
 sealed record ClientSource(string Folder, ClientFiles.Mode Mode, string Description);
 
-/// <summary>Setup and play, without UI: the form shows status and progress.</summary>
-sealed class Workflow(LauncherConfig config, LauncherSettings settings)
+/// <summary>Setup and play on one saved server, without UI: the form shows status and progress.</summary>
+sealed class Workflow(ServerEntry server, LauncherSettings settings)
 {
-    public SupportedBuild Build { get; } = SupportedBuild.Embedded;
-    public LauncherConfig Config => config;
+    /// <summary>The client build the chosen version is checked against (<see cref="PrepareAsync"/> resolves the server's).</summary>
+    public SupportedBuild Build { get; private set; } = SupportedBuild.Embedded;
+    public LauncherConfig Config => server.Config;
+    LauncherConfig config => server.Config;
+    public ServerEntry Profile => server;
     public LauncherSettings Settings => settings;
-    public AccountClient Account { get; } = new(config);
-    /// <summary>The client version chosen on the Play page (kept in the launcher settings, not in launcher.json).</summary>
-    public ClientVersion Version { get; set; } = ClientVersions.Selected(config, settings.SelectedClientVersion);
+    public AccountClient Account { get; } = new(server.Config);
+    /// <summary>The client version chosen on the Play page (kept per server).</summary>
+    public ClientVersion Version { get; private set; } = ClientVersions.Selected(server.Config, server.SelectedClientVersion);
     /// <summary>The folder of the client started last (for waiting until it closes).</summary>
     public string? GameFolder { get; private set; }
 
@@ -29,19 +32,72 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
         return path is not null && Directory.Exists(path) ? new SteamInstall(Path.GetFullPath(path)) : null;
     }
 
-    public bool Installed => settings.InstallFolder is { } folder && File.Exists(Path.Combine(folder, Build.Executable));
+    /// <summary>The private copy of <see cref="Build"/> (shared by every server on that build).</summary>
+    ClientCopy Copy => settings.Copy(Build.Fingerprint);
+    public string? InstallFolder => settings.Copies.TryGetValue(Build.Fingerprint, out var copy) ? copy.Folder : null;
+    /// <summary>Every private copy this PC has, for the uninstall.</summary>
+    public IEnumerable<string> AllCopies => settings.Copies.Values.Select(c => c.Folder).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase);
+
+    public bool Installed => InstallFolder is { } folder && File.Exists(Path.Combine(folder, Build.Executable));
+
+    /// <summary>
+    /// Asks the server for its current settings (address, port, versions; kept for the next start) and resolves the
+    /// chosen version's build reference: the embedded one, a cached one, or the server's (checked against its
+    /// fingerprint). A server that predates the settings, or cannot be reached now, keeps what the launcher has.
+    /// </summary>
+    public async Task PrepareAsync(CancellationToken ct)
+    {
+        try
+        {
+            if (await Account.ServerConfigAsync(ct) is { } reply)
+            {
+                server.Config = ServerSetup.Apply(server.Config, new Uri(server.Config.AccountUrl), reply, null);
+                Version = ClientVersions.Selected(server.Config, server.SelectedClientVersion);
+                settings.Save();
+            }
+        }
+        catch (Exception error) when (error is AccountException or InvalidDataException or System.Text.Json.JsonException) { }
+        Build = await BuildForAsync(Version, ct);
+    }
+
+    async Task<SupportedBuild> BuildForAsync(ClientVersion version, CancellationToken ct)
+    {
+        // The Steam copy is not checked against a build; its executable path is the embedded build's.
+        if (version.IsSteam || version.Build is not { Length: > 0 } fingerprint || fingerprint.Equals(SupportedBuild.Embedded.Fingerprint, StringComparison.OrdinalIgnoreCase))
+            return SupportedBuild.Embedded;
+        var cached = Path.Combine(LauncherSettings.BuildsFolder, fingerprint.ToLowerInvariant() + ".json");
+        if (File.Exists(cached))
+            try { return SupportedBuild.Parse(await File.ReadAllBytesAsync(cached, ct), fingerprint); }
+            catch (Exception error) when (error is InvalidDataException or System.Text.Json.JsonException) { File.Delete(cached); }
+        var (build, json) = await Account.BuildReferenceAsync(fingerprint, ct);
+        Directory.CreateDirectory(LauncherSettings.BuildsFolder);
+        await File.WriteAllBytesAsync(cached, json, ct);
+        return build;
+    }
+
+    /// <summary>Chooses a version on the Play page (kept per server) and resolves its build.</summary>
+    public async Task ChooseVersionAsync(ClientVersion version, CancellationToken ct)
+    {
+        var build = await BuildForAsync(version, ct);
+        Version = version;
+        Build = build;
+        server.SelectedClientVersion = version.Id;
+        settings.Save();
+    }
 
     /// <summary>
     /// The private copy's folder, on the same drive as its source so placing it is a hard link or a
     /// move (no extra space): under %LOCALAPPDATA% on the system drive, else &lt;drive&gt;:\A2CorePrivate.
+    /// The embedded build keeps the folder name launchers always used (AION2); another build gets its own.
     /// </summary>
-    public static string TargetFor(string source)
+    public string TargetFor(string source)
     {
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return ClientFiles.SameVolume(source, local)
-            ? Path.Combine(local, "A2CorePrivate", "AION2")
-            : Path.Combine(Path.GetPathRoot(Path.GetFullPath(source))!, "A2CorePrivate", "AION2");
+        var root = ClientFiles.SameVolume(source, local) ? Path.Combine(local, "A2CorePrivate") : Path.Combine(Path.GetPathRoot(Path.GetFullPath(source))!, "A2CorePrivate");
+        return Path.Combine(root, CopyName);
     }
+
+    string CopyName => Build.Fingerprint.Equals(SupportedBuild.Embedded.Fingerprint, StringComparison.OrdinalIgnoreCase) ? "AION2" : "AION2-" + Build.Fingerprint[..12];
 
     public static long FreeBytes(string folder) => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace;
 
@@ -72,13 +128,13 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
     /// </summary>
     public string? DownloadFolder()
     {
-        if (settings.DownloadFolder is { } previous) return previous;
+        if (settings.DownloadFolder is { } previous && Build.Fingerprint.Equals(settings.DownloadBuild, StringComparison.OrdinalIgnoreCase)) return previous;
         const long reserve = 2L << 30;
         var local = TargetFor(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
         if (FreeBytes(local) > Build.TotalBytes + reserve) return local;
         var best = DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
             .OrderByDescending(d => d.AvailableFreeSpace).FirstOrDefault();
-        return best is not null && best.AvailableFreeSpace > Build.TotalBytes + reserve ? Path.Combine(best.RootDirectory.FullName, "A2CorePrivate", "AION2") : null;
+        return best is not null && best.AvailableFreeSpace > Build.TotalBytes + reserve ? Path.Combine(best.RootDirectory.FullName, "A2CorePrivate", CopyName) : null;
     }
 
     /// <summary>
@@ -89,6 +145,7 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
     {
         var folder = DownloadFolder() ?? throw new LauncherException($"No drive has {Build.TotalBytes / 1e9:0} GB free for the game.");
         settings.DownloadFolder = folder;
+        settings.DownloadBuild = Build.Fingerprint;
         settings.Save();
         using var steam = new SteamDownload();
         steam.QrCode += qrCode;
@@ -133,10 +190,12 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
         status("Allowing the game to reach only this server (approve the Windows prompt)…");
         if (!await Elevated.RunAsync("--setup-firewall", folder, config.ServerAddress))
             throw new LauncherException("The Windows permission prompt was declined, so the firewall rules were not added. Press Try again and choose Yes.");
-        settings.InstallFolder = folder;
-        settings.VerifiedStamp = QuickStamp(folder);
+        Copy.Folder = folder;
+        Copy.VerifiedStamp = QuickStamp(folder);
+        Copy.FirewallAddress = config.ServerAddress;
         // The Steam sign-in was only kept to resume the download.
         settings.DownloadFolder = null;
+        settings.DownloadBuild = null;
         settings.SetSteamSignIn(null);
         settings.Save();
     }
@@ -150,7 +209,14 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
         return process.ExitCode == 0;
     }
 
-    public Task<bool> RepairFirewallAsync() => Elevated.RunAsync("--setup-firewall", settings.InstallFolder!, config.ServerAddress);
+    /// <summary>The firewall rules for this copy and this server (another server's address replaces the rules).</summary>
+    public async Task<bool> RepairFirewallAsync()
+    {
+        if (!await Elevated.RunAsync("--setup-firewall", InstallFolder!, config.ServerAddress)) return false;
+        Copy.FirewallAddress = config.ServerAddress;
+        settings.Save();
+        return true;
+    }
 
     /// <summary>
     /// Starts the game: account launch code into the private settings, hosts lines for this session
@@ -161,7 +227,7 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
         var version = Version;
         var folder = version.IsSteam
             ? ClientVersions.SteamFolder(version, config, steam) ?? throw new LauncherException("The Steam copy of AION2 was not found. Set steamClientPath in launcher.json.")
-            : version.ClientPath ?? settings.InstallFolder ?? throw new LauncherException("The game is not installed.");
+            : version.ClientPath ?? InstallFolder ?? throw new LauncherException("The game is not installed.");
         if (Elevated.GameRunning(folder)) throw new LauncherException("The game is already running.");
         GameFolder = folder;
         if (Process.GetProcessesByName("steam").Length == 0)
@@ -180,16 +246,17 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
         var sizes = await ClientFiles.CheckAsync(folder, Build, CheckLevel.Sizes, null, ct);
         if (!sizes.Ok) throw new LauncherException($"Game files changed ({sizes.Problem}). Use Check all files, or Uninstall and set up again.");
         var stamp = QuickStamp(folder);
-        if (stamp != settings.VerifiedStamp)
+        if (stamp != Copy.VerifiedStamp)
         {
             var quick = await ClientFiles.CheckAsync(folder, Build, CheckLevel.Quick, progress, ct);
             if (!quick.Ok) throw new LauncherException($"Game files changed ({quick.Problem}). Uninstall and set up again.");
-            settings.VerifiedStamp = stamp;
+            Copy.VerifiedStamp = stamp;
             settings.Save();
         }
-        if (!FirewallRulesPresent())
+        if (!FirewallRulesPresent() || Copy.FirewallAddress != config.ServerAddress)
         {
-            status("Restoring the firewall rules (approve the Windows prompt)…");
+            status(Copy.FirewallAddress is { } other && other != config.ServerAddress
+                ? "Pointing the firewall rules at this server (approve the Windows prompt)…" : "Restoring the firewall rules (approve the Windows prompt)…");
             if (!await RepairFirewallAsync()) throw new LauncherException("The firewall rules are missing and setup was cancelled.");
         }
         }
@@ -225,8 +292,8 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
 
     public async Task<BuildCheck> VerifyAllAsync(IProgress<(long, long)> progress, CancellationToken ct)
     {
-        var result = await ClientFiles.CheckAsync(settings.InstallFolder!, Build, CheckLevel.Full, progress, ct);
-        if (result.Ok) { settings.VerifiedStamp = QuickStamp(settings.InstallFolder!); settings.Save(); }
+        var result = await ClientFiles.CheckAsync(InstallFolder!, Build, CheckLevel.Full, progress, ct);
+        if (result.Ok) { Copy.VerifiedStamp = QuickStamp(InstallFolder!); settings.Save(); }
         return result;
     }
 
