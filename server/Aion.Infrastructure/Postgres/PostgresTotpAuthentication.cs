@@ -145,17 +145,19 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
         return false;
     }
 
-    public async Task<TotpLoginChallenge?> BeginLoginAsync(Guid accountId, CancellationToken ct)
+    public async Task<TotpLoginChallenge?> BeginLoginAsync(Guid accountId, TimeSpan? sessionLifetime, CancellationToken ct)
     {
         if (!await IsEnabledAsync(accountId, ct)) return null;
         var token = Token();
         await using var command = source.CreateCommand("""
-            INSERT INTO auth.totp_login_challenges(token_hash,account_id,expires_at)
-            VALUES($1,$2,now()+interval '5 minutes')
+            INSERT INTO auth.totp_login_challenges(token_hash,account_id,expires_at,session_seconds)
+            VALUES($1,$2,now()+interval '5 minutes',$3)
             ON CONFLICT (token_hash) DO NOTHING RETURNING expires_at
             """);
         command.Parameters.AddWithValue(Hash(token));
         command.Parameters.AddWithValue(accountId);
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer,
+            Value = sessionLifetime is { } life ? (object)(int)SessionLifetime(life).TotalSeconds : DBNull.Value });
         var expires = await command.ExecuteScalarAsync(ct);
         return expires is DateTime date ? new(token, new DateTimeOffset(date)) : null;
     }
@@ -168,8 +170,9 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
         Guid account;
         int failures;
         DateTimeOffset? lockedUntil;
+        TimeSpan lifetime;
         await using (var query = new NpgsqlCommand("""
-            SELECT account_id, failed_attempts, locked_until FROM auth.totp_login_challenges
+            SELECT account_id, failed_attempts, locked_until, session_seconds FROM auth.totp_login_challenges
             WHERE token_hash=$1 AND expires_at>now() FOR UPDATE
             """, connection, transaction))
         {
@@ -179,6 +182,7 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
             account = reader.GetGuid(0);
             failures = reader.GetInt32(1);
             lockedUntil = reader.IsDBNull(2) ? null : reader.GetDateTime(2);
+            lifetime = reader.IsDBNull(3) ? DefaultSessionLifetime : SessionLifetime(TimeSpan.FromSeconds(reader.GetInt32(3)));
         }
         if (lockedUntil is { } until && until > DateTimeOffset.UtcNow) return null;
         if (!await VerifyForAccountAsync(account, code, recoveryCode, ct))
@@ -207,7 +211,7 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
         {
             session.Parameters.AddWithValue(Hash(sessionToken));
             session.Parameters.AddWithValue(account);
-            session.Parameters.AddWithValue(DefaultSessionLifetime.TotalSeconds);
+            session.Parameters.AddWithValue(lifetime.TotalSeconds);
             var expires = (DateTime)(await session.ExecuteScalarAsync(ct))!;
             await transaction.CommitAsync(ct);
             return new(sessionToken, account, new DateTimeOffset(expires));

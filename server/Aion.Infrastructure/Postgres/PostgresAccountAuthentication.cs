@@ -64,9 +64,12 @@ public sealed partial class PostgresAccountAuthentication : IAccountAuthenticati
     /// <summary>Standard sessions last 8 hours; "keep me signed in" asks for up to MaxSessionLifetime.</summary>
     public static readonly TimeSpan DefaultSessionLifetime = TimeSpan.FromHours(8), MaxSessionLifetime = TimeSpan.FromDays(30);
 
+    static TimeSpan SessionLifetime(TimeSpan lifetime) =>
+        lifetime <= TimeSpan.Zero ? DefaultSessionLifetime : lifetime > MaxSessionLifetime ? MaxSessionLifetime : lifetime;
+
     public async Task<AccountSession?> SignInAsync(string username, string password, TimeSpan lifetime, CancellationToken cancellationToken)
     {
-        lifetime = lifetime <= TimeSpan.Zero ? DefaultSessionLifetime : lifetime > MaxSessionLifetime ? MaxSessionLifetime : lifetime;
+        lifetime = SessionLifetime(lifetime);
         if (!ValidUsername(username) || password is null || password.Length > 256) return null;
         await using var connection = await source.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);

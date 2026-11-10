@@ -54,14 +54,15 @@ public static class AccountEndpoints
         app.MapPost("/api/accounts/login", async (Credentials input, IAccountAuthentication auth, ITotpAuthentication totp, CancellationToken ct) =>
         {
             if (input.Username is null || input.Password is null) return Results.Unauthorized();
-            // "Keep me signed in" (the staff dashboard): a 30-day session instead of the standard 8 hours.
-            var session = input.Remember == true
-                ? await auth.SignInAsync(input.Username, input.Password, TimeSpan.FromDays(30), ct)
+            // "Keep me signed in": a 30-day session instead of the standard 8 hours (kept through the TOTP step).
+            TimeSpan? lifetime = input.Remember == true ? TimeSpan.FromDays(30) : null;
+            var session = lifetime is { } days
+                ? await auth.SignInAsync(input.Username, input.Password, days, ct)
                 : await auth.SignInAsync(input.Username, input.Password, ct);
             if (session is null) return Results.Unauthorized();
             if (!await totp.IsEnabledAsync(session.AccountId, ct)) return Results.Ok(session);
             await auth.SignOutAsync(session.Token, ct);
-            var challenge = await totp.BeginLoginAsync(session.AccountId, ct);
+            var challenge = await totp.BeginLoginAsync(session.AccountId, lifetime, ct);
             return challenge is null ? Results.Unauthorized() : Results.Ok(new
             {
                 requiresTotp = true,

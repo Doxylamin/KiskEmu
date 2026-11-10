@@ -2,6 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useWorldNames } from '../ui/worlds';
 import { api, ApiError } from '../api';
 import { Button, Status, type StatusMessage } from '../ui/components';
+import { readSession, writeSession } from '../ui/session';
+
+// The signed-in session survives a page refresh (src/ui/session.ts).
+const STORE_KEY = 'aion-account-session';
 
 interface Character { name: string; level: number; worldId: number }
 
@@ -17,6 +21,7 @@ function describe(error: unknown, signingIn = false): string {
 export function AccountApp() {
   const [token, setToken] = useState<string | null>(null);
   const [username, setUsername] = useState('');
+  const [restoring, setRestoring] = useState(() => readSession(STORE_KEY) !== null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [message, setMessage] = useState<StatusMessage | null>(null);
   const [configured, setConfigured] = useState(true);
@@ -33,24 +38,43 @@ export function AccountApp() {
       .catch(error => setMessage({ text: describe(error), kind: 'error' }));
   }, []);
 
+  // A saved session from before the refresh: still valid? (a 401 forgets it; an unreachable server keeps it)
+  useEffect(() => {
+    const saved = readSession(STORE_KEY);
+    if (!saved) return;
+    api<Character[]>('/api/characters', { token: saved.token })
+      .then(list => { setToken(saved.token); setUsername(saved.username); setCharacters(list); })
+      .catch(error => {
+        if (error instanceof ApiError && error.status === 401) writeSession(STORE_KEY, null);
+        else setMessage({ text: describe(error), kind: 'error' });
+      })
+      .finally(() => setRestoring(false));
+  }, []);
+
   function signedOut(text: string, kind: StatusMessage['kind'] = '') {
+    writeSession(STORE_KEY, null);
     setToken(null); setCharacters([]); setMessage({ text, kind });
   }
 
-  const [totpChallenge, setTotpChallenge] = useState<{ token: string; username: string } | null>(null);
+  const [totpChallenge, setTotpChallenge] = useState<{ token: string; username: string; remember: boolean } | null>(null);
 
-  async function signIn(name: string, password: string, register: boolean) {
+  async function signedIn(sessionToken: string, name: string, remember: boolean) {
+    const list = await api<Character[]>('/api/characters', { token: sessionToken });
+    writeSession(STORE_KEY, { token: sessionToken, username: name }, remember);
+    setToken(sessionToken); setUsername(name); setCharacters(list); setTotpChallenge(null);
+  }
+
+  async function signIn(name: string, password: string, register: boolean, remember: boolean) {
     if (register) await api('/api/accounts/register', { method: 'POST', body: { username: name, password } });
     const session = await api<{ token?: string; requiresTotp?: boolean; challengeToken?: string }>(
-      '/api/accounts/login', { method: 'POST', body: { username: name, password } });
+      '/api/accounts/login', { method: 'POST', body: { username: name, password, remember } });
     if (session.requiresTotp && session.challengeToken) {
-      setTotpChallenge({ token: session.challengeToken, username: name });
+      setTotpChallenge({ token: session.challengeToken, username: name, remember });
       setMessage({ text: 'Enter the code from your authenticator app.', kind: '' });
       return;
     }
     if (!session.token) throw new ApiError(401, 'Sign-in failed');
-    const list = await api<Character[]>('/api/characters', { token: session.token });
-    setToken(session.token); setUsername(name); setCharacters(list); setTotpChallenge(null);
+    await signedIn(session.token, name, remember);
     setMessage({ text: register ? 'Account created. Welcome!' : '', kind: 'ok' });
   }
 
@@ -59,9 +83,12 @@ export function AccountApp() {
     const session = await api<{ token: string }>('/api/accounts/login/totp', {
       method: 'POST', body: { challengeToken: totpChallenge.token, code: code || null, recoveryCode: recoveryCode || null },
     });
-    const list = await api<Character[]>('/api/characters', { token: session.token });
-    setToken(session.token); setUsername(totpChallenge.username); setCharacters(list); setTotpChallenge(null);
+    await signedIn(session.token, totpChallenge.username, totpChallenge.remember);
     setMessage({ text: 'Signed in.', kind: 'ok' });
+  }
+
+  if (restoring) {
+    return <div className="account-page"><main className="card account-card"><div className="card-body"><p className="muted">Signing in…</p></div></main></div>;
   }
 
   return (
@@ -148,7 +175,7 @@ function TotpSignIn({ onSubmit, onCancel, onError }: {
 }
 
 function SignIn({ disabled, registrationOpen, onSubmit, onError }:
-  { disabled: boolean; registrationOpen: boolean; onSubmit: (name: string, password: string, register: boolean) => Promise<void>; onError: (error: unknown) => void }) {
+  { disabled: boolean; registrationOpen: boolean; onSubmit: (name: string, password: string, register: boolean, remember: boolean) => Promise<void>; onError: (error: unknown) => void }) {
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -156,7 +183,7 @@ function SignIn({ disabled, registrationOpen, onSubmit, onError }:
     const form = event.currentTarget;
     const data = new FormData(form);
     setBusy(true);
-    try { await onSubmit(String(data.get('username')), String(data.get('password')), mode === 'register'); }
+    try { await onSubmit(String(data.get('username')), String(data.get('password')), mode === 'register', data.get('remember') === 'on'); }
     catch (error) { onError(error); }
     finally {
       setBusy(false);
@@ -185,6 +212,10 @@ function SignIn({ disabled, registrationOpen, onSubmit, onError }:
           {...(register ? { minLength: 12 } : {})} />
         {register && <small>At least 12 characters.</small>}
       </div>
+      <label className="check">
+        <input type="checkbox" name="remember" />
+        <span>Keep me signed in on this computer (30 days)</span>
+      </label>
       <Button type="submit" variant="primary" block busy={busy} disabled={disabled}>{register ? 'Create account' : 'Sign in'}</Button>
     </form>
   );

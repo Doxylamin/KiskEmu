@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api';
 import { Button, Icon, Status, type StatusMessage } from '../ui/components';
+import { readSession, writeSession, type SavedSession } from '../ui/session';
 import { Activity } from './Activity';
 import { Broadcast } from './Broadcast';
 import { NewAccountDialog } from './NewAccount';
@@ -47,28 +48,8 @@ function readWorld(): number | null {
 type View = 'overview' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'shop' | 'economy' | 'activity' | 'worlds' | 'server';
 
 const STORE_KEY = 'aion-staff-session';
-interface Saved { token: string; username: string }
-
-function readSaved(): Saved | null {
-  for (const store of [() => window.localStorage, () => window.sessionStorage]) {
-    try {
-      const raw = store().getItem(STORE_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as Saved;
-        if (typeof saved.token === 'string' && typeof saved.username === 'string') return saved;
-      }
-    } catch { /* storage blocked: sign in each time */ }
-  }
-  return null;
-}
-function writeSaved(saved: Saved | null, remember = false) {
-  for (const [store, keep] of [[() => window.localStorage, remember], [() => window.sessionStorage, !remember]] as const) {
-    try {
-      if (saved && keep) store().setItem(STORE_KEY, JSON.stringify(saved));
-      else store().removeItem(STORE_KEY);
-    } catch { /* ignore */ }
-  }
-}
+const readSaved = () => readSession(STORE_KEY);
+const writeSaved = (saved: SavedSession | null, remember = false) => writeSession(STORE_KEY, saved, remember);
 
 const NAV: { id: View; label: string; icon: string }[] = [
   { id: 'overview', label: 'Live map', icon: 'map' },
