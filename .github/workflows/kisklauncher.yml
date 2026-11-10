@@ -1,7 +1,8 @@
 # KiskLauncher builds on GitHub's Windows runners.
-# - A push to main that touches the launcher (or a manual run): checks, then both exes as a workflow artifact.
+# - A push to main that touches the launcher (or a manual run): checks, then the exe as a workflow artifact.
 # - A tag launcher-v<version> (equal to <Version> in launcher/AionLauncher/AionLauncher.csproj): the same, then a
-#   GitHub release with the generic exe (no server built in; players add servers), the KiskEmu-server exe, and SHA256SUMS.
+#   GitHub release with the exe and SHA256SUMS. The exe has no server built in: a launcher.json next to it (a server's
+#   own download) adds that server; without one the player adds servers.
 # The exes contain no game files: the game always comes from the player's own Steam install or account.
 name: KiskLauncher
 
@@ -57,13 +58,10 @@ jobs:
         shell: pwsh
         run: |
           $common = @('-c', 'Release', '-r', 'win-x64', '-p:DebugType=none')
-          dotnet publish launcher/AionLauncher @common -o out/generic -p:GenericLauncher=true
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          dotnet publish launcher/AionLauncher @common -o out/kiskemu
+          dotnet publish launcher/AionLauncher @common -o out/launcher -p:GenericLauncher=true
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force release | Out-Null
-          Copy-Item out/generic/KiskLauncher.exe release/KiskLauncher.exe
-          Copy-Item out/kiskemu/KiskLauncher.exe release/KiskLauncher-KiskEmu.exe
+          Copy-Item out/launcher/KiskLauncher.exe release/KiskLauncher.exe
           "${{ steps.version.outputs.version }}" | Set-Content -NoNewline -Encoding ascii release/KiskLauncher.exe.version
           $sums = Get-ChildItem release -Filter *.exe | ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
@@ -97,12 +95,12 @@ jobs:
           cat > notes.md <<EOF
           KiskLauncher ${VERSION} for Windows (x64, self-contained single exe, no install of .NET needed).
 
-          - **KiskLauncher.exe**: works with any KiskEmu server. At the first start it asks for the server's
-            account-site address (or use the server's "Add this server" link on its account page).
-          - **KiskLauncher-KiskEmu.exe**: the same launcher with the KiskEmu server already added.
+          Works with any KiskEmu server. At the first start it asks for the server's account-site address (or use
+          the "Add this server" link on the server's account page). A server's own download may come as a ZIP with a
+          \`launcher.json\` next to the exe, which adds that server.
 
           The launcher contains no game files: it sets up the game from your own Steam install or Steam account.
           Compare the file's SHA-256 with \`SHA256SUMS\`.
           EOF
-          gh release create "${GITHUB_REF_NAME}" release/KiskLauncher.exe release/KiskLauncher-KiskEmu.exe release/SHA256SUMS \
+          gh release create "${GITHUB_REF_NAME}" release/KiskLauncher.exe release/SHA256SUMS \
             --repo "${GITHUB_REPOSITORY}" --title "KiskLauncher ${VERSION}" --notes-file notes.md
