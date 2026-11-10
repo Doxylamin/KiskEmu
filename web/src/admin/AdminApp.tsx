@@ -20,7 +20,7 @@ import { Rewards } from './Rewards';
 import { Shop } from './Shop';
 import { ServerView } from './Server';
 import { Worlds } from './Worlds';
-import { ERRORS, ROLE_LABEL, type StaffProfile, type WorldList } from './types';
+import { ERRORS, can, type StaffProfile, type WorldList } from './types';
 
 export function describe(error: unknown): string {
   if (!(error instanceof ApiError)) return 'Something went wrong.';
@@ -128,7 +128,7 @@ export function AdminApp() {
     );
   }
 
-  const isAdmin = session.profile.roles.includes('admin');
+  const allowed = (permission: string) => can(session.profile, permission);
   return (
     <div className="app app-shell">
       <aside className="sidebar">
@@ -155,12 +155,12 @@ export function AdminApp() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          {isAdmin && <Button size="sm" block onClick={() => setCreating(true)}><Icon name="plus" size={16} /> New account</Button>}
+          {allowed('manageAccounts') && <Button size="sm" block onClick={() => setCreating(true)}><Icon name="plus" size={16} /> New account</Button>}
           <div className="me">
             <span className="avatar" aria-hidden="true">{session.username.slice(0, 1).toUpperCase()}</span>
             <div className="grow">
               <span className="truncate block">{session.username}</span>
-              <span className="small accent">{session.profile.roles.map(r => ROLE_LABEL[r] ?? r).join(' · ')}</span>
+              <span className="small accent">{session.profile.rankLabel ?? 'Staff'}</span>
             </div>
             <button type="button" className="icon-btn" onClick={logout} title="Sign out" aria-label="Sign out"><Icon name="logout" /></button>
           </div>
@@ -175,14 +175,14 @@ export function AdminApp() {
         <div className="view" hidden={view !== 'broadcast'}>
           <div className="page-stack"><Broadcast call={call} active={view === 'broadcast'} worldName={worlds.find(w => w.worldId === world)?.name ?? null} /><div className="page page-tail"><Events call={call} active={view === 'broadcast'} /></div></div>
         </div>
-        <div className="view" hidden={view !== 'rewards'}><Rewards call={call} isAdmin={isAdmin} /></div>
+        <div className="view" hidden={view !== 'rewards'}><Rewards call={call} isAdmin={allowed('rewardEveryone')} /></div>
         <div className="view" hidden={view !== 'shop'}>
-          <Shop call={call} active={view === 'shop'} isAdmin={isAdmin} worldName={worlds.find(w => w.worldId === world)?.name ?? null} />
+          <Shop call={call} active={view === 'shop'} isAdmin={allowed('editShop')} worldName={worlds.find(w => w.worldId === world)?.name ?? null} />
         </div>
         <div className="view" hidden={view !== 'economy'}><Economy call={call} active={view === 'economy'} onOpen={openCharacter} /></div>
         <div className="view" hidden={view !== 'activity'}><Activity call={call} active={view === 'activity'} onOpen={openCharacter} /></div>
         <div className="view" hidden={view !== 'worlds'}><Worlds call={call} active={view === 'worlds'} /></div>
-        <div className="view" hidden={view !== 'server'}><ServerView call={call} token={session.token} world={world} active={view === 'server'} isAdmin={isAdmin} /></div>
+        <div className="view" hidden={view !== 'server'}><ServerView call={call} token={session.token} world={world} active={view === 'server'} isAdmin={allowed('manageServer')} /></div>
       </div>
       <NewAccountDialog open={creating} call={call} onClose={() => setCreating(false)} />
     </div>
@@ -241,7 +241,7 @@ function SignIn({ message, onSignedIn, onMessage }:
         </div>
         <div className="stack-sm center">
           <h2>Staff sign-in</h2>
-          <p className="muted">Use an account with the GameMaster or Admin role.</p>
+          <p className="muted">Use an account with a Gamemaster, Moderator or Administrator role.</p>
         </div>
         {challenge ? (
           <div className="field">

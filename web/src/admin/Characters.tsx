@@ -3,7 +3,7 @@ import { ApiError, requestId } from '../api';
 import { Badge, Button, Tabs } from '../ui/components';
 import { describe } from './AdminApp';
 import type { Tools } from './Dashboard';
-import { ROLE_LABEL, type AdminCharacter, type CharacterDetail } from './types';
+import { ROLE_LABEL, STAFF_ROLES, can, type AdminCharacter, type CharacterDetail } from './types';
 import { iconUrl, type Wardrobe } from './useWardrobe';
 import { useWorldNames } from '../ui/worlds';
 
@@ -77,7 +77,11 @@ function CharacterDetailView({ tools, detail, onRefresh, wardrobe }:
 function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: CharacterDetail; onRefresh: () => Promise<void> }) {
   const c = detail.character;
   const roles = c.accountRoles ?? [];
-  const isAdmin = tools.session.profile.roles.includes('admin');
+  const canStaff = can(tools.session.profile, 'manageStaff');
+  const canAccounts = can(tools.session.profile, 'manageAccounts');
+  const canQuna = can(tools.session.profile, 'manageQuna');
+  const canEdit = can(tools.session.profile, 'editCharacters');
+  const shownRole = STAFF_ROLES.slice().reverse().find(r => roles.includes(r));
   const [level, setLevel] = useState(String(c.level));
   const [creationId, setCreationId] = useState(String(c.creationId));
   const [ascension, setAscension] = useState(String(detail.ascension || 1));
@@ -105,7 +109,7 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
   function toggleStaff() {
     const granted = !c.staff;
     command('staff', granted ? 'Make staff character' : 'Make player character',
-      granted ? `Give ${c.name} the ${ROLE_LABEL[roles.includes('admin') ? 'admin' : 'gamemaster'] ?? 'staff'} standing in the world (name tag, builder commands, wings)? Applies at their next world entry.`
+      granted ? `Give ${c.name} the ${(shownRole && ROLE_LABEL[shownRole]) ?? 'staff'} standing in the world (name tag, builder commands, wings)? Applies at their next world entry.`
         : `Make ${c.name} a regular character again? Applies at their next world entry.`,
       { command: 'staff', staff: granted }, `${c.name} is now a ${granted ? 'staff' : 'player'} character.`, `${granted ? 'Staff' : 'Player'} character → ${c.name}`);
   }
@@ -137,7 +141,7 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
     tools.confirm({
       title: granted ? `Make ${label}` : `Remove ${label}`, danger: !granted,
       body: granted ? `Give account ${c.accountName} the ${label} role?` : `Remove the ${label} role from account ${c.accountName}?`,
-      note: 'Applies when the player next starts the game client. Admins cannot remove their own Admin role.',
+      note: 'Applies when the player next starts the game client. Administrators cannot remove their own Administrator role.',
       confirmLabel: granted ? `Make ${label}` : `Remove ${label}`,
       onConfirm: async () => {
         setBusy('role-' + role);
@@ -148,7 +152,7 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
           await onRefresh();
         } catch (error) {
           tools.notify(error instanceof ApiError && error.code === 'forbidden'
-            ? 'Only admins can change roles, and an admin cannot remove their own Admin role.' : describe(error), 'error');
+            ? 'Only administrators can change roles, and an administrator cannot remove their own Administrator role.' : describe(error), 'error');
         } finally { setBusy(null); }
       },
     });
@@ -165,24 +169,24 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
         <h4>This character</h4>
         <div className="row wrap">
           {c.staff ? <Badge tone="accent">Staff character</Badge> : <Badge>Player character</Badge>}
-          {roles.length > 0 && !c.accountDisabled && (
+          {roles.length > 0 && !c.accountDisabled && canStaff && (
             <Button size="sm" variant={c.staff ? 'danger' : 'secondary'} busy={busy === 'staff'} onClick={toggleStaff}>
               {c.staff ? 'Make player character' : 'Make staff character'}
             </Button>
           )}
         </div>
-        <QunaWallet tools={tools} accountId={c.accountId} accountName={c.accountName} canChange={isAdmin && !c.accountDisabled} />
-        {isAdmin && !c.accountDisabled && (
+        <QunaWallet tools={tools} accountId={c.accountId} accountName={c.accountName} canChange={canQuna && !c.accountDisabled} />
+        {(canAccounts || canStaff) && !c.accountDisabled && (
           <div className="row wrap">
-            <Button size="sm" variant="danger" busy={busy === 'totp-reset'} onClick={async () => {
+            {canAccounts && <Button size="sm" variant="danger" busy={busy === 'totp-reset'} onClick={async () => {
               if (!window.confirm('Remove two-step verification for this account?')) return;
               setBusy('totp-reset');
               try {
                 await tools.call(`/api/admin/accounts/${c.accountId}/totp/reset`, { method: 'POST' });
                 await onRefresh();
               } finally { setBusy(null); }
-            }}>Reset 2FA</Button>
-            {['gamemaster', 'admin'].map(role => {
+            }}>Reset 2FA</Button>}
+            {canStaff && STAFF_ROLES.map(role => {
               const has = roles.includes(role);
               return <Button key={role} size="sm" variant={has ? 'danger' : 'secondary'} busy={busy === 'role-' + role}
                 onClick={() => toggleRole(role, !has)}>{has ? 'Remove' : 'Make'} {ROLE_LABEL[role]}</Button>;
@@ -195,7 +199,7 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
         <form className="inline-field" onSubmit={submitLevel}>
           <label htmlFor="level">Level</label>
           <input id="level" className="input input-sm" type="number" min={1} max={100} required value={level} onChange={e => setLevel(e.target.value)} />
-          <Button type="submit" size="sm" busy={busy === 'level'} disabled={Number(level) === c.level}>Set</Button>
+          <Button type="submit" size="sm" busy={busy === 'level'} disabled={!canEdit || Number(level) === c.level}>Set</Button>
         </form>
         {classes.length > 0 && (
           <form className="inline-field" onSubmit={submitClass}>
@@ -204,7 +208,7 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
               {!classes.some(x => x.creationId === c.creationId) && <option value={c.creationId} disabled>Class {c.creationId} (no profile)</option>}
               {classes.map(x => <option key={x.creationId} value={x.creationId}>{x.name}</option>)}
             </select>
-            <Button type="submit" size="sm" busy={busy === 'class'} disabled={Number(creationId) === c.creationId}>Change</Button>
+            <Button type="submit" size="sm" busy={busy === 'class'} disabled={!canEdit || Number(creationId) === c.creationId}>Change</Button>
           </form>
         )}
         <form className="inline-field" onSubmit={submitAscension}>
@@ -212,7 +216,7 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
           <select id="ascension" className="select select-sm" value={ascension} onChange={e => setAscension(e.target.value)}>
             {[1, 2, 3, 4, 5, 6].map(g => <option key={g} value={g}>Grade {g}</option>)}
           </select>
-          <Button type="submit" size="sm" busy={busy === 'ascension'} disabled={Number(ascension) === detail.ascension}>Set</Button>
+          <Button type="submit" size="sm" busy={busy === 'ascension'} disabled={!canEdit || Number(ascension) === detail.ascension}>Set</Button>
         </form>
       </div>
     </div>

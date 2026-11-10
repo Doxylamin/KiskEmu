@@ -1,5 +1,6 @@
 using Aion.Application.Authentication;
 using Microsoft.AspNetCore.Identity;
+using Aion.Core.Security;
 using Npgsql;
 
 namespace Aion.Infrastructure.Postgres;
@@ -67,7 +68,7 @@ public sealed partial class PostgresAccountAuthentication : IAccountManagement
 
     public async Task<bool> SetStaffRoleAsync(string session, Guid target, string role, bool granted, CancellationToken ct=default)
     {
-        if(!ValidToken(session) || target==Guid.Empty || role is not ("gamemaster" or "admin")) return false;
+        if(!ValidToken(session) || target==Guid.Empty || !StaffAccess.IsRole(role)) return false;
         await using var q=source.CreateCommand("SELECT auth.set_staff_role($1,$2,$3,$4)");
         q.Parameters.AddWithValue(Hash(session)); q.Parameters.AddWithValue(target); q.Parameters.AddWithValue(role); q.Parameters.AddWithValue(granted);
         return await q.ExecuteScalarAsync(ct) is true;

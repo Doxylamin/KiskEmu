@@ -3,6 +3,7 @@ using System.Text;
 using Aion.Application.Authentication;
 using Aion.Application.Gameplay;
 using Aion.Core.Accounts;
+using Aion.Core.Security;
 using Aion.Host.Native;
 using Aion.World;
 
@@ -89,7 +90,7 @@ public static class WorldEndpoints
             var listed = native is null ? [] : LoginWorldList.Directory(worlds, native, supervisor is null ? _ => WorldRuntime.None : supervisor.Runtime);
             return Results.Ok(new
             {
-                canManage = roles.Contains("admin"),
+                canManage = StaffAccess.Can(roles, StaffPermission.ManageWorlds),
                 supervised = supervisor is not null,
                 publicAddress = native?.Network.PublicAddress,
                 worlds = worlds.Select(w =>

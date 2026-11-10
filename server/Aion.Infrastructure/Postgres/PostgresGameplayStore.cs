@@ -2,6 +2,7 @@ using System.Text.Json;
 using Aion.Application.Gameplay;
 using Aion.Core.Accounts;
 using Aion.Core;
+using Aion.Core.Security;
 using Npgsql;
 using Aion.Core.Characters;
 using NpgsqlTypes;
@@ -48,9 +49,9 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
     { await using var q = Query(c,t,sql,args); return await q.ExecuteNonQueryAsync(ct); }
     // Roles are read inside the caller's transaction so a revoked role takes effect immediately.
     private static async Task<string[]> StaffRoles(NpgsqlConnection c, NpgsqlTransaction? t, Guid actor, CancellationToken ct) =>
-        await Scalar(c,t,"SELECT array_agg(r.role ORDER BY r.role) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN ('gamemaster','admin')",ct,actor) as string[] ?? [];
-    private static async Task RequireStaff(NpgsqlConnection c, NpgsqlTransaction t, Guid actor, CancellationToken ct)
-    { if((await StaffRoles(c,t,actor,ct)).Length==0) throw new GameplayException("forbidden"); }
+        await Scalar(c,t,"SELECT array_agg(r.role ORDER BY r.role) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN ("+StaffAccess.RoleSqlList+")",ct,actor) as string[] ?? [];
+    private static async Task RequireStaff(NpgsqlConnection c, NpgsqlTransaction t, Guid actor, CancellationToken ct, StaffPermission permission=StaffPermission.ViewDashboard)
+    { if(!StaffAccess.Can(await StaffRoles(c,t,actor,ct),permission)) throw new GameplayException("forbidden"); }
     private static async Task<List<ItemState>> Items(NpgsqlConnection c, NpgsqlTransaction t, Guid character, CancellationToken ct)
     {
         var items=new List<ItemState>();
@@ -2774,7 +2775,9 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
         if(command.Command=="level" && (command.Level<1 || command.Level>MaxLevel)) throw new GameplayException("invalid_level");
         if(command.Command=="teleport" && (command.MapId<=0 || !double.IsFinite(command.X) || !double.IsFinite(command.Y) || !double.IsFinite(command.Z))) throw new GameplayException("invalid_position");
         await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
-        await RequireStaff(c,t,actor.AccountId,ct);
+        // Every staff rank (the in-game GM commands use this too); the dashboard's /commands asks for EditCharacters.
+        // Flagging a character as staff is the administrators'.
+        await RequireStaff(c,t,actor.AccountId,ct,command.Command=="staff" ? StaffPermission.ManageStaff : StaffPermission.ViewDashboard);
         await Execute(c,t,"SELECT pg_advisory_xact_lock(hashtextextended($1,0))",ct,command.RequestId.ToString());
         var args=Json(command);
         await using(var q=Query(c,t,"SELECT result::text,(arguments=$2 AND actor_id=$3) FROM game.admin_requests WHERE request_id=$1",command.RequestId,args,actor.AccountId))
@@ -2808,7 +2811,7 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
         else if(command.Command=="staff")
         {
             // Staff standing is per character (migration 035): only a character of an account holding a staff role can be flagged.
-            if(command.Staff && !(bool)(await Scalar(c,t,"SELECT EXISTS(SELECT FROM game.characters c JOIN auth.account_roles r USING(account_id) WHERE c.character_id=$1 AND r.role IN ('gamemaster','admin'))",ct,command.CharacterId))!)
+            if(command.Staff && !(bool)(await Scalar(c,t,"SELECT EXISTS(SELECT FROM game.characters c JOIN auth.account_roles r USING(account_id) WHERE c.character_id=$1 AND r.role IN ("+StaffAccess.RoleSqlList+"))",ct,command.CharacterId))!)
                 throw new GameplayException("not_staff_account");
             var revision=await Scalar(c,t,"UPDATE game.characters SET staff=$2 WHERE character_id=$1 RETURNING revision",ct,command.CharacterId,command.Staff);
             result=Json(new {revision=(long)revision!,staff=command.Staff});

@@ -1,6 +1,13 @@
 // Shapes of the staff API (server/Aion.Host/Authentication/GameplayEndpoints.cs) and the wardrobe export.
 
-export interface StaffProfile { roles: string[]; buildId: string | null }
+/** GET /api/admin/me. permissions: what this rank may do (Aion.Core/Security/StaffAccess.cs); the server checks every request. */
+export interface StaffProfile { roles: string[]; buildId: string | null; rank?: string | null; rankLabel?: string; permissions?: string[] }
+
+/** Whether the signed-in staff member holds a permission (camelCase names of StaffPermission). */
+export function can(profile: StaffProfile, permission: string): boolean { return profile.permissions?.includes(permission) ?? false; }
+
+/** The stored staff roles, lowest rank first. */
+export const STAFF_ROLES = ['gamemaster', 'moderator', 'admin'] as const;
 
 export interface AdminCharacter {
   characterId: string; name: string; accountId: string; accountName: string; worldId: number;
@@ -41,11 +48,11 @@ export interface ViewerModule {
   createViewer(stage: HTMLElement, data: WardrobeData, hooks: { onStatus?: (t: string) => void; onError?: (t: string) => void; onChange?: () => void }): Viewer;
 }
 
-export const ROLE_LABEL: Record<string, string> = { admin: 'Admin', gamemaster: 'GameMaster' };
+export const ROLE_LABEL: Record<string, string> = { admin: 'Administrator', moderator: 'Moderator', gamemaster: 'Gamemaster' };
 export const GENDER: Record<number, 'GM' | 'GF'> = { 1: 'GM', 2: 'GF' };   // EGender::Male = 1, Female = 2
 
 export const ERRORS: Record<string, string> = {
-  forbidden: 'Your account does not have the GameMaster or Admin role.',
+  forbidden: 'Your staff rank does not allow this.',
   unknown_item: 'This item is not in the server catalogue build.',
   character_unavailable: 'That character is unavailable (deleted or its account is disabled).',
   invalid_grant: 'Quantity must be between 1 and 1,000,000.',

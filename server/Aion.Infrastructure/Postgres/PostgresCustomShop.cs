@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Aion.Application.Gameplay;
 using Aion.Core.Accounts;
+using Aion.Core.Security;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -38,7 +39,7 @@ public sealed class PostgresCustomShop(NpgsqlDataSource source) : ICustomShopAdm
     {
         await using var c = await source.OpenConnectionAsync(ct);
         await using var t = await c.BeginTransactionAsync(ct);
-        await RequireStaff(c, t, actor, admin: false, ct);
+        await RequireStaff(c, t, actor, StaffPermission.ViewShop, ct);
         var goods = await ReadAsync(c, t, $"SELECT {Columns} FROM game.custom_shop_goods ORDER BY sort_order, goods_id", ct);
         await t.CommitAsync(ct);
         return goods;
@@ -49,7 +50,7 @@ public sealed class PostgresCustomShop(NpgsqlDataSource source) : ICustomShopAdm
         if (CustomShopRules.Validate(goods) is { } invalid) throw new GameplayException(invalid);
         await using var c = await source.OpenConnectionAsync(ct);
         await using var t = await c.BeginTransactionAsync(ct);
-        await RequireStaff(c, t, actor, admin: true, ct);
+        await RequireStaff(c, t, actor, StaffPermission.EditShop, ct);
         var build = await Scalar(c, t, "SELECT build_id FROM catalog.builds ORDER BY imported_at DESC LIMIT 1", ct) as string
             ?? throw new GameplayException("no_catalogue");
         foreach (var item in goods.Items)
@@ -83,7 +84,7 @@ public sealed class PostgresCustomShop(NpgsqlDataSource source) : ICustomShopAdm
     {
         await using var c = await source.OpenConnectionAsync(ct);
         await using var t = await c.BeginTransactionAsync(ct);
-        await RequireStaff(c, t, actor, admin: true, ct);
+        await RequireStaff(c, t, actor, StaffPermission.EditShop, ct);
         await using var q = Query(c, t, "DELETE FROM game.custom_shop_goods WHERE goods_id=$1", goodsId);
         var removed = await q.ExecuteNonQueryAsync(ct) > 0;
         if (removed) await Audit(c, t, actor, "shop_goods_removed", new { goods_id = goodsId }, ct);
@@ -130,11 +131,10 @@ public sealed class PostgresCustomShop(NpgsqlDataSource source) : ICustomShopAdm
         return value is DBNull ? null : value;
     }
 
-    internal static async Task RequireStaff(NpgsqlConnection c, NpgsqlTransaction t, VerifiedAccount actor, bool admin, CancellationToken ct)
+    internal static async Task RequireStaff(NpgsqlConnection c, NpgsqlTransaction t, VerifiedAccount actor, StaffPermission permission, CancellationToken ct)
     {
-        await using var q = Query(c, t, "SELECT array_agg(r.role) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN ('gamemaster','admin')", actor.AccountId);
-        var roles = await q.ExecuteScalarAsync(ct) as string[] ?? [];
-        if (roles.Length == 0 || admin && !roles.Contains("admin")) throw new GameplayException("forbidden");
+        await using var q = Query(c, t, "SELECT array_agg(r.role) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN (" + StaffAccess.RoleSqlList + ")", actor.AccountId);
+        if (!StaffAccess.Can(await q.ExecuteScalarAsync(ct) as string[], permission)) throw new GameplayException("forbidden");
     }
 
     static async Task Audit(NpgsqlConnection c, NpgsqlTransaction t, VerifiedAccount actor, string action, object details, CancellationToken ct)
@@ -152,7 +152,7 @@ public sealed class PostgresShopLedger(NpgsqlDataSource source) : IShopLedger
         limit = Math.Clamp(limit, 1, 500);
         await using var c = await source.OpenConnectionAsync(ct);
         await using var t = await c.BeginTransactionAsync(ct);
-        await PostgresCustomShop.RequireStaff(c, t, actor, admin: false, ct);
+        await PostgresCustomShop.RequireStaff(c, t, actor, StaffPermission.ViewShop, ct);
         var who = (character ?? "").Trim();
         Guid? id = Guid.TryParse(who, out var parsed) ? parsed : null;
         await using var q = new NpgsqlCommand("""

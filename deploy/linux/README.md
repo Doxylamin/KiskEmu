@@ -142,7 +142,8 @@ git clone git@github.com:<owner>/<repo>.git ~/aion
 ```bash
 systemctl status aion-host aion-postgres
 journalctl -u aion-host -f
-# Staff roles (after the account has registered on the account site):
+# Staff roles (after the account has registered on the account site): gamemaster < moderator < admin
+# (each rank has what the ranks below it have; the matrix is server/Aion.Core/Security/StaffAccess.cs):
 sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres python3 /opt/aion/src/tools/postgres_dev.py role USERNAME admin
 ```
 

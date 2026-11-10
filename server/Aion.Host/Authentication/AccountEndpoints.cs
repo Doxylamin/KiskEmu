@@ -41,7 +41,8 @@ public static class AccountEndpoints
             if (actor is null) return Results.Unauthorized();
             try
             {
-                if (!(await game.AdminProfileAsync(actor, ct)).Roles.Contains("admin")) return Results.StatusCode(403);
+                if (!Aion.Core.Security.StaffAccess.Can((await game.AdminProfileAsync(actor, ct)).Roles, Aion.Core.Security.StaffPermission.ManageAccounts))
+                    return Results.StatusCode(403);
             }
             catch (Aion.Application.Gameplay.GameplayException) { return Results.StatusCode(403); }
             if (!PostgresAccountAuthentication.ValidUsername(input.Username) || !PostgresAccountAuthentication.ValidPassword(input.Password))
