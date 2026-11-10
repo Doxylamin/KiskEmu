@@ -409,7 +409,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
                         if (header == 0x3613)
                         {
                             if (authenticated) { Logger.LogInformation("Native game closed: replay_rejected"); return; }
-                            session.Store = await AuthenticateAsync(plain, ct);
+                            session.Store = await AuthenticateAsync(plain, clientAddress, ct);
                             if (session.Store is { } opened && turn is not null) session.Store = TurnStore.Wrap(opened, turn);
                             if (session.Store is null) { Logger.LogInformation("Native game closed: rejected"); return; }
                             if (services.GetService<IPlatformSecondaryAuth>() is { } platformAuth)
@@ -544,7 +544,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         }
     }
 
-    async Task<INativeCharacterStore?> AuthenticateAsync(byte[] plain, CancellationToken ct)
+    async Task<INativeCharacterStore?> AuthenticateAsync(byte[] plain, IPAddress? clientAddress, CancellationToken ct)
     {
         var sessions = services.GetService<IWorldSessions>();
         if (sessions is null) return null;
@@ -563,6 +563,15 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         {
             Logger.LogInformation("Native game login refused: {Reason}", blocked);
             return null;
+        }
+        // A world server has no platform auth of its own: the realm keeps this address for the account (the platform API's
+        // Quna balance, which the client's Quna counter shows, names the account by it). Without it the address the
+        // launcher registered lapses 15 minutes after the launch and the counter shows 0.
+        if (clientAddress is not null && services.GetService<IPlatformSecondaryAuth>() is null && services.GetService<Aion.Host.Realm.RealmLinkClient>() is { } realm)
+        {
+            try { await realm.RememberClientAsync(opened.Token, clientAddress, ct); }
+            catch (Exception error) when (error is HttpRequestException or Aion.Host.Realm.RealmLinkException or TaskCanceledException && !ct.IsCancellationRequested)
+            { Logger.LogWarning("Realm did not keep the client address: {Error}", error.Message); }
         }
         return new ServiceNativeCharacterStore(opened.Token, who, sessions, services.GetRequiredService<IWireCharacterRepository>(),
             services.GetRequiredService<IGameplayStore>(), services.GetRequiredService<CharacterPersistenceService>(),

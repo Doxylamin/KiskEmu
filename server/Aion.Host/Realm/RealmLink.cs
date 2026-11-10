@@ -40,6 +40,8 @@ public sealed record LinkWorld(int WorldId, string Name, int LightServerId, int 
 public sealed record LinkSessionOpen(string Ticket, long WireAccountId, string Grant);
 public sealed record LinkSession(string Token, Guid AccountId, int WorldId, DateTimeOffset ExpiresAt, int? Race, AccountSnapshot Account);
 public sealed record LinkToken(string Token);
+/// <summary>A game login's address for the realm's platform API (/clients/remember): the session token proves the account.</summary>
+public sealed record LinkClient(string Token, string Address);
 public sealed record LinkIdentity(Guid AccountId, int WorldId);
 public sealed record LinkRealmState(MaintenanceState Maintenance, IReadOnlyList<Sanction> Sanctions, IReadOnlyList<ScheduledEvent> Events);
 public sealed record LinkTicket(Guid? Account, string? CharacterName, string Category, string Content);
@@ -101,6 +103,15 @@ public static class RealmLinkEndpoints
         link.MapPost("/sessions/validate", async (LinkToken input, HttpContext ctx, IWorldSessions sessions, CancellationToken ct) =>
             await sessions.ValidateAsync(input.Token, ct) is { } who && who.WorldId == World(ctx).WorldId
                 ? Results.Ok(new LinkIdentity(who.Account.AccountId, who.WorldId)) : Results.Unauthorized());
+        // A game login on this world: its address names the account for the platform API on the realm (the Quna balance the
+        // client's counter reads, secondary auth). Only for a session of this world; the realm keeps the address 15 minutes.
+        link.MapPost("/clients/remember", async (LinkClient input, HttpContext ctx, IWorldSessions sessions, IServiceProvider services, CancellationToken ct) =>
+        {
+            if (await sessions.ValidateAsync(input.Token, ct) is not { } who || who.WorldId != World(ctx).WorldId) return Results.Unauthorized();
+            if (!System.Net.IPAddress.TryParse(input.Address, out var address)) return Results.BadRequest(new { error = "invalid_address" });
+            if (services.GetService<IPlatformSecondaryAuth>() is { } platform) await platform.RememberClientAsync(address, who.Account.AccountId, ct);
+            return Results.NoContent();
+        });
         link.MapPost("/sessions/close", async (LinkToken input, HttpContext ctx, IWorldSessions sessions, CancellationToken ct) =>
         {
             if (await sessions.ValidateAsync(input.Token, ct) is { } who && who.WorldId != World(ctx).WorldId) return Results.StatusCode(403);
@@ -244,6 +255,8 @@ public sealed class RealmLinkClient
     public Task<LinkSession?> OpenSessionAsync(LinkSessionOpen input, CancellationToken ct) => Send<LinkSession>(HttpMethod.Post, "sessions/open", input, ct);
     public Task<LinkIdentity?> ValidateSessionAsync(string token, CancellationToken ct) => Send<LinkIdentity>(HttpMethod.Post, "sessions/validate", new LinkToken(token), ct, repeatable: true);
     public Task CloseSessionAsync(string token, CancellationToken ct) => Send<bool>(HttpMethod.Post, "sessions/close", new LinkToken(token), ct);
+    public Task RememberClientAsync(string token, System.Net.IPAddress address, CancellationToken ct) =>
+        Send<bool>(HttpMethod.Post, "clients/remember", new LinkClient(token, address.ToString()), ct, repeatable: true);
     public Task<AccountSnapshot?> AuthenticateAsync(string token, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Post, "authenticate", new LinkToken(token), ct, repeatable: true);
     public Task<AccountSnapshot?> AccountAsync(Guid account, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Get, $"accounts/{account:D}", null, ct);
     public Task<LinkRealmState?> StateAsync(CancellationToken ct) => Send<LinkRealmState>(HttpMethod.Get, "state", null, ct);
