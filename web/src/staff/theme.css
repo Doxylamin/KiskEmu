@@ -24,7 +24,7 @@ body { background: var(--bg); }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
 .brand strong { font-size: 15px; letter-spacing: .02em; }
 .brand-center { justify-content: center; }
-.brand-mark { width: 30px; height: 30px; flex: none; border-radius: 7px; display: grid; place-items: center; background: var(--text); color: var(--bg); font-weight: 700; }
+.brand-mark { width: 32px; height: 32px; flex: none; object-fit: contain; }
 .nav { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
 .nav-heading { padding: 0 12px 4px; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }

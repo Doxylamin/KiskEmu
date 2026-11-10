@@ -21,8 +21,8 @@ export function useSiteName(): string {
   return name;
 }
 
-/** The brand mark's letter: the name's first letter or digit. */
-export const siteMark = (name: string) => (name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase();
+/** The KiskEmu icon: the brand mark on both sites (and their favicon, index.html / admin.html). */
+export { default as siteIcon } from './kiskemu-icon.svg';
 
 /** "Page · Site" for the browser tab. */
 export const pageTitle = (page: string, site: string) => (page ? `${page} · ${site}` : site);

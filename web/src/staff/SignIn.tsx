@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../shared/api';
 import { Button, Status, type StatusMessage } from '../shared/components';
 import { QrCode } from '../shared/QrCode';
-import { siteMark, useSiteName } from '../shared/site';
+import { siteIcon, useSiteName } from '../shared/site';
 import { describe, type Session } from './StaffApp';
 import { ERRORS, type StaffProfile } from './types';
 
@@ -100,7 +100,7 @@ export function SignIn({ message, onSignedIn, onMessage }:
     <main className="signin">
       <form className="card card-body stack signin-card" onSubmit={submit}>
         <div className="brand brand-center">
-          <span className="brand-mark" aria-hidden="true">{siteMark(site)}</span>
+          <img className="brand-mark" src={siteIcon} alt="" />
         </div>
         <div className="stack-sm center">
           <h2>{site} staff sign-in</h2>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="wing" x1="95" y1="90" x2="410" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5FBFF"/><stop offset=".28" stop-color="#A9C8F8"/><stop offset=".62" stop-color="#526FC4"/><stop offset="1" stop-color="#171C4D"/>
+    </linearGradient>
+    <linearGradient id="deep" x1="150" y1="150" x2="365" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4DEBFF"/><stop offset=".48" stop-color="#4166D8"/><stop offset="1" stop-color="#8B43E8"/>
+    </linearGradient>
+    <linearGradient id="crystal" x1="220" y1="145" x2="302" y2="363" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3FFFF"/><stop offset=".22" stop-color="#74F3FF"/><stop offset=".58" stop-color="#4777F5"/><stop offset="1" stop-color="#A34DFF"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="180" y1="100" x2="332" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/><stop offset=".45" stop-color="#A9C9F7"/><stop offset="1" stop-color="#526AAB"/>
+    </linearGradient>
+    <filter id="glow" x="110" y="90" width="292" height="350" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="10" result="b"/><feColorMatrix in="b" type="matrix" values="0 0 0 0 .18 0 0 0 0 0.55 0 0 0 0 1 0 0 0 .8 0"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- wing silhouette -->
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path d="M246 222C195 190 128 129 76 64c2 91 28 160 86 207-31-5-61-20-91-45 18 76 56 128 119 150-24 2-48-3-73-15 28 62 70 102 126 120l13-88-10-171Z" fill="url(#wing)" stroke="#D9EEFF" stroke-width="5"/>
+    <path d="M266 222c51-32 118-93 170-158-2 91-28 160-86 207 31-5 61-20 91-45-18 76-56 128-119 150 24 2 48-3 73-15-28 62-70 102-126 120l-13-88 10-171Z" fill="url(#wing)" stroke="#D9EEFF" stroke-width="5"/>
+    <!-- feather cuts -->
+    <path d="M93 104c42 62 92 105 147 139M111 174c39 43 82 73 129 92M139 246c34 26 68 43 105 51M169 318c24 14 49 22 77 25" stroke="#F2FBFF" stroke-width="5" opacity=".9"/>
+    <path d="M419 104c-42 62-92 105-147 139M401 174c-39 43-82 73-129 92M373 246c-34 26-68 43-105 51M343 318c-24 14-49 22-77 25" stroke="#F2FBFF" stroke-width="5" opacity=".9"/>
+    <path d="M119 274c34 45 73 73 121 86M393 274c-34 45-73 73-121 86" stroke="#9B8BFF" stroke-width="8" opacity=".9"/>
+    <!-- central halo / server core -->
+    <path d="M256 63c-58 40-92 96-92 161 0 72 39 130 92 180 53-50 92-108 92-180 0-65-34-121-92-161Z" stroke="url(#deep)" stroke-width="9" opacity=".9"/>
+    <path d="M256 92v303" stroke="#72EFFF" stroke-width="3" opacity=".65"/>
+    <g filter="url(#glow)">
+      <path d="M256 132 311 221 256 355 201 221 256 132Z" fill="url(#crystal)" stroke="url(#metal)" stroke-width="7"/>
+      <path d="m256 132 0 223 55-134-55-89Z" fill="#9B6CFF" opacity=".35"/>
+      <path d="m256 132-55 89 55 36 55-36-55-89Z" fill="#E8FFFF" opacity=".42"/>
+      <path d="m201 221 55 36 55-36M256 257v98" stroke="#F1FFFF" stroke-width="4" opacity=".9"/>
+    </g>
+    <!-- lower pointed crest -->
+    <path d="M218 343 256 424 294 343 276 369 256 389 236 369 218 343Z" fill="url(#deep)" stroke="#C8E9FF" stroke-width="5"/>
+    <path d="M256 389v54" stroke="#7CEBFF" stroke-width="5"/>
+    <!-- small top crown -->
+    <path d="M256 48 269 91 256 113 243 91 256 48Z" fill="url(#metal)" stroke="#8EEBFF" stroke-width="3"/>
+  </g>
+</svg>

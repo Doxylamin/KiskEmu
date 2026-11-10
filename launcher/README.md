@@ -19,9 +19,9 @@ Design and evidence: `research/client-installer.md`.
   from `research/local/dev-client/verification.json`, keeping only the depot's 1218 files).
 - `launcher.json`: the server (account URL, IPv4 address, bootstrap port, private saved-folder suffix).
   Embedded; a `launcher.json` next to the exe overrides it.
-- `AionLauncher/icon.ico` (exe, window, taskbar, shortcuts) and `AionLauncher/emblem.png` (the rail): the "AH"
-  emblem artwork (user-supplied PNG, 1254 px), cropped to the central 77 % and resized with Pillow;
-  the ico holds 16-256 px.
+- `AionLauncher/icon.ico` (exe, window, taskbar, shortcuts) and `AionLauncher/emblem.png` (the rail): the KiskEmu
+  icon (`web/src/shared/kiskemu-icon.svg`, also the client editor's icon) rendered with resvg; emblem.png is
+  1024 px, the ico holds 16-256 px as PNG entries.
 
 ## What it does
 

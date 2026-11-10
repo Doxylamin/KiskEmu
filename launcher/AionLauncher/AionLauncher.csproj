@@ -10,7 +10,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- icon.ico and emblem.png come from the "AH" emblem artwork (see README). -->
+    <!-- icon.ico and emblem.png are rendered from the KiskEmu icon, web/src/shared/kiskemu-icon.svg (see README). -->
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <AssemblyName>KiskLauncher</AssemblyName>
     <Product>KiskLauncher</Product>

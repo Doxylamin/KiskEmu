@@ -6,7 +6,7 @@
 // act on: the realm forwards those requests (?world=…) to that world server; everything else is the realm's.
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../shared/api';
-import { pageTitle, siteMark, useSiteName } from '../shared/site';
+import { pageTitle, siteIcon, useSiteName } from '../shared/site';
 import { Button, Icon, type StatusMessage } from '../shared/components';
 import { hashOf, useRoute } from '../shared/router';
 import { readSession, writeSession, type SavedSession } from '../shared/session';
@@ -170,7 +170,7 @@ export function StaffApp() {
     <div className="app app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">{siteMark(site)}</span>
+          <img className="brand-mark" src={siteIcon} alt="" />
           <div>
             <strong>{site}</strong>
             <span className="muted small block">Staff dashboard</span>

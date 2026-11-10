@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useWorldNames } from '../shared/worlds';
 import { QrCode } from '../shared/QrCode';
-import { pageTitle, siteMark, useSiteName } from '../shared/site';
+import { pageTitle, siteIcon, useSiteName } from '../shared/site';
 import { api, ApiError } from '../shared/api';
 import { Button, Status, type StatusMessage } from '../shared/components';
 import { readSession, writeSession } from '../shared/session';
@@ -72,7 +72,7 @@ export function PlayerApp() {
   return (
     <div className="site">
       <header className="site-header">
-        <a className="site-brand" href="#/"><span className="site-mark" aria-hidden="true">{siteMark(site)}</span><span>{site}</span></a>
+        <a className="site-brand" href="#/"><img className="site-mark" src={siteIcon} alt="" /><span>{site}</span></a>
         {session
           ? <div className="row"><span className="muted hide-narrow">Signed in as <strong className="ink">{session.username}</strong></span>
               <Button onClick={async () => {

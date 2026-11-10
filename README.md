@@ -1,3 +1,5 @@
+<p align="center"><img src="web/src/shared/kiskemu-icon.svg" alt="" width="128" height="128"></p>
+
 # KiskEmu
 
 An open-source server emulator for the AION2 Steam client, with its Windows launcher, KiskLauncher.
