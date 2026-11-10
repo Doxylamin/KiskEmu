@@ -1,4 +1,5 @@
 using Aion.Application.Authentication;
+using System.Text.Json;
 using Aion.Application.Gameplay;
 
 namespace Aion.Host.Authentication;
@@ -8,6 +9,8 @@ public static class GameplayEndpoints
     private sealed record MoveItem(long Revision, int? EquipmentSlot);
     private sealed record ChangePassword(string CurrentPassword, string NewPassword);
     private sealed record StaffRoleChange(string Role, bool Granted);
+    /// <param name="Amount">Quna to add (positive) or take (negative).</param>
+    private sealed record QunaStaffChange(Guid RequestId, long Amount, string? Note);
     /// <param name="accounts">The account store's routes (password, sessions, TOTP reset, disable, roles): the auth host
     /// only; a world server has the realm's accounts only as a mirror (server/DATABASES.md).</param>
     public static void MapGameplayEndpoints(this WebApplication app, bool accounts = true)
@@ -112,6 +115,30 @@ public static class GameplayEndpoints
             if(!await management.SetStaffRoleAsync(Bearer(ctx),id,input.Role,input.Granted,ct)) return Results.StatusCode(403);
             if(services.GetService<Aion.Host.Realm.RealmSocketHub>() is { } sockets) await sockets.AccountChangedAsync(id);
             return Results.NoContent();
+        });
+        // The account's Quna wallet (server/DATABASES.md). Staff read it; admins add or take Quna here, the only place Quna
+        // is credited (world servers can only spend and refund). The ledger keeps the admin and the note; the realm pushes
+        // the new balance to the world the account plays on.
+        admin.MapGet("/accounts/{id:guid}/quna",async(Guid id,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,IQunaWallet wallet,CancellationToken ct) =>
+        {
+            var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
+            await game.AdminProfileAsync(account,ct);   // staff only
+            var balance=await wallet.BalanceAsync(id,ct);
+            return Results.Ok(new {balance=balance.Balance});
+        });
+        admin.MapPost("/accounts/{id:guid}/quna",async(Guid id,QunaStaffChange input,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,IQunaWallet wallet,CancellationToken ct) =>
+        {
+            var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
+            if(!(await game.AdminProfileAsync(account,ct)).Roles.Contains("admin")) return Results.StatusCode(403);
+            var note=(input.Note??"").Trim();
+            if(input.RequestId==Guid.Empty || input.Amount==0 || Math.Abs(input.Amount)>QunaWalletRules.MaxAmount || note.Length>200)
+                return Results.BadRequest(new {error="invalid_quna_change"});
+            var request=new QunaRequest(id,"staff:"+input.RequestId.ToString("N"),Math.Abs(input.Amount),QunaWalletRules.Staff,
+                Details:JsonSerializer.SerializeToElement(new {actor=account.AccountId,note}));
+            QunaResult result;
+            try { result=input.Amount>0 ? await wallet.GrantAsync(request,ct) : await wallet.SpendAsync(request,ct); }
+            catch(System.Data.Common.DbException) { return Results.NotFound(new {error="unknown_account"}); }   // no such account (the wallet's key)
+            return result.Ok ? Results.Ok(new {balance=result.Balance}) : Results.BadRequest(new {error="quna_"+result.Error,balance=result.Balance});
         });
     }
     private static string Bearer(HttpContext context)

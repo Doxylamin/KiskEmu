@@ -348,7 +348,7 @@ public sealed class BuilderCommands(WorldPresence presence, GmPolicy policy, Act
             _ => 0,
         };
         if (template <= 0) return BuilderOutcome.Fail("Use kina, quna, or a currency template id.");
-        if (template == PlatformGoodsTables.Embedded.QunaItemId && await QunaAsync(actor, count, ct) is { } quna) return quna;
+        if (template == PlatformGoodsTables.Embedded.QunaItemId && Quna(actor, count) is { } quna) return quna;
         await grant(store.AccountId, character, template, count, ct);
         return BuilderOutcome.Ok($"Granted {count} of currency item {template}.", await actor.InventoryChangesAsync(ct));
     }
@@ -365,15 +365,16 @@ public sealed class BuilderCommands(WorldPresence presence, GmPolicy policy, Act
             : rows.FirstOrDefault(r => r.Name.Equals(args[0], StringComparison.OrdinalIgnoreCase) || r.Id.ToString(CultureInfo.InvariantCulture) == args[0]);
         if (item.Name is null)
             return BuilderOutcome.Fail(rows.Count == 0 ? $"No item matches {args[0]}." : "Several items match: " + string.Join(", ", rows.Select(r => $"{r.Id} {r.Name}")));
-        if (item.Id == PlatformGoodsTables.Embedded.QunaItemId && await QunaAsync(actor, count, ct) is { } quna) return quna;
+        if (item.Id == PlatformGoodsTables.Embedded.QunaItemId && Quna(actor, count) is { } quna) return quna;
         await grant(store.AccountId, character, item.Id, count, ct);
         // Stored first, then the client gets the difference (0x561b) so the item shows at once.
         return BuilderOutcome.Ok($"{count} x {item.Name} ({item.Id}) added.", await actor.InventoryChangesAsync(ct));
     }
 
-    /// <summary>Quna goes to the account's wallet in the realm, not into the bag (null without a wallet: then the item).</summary>
-    static async Task<BuilderOutcome?> QunaAsync(GameSession actor, long count, CancellationToken ct) =>
-        await actor.GrantQunaAsync(count, ct) is { } granted
+    /// <summary>Quna is the account's wallet in the realm, which only the realm adds to: refused here (null without a
+    /// wallet: then the item).</summary>
+    static BuilderOutcome? Quna(GameSession actor, long count) =>
+        actor.GrantQuna(count) is { } granted
             ? granted.Ok ? BuilderOutcome.Ok(granted.Message, granted.Packets) : BuilderOutcome.Fail(granted.Message)
             : null;
 

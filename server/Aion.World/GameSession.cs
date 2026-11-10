@@ -990,8 +990,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     async Task<List<InventoryItem>> LoadInventoryAsync(INativeCharacterStore store, Guid character, CancellationToken ct, IReadOnlyDictionary<long, int>? hints = null)
     {
         var rows = await store.InventoryAsync(character, ct);
-        // Quna is the account wallet's: stacks still stored go into it, and the balance is read on the first load.
-        if (store.QunaWallet is { } wallet && rows.Any(r => IsQunaRow(r) && r.Location == "bag")) rows = await SweepQunaStacksAsync(store, wallet, character, rows, ct);
+        // Quna is the account wallet's: its balance is read on the first load. A stored Quna stack is not shown (and not
+        // credited here: only the realm adds Quna; tools/postgres_dev.py migrate-quna moves old stacks into the wallet).
         if (qunaEntry < 0) await RefreshAccountQunaBalanceAsync(ct);
         storedItems.Clear();
         foreach (var row in rows.Where(r => !QunaInWallet || !IsQunaRow(r))) storedItems[WireKey(row)] = row;

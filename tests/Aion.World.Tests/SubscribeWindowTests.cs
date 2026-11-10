@@ -104,7 +104,7 @@ public sealed class SubscribeWindowTests
     public async Task Levels_are_claimed_with_their_items_and_the_paid_pass_after_its_unlock()
     {
         var store = new FakeCharacterStore(Guid.NewGuid());
-        store.Items.Add(FakeCharacterStore.BagItem(PlatformGoodsTables.Embedded.QunaItemId, 10_000, 7000));
+        store.Quna.Seed(store.AccountId, 10_000);
         var (session, _, _) = await EnterAsync(store, LiveNow);
 
         var exp = session.GrantBattlePassExp(3000, LiveNow);

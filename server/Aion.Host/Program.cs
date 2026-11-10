@@ -78,10 +78,11 @@ if (!string.IsNullOrWhiteSpace(connectionString))
     builder.Services.AddSingleton<IWireCharacterRepository>(provider => provider.GetRequiredService<PostgresCharacterRepository>());
     builder.Services.AddSingleton<CharacterService>();
     builder.Services.AddSingleton<CharacterPersistenceService>();
-    // A staff grant of Quna goes to the account's wallet (server/DATABASES.md), not into the world's items.
+    // Quna is the account's wallet (server/DATABASES.md): a staff grant of the Quna item to a character is refused, the
+    // account page adds Quna in the realm.
     builder.Services.AddSingleton<IGameplayStore>(sp => new PostgresGameplayStore(
         sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<ProgressionOptions>(), sp.GetService<IItemStatRoller>())
-    { QunaWallet = sp.GetService<IQunaWallet>(), QunaWorldId = worldProcess is null ? null : builder.Configuration.GetValue<int?>("Aion:Native:WorldId") });
+    { QunaWallet = sp.GetService<IQunaWallet>() });
     if (worldProcess is null)
     {
         builder.Services.AddSingleton<IGameTicketRedeemer, PostgresGameTicketRedeemer>();
@@ -149,7 +150,7 @@ else if (accountsReady)
     builder.Services.AddSingleton<Aion.Host.Realm.RealmLinkService>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Realm.RealmLinkService>());
     builder.Services.AddSingleton<ICustomShopCatalog, Aion.Host.Realm.LinkedCustomShopCatalog>();
-    // Quna is the realm's account wallet (server/DATABASES.md): spent and granted over the realm link.
+    // Quna is the realm's account wallet (server/DATABASES.md): spent and refunded over the realm link; only the realm adds Quna.
     builder.Services.AddSingleton<IQunaWallet, Aion.Host.Realm.LinkedQunaWallet>();
     builder.Services.AddSingleton<IShopLedger>(provider => new PostgresShopLedger(provider.GetRequiredService<NpgsqlDataSource>()));
 }

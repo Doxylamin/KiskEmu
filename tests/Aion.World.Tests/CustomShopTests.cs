@@ -50,7 +50,7 @@ public sealed class CustomShopTests
     {
         var store = new FakeCharacterStore(Guid.NewGuid());
         store.Items.Add(FakeCharacterStore.BagItem(GameSession.KinaItemId, kina, 4000));
-        if (quna > 0) store.Items.Add(FakeCharacterStore.BagItem(PlatformGoodsTables.Embedded.QunaItemId, quna, 4001));
+        if (quna > 0) store.Quna.Seed(store.AccountId, quna);
         return store;
     }
 
@@ -79,6 +79,7 @@ public sealed class CustomShopTests
         Assert.Equal("invalid_goods_id", CustomShopRules.Validate(Goods(1169)));
         Assert.Equal("invalid_limit", CustomShopRules.Validate(Goods(0, target: 3)));
         Assert.Equal("invalid_items", CustomShopRules.Validate(Goods(0) with { Items = [] }));
+        Assert.Equal("quna_item", CustomShopRules.Validate(Goods(0) with { Items = [new CustomShopItem(QunaWalletRules.ItemId, 100)] }));
         Assert.Equal("invalid_sale_window", CustomShopRules.Validate(Goods(0) with { SaleFrom = At, SaleTo = At }));
     }
 

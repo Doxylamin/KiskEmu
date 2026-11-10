@@ -49,6 +49,8 @@ public static class CustomShopRules
         if (g.Name.Trim().Length is 0 or > 80 || g.Description.Length > 400) return "invalid_name";
         if (g.TabLight.Trim().Length is 0 or > 64 || g.TabDark.Trim().Length is 0 or > 64 || g.Icon.Length > 128) return "invalid_tab";
         if (g.Items.Count is 0 or > 10 || g.Items.Any(i => i.TemplateId <= 0 || i.Quantity is < 1 or > MaxItemQuantity)) return "invalid_items";
+        // Quna is the account wallet's, credited by the realm only: goods cannot hand it out.
+        if (g.Items.Any(i => i.TemplateId == QunaWalletRules.ItemId)) return "quna_item";
         if (!Currencies.Contains(g.Currency)) return "invalid_currency";
         if (g.Price < 0 || g.Price > MaxPrice || g.Currency == "free" && g.Price != 0 || g.Currency != "free" && g.Price == 0) return "invalid_price";
         if (g.LimitCount is < 0 or > 100_000 || g.LimitTarget is not (1 or 2) || g.LimitPeriod is < 0 or > 3) return "invalid_limit";

@@ -5,9 +5,9 @@ using Aion.Protocol.Native;
 namespace Aion.World;
 
 // Quna (GameCash) is the account's wallet in the realm (server/DATABASES.md, migration 095), not an item: every spend and
-// grant goes to Store.QunaWallet. The client still expects it as a bag stack of item 535300006 on 0x5611 and in the shop
+// refund goes to Store.QunaWallet; a world never adds Quna (credits are the realm's). The client still expects it as a bag stack of item 535300006 on 0x5611 and in the shop
 // packets, so the bag shows a virtual stack (never stored) whose count is the wallet balance, refreshed after a spend or
-// grant and when the realm pushes a change (/internal/world/quna/balance). Without a wallet (development logins) Quna stays
+// refund and when the realm pushes a change (/internal/world/quna/balance). Without a wallet (development logins) Quna stays
 // a plain bag item as before.
 // Kinah is bag item 930100001 on 0x5611 (GoldCombined). GNB slot wiring for Quna is unverified — see tools/data/currency_hud.json.
 // HTTP GET virtual_currency/v2.0/me/balances uses currency_id 109 with currency_group_id 145 (GameCash), 110 with 158 (Mileage).
@@ -64,34 +64,6 @@ public sealed partial class GameSession
             PersistenceErrors.Add("quna_balance");
             qunaEntry = Math.Max(qunaEntry, 0);
         }
-    }
-
-    /// <summary>
-    /// Quna item stacks still in this character's bag (a mail or reward that granted the item, or a world database the
-    /// migration did not reach; the warehouse is the migration's) go into the wallet and are deleted: credited first, with a request id of the stack and its revision so a
-    /// repeat after a failed delete credits nothing twice. Returns the rows to use.
-    /// </summary>
-    async Task<IReadOnlyList<ItemState>> SweepQunaStacksAsync(INativeCharacterStore store, IQunaWallet wallet, Guid character,
-        IReadOnlyList<ItemState> rows, CancellationToken ct)
-    {
-        var swept = false;
-        foreach (var row in rows.Where(r => IsQunaRow(r) && r.Location == "bag" && r.Quantity is > 0 and <= int.MaxValue))
-        {
-            try
-            {
-                var details = JsonSerializer.SerializeToElement(new { source = "item", instance = row.InstanceId, row.Location });
-                var credited = await wallet.GrantAsync(new QunaRequest(store.AccountId, $"stack:{row.InstanceId:N}:{row.Revision}", row.Quantity,
-                    QunaWalletRules.Grant, store.WorldId, character, details), ct);
-                if (!credited.Ok) continue;
-                NoteQuna(credited);
-                if (await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, (int)row.Quantity, ct)) swept = true;
-            }
-            catch (Exception error) when (error is not OperationCanceledException || !ct.IsCancellationRequested)
-            {
-                PersistenceErrors.Add("quna_sweep");
-            }
-        }
-        return swept ? await store.InventoryAsync(character, ct) : rows;
     }
 
     /// <summary>The stored rows plus the virtual Quna stack (when Quna is the wallet's and the balance is above 0).</summary>
@@ -248,25 +220,9 @@ public sealed partial class GameSession
     }
 
     /// <summary>
-    /// A staff grant of Quna to this account's wallet (GM command); the packets show it. Null when Quna is not a wallet here
-    /// (development logins: the caller grants the item).
+    /// The GM command's Quna grant: refused where Quna is the wallet's, since only the realm adds Quna (the staff dashboard's
+    /// account page). Null without a wallet (development logins: the caller grants the item).
     /// </summary>
-    public async Task<(bool Ok, string Message, List<byte[]> Packets)?> GrantQunaAsync(long amount, CancellationToken ct)
-    {
-        if (Store is not { QunaWallet: { } wallet } store) return null;
-        var details = JsonSerializer.SerializeToElement(new { command = "GrantShopCurrency" });
-        QunaResult granted;
-        try
-        {
-            granted = await wallet.GrantAsync(new QunaRequest(store.AccountId, $"gm:{Guid.NewGuid():N}", amount, QunaWalletRules.Staff,
-                store.WorldId, CharacterId, details), ct);
-        }
-        catch (Exception error) when (error is not OperationCanceledException || !ct.IsCancellationRequested)
-        {
-            return (false, "The realm could not be reached; no Quna was granted.", []);
-        }
-        if (!granted.Ok) return (false, $"Quna not granted: {granted.Error}.", []);
-        NoteQuna(granted);
-        return (true, $"Granted {amount} Quna (balance {granted.Balance}).", CharacterId is null ? [] : await InventoryChangesAsync(ct));
-    }
+    public (bool Ok, string Message, List<byte[]> Packets)? GrantQuna(long amount) =>
+        QunaInWallet ? (false, "Quna is added on the staff dashboard (a character's account), not in a world.", []) : null;
 }

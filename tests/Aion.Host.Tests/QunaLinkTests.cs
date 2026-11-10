@@ -179,6 +179,23 @@ public sealed class QunaLinkTests
     }
 
     [Fact]
+    public async Task A_world_cannot_add_quna_over_the_link()
+    {
+        await using var rig = await Rig.StartAsync();
+        var account = Guid.NewGuid();
+        rig.Ledger.Seed(account, 10);
+        var entries = rig.Ledger.Ledger.Count;
+        foreach (var reason in new[] { QunaWalletRules.Grant, QunaWalletRules.Staff, QunaWalletRules.Migration })
+        {
+            var granted = await rig.WorldWallet.GrantAsync(new QunaRequest(account, "mint:" + reason, 1_000_000, reason, WorldId));
+            Assert.False(granted.Ok);
+            Assert.Equal(QunaWalletRules.RealmOnly, granted.Error);
+        }
+        Assert.Equal(entries, rig.Ledger.Ledger.Count);
+        Assert.Equal(10, (await rig.WorldWallet.BalanceAsync(account)).Balance);
+    }
+
+    [Fact]
     public async Task The_realm_pushes_a_balance_change_to_the_world_the_account_plays_on()
     {
         await using var rig = await Rig.StartAsync();

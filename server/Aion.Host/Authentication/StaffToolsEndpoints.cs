@@ -148,6 +148,8 @@ public static partial class StaffToolsEndpoints
             if (input.Kina > 0) items.Add((KinaItemId, input.Kina));
             var message = (input.Message ?? "").Trim();
             if (items.Count is 0 or > 10 || items.Any(i => i.Quantity > 100_000_000) || message.Length > 200) return Results.BadRequest(new { error = "invalid_reward" });
+            // Quna is the account wallet's (the account page adds it), not a reward item.
+            if (items.Any(i => i.TemplateId == QunaWalletRules.ItemId)) return Results.BadRequest(new { error = "quna_item" });
             var presence = services.GetService<WorldPresence>();
             List<Guid> characters;
             switch (input.Target)

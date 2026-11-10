@@ -149,8 +149,9 @@ public static class RealmLinkEndpoints
     static WorldRecord World(HttpContext context) => (WorldRecord)context.Items[WorldKey]!;
 
     /// <summary>
-    /// The account Quna wallet (server/DATABASES.md): balance, spend, grant and refund, each repeatable with the same request
-    /// id. A world names the account and the request; the realm records the calling world. Refusals are answered 200 with
+    /// The account Quna wallet (server/DATABASES.md): balance, spend and refund, each repeatable with the same request id. A
+    /// world names the account and the request; the realm records the calling world. There is no grant: only the realm adds
+    /// Quna (the staff dashboard's account page), so a world server, even a compromised one, cannot mint it. Refusals are answered 200 with
     /// ok=false (insufficient, request_conflict, ...), so a world tells "not enough Quna" from "realm unreachable".
     /// </summary>
     public static void MapQuna(IEndpointRouteBuilder link, Func<HttpContext, int> worldOf)
@@ -159,11 +160,6 @@ public static class RealmLinkEndpoints
             Results.Ok(await wallet.BalanceAsync(account, ct)));
         link.MapPost("/quna/spend", async (LinkQunaChange input, HttpContext ctx, IQunaWallet wallet, CancellationToken ct) =>
             Results.Ok(await wallet.SpendAsync(Request(input, worldOf(ctx)), ct)));
-        link.MapPost("/quna/grant", async (LinkQunaChange input, HttpContext ctx, IQunaWallet wallet, CancellationToken ct) =>
-            // A world grants (a GM command, the staff dashboard's grant on that world); the opening balances are the realm's.
-            input.Reason == QunaWalletRules.Migration
-                ? Results.Ok(new QunaResult(false, 0, Error: QunaWalletRules.InvalidReason))
-                : Results.Ok(await wallet.GrantAsync(Request(input, worldOf(ctx)), ct)));
         link.MapPost("/quna/refund", async (LinkQunaRefund input, HttpContext ctx, IQunaWallet wallet, CancellationToken ct) =>
             Results.Ok(await wallet.RefundAsync(input.Account, input.RequestId ?? "", worldOf(ctx), ct)));
     }
@@ -254,7 +250,6 @@ public sealed class RealmLinkClient
     // The account Quna wallet: every call is repeatable (the request id makes a repeat return the first result).
     public Task<QunaResult?> QunaBalanceAsync(Guid account, CancellationToken ct) => Send<QunaResult>(HttpMethod.Get, $"quna/{account:D}", null, ct, repeatable: true);
     public Task<QunaResult?> QunaSpendAsync(LinkQunaChange input, CancellationToken ct) => Send<QunaResult>(HttpMethod.Post, "quna/spend", input, ct, repeatable: true);
-    public Task<QunaResult?> QunaGrantAsync(LinkQunaChange input, CancellationToken ct) => Send<QunaResult>(HttpMethod.Post, "quna/grant", input, ct, repeatable: true);
     public Task<QunaResult?> QunaRefundAsync(LinkQunaRefund input, CancellationToken ct) => Send<QunaResult>(HttpMethod.Post, "quna/refund", input, ct, repeatable: true);
     public async Task<IReadOnlyList<CustomShopGoods>> ShopGoodsAsync(CancellationToken ct) =>
         await Send<List<CustomShopGoods>>(HttpMethod.Get, "shop/goods", null, ct) ?? throw new RealmLinkException("The realm sent no shop goods.");
@@ -307,8 +302,9 @@ public sealed class LinkedQunaWallet(RealmLinkClient link, ILogger<LinkedQunaWal
     public async Task<QunaResult> SpendAsync(QunaRequest request, CancellationToken ct = default) =>
         await CallAsync(() => link.QunaSpendAsync(Change(request), ct), "spend");
 
-    public async Task<QunaResult> GrantAsync(QunaRequest request, CancellationToken ct = default) =>
-        await CallAsync(() => link.QunaGrantAsync(Change(request), ct), "grant");
+    /// <summary>Refused: only the realm adds Quna (the link has no grant).</summary>
+    public Task<QunaResult> GrantAsync(QunaRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new QunaResult(false, 0, Error: QunaWalletRules.RealmOnly));
 
     public async Task<QunaResult> RefundAsync(Guid account, string spendRequestId, int? worldId = null, CancellationToken ct = default) =>
         await CallAsync(() => link.QunaRefundAsync(new LinkQunaRefund(account, spendRequestId), ct), "refund");

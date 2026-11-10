@@ -71,7 +71,7 @@ Every request carries `X-World-Id: <id>` and `Authorization: Bearer <token>`:
 | `POST tickets`, `POST chat` | `//report` tickets; announcements and staff chat |
 | `POST characters` | the character index sync |
 | `GET shop/goods` | the custom shop goods the world sells (cached 30 s by the world) |
-| `GET quna/{account}`, `POST quna/spend`, `quna/grant`, `quna/refund` | the account Quna wallet (below); every call repeatable by its request id |
+| `GET quna/{account}`, `POST quna/spend`, `quna/refund` | the account Quna wallet (below); every call repeatable by its request id; no grant (only the realm adds Quna) |
 
 While a world's **realm socket** is open (`/internal/realm/socket`, the same sign-in), these calls and the auth
 host's calls to the world's control port ride one WebSocket the world dials, plus pushed events (account and state
@@ -100,16 +100,20 @@ with another account or amount is `request_conflict`. The ledger cannot be updat
 
 - **The auth host** uses the wallet directly (`PostgresQunaWallet`): the platform balance
   (`virtual_currency/v2.0/me/balances`) is the wallet's balance, before and after world entry.
-- **A world server** has no Quna in its database. It spends, grants and refunds over the realm link
+- **Only the realm adds Quna.** Staff do it on the dashboard: a character's Overview tab shows the account's
+  wallet, and admins add or take Quna there (`GET`/`POST /api/admin/accounts/{id}/quna`, reason `staff`, request
+  `staff:<id>`, the admin and the note in the ledger's details). The realm link has no grant, so a world server
+  (even a compromised one with a valid token) cannot mint Quna; a refund only gives back a spend of the same amount.
+- **A world server** has no Quna in its database. It spends and refunds over the realm link
   (`LinkedQunaWallet`, the realm socket while it is open, HTTP otherwise; the realm records the calling world).
   A purchase takes the Quna first, then runs its own transaction (items, limits, `game.shop_orders`); when that
   fails the Quna is refunded (`refund:<request id>`). NPC, coin, guild and in-game shop goods, custom goods, the
-  random shop, the Daeva Pass unlock and the membership all pay this way; the GM command `GrantShopCurrency quna`
-  (and `AcquireItem` of item 535300006) and the staff dashboard's grant of item 535300006 (`staff` reason, request
-  `admin:<command id>`) credit the wallet.
+  random shop, the Daeva Pass unlock and the membership all pay this way. The GM command `GrantShopCurrency quna`
+  (and `AcquireItem` of item 535300006) and the dashboard's item grant of 535300006 to a character are refused
+  (`quna_realm_only`), and custom shop goods and rewards cannot contain the Quna item (`quna_item`).
 - **The bag stack**: the client still expects Quna as a stack of item 535300006 (0x5611, 0x561b) and in
   `RefreshCurrency_NT`, so the world shows a virtual stack whose count is the wallet balance. It is never stored;
-  it changes after a spend or grant and when the realm pushes a change.
+  it changes after a spend or refund and when the realm pushes a change.
 - **Push**: after every change the realm sends the new balance and its ledger entry to the world one of the
   account's characters is in (`POST /internal/world/quna/balance`, over the world's socket or HTTP); the world
   keeps the balance with the highest entry, so a push and an answer arriving out of order do not go back.
@@ -117,8 +121,8 @@ with another account or amount is `request_conflict`. The ledger cannot be updat
   database in the cluster into the wallets: per world and account one `migration` entry for the stacks' sum, then
   the stacks are deleted. The request id is the world, the account and a hash of the stacks, so a rerun (after a
   failure between the credit and the delete) credits nothing twice. A stack that still turns up later on a world
-  in a bag (mail sent before the update, a remote world's database) is credited when its owner's inventory loads
-  (request `stack:<instance>:<revision>`, reason `grant`) and then deleted.
+  (mail sent before the update, a remote world's database) is neither shown nor credited by the world; run
+  `migrate-quna` against that world's database to move it.
 
 ## Not covered
 

@@ -171,6 +171,7 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
             </Button>
           )}
         </div>
+        <QunaWallet tools={tools} accountId={c.accountId} accountName={c.accountName} canChange={isAdmin && !c.accountDisabled} />
         {isAdmin && !c.accountDisabled && (
           <div className="row wrap">
             <Button size="sm" variant="danger" busy={busy === 'totp-reset'} onClick={async () => {
@@ -214,6 +215,64 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
           <Button type="submit" size="sm" busy={busy === 'ascension'} disabled={Number(ascension) === detail.ascension}>Set</Button>
         </form>
       </div>
+    </div>
+  );
+}
+
+// The account's Quna (one wallet in the realm, shared by every world). This is where Quna is added: world servers can only
+// spend and refund it. Staff see the balance; admins add or take Quna (recorded in the wallet's ledger with the note).
+function QunaWallet({ tools, accountId, accountName, canChange }: { tools: Tools; accountId: string; accountName: string; canChange: boolean }) {
+  const [balance, setBalance] = useState<number | null>(null);
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setBalance(null);
+    tools.call<{ balance: number }>(`/api/admin/accounts/${accountId}/quna`)
+      .then(r => { if (live) setBalance(r.balance); }, () => { if (live) setBalance(null); });
+    return () => { live = false; };
+  }, [tools, accountId]);
+
+  function change(sign: 1 | -1) {
+    const value = Number(amount);
+    if (!Number.isInteger(value) || value <= 0) { tools.notify('Enter a whole number of Quna above 0.', 'error'); return; }
+    const text = note.trim();
+    tools.confirm({
+      title: sign > 0 ? 'Add Quna' : 'Take Quna', danger: sign < 0,
+      body: `${sign > 0 ? 'Add' : 'Take'} ${value.toLocaleString()} Quna ${sign > 0 ? 'to' : 'from'} account ${accountName}'s wallet? Every world sees the new balance.`,
+      note: 'Recorded in the wallet ledger under your account' + (text ? ', with your note.' : '.'),
+      confirmLabel: sign > 0 ? 'Add Quna' : 'Take Quna',
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          const r = await tools.call<{ balance: number }>(`/api/admin/accounts/${accountId}/quna`,
+            { method: 'POST', body: { requestId: requestId(), amount: sign * value, note: text } });
+          setBalance(r.balance); setAmount(''); setNote('');
+          tools.notify(`${sign > 0 ? 'Added' : 'Took'} ${value.toLocaleString()} Quna. Balance ${r.balance.toLocaleString()}.`, 'ok');
+          tools.log(`${sign > 0 ? 'Added' : 'Took'} ${value.toLocaleString()} Quna · account ${accountName}`);
+        } catch (error) { tools.fail(error); }
+        finally { setBusy(false); }
+      },
+    });
+  }
+
+  return (
+    <div className="stack-sm">
+      <h4>Quna wallet</h4>
+      <div className="row wrap">
+        <Badge tone="accent">{balance === null ? '…' : `${balance.toLocaleString()} Quna`}</Badge>
+        <span className="muted">Shared by every world on this account.</span>
+      </div>
+      {canChange && (
+        <form className="inline-field" onSubmit={e => { e.preventDefault(); change(1); }}>
+          <label htmlFor="quna-amount">Quna</label>
+          <input id="quna-amount" className="input input-sm" type="number" min={1} step={1} required value={amount} onChange={e => setAmount(e.target.value)} />
+          <input aria-label="Note" className="input input-sm" maxLength={200} placeholder="Note (optional)" value={note} onChange={e => setNote(e.target.value)} />
+          <Button type="submit" size="sm" busy={busy}>Add</Button>
+          <Button type="button" size="sm" variant="danger" disabled={busy} onClick={() => change(-1)}>Take</Button>
+        </form>
+      )}
     </div>
   );
 }

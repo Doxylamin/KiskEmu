@@ -16,11 +16,11 @@ public sealed class QunaWalletTests
     const int QunaItem = 535300006;
     const int PaidPass = 100151;
 
-    static async Task<(GameSession Session, FakeCharacterStore Store, IReadOnlyList<byte[]> Entry)> EnterWithQunaAsync(long quna, bool asItem = true)
+    static async Task<(GameSession Session, FakeCharacterStore Store, IReadOnlyList<byte[]> Entry)> EnterWithQunaAsync(long quna, bool asItem = false)
     {
         GameSession.ConfigureShopOptions(new ShopOptions { PremiumMode = ShopPremiumMode.Quna });
         var store = new FakeCharacterStore(Guid.NewGuid());
-        // A stack stored before the wallet: swept into it at the first inventory load.
+        // asItem: a stack stored before the wallet (the world neither credits nor shows it; migrate-quna moves it).
         if (asItem) store.Items.Add(FakeCharacterStore.BagItem(QunaItem, quna, 9001));
         else store.Quna.Seed(store.AccountId, quna);
         var session = new GameSession(GameData.Embedded, new GameSessionOptions { CharacterLevel = 45, WorldId = store.WorldId }, new Random(3)) { Store = store };
@@ -128,18 +128,16 @@ public sealed class QunaWalletTests
     }
 
     [Fact]
-    public async Task Stored_quna_stacks_are_swept_into_the_wallet_once()
+    public async Task A_stored_quna_stack_is_neither_credited_nor_shown_by_the_world()
     {
-        var (session, store, _) = await EnterWithQunaAsync(50_000);
-        Assert.DoesNotContain(store.Items, i => i.TemplateId == QunaItem);
-        Assert.Equal(50_000, store.QunaBalance);
-        var entry = Assert.Single(store.Quna.Ledger);
-        Assert.Equal(QunaWalletRules.Grant, entry.Reason);
-        Assert.StartsWith("stack:", entry.RequestId);
-        // Later loads find nothing more to sweep.
+        // Only the realm adds Quna: a world that finds a stack leaves it for migrate-quna.
+        var (session, store, _) = await EnterWithQunaAsync(50_000, asItem: true);
         await session.InventoryChangesAsync(CancellationToken.None);
-        Assert.Single(store.Quna.Ledger);
-        Assert.Equal(50_000, session.QunaBalance());
+        Assert.Empty(store.Quna.Ledger);
+        Assert.Equal(0, store.QunaBalance);
+        Assert.Equal(0, session.QunaBalance());
+        Assert.Null(VirtualStack(session));
+        Assert.Contains(store.Items, i => i.TemplateId == QunaItem && i.Quantity == 50_000);
     }
 
     [Fact]
@@ -264,15 +262,15 @@ public sealed class QunaWalletTests
     }
 
     [Fact]
-    public async Task A_gm_grant_goes_to_the_wallet()
+    public async Task A_gm_grant_of_quna_is_refused_in_the_world()
     {
         var (session, store, _) = await EnterWithQunaAsync(0, asItem: false);
-        var granted = await session.GrantQunaAsync(100_000, CancellationToken.None);
-        Assert.True(granted!.Value.Ok);
-        Assert.Equal(100_000, store.QunaBalance);
-        Assert.Equal(QunaWalletRules.Staff, store.Quna.Ledger[^1].Reason);
-        Assert.Equal(100_000, VirtualStack(session)!.Count);
-        Assert.Equal(100_000, RefreshedBalance(granted.Value.Packets));
+        var granted = session.GrantQuna(100_000);
+        Assert.False(granted!.Value.Ok);
+        Assert.Contains("dashboard", granted.Value.Message);
+        Assert.Empty(granted.Value.Packets);
+        Assert.DoesNotContain(store.Quna.Ledger, e => e.Reason == QunaWalletRules.Staff);
+        Assert.Equal(0, store.QunaBalance);
         Assert.DoesNotContain(store.Items, i => i.TemplateId == QunaItem);
     }
 
@@ -288,7 +286,7 @@ public sealed class QunaWalletTests
         await session.HandleAsync(new PacketWriter().U16(0x361f).Varint((uint)store.States[0].WireId << 16).I32(0).Vec3(Vector3d.Zero).ToArray(), LiveNow);
         await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), LiveNow);
         Assert.Equal(5_000, session.QunaBalance());
-        Assert.Null(await session.GrantQunaAsync(1, CancellationToken.None));
+        Assert.Null(session.GrantQuna(1));
         var bought = await session.HandleAsync(BuyPass(), LiveNow + 5);
         Assert.Equal(0, BitConverter.ToUInt16(bought[0], 2));
         Assert.Equal(5_000 - GameSession.PaidPassUnlockQunaCost, store.Items.Single(i => i.TemplateId == QunaItem).Quantity);

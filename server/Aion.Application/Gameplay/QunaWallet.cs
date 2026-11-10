@@ -16,7 +16,8 @@ public interface IQunaWallet
     /// <summary>Takes <see cref="QunaRequest.Amount"/>; refused ("insufficient") when the balance is lower.</summary>
     Task<QunaResult> SpendAsync(QunaRequest request, CancellationToken ct = default);
 
-    /// <summary>Adds <see cref="QunaRequest.Amount"/> (reason grant, staff or migration).</summary>
+    /// <summary>Adds <see cref="QunaRequest.Amount"/> (reason grant, staff or migration). The realm's only: a world server's
+    /// wallet refuses it (<see cref="QunaWalletRules.RealmOnly"/>).</summary>
     Task<QunaResult> GrantAsync(QunaRequest request, CancellationToken ct = default);
 
     /// <summary>Gives back a spend (its request id); the refund's own request id is "refund:" + that id.</summary>
@@ -42,7 +43,11 @@ public static class QunaWalletRules
     public const string Purchase = "purchase", Grant = "grant", Refund = "refund", Staff = "staff", Migration = "migration";
     public static readonly IReadOnlyList<string> Reasons = [Purchase, Grant, Refund, Staff, Migration];
     public const string Insufficient = "insufficient", InvalidAmount = "invalid_amount", InvalidReason = "invalid_reason",
-        InvalidRequest = "invalid_request", RequestConflict = "request_conflict", NotFound = "not_found";
+        InvalidRequest = "invalid_request", RequestConflict = "request_conflict", NotFound = "not_found",
+        // Credits are the realm's (the staff dashboard's account page, later the web shop): a world server cannot add Quna.
+        RealmOnly = "realm_only";
+    /// <summary>The Quna item (the client's bag stack of it is virtual where Quna is the wallet's).</summary>
+    public const int ItemId = 535300006;
     /// <summary>Upper bound of one change (the ledger's CHECK).</summary>
     public const long MaxAmount = 100_000_000_000;
 
