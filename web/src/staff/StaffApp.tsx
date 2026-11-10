@@ -1,5 +1,5 @@
 // Staff dashboard: the realm-wide Dashboard, accounts, the live map with the game's maps, characters, moderation,
-// announcements, rewards, the shop, the economy, worlds, server health and the activity log, through the audited
+// announcements, rewards, the shop, custom NPCs, the economy, worlds, server health and the activity log, through the audited
 // /api/admin endpoints. The server checks the rank on every request; this page only hides controls. Pages have hash
 // URLs (#/accounts/<id>) so a refresh or Back keeps them. "Keep me signed in" keeps the staff session in localStorage;
 // otherwise it lives in sessionStorage until the tab closes. The world picker chooses the world server the world tools
@@ -13,6 +13,7 @@ import { readSession, writeSession, type SavedSession } from '../shared/session'
 import { AccountList, AccountView } from './Accounts';
 import { Activity } from './Activity';
 import { Broadcast } from './Broadcast';
+import { CustomNpcs } from './CustomNpcs';
 import { NewAccountDialog } from './NewAccount';
 import { Dashboard } from './Dashboard';
 import { Economy } from './Economy';
@@ -50,7 +51,7 @@ function withWorld(path: string, world: number | null): string {
 function readWorld(): number | null {
   try { const v = Number(window.localStorage.getItem(WORLD_KEY)); return Number.isInteger(v) && v > 0 ? v : null; } catch { return null; }
 }
-type View = 'dashboard' | 'overview' | 'accounts' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'shop' | 'economy' | 'activity' | 'worlds' | 'server' | 'staff';
+type View = 'dashboard' | 'overview' | 'accounts' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'shop' | 'npcs' | 'economy' | 'activity' | 'worlds' | 'server' | 'staff';
 /** The pages whose data is one world server's: the world picker shows on these. */
 const WORLD_VIEWS: View[] = ['overview', 'characters', 'broadcast', 'rewards', 'shop', 'economy', 'activity', 'server'];
 
@@ -73,6 +74,7 @@ const NAV: { name: string; items: NavEntry[] }[] = [
     { id: 'broadcast', label: 'Announcements & events', icon: 'broadcast', permission: 'announce' },
     { id: 'rewards', label: 'Rewards', icon: 'gift', permission: 'rewardCharacters' },
     { id: 'shop', label: 'Shop', icon: 'shop', permission: 'viewShop' },
+    { id: 'npcs', label: 'NPCs', icon: 'pin', permission: 'viewCustomNpcs' },
     { id: 'economy', label: 'Economy', icon: 'coins', permission: 'viewEconomy' },
   ] },
   { name: 'System', items: [
@@ -228,6 +230,7 @@ export function StaffApp() {
         {page('broadcast', <div className="page-stack"><Broadcast call={call} active={view === 'broadcast'} worldName={worldName} /><div className="page page-tail"><Events call={call} active={view === 'broadcast'} /></div></div>)}
         {page('rewards', <Rewards call={call} isAdmin={allowed('rewardEveryone')} />)}
         {page('shop', <Shop call={call} active={view === 'shop'} isAdmin={allowed('editShop')} worldName={worldName} />)}
+        {page('npcs', <CustomNpcs call={call} active={view === 'npcs'} isAdmin={allowed('editCustomNpcs')} />)}
         {page('economy', <Economy call={call} active={view === 'economy'} onOpen={openCharacter} />)}
         {page('activity', <Activity call={call} active={view === 'activity'} onOpen={openCharacter} />)}
         {page('worlds', <Worlds call={call} active={view === 'worlds'} />)}
