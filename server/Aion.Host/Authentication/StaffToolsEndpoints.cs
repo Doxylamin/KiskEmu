@@ -118,8 +118,11 @@ public static partial class StaffToolsEndpoints
         });
 
         // ---------- Population, economy and anti-cheat ----------
-        staff.MapGet("/population", async (double? hours, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
-            await Signed(ctx, auth, ct) is { } a ? Results.Ok(await tools.PopulationAsync(a, TimeSpan.FromHours(hours ?? 24), ct)) : Results.Unauthorized());
+        // worldId, not world: "?world=" sends the call to that world server (Program.cs), and the samples are the realm's.
+        staff.MapGet("/population", async (double? hours, int? worldId, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
+            await Signed(ctx, auth, ct) is { } a ? Results.Ok(await tools.PopulationAsync(a, TimeSpan.FromHours(hours ?? 24), worldId, ct)) : Results.Unauthorized());
+        staff.MapGet("/stats", async (HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
+            await Signed(ctx, auth, ct) is { } a ? Results.Ok(await tools.RealmStatsAsync(a, ct)) : Results.Unauthorized());
         staff.MapGet("/economy", async (HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, IServiceProvider services, CancellationToken ct) =>
         {
             if (await Signed(ctx, auth, ct) is not { } a) return Results.Unauthorized();

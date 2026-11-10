@@ -481,7 +481,7 @@ public sealed class LinkedStaffTools(PostgresStaffTools local, RealmLinkClient l
     // A world server runs no chat server, scheduler, population sampler or cleanup.
     public Task LogChatAsync(IReadOnlyList<ChatLogEntry> lines, CancellationToken ct = default) => Task.CompletedTask;
     public Task MarkEventRunAsync(long id, DateTimeOffset at, CancellationToken ct = default) => Task.CompletedTask;
-    public Task SamplePopulationAsync(int players, int connections, CancellationToken ct = default) => Task.CompletedTask;
+    public Task SamplePopulationAsync(int players, int connections, int? worldId = null, CancellationToken ct = default) => Task.CompletedTask;
     public Task CleanupAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public Task<IReadOnlyList<Sanction>> SanctionsAsync(VerifiedAccount actor, bool includeEnded, CancellationToken ct = default) => throw RealmOnly();
@@ -494,7 +494,8 @@ public sealed class LinkedStaffTools(PostgresStaffTools local, RealmLinkClient l
     public Task<IReadOnlyList<ScheduledEvent>> EventsAsync(VerifiedAccount actor, CancellationToken ct = default) => throw RealmOnly();
     public Task<ScheduledEvent> CreateEventAsync(VerifiedAccount actor, NewScheduledEvent input, CancellationToken ct = default) => throw RealmOnly();
     public Task<bool> CancelEventAsync(VerifiedAccount actor, long id, CancellationToken ct = default) => throw RealmOnly();
-    public Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, CancellationToken ct = default) => throw RealmOnly();
+    public Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, int? worldId = null, CancellationToken ct = default) => throw RealmOnly();
+    public Task<RealmStats> RealmStatsAsync(VerifiedAccount actor, CancellationToken ct = default) => throw RealmOnly();
 }
 
 /// <summary>

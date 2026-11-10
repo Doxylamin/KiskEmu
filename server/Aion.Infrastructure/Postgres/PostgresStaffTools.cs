@@ -369,23 +369,71 @@ public sealed class PostgresStaffTools(NpgsqlDataSource source) : IStaffTools
 
     // ---------- Population, economy, bulk rewards ----------
 
-    public async Task SamplePopulationAsync(int players, int connections, CancellationToken ct = default)
+    public async Task SamplePopulationAsync(int players, int connections, int? worldId = null, CancellationToken ct = default)
     {
         await using var c = await source.OpenConnectionAsync(ct);
-        await using var q = Query(c, null, "INSERT INTO game.population_samples(players,connections) VALUES($1,$2) ON CONFLICT DO NOTHING", players, connections);
+        await using var q = Query(c, null, "INSERT INTO game.population_samples(players,connections,world_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+            players, connections, new Typed(worldId, NpgsqlDbType.Integer));
         await q.ExecuteNonQueryAsync(ct);
     }
 
-    public Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, int? worldId = null, CancellationToken ct = default) =>
         InTransaction<IReadOnlyList<PopulationPoint>>(async (c, t) =>
         {
-            await RequireStaff(c, t, actor, ct, StaffPermission.ViewEconomy);
-            await using var q = Query(c, t, "SELECT sampled_at,players,connections FROM game.population_samples WHERE sampled_at>now()-make_interval(secs=>$1) ORDER BY sampled_at",
-                Math.Clamp(window.TotalSeconds, 3600, PopulationRetention.TotalSeconds));
+            await RequireStaff(c, t, actor, ct, StaffPermission.ViewDashboard);
+            await using var q = Query(c, t, "SELECT sampled_at,players,connections FROM game.population_samples WHERE sampled_at>now()-make_interval(secs=>$1) AND world_id IS NOT DISTINCT FROM $2 ORDER BY sampled_at",
+                Math.Clamp(window.TotalSeconds, 3600, PopulationRetention.TotalSeconds), new Typed(worldId, NpgsqlDbType.Integer));
             var list = new List<PopulationPoint>();
             await using var r = await q.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct)) list.Add(new(At(r, 0), r.GetInt32(1), r.GetInt32(2)));
             return list;
+        }, ct);
+
+    public Task<RealmStats> RealmStatsAsync(VerifiedAccount actor, CancellationToken ct = default) =>
+        InTransaction(async (c, t) =>
+        {
+            await RequireStaff(c, t, actor, ct, StaffPermission.ViewDashboard);
+            const string Real = "a.account_id<>'00000000-0000-0000-0000-00000000dead'";
+            async Task<long> Scalar(string sql)
+            {
+                await using var q = Query(c, t, sql);
+                return Convert.ToInt64(await q.ExecuteScalarAsync(ct) ?? 0L);
+            }
+            async Task<List<NamedCount>> Counts(string sql)
+            {
+                var list = new List<NamedCount>();
+                await using var q = Query(c, t, sql);
+                await using var r = await q.ExecuteReaderAsync(ct);
+                while (await r.ReadAsync(ct)) list.Add(new(r.GetString(0), Convert.ToInt32(r.GetValue(1))));
+                return list;
+            }
+            var accounts = (int)await Scalar($"SELECT count(*) FROM auth.accounts a WHERE {Real}");
+            var staff = (int)await Scalar($"SELECT count(DISTINCT a.account_id) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE {Real} AND r.role IN ({StaffAccess.RoleSqlList})");
+            var disabled = (int)await Scalar($"SELECT count(*) FROM auth.accounts a WHERE {Real} AND a.disabled_at IS NOT NULL");
+            var recent = (int)await Scalar($"SELECT count(*) FROM auth.accounts a WHERE {Real} AND a.created_at>now()-interval '30 days'");
+            var days = new List<DayCount>();
+            await using (var q = Query(c, t, $"SELECT date_trunc('day',a.created_at)::date,count(*) FROM auth.accounts a WHERE {Real} AND a.created_at>now()-interval '30 days' GROUP BY 1 ORDER BY 1"))
+            {
+                await using var r = await q.ExecuteReaderAsync(ct);
+                while (await r.ReadAsync(ct)) days.Add(new(DateOnly.FromDateTime(r.GetDateTime(0)), Convert.ToInt32(r.GetValue(1))));
+            }
+            // Every world's characters, from the realm's character index (each world keeps it current).
+            const string Index = "game.character_index ch WHERE ch.account_id<>'00000000-0000-0000-0000-00000000dead'";
+            var characters = (int)await Scalar($"SELECT count(*) FROM {Index}");
+            var byWorld = await Counts($"SELECT ch.world_id::text,count(*) FROM {Index} GROUP BY ch.world_id ORDER BY ch.world_id");
+            var bands = await Counts($"""
+                SELECT CASE WHEN ch.level<10 THEN '1-9' WHEN ch.level<20 THEN '10-19' WHEN ch.level<30 THEN '20-29' WHEN ch.level<40 THEN '30-39'
+                            WHEN ch.level<50 THEN '40-49' ELSE '50+' END,count(*)
+                FROM {Index} GROUP BY 1 ORDER BY min(ch.level)
+                """);
+            var races = await Counts($"SELECT CASE ch.race WHEN 2 THEN 'Dark' ELSE 'Light' END,count(*) FROM {Index} GROUP BY 1 ORDER BY 1 DESC");
+            var quna = await Scalar("SELECT coalesce(sum(balance),0) FROM game.quna_wallets");
+            var open = (int)await Scalar("SELECT count(*) FROM game.tickets WHERE status='open'");
+            var waiting = (int)await Scalar("SELECT count(*) FROM game.tickets WHERE status='open' AND created_at<now()-interval '1 day'");
+            const string Active = "revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())";
+            var mutes = (int)await Scalar($"SELECT count(*) FROM game.sanctions WHERE kind='mute' AND {Active}");
+            var bans = (int)await Scalar($"SELECT count(*) FROM game.sanctions WHERE kind='ban' AND {Active}");
+            return new RealmStats(accounts, staff, disabled, recent, days, characters, byWorld, bands, races, quna, open, waiting, mutes, bans);
         }, ct);
 
     public Task<EconomyReport> EconomyAsync(VerifiedAccount actor, CancellationToken ct = default) =>

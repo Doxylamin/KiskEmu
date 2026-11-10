@@ -27,6 +27,11 @@ public sealed record LevelCount(int Level, int Count);
 public sealed record EconomyReport(long TotalKina, int Characters, int Accounts, IReadOnlyList<RichCharacter> Richest, IReadOnlyList<ItemTotal> Items,
     IReadOnlyList<LevelCount> Levels, IReadOnlyList<DayCount> NewAccounts, IReadOnlyList<DayCount> NewCharacters);
 public sealed record AccountRef(Guid AccountId, string AccountName);
+public sealed record NamedCount(string Name, int Count);
+/// <summary>Realm-wide figures for the staff Dashboard (every world's characters through the character index).</summary>
+public sealed record RealmStats(int Accounts, int StaffAccounts, int DisabledAccounts, int NewAccounts30Days, IReadOnlyList<DayCount> NewAccounts,
+    int Characters, IReadOnlyList<NamedCount> CharactersByWorld, IReadOnlyList<NamedCount> LevelBands, IReadOnlyList<NamedCount> Races,
+    long QunaInCirculation, int OpenTickets, int TicketsWaitingOverADay, int ActiveMutes, int ActiveBans);
 
 public interface IStaffTools
 {
@@ -65,8 +70,12 @@ public interface IStaffTools
     Task<IReadOnlyList<ScheduledEvent>> LiveEventsAsync(CancellationToken ct = default);
     Task MarkEventRunAsync(long id, DateTimeOffset at, CancellationToken ct = default);
 
-    Task SamplePopulationAsync(int players, int connections, CancellationToken ct = default);
-    Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, CancellationToken ct = default);
+    /// <summary>One population sample: the realm total (no world) or one world's.</summary>
+    Task SamplePopulationAsync(int players, int connections, int? worldId = null, CancellationToken ct = default);
+    /// <summary>The realm totals, or one world's samples.</summary>
+    Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, int? worldId = null, CancellationToken ct = default);
+    /// <summary>Realm-wide account, character, Quna, ticket and sanction figures (realm only).</summary>
+    Task<RealmStats> RealmStatsAsync(VerifiedAccount actor, CancellationToken ct = default);
 
     Task<EconomyReport> EconomyAsync(VerifiedAccount actor, CancellationToken ct = default);
     /// <summary>Characters for a bulk reward: all live ones (not deleted, account enabled).</summary>
