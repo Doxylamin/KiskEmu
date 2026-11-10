@@ -1,0 +1,76 @@
+# CI on forge.msit.systems (Forgejo Actions, Linux runner).
+# - checks: the checks CONTRIBUTING.md asks for before a change (Aion.Native.Checks, the Python tests).
+# - launcher: the launcher checks, then KiskLauncher.exe, cross-built for win-x64 on Linux, as a workflow artifact.
+# Releases stay on GitHub (.github/workflows/kisklauncher.yml, tag launcher-v<version>). Forgejo reads this folder
+# instead of .github/workflows, so the GitHub workflow does not run here.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Python dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends python3-cryptography
+
+      - name: Native checks
+        run: |
+          dotnet build tests/Aion.Native.Checks/Aion.Native.Checks.csproj
+          dotnet tests/Aion.Native.Checks/bin/Debug/net10.0/Aion.Native.Checks.dll | tee native-checks.log
+          if grep -q "Check failed" native-checks.log; then exit 1; fi
+
+      - name: Python tests
+        run: python3 -m unittest discover -s tests -q
+
+  launcher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Launcher checks
+        run: dotnet run --project tests/Aion.Launcher.Checks -c Release
+
+      - name: Publish (win-x64, cross-built)
+        run: |
+          set -e
+          version=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' launcher/AionLauncher/AionLauncher.csproj | head -1)
+          dotnet publish launcher/AionLauncher -c Release -r win-x64 -p:DebugType=none -p:EnableWindowsTargeting=true -o out/launcher
+          mkdir -p release
+          cp out/launcher/KiskLauncher.exe release/KiskLauncher.exe
+          printf '%s' "$version" > release/KiskLauncher.exe.version
+          (cd release && sha256sum *.exe | tee SHA256SUMS)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KiskLauncher-${{ env.VERSION }}-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
