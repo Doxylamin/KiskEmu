@@ -115,6 +115,35 @@ public sealed class CustomNpcTests
     }
 
     [Fact]
+    public async Task A_shop_request_talks_instead_of_selling()
+    {
+        var (session, _, store) = await EnterAsync(patched: false);
+        await SeeAsync(session);
+        var kinaBefore = store.Items.Where(i => i.TemplateId == GameSession.KinaItemId).Sum(i => i.Quantity);
+
+        // A merchant base: [F] asks for the shop (0x8c00); it is refused and each request shows the next line.
+        var first = await session.HandleAsync(Talk(GameSession.ShopOpenRq), Now + 5_000);
+        var refusal = Assert.Single(first, p => GameSessionTestHelpers.Op(p) == GameSession.ShopOpenRs);
+        Assert.Equal(1, BitConverter.ToUInt16(refusal, 2));
+        Assert.True(HasText(first, GameSession.NoticeNt, "Kisk Tester: Line one …"));
+        Assert.False(session.CustomNpcFlag("Tester", "met"));
+
+        var second = await session.HandleAsync(Talk(GameSession.ShopOpenRq), Now + 6_000);
+        Assert.True(HasText(second, GameSession.NoticeNt, "Kisk Tester: Line two"));
+        Assert.True(session.CustomNpcFlag("Tester", "met"));
+        Assert.Equal(kinaBefore + 1234, store.Items.Where(i => i.TemplateId == GameSession.KinaItemId).Sum(i => i.Quantity));
+
+        // When the client opened the talk first (0xe240), the shop request only gets its refusal.
+        await session.HandleAsync(Talk(0xe240), Now + 7_000);
+        var during = await session.HandleAsync(Talk(GameSession.ShopOpenRq), Now + 7_050);
+        Assert.Single(during);
+
+        // Nothing can be bought from it.
+        var buy = await session.HandleAsync(new PacketWriter().U16(GameSession.ShopBuyRq).Varint(NpcKey).Varint(1).I32(1).I32(1).ToArray(), Now + 8_000);
+        Assert.All(buy.Where(p => GameSessionTestHelpers.Op(p) == GameSession.ShopBuyRs), p => Assert.NotEqual(0, BitConverter.ToUInt16(p, 2)));
+    }
+
+    [Fact]
     public async Task A_changed_or_disabled_npc_leaves_the_view()
     {
         var (session, world, _) = await EnterAsync(patched: false);

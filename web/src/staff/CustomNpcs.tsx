@@ -209,7 +209,7 @@ export function CustomNpcs({ call, active, isAdmin }: { call: Call; active: bool
             <div className="field"><label htmlFor="cn-slug">Code name (letters and digits; names its texts in the patch pak)</label>
               <input id="cn-slug" className="input" maxLength={32} value={draft.slug} onChange={e => set('slug', e.target.value.replace(/[^A-Za-z0-9]/g, ''))} /></div>
             <div className="field">
-              <label htmlFor="cn-base">Looks like (an official NPC players talk to)</label>
+              <label htmlFor="cn-base">Looks like (an official merchant, so players get [F])</label>
               <input id="cn-base" className="input" type="search" placeholder="NPC name or ID" value={baseQuery} onChange={e => setBaseQuery(e.target.value)} />
               {baseFound.length > 0 && (
                 <ul className="pick-list">

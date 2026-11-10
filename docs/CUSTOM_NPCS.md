@@ -19,8 +19,14 @@ The pieces:
    - **Name**: English is required. Switch **Texts in** to add other languages; an empty text uses the English one.
    - **Code name**: letters and digits, for example `Ferryman`. It names the NPC's rows in the patch pak, so keep it
      once the pak is out.
-   - **Looks like**: the official NPC to copy, for its model, level and talk prompt. Only NPCs players talk to can be
-     picked, not monsters.
+   - **Looks like**: the official NPC to copy, for its model and level. Pick a **merchant** (for example a general
+     goods merchant).
+     - The client offers the interaction key only on NPCs it has something for: a merchant always, but a quest NPC
+       only while one of its quest steps is open. A custom NPC copying a quest NPC therefore cannot be talked to (live
+       2026-11-10: Guard Sylvar as the base, no talk request from the client at all).
+     - On a merchant, the key asks for the shop: the server refuses the shop and plays the dialog instead, and nothing
+       can be bought. CANDIDATE until the in-game check: what the client shows for the refused shop.
+     - Monsters cannot be picked.
    - **Where it stands**: enter a character who is in the picked world, then **Place where they stand**. Up to 20
      places across any maps.
    - **Dialogs**: one or more. Each has a key (letters and digits) and its lines, one per row.

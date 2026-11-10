@@ -145,6 +145,12 @@ public sealed partial class GameSession
         uint key;
         try { key = new PacketReader(plain) { Offset = 2 }.Varint(); } catch (ProtocolException) { return []; }
         Target? npc = null;
+        // A custom NPC built on a merchant talks instead of selling (GameSession.CustomNpcs.cs).
+        if (targets?.GetValueOrDefault((int)key) is { Custom: { } custom } talker)
+        {
+            openShop = null;
+            return await CustomNpcShopTalkAsync(talker, custom, now, ct);
+        }
         var ok = targets?.TryGetValue((int)key, out npc) == true && Shops.IsMerchant(npc!.NpcId);
         openShop = ok ? (int)key : null;
         var bought = new List<(int Goods, int Count)>();
@@ -207,7 +213,7 @@ public sealed partial class GameSession
         if (request is not { } req) return [Reply(1, openShop ?? 0)];
         var npcKey = targets?.ContainsKey(req.Npc) == true ? req.Npc : openShop ?? req.Npc;
         DebugShop($"ShopBuy_RQ npcKey={npcKey} lines={ShopEntriesSummary(entries)}");
-        if (Store is not { } store || CharacterId is not { } character || targets?.TryGetValue(npcKey, out var npc) != true || entries.Count == 0)
+        if (Store is not { } store || CharacterId is not { } character || targets?.TryGetValue(npcKey, out var npc) != true || npc!.Custom is not null || entries.Count == 0)
             return [Reply(1, npcKey)];
         var rewards = new List<(int, long)>();
         var prices = new Dictionary<int, long>();
@@ -251,7 +257,7 @@ public sealed partial class GameSession
         if (request is not { } req) return [Reply(1, openShop ?? 0)];
         var npcKey = targets?.ContainsKey(req.Npc) == true ? req.Npc : openShop ?? req.Npc;
         DebugShop($"ShopSell_RQ npcKey={npcKey} lines={ShopEntriesSummary(entries)}");
-        if (Store is not { } store || CharacterId is not { } character || targets?.TryGetValue(npcKey, out var npc) != true || !Shops.IsMerchant(npc!.NpcId) || entries.Count == 0)
+        if (Store is not { } store || CharacterId is not { } character || targets?.TryGetValue(npcKey, out var npc) != true || npc!.Custom is not null || !Shops.IsMerchant(npc.NpcId) || entries.Count == 0)
             return [Reply(1, npcKey)];
         foreach (var (key, count) in entries)
         {

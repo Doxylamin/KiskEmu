@@ -85,7 +85,7 @@ public sealed partial class GameSession
         }
         if (request is not { } req) return [Reply(1, openShop ?? 0)];
         var npcKey = targets?.ContainsKey(req.Npc) == true ? req.Npc : openShop ?? req.Npc;
-        if (Store is not { } store || CharacterId is not { } character || targets?.TryGetValue(npcKey, out var npc) != true || !Shops.IsGuildMerchant(npc!.NpcId) || entries.Count == 0)
+        if (Store is not { } store || CharacterId is not { } character || targets?.TryGetValue(npcKey, out var npc) != true || npc!.Custom is not null || !Shops.IsGuildMerchant(npc.NpcId) || entries.Count == 0)
             return [Reply(1, npcKey)];
         var shop = Shops.ShopName(npc.NpcId);
         if (shop is null) return [Reply(1, npcKey)];

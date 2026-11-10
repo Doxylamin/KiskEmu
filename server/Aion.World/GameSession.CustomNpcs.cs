@@ -5,6 +5,8 @@ using Aion.Protocol.Native;
 namespace Aion.World;
 
 // Custom NPC dialogs (CustomNpcWorld.cs). The interaction is the client's own: 0xe240 opens it (0xe241), 0xe242 ends it.
+// The client offers [F] only on NPCs it has something for: a quest NPC with no open step gets none, so the base should
+// be a merchant, whose shop request (0x8c00) then counts as the talk (CustomNpcShopTalkAsync).
 // The first dialog node whose condition holds is the one that plays.
 // - With the patch pak, the client knows the node's NpcTalk rows (KISK_Npc_<slug>_<node>): the server plays them with
 //   PlayNpcTalk (GamePackets.Caption), the same lower-third lines as the tutorial captions. CANDIDATE until the in-game
@@ -94,6 +96,22 @@ public sealed partial class GameSession
         }
         customTalkProgress.Remove(npcKey);
         return await RunCustomNpcActionsAsync(open.Npc, open.Node, now, ct);
+    }
+
+    /// <summary>
+    /// 0x8c00 NpcShopOpen_RQ on a custom NPC built on a merchant. A plain citizen gets no [F] from the client unless a quest
+    /// step targets it (live 2026-11-10: Guard Sylvar as a base, no 0xe240 at all); a merchant always has [F] and the client
+    /// asks for the shop. The shop is refused (0x8c01 result 1) and the request counts as one talk: it shows the next line,
+    /// and the actions run after the last one. CANDIDATE: whether the client also sends 0xe240 first (then that talk already
+    /// shows the line and this only refuses the shop) and what the refusal shows.
+    /// </summary>
+    async Task<List<byte[]>> CustomNpcShopTalkAsync(Target npc, CustomNpc custom, long now, CancellationToken ct)
+    {
+        var replies = new List<byte[]> { PacketWriter.Opcode(ShopOpenRs).U16(1).Varint((uint)npc.Key).Varint(0).I64(now).ToArray() };
+        if (openCustomTalk?.NpcKey == npc.Key) return replies;
+        replies.AddRange(CustomNpcTalkOpened(npc, custom));
+        replies.AddRange(await CustomNpcTalkFinishedAsync(npc.Key, now, ct));
+        return replies;
     }
 
     async Task<List<byte[]>> RunCustomNpcActionsAsync(CustomNpc npc, CustomNpcNode node, long now, CancellationToken ct)
