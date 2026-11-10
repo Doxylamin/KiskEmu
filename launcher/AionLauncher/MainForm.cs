@@ -460,7 +460,7 @@ sealed class MainForm : Form
     {
         var resuming = workflow.Settings.DownloadFolder is not null;
         Page(GameStep, resuming ? "Continue the download" : "Download the game", "This server runs one specific version of the game (about 88 GB). "
-            + "KiskEmu Launcher downloads it from Steam with your own Steam account. Your normal Steam copy of the game is not changed.");
+            + "KiskLauncher downloads it from Steam with your own Steam account. Your normal Steam copy of the game is not changed.");
         var folder = workflow.DownloadFolder();
         var spaceRow = AddRequirement(null);
         spaceRow.Set(folder is not null, folder is null
@@ -469,7 +469,7 @@ sealed class MainForm : Form
         var start = AddButton(resuming ? "Continue download" : "Sign in to Steam and download", primary: true, null, wide: true);
         start.Visible = folder is not null;
         if (folder is null) AddButton("Check again", primary: false, () => { ShowDownload(); return Task.CompletedTask; });
-        AddLabel("You sign in by scanning a QR code with the Steam app on your phone. KiskEmu Launcher never sees your Steam password.", muted: true);
+        AddLabel("You sign in by scanning a QR code with the Steam app on your phone. KiskLauncher never sees your Steam password.", muted: true);
         AddLink("I already have this version in another folder", ChooseExistingCopy);
         if (message is not null) SetStatus(message, error: true);
         start.Click += async (_, _) => await DownloadAsync();
@@ -539,7 +539,7 @@ sealed class MainForm : Form
             ShowDownload(reason);
             return;
         }
-        Page(InstallStep, "Installing", "Downloaded. KiskEmu Launcher checks the files and adds firewall rules so the game can reach only this server. "
+        Page(InstallStep, "Installing", "Downloaded. KiskLauncher checks the files and adds firewall rules so the game can reach only this server. "
             + "Windows asks for permission once: choose Yes.");
         if (await RunAsync(ct => workflow.AdoptAsync(folder!, s => SetStatus(s), ProgressReporter(), ct))) await NextAsync();
         else AddButton("Try again", primary: true, async () => await NextAsync());
@@ -583,7 +583,7 @@ sealed class MainForm : Form
 
     void ShowInstall(ClientSource source)
     {
-        Page(InstallStep, "Installing", $"Found the server's version in {source.Description}. KiskEmu Launcher puts it in its own folder "
+        Page(InstallStep, "Installing", $"Found the server's version in {source.Description}. KiskLauncher puts it in its own folder "
             + $"({Workflow.TargetFor(source.Folder)}) and adds firewall rules so the game can reach only this server.");
         AddLabel("Windows asks for permission once at the end: choose Yes.", muted: true);
         async Task Install()
@@ -664,7 +664,7 @@ sealed class MainForm : Form
             var ok = await RunAsync(async ct =>
             {
                 using var game = await workflow.PlayAsync(found, s => SetStatus(s), ProgressReporter(), ct);
-                SetStatus("Playing. KiskEmu Launcher waits here until the game closes.");
+                SetStatus("Playing. KiskLauncher waits here until the game closes.");
                 WindowState = FormWindowState.Minimized;
                 await game.WaitForExitAsync(CancellationToken.None);
                 // The client may hand over to child processes; wait for the whole copy to close.

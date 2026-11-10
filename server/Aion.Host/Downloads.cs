@@ -15,8 +15,8 @@ namespace Aion.Host;
 public sealed class Downloads(string folder, TimeProvider clock)
 {
     /// <summary>The file in the downloads folder, and the name the browser saves it as (the route is /download/launcher).</summary>
-    public const string LauncherFile = "KiskEmu Launcher.exe";
-    /// <summary>The name before the rename: served until a KiskEmu Launcher is published to the same folder.</summary>
+    public const string LauncherFile = "KiskLauncher.exe";
+    /// <summary>The name before the rename: served until a KiskLauncher is published to the same folder.</summary>
     public const string LegacyLauncherFile = "A2Core Launcher.exe";
     const string Route = "/download/launcher";
     /// <summary>Optional text file next to the exe with its version (exe name + ".version"), shown by the launcher before it updates.</summary>

@@ -318,7 +318,7 @@ def main():
             env['Aion__Accounts__Registration'] = 'false'
             env['Aion__Web__StaffPath'] = '/deskx7k2m9q4'
             (Path(wardrobe.name).parent / 'aion-downloads').mkdir(exist_ok=True)
-            (Path(wardrobe.name).parent / 'aion-downloads' / 'KiskEmu Launcher.exe').write_bytes(b'MZ launcher')
+            (Path(wardrobe.name).parent / 'aion-downloads' / 'KiskLauncher.exe').write_bytes(b'MZ launcher')
             env['Aion__Web__Downloads'] = str(Path(wardrobe.name).parent / 'aion-downloads')
             host = launch(log)
             check(request('/api/status')[1]['launcherAvailable'] is True, 'status reports the launcher download')
@@ -329,11 +329,11 @@ def main():
             status, link, _ = request('/api/downloads/launcher', 'POST', token=player)
             check(status == 200 and link['url'].startswith('/download/launcher?ticket='), 'signed-in player gets a download link')
             status, body, headers = request(link['url'])
-            check(status == 200 and body == b'MZ launcher' and 'Aion%20Horizon.exe' in headers.get('Content-Disposition', ''), 'KiskEmu Launcher.exe downloaded as an attachment with the link')
+            check(status == 200 and body == b'MZ launcher' and 'Aion%20Horizon.exe' in headers.get('Content-Disposition', ''), 'KiskLauncher.exe downloaded as an attachment with the link')
             status, manifest, _ = request('/api/downloads/launcher/manifest')
             check(status == 200 and manifest == {'sha256': hashlib.sha256(b'MZ launcher').hexdigest(), 'size': 11, 'version': None},
                   'launcher manifest (hash and size) for the launcher\'s own update check, no sign-in needed')
-            (Path(wardrobe.name).parent / 'aion-downloads' / 'KiskEmu Launcher.exe.version').write_text('0.4.0\n')
+            (Path(wardrobe.name).parent / 'aion-downloads' / 'KiskLauncher.exe.version').write_text('0.4.0\n')
             check(request('/api/downloads/launcher/manifest')[1]['version'] == '0.4.0', 'launcher manifest reports the version file')
             check(request('/admin.html')[0] == 404, 'dashboard hidden at /admin.html')
             status, page, headers = request('/deskx7k2m9q4')

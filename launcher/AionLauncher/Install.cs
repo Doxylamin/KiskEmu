@@ -16,9 +16,9 @@ namespace AionLauncher;
 /// </summary>
 static class Install
 {
-    public const string Name = "KiskEmu Launcher";
+    public const string Name = "KiskLauncher";
     public const string FileName = Name + ".exe";
-    const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\KiskEmuLauncher";
+    const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\KiskLauncher";
     // The install before the rename (A2Core Launcher). An installed copy updates itself in place, so after the update it
     // still runs from there; it then installs itself under the new name and removes the old folder, shortcuts and entry.
     const string LegacyName = "A2Core Launcher";

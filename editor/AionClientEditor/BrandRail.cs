@@ -2,7 +2,7 @@ using System.Drawing.Drawing2D;
 
 namespace AionClientEditor.App;
 
-/// <summary>Left branding rail matching the KiskEmu Launcher.</summary>
+/// <summary>Left branding rail matching the KiskLauncher.</summary>
 sealed class BrandRail : Panel
 {
     static readonly Image? Emblem = LoadEmblem();

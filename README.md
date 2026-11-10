@@ -67,7 +67,7 @@ same).
    dotnet publish launcher/AionLauncher -c Release -r win-x64 -o out/launcher -p:DebugType=none
    ```
 
-3. Copy `out/launcher/KiskEmu Launcher.exe` (and an optional `KiskEmu Launcher.exe.version`) to
+3. Copy `out/launcher/KiskLauncher.exe` (and an optional `KiskLauncher.exe.version`) to
    `/var/lib/aion/downloads/` on the server. Signed-in players download it from the account page; installed copies
    update themselves.
 

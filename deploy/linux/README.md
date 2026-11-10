@@ -143,7 +143,7 @@ sudo deploy/linux/update.sh
 From the development PC, `tools/deploy.ps1` does this over SSH (ssh config host `aion`: the server's
 address, `User root`, a dedicated key `~/.ssh/id_ed25519_aion` whose public half is in the server's
 `authorized_keys`): `-Server` pushes the current branch and runs update.sh; `-Launcher` publishes
-KiskEmu Launcher and copies the exe and its version file to `/var/lib/aion/downloads`; `-Status` shows the
+KiskLauncher and copies the exe and its version file to `/var/lib/aion/downloads`; `-Status` shows the
 services and the last log lines.
 
 It backs up the databases (`/var/lib/aion/backups`, newest 10 kept: the realm's `<name>.dump` and one

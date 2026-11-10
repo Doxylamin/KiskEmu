@@ -12,10 +12,10 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- icon.ico and emblem.png come from the "AH" emblem artwork (see README). -->
     <ApplicationIcon>icon.ico</ApplicationIcon>
-    <AssemblyName>KiskEmu Launcher</AssemblyName>
-    <Product>KiskEmu Launcher</Product>
-    <AssemblyTitle>KiskEmu Launcher</AssemblyTitle>
-    <Description>KiskEmu Launcher: sets up the game and plays on the KiskEmu Launcher server.</Description>
+    <AssemblyName>KiskLauncher</AssemblyName>
+    <Product>KiskLauncher</Product>
+    <AssemblyTitle>KiskLauncher</AssemblyTitle>
+    <Description>KiskLauncher: sets up the game and plays on a KiskEmu server.</Description>
     <Version>0.4.2</Version>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>

@@ -1,9 +1,9 @@
-# KiskEmu Launcher (the player program, Windows)
+# KiskLauncher (the player program, Windows)
 
-`KiskEmu Launcher.exe` (project AionLauncher) sets up a private copy of AION2 at the one build the server
+`KiskLauncher.exe` (project AionLauncher) sets up a private copy of AION2 at the one build the server
 supports and starts it against our server. It ships no NCSoft files: the game comes from the player's
 own Steam account. One self-contained exe: downloaded, it offers to install itself for the Windows user
-(`%LOCALAPPDATA%\Programs\KiskEmu Launcher`, desktop and Start menu shortcuts, an Apps & features entry whose
+(`%LOCALAPPDATA%\Programs\KiskLauncher`, desktop and Start menu shortcuts, an Apps & features entry whose
 uninstall runs `--uninstall`; no administrator rights), or runs where it is ("Run without installing",
 remembered). The installed copy is the one the self-update replaces.
 Design and evidence: `research/client-installer.md`.
@@ -36,8 +36,8 @@ next one itself; the player only confirms and answers Windows prompts.
    Then the launcher asks the server for its launcher's hash (`GET /api/downloads/launcher/manifest`).
    When the server's file differs from the running exe, it says so and offers **Install update**; the
    player chooses ("Not now" continues). Installing downloads the file through the ticket link next to
-   the exe (`KiskEmu Launcher.exe.new`), checks the SHA-256, renames the running exe to `KiskEmu Launcher.exe.old`,
-   moves the download into place and starts it; the next start removes the old file. `KiskEmu Launcher.exe.version`
+   the exe (`KiskLauncher.exe.new`), checks the SHA-256, renames the running exe to `KiskLauncher.exe.old`,
+   moves the download into place and starts it; the next start removes the old file. `KiskLauncher.exe.version`
    next to the server's file (optional) is the version shown. `AION_LAUNCHER_NO_UPDATE=1` skips the check
    (development builds).
 2. Get the game. If the Steam install is still the supported build it is hard-linked (same drive,
@@ -115,13 +115,13 @@ used) download the same manifest.
 ```powershell
 dotnet run --project tests/Aion.Launcher.Checks
 dotnet publish launcher/AionLauncher -c Release -r win-x64 -o research/local/launcher-publish -p:DebugType=none
-echo 0.4.1 > "research/local/launcher-publish/KiskEmu Launcher.exe.version"
-scp "research/local/launcher-publish/KiskEmu Launcher.exe" "research/local/launcher-publish/KiskEmu Launcher.exe.version" root@<server>:/var/lib/aion/downloads/
+echo 0.4.1 > "research/local/launcher-publish/KiskLauncher.exe.version"
+scp "research/local/launcher-publish/KiskLauncher.exe" "research/local/launcher-publish/KiskLauncher.exe.version" root@<server>:/var/lib/aion/downloads/
 ```
 
-Signed-in players then see "Download KiskEmu Launcher" on the account page (a five-minute link from
-POST /api/downloads/launcher; `/download/launcher` needs that ticket and saves as `KiskEmu Launcher.exe`).
-Installed copies offer the new file at their next start (the version in `KiskEmu Launcher.exe.version` is what they show; keep
+Signed-in players then see "Download KiskLauncher" on the account page (a five-minute link from
+POST /api/downloads/launcher; `/download/launcher` needs that ticket and saves as `KiskLauncher.exe`).
+Installed copies offer the new file at their next start (the version in `KiskLauncher.exe.version` is what they show; keep
 it equal to `<Version>` in AionLauncher.csproj).
 
 ## Not yet verified (CANDIDATE)

@@ -10,7 +10,7 @@ using Xunit;
 
 namespace Aion.Host.Tests;
 
-/// <summary>The launcher download after the rename (Downloads.cs): KiskEmu Launcher.exe, else the old A2Core Launcher.exe.</summary>
+/// <summary>The launcher download after the rename (Downloads.cs): KiskLauncher.exe, else the old A2Core Launcher.exe.</summary>
 public sealed class DownloadsTests : IAsyncDisposable
 {
     readonly string folder = Directory.CreateTempSubdirectory("kiskemu-downloads-").FullName;

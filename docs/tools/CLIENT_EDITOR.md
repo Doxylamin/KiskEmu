@@ -40,7 +40,7 @@ dotnet publish editor/AionClientEditor -c Release -r win-x64 -o out/client-edito
 
 ## Integrity checks and loading patches
 
-### KiskEmu Launcher (documented behavior)
+### KiskLauncher (documented behavior)
 
 | Check | What it verifies | Patch impact |
 |-------|------------------|--------------|
