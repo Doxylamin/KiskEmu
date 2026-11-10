@@ -403,6 +403,18 @@ public sealed partial class GameSession
         return replies;
     }
 
+    /// <summary>EAchievementCategory filter of a batch claim: category 0 (with group 0) is the Collect All of every group
+    /// (from A2Core-ChanAge, Artezianec).</summary>
+    internal static bool CategoryMatches(byte category, string groupCategory) =>
+        category == 0 || CategoryOrdinal(groupCategory) == category;
+
+    IReadOnlyList<int> BatchClaimGroupIds(int groupId, byte category) =>
+        groupId != 0
+            ? [groupId]
+            : Achievements.All.Select(e => Achievements.GroupOf(e)).OfType<AchievementTables.Group>()
+                .Where(g => (g.Race == 0 || g.Race == profileRace) && CategoryMatches(category, g.Category))
+                .Select(g => g.Id).Distinct().ToList();
+
     /// <summary>0x5689 TakeAchievementRewardBatch_RQ {category u8, group i32, only character}: every claimable step of the group (or category).</summary>
     async Task<List<byte[]>> TakeRewardBatchAsync(byte[] plain, long now, CancellationToken ct)
     {
@@ -415,12 +427,12 @@ public sealed partial class GameSession
         var attendanceAchievements = Achievements.Boards.Select(b => b.Achievement).ToHashSet();
         var refreshAccountContents = false;
         var grantedItems = false;
-        var groups = groupId != 0 ? [groupId] : Achievements.All.Select(e => Achievements.GroupOf(e)).OfType<AchievementTables.Group>().Where(g => (g.Race == 0 || g.Race == profileRace) && CategoryOrdinal(g.Category) == category).Select(g => g.Id).Distinct().ToList();
+        var groups = BatchClaimGroupIds(groupId, category);
         foreach (var gid in groups)
         {
             var steps = new Dictionary<int, int>();
             var groupSteps = new List<byte>();
-            foreach (var entry in Achievements.InGroup(gid))
+            foreach (var entry in Achievements.InGroup(gid).Where(e => Listed(e, now)))
                 for (var step = (achievements.GetValueOrDefault(entry.Id)?.RewardedStep ?? 0) + 1; step <= entry.Steps.Length; step++)
                 {
                     var taken = await TakeStepAsync(entry.Id, step, now, ct, syncInventory: false);

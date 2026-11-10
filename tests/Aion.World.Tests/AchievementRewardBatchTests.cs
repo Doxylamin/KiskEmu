@@ -1,3 +1,5 @@
+using Aion.Application.Gameplay;
+using Aion.Protocol.Native;
 using Aion.World;
 using Xunit;
 
@@ -36,6 +38,33 @@ public sealed class AchievementRewardBatchTests
             at += entries * 5;
         }
         Assert.Equal(packet.Length, at);
+    }
+
+    /// <summary>Collect All (category 0, group 0) claims every group's pending steps (from A2Core-ChanAge, Artezianec).</summary>
+    [Fact]
+    public async Task Category_zero_collect_all_claims_a_pending_step()
+    {
+        const long now = 1_793_368_800_000;
+        const int growthComplete = 301_100_300;
+        var store = new FakeCharacterStore();
+        store.Achievements.Add(new AchievementRecord(growthComplete, 300, null, 1, DateTimeOffset.FromUnixTimeMilliseconds(now)));
+        var session = await GameSessionTestHelpers.EnterWorldAsync(store, now, level: 55);
+
+        var batch = await session.HandleAsync(
+            new PacketWriter().U16(GameSession.TakeAchievementRewardBatchRq).U8(0).I32(0).U8(0).ToArray(), now + 50);
+
+        var rs = batch.First(p => GameSessionTestHelpers.Op(p) == GameSession.TakeAchievementRewardBatchRs);
+        Assert.Equal(0, BitConverter.ToUInt16(rs, 2));
+        Assert.Contains(batch, p => GameSessionTestHelpers.Op(p) == 0x561b);
+        Assert.Equal(2, store.Achievements.Single(a => a.Id == growthComplete).RewardedStep);
+    }
+
+    [Fact]
+    public void Category_zero_matches_every_group_category()
+    {
+        Assert.True(GameSession.CategoryMatches(1, "Achievement"));
+        Assert.True(GameSession.CategoryMatches(0, "Unlock"));
+        Assert.False(GameSession.CategoryMatches(1, "Unlock"));
     }
 
     [Fact]
