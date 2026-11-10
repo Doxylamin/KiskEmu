@@ -26,33 +26,41 @@ public class DataTableRowsTests
     [Fact]
     public void AppendRow_clones_row_sets_id_and_applies_edits()
     {
-        var table = Table(("100", Row(100, "N_Source", 5)));
+        var table = Table(Row(100, "N_Source", "STR_Source", 5));
 
-        var added = DataTableRows.AppendRow(table, "2999001", "100", new Dictionary<string, string> { ["Name"] = "N_KISK_Test" });
+        var added = DataTableRows.AppendRow(table, 2999001, 100, new Dictionary<string, string>
+        {
+            ["Name"] = "N_KISK_Test",
+            ["Desc.Key"] = "STR_KISK_NPC_TEST_NAME",
+        });
 
-        Assert.Equal(["100", "2999001"], table.Ids);
-        Assert.Equal("2999001", Cell(added, "Id"));
-        Assert.Equal("N_KISK_Test", Cell(added, "Name"));
-        Assert.Equal("5", Cell(added, "Level"));
-        // The source row is untouched.
-        var source = DataTableRows.FindRow(table, "100")!;
-        Assert.Equal("100", Cell(source, "Id"));
-        Assert.Equal("N_Source", Cell(source, "Name"));
+        Assert.Equal(ColumnIds, table.Ids); // one hash per column, not per row: unchanged
+        Assert.Equal(2999001, DataTableRows.RowId(added));
+        Assert.Equal("N_KISK_Test", DataTableRows.GetPath(added, "Name"));
+        Assert.Equal("STR_KISK_NPC_TEST_NAME", DataTableRows.GetPath(added, "Desc.Key"));
+        Assert.Equal("5", DataTableRows.GetPath(added, "Level"));
+        // The source row, including its nested structs, is untouched.
+        var source = DataTableRows.FindRow(table, 100)!;
+        Assert.Equal("N_Source", DataTableRows.GetPath(source, "Name"));
+        Assert.Equal("STR_Source", DataTableRows.GetPath(source, "Desc.Key"));
+        Assert.Equal("100", DataTableRows.GetPath(source, "ID.Value"));
 
         // Serialized bytes equal a table that was built with both rows from the start.
-        var expected = Table(("100", Row(100, "N_Source", 5)), ("2999001", Row(2999001, "N_KISK_Test", 5)));
+        var expected = Table(Row(100, "N_Source", "STR_Source", 5), Row(2999001, "N_KISK_Test", "STR_KISK_NPC_TEST_NAME", 5));
         Assert.Equal(Serialize(expected), Serialize(table));
     }
 
     [Fact]
     public void AppendRow_refuses_duplicate_or_missing_ids()
     {
-        var table = Table(("100", Row(100, "N_Source", 5)));
-        Assert.Throws<InvalidOperationException>(() => DataTableRows.AppendRow(table, "100", "100"));
-        Assert.Throws<KeyNotFoundException>(() => DataTableRows.AppendRow(table, "200", "999"));
+        var table = Table(Row(100, "N_Source", "STR_Source", 5));
+        Assert.Throws<InvalidOperationException>(() => DataTableRows.AppendRow(table, 100, 100));
+        Assert.Throws<KeyNotFoundException>(() => DataTableRows.AppendRow(table, 200, 999));
         Assert.Throws<KeyNotFoundException>(() =>
-            DataTableRows.AppendRow(table, "200", "100", new Dictionary<string, string> { ["Missing"] = "1" }));
-        Assert.Single(table.Ids);
+            DataTableRows.AppendRow(table, 200, 100, new Dictionary<string, string> { ["Missing"] = "1" }));
+        Assert.Throws<FormatException>(() =>
+            DataTableRows.AppendRow(table, 200, 100, new Dictionary<string, string> { ["Name.Key"] = "x" }));
+        Assert.Single(DataTableRows.Rows(table));
     }
 
     [Fact]
@@ -91,34 +99,44 @@ public class DataTableRowsTests
         Assert.Equal(original.Entries, round.Entries);
     }
 
-    static FAion2DataTableFile Table(params (string Id, FStructFallback Row)[] rows)
+    static readonly string[] ColumnIds = ["1858135510", "1575265074", "654954401", "1524168231"];
+
+    static FAion2DataTableFile Table(params FStructFallback[] rows)
     {
         // A path outside Data/Table makes the reader skip parsing, leaving an empty table to fill in.
         var table = new FAion2DataTableFile(new MemoryGameFile("Synthetic/Npc.dat", []), null!);
-        table.Version = 3;
-        table.Ids = rows.Select(r => r.Id).ToArray();
+        table.Version = 13;
+        table.Ids = [.. ColumnIds];
         var array = new UScriptArray(
-            rows.Select(r => (FPropertyTagType)new StructProperty(new FScriptStruct(r.Row))).ToList(),
-            "StructProperty", new FPropertyTagData { Type = "StructProperty", StructType = "NpcTableItem" });
+            rows.Select(r => (FPropertyTagType)new StructProperty(new FScriptStruct(r))).ToList(),
+            "StructProperty", StructData("NpcTableItem"));
         table.Properties.Add(new FPropertyTag
         {
             Name = new FName("Data"),
             PropertyType = new FName("ArrayProperty"),
-            TagData = new FPropertyTagData { Type = "ArrayProperty", InnerType = "StructProperty", InnerTypeData = new FPropertyTagData { Type = "StructProperty", StructType = "NpcTableItem" } },
+            TagData = new FPropertyTagData { Type = "ArrayProperty", InnerType = "StructProperty", InnerTypeData = StructData("NpcTableItem") },
             Tag = new ArrayProperty(array),
         });
         return table;
     }
 
-    static FStructFallback Row(int id, string name, int level) => new(
+    static FPropertyTagData StructData(string name) => new() { Type = "StructProperty", StructType = name };
+
+    static FPropertyTag Struct(string name, string structType, params FPropertyTag[] fields) => new()
+    {
+        Name = new FName(name),
+        PropertyType = new FName("StructProperty"),
+        TagData = StructData(structType),
+        Tag = new StructProperty(new FScriptStruct(new FStructFallback([.. fields]))),
+    };
+
+    static FStructFallback Row(int id, string name, string descKey, int level) => new(
     [
-        new FPropertyTag { Name = new FName("Id"), PropertyType = new FName("IntProperty"), Tag = new IntProperty(id) },
-        new FPropertyTag { Name = new FName("Name"), PropertyType = new FName("StrProperty"), Tag = new StrProperty(name) },
+        Struct("ID", "TableItemId", new FPropertyTag { Name = new FName("Value"), PropertyType = new FName("IntProperty"), Tag = new IntProperty(id) }),
+        new FPropertyTag { Name = new FName("Name"), PropertyType = new FName("NameProperty"), Tag = new NameProperty(new FName(name)) },
+        Struct("Desc", "TableString", new FPropertyTag { Name = new FName("Key"), PropertyType = new FName("NameProperty"), Tag = new NameProperty(new FName(descKey)) }),
         new FPropertyTag { Name = new FName("Level"), PropertyType = new FName("IntProperty"), Tag = new IntProperty(level) },
     ]);
-
-    static string Cell(FStructFallback row, string name) =>
-        PropertyValueFormat.FormatCell(row.Properties.Single(p => p.Name.Text == name));
 
     static byte[] Serialize(FAion2DataTableFile table) =>
         ClientDatSerializer.SerializePlaintextTable(table, new TypeMappings(), Versions);

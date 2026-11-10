@@ -9,19 +9,19 @@ namespace AionClientEditor.Serialization;
 public static class FAion2PropertyWriter
 {
     public static void WritePropertyTagType(FAion2DatFileWriter Ar, FPropertyTagType value, TypeMappings mappings, string propertyType,
-        FPropertyTagData? tagData, bool writeStructTag = true, ReadType type = ReadType.NORMAL)
+        FPropertyTagData? tagData, bool writeStructTag = true, ReadType type = ReadType.NORMAL, string? propertyName = null)
     {
         switch (propertyType)
         {
             case "ArrayProperty":
-                WriteArray(Ar, (ArrayProperty)value, mappings, tagData, writeStructTag);
+                WriteArray(Ar, (ArrayProperty)value, mappings, tagData, writeStructTag, propertyName);
                 break;
             case "BoolProperty":
                 Ar.Write(((BoolProperty)value).Value ? (byte)1 : (byte)0);
                 break;
             case "ByteProperty":
                 if (tagData?.EnumName is { } enumName && !enumName.Equals("None", StringComparison.OrdinalIgnoreCase))
-                    Ar.WriteUnencryptedFString(((EnumProperty)value).Value.Text);
+                    Ar.WriteName(((EnumProperty)value).Value.Text);
                 else
                     Ar.Write(((ByteProperty)value).Value);
                 break;
@@ -29,7 +29,7 @@ public static class FAion2PropertyWriter
                 Ar.Write(((DoubleProperty)value).Value);
                 break;
             case "EnumProperty":
-                Ar.WriteUnencryptedFString(((EnumProperty)value).Value.Text);
+                Ar.WriteName(((EnumProperty)value).Value.Text);
                 break;
             case "FloatProperty":
                 Ar.Write(((FloatProperty)value).Value);
@@ -47,10 +47,10 @@ public static class FAion2PropertyWriter
                 Ar.Write(((IntProperty)value).Value);
                 break;
             case "NameProperty":
-                Ar.WriteAion2String(((NameProperty)value).Value.Text);
+                Ar.WriteName(((NameProperty)value).Value.Text);
                 break;
             case "SetProperty":
-                WriteSet(Ar, (SetProperty)value, mappings, tagData);
+                WriteSet(Ar, (SetProperty)value, mappings, tagData, propertyName);
                 break;
             case "MapProperty":
                 WriteMap(Ar, (MapProperty)value, mappings, tagData);
@@ -77,36 +77,54 @@ public static class FAion2PropertyWriter
         }
     }
 
-    static void WriteStructTag(FAion2DatFileWriter Ar)
+    /// <summary>
+    /// Inner struct tag of a struct array, as the client writes it (OBSERVED in NpcData.ActiveSkillList): property name,
+    /// "StructProperty", byte size of the elements that follow, struct type, zero GUID, no property GUID.
+    /// The reader skips it, but the bytes must match for the client.
+    /// </summary>
+    static void WriteStructTag(FAion2DatFileWriter Ar, string? propertyName, string? structType, long elementBytes)
     {
-        Ar.WriteUnencryptedFString("None");
-        Ar.WriteUnencryptedFString("None");
-        Ar.Write(0L);
-        Ar.WriteUnencryptedFString("None");
+        Ar.WriteName(propertyName ?? "None");
+        Ar.WriteName("StructProperty");
+        Ar.Write(elementBytes);
+        Ar.WriteName(structType ?? "None");
         Ar.Write(new byte[16]);
         Ar.Write((byte)0);
     }
 
-    static void WriteSet(FAion2DatFileWriter Ar, SetProperty value, TypeMappings mappings, FPropertyTagData? tagData)
+    static void WriteSet(FAion2DatFileWriter Ar, SetProperty value, TypeMappings mappings, FPropertyTagData? tagData, string? propertyName)
     {
         var items = value.Value!.Properties;
         Ar.Write(items.Count);
         foreach (var item in items)
             WritePropertyTagType(Ar, item, mappings, tagData?.InnerType ?? "StructProperty", tagData?.InnerTypeData, true, ReadType.ARRAY);
-        WriteArrayBody(Ar, new UScriptArray(items, tagData?.InnerType ?? "StructProperty", tagData?.InnerTypeData), mappings, tagData, writeStructTag: true);
+        WriteArrayBody(Ar, new UScriptArray(items, tagData?.InnerType ?? "StructProperty", tagData?.InnerTypeData), mappings, tagData, writeStructTag: true, propertyName);
     }
 
-    static void WriteArray(FAion2DatFileWriter Ar, ArrayProperty value, TypeMappings mappings, FPropertyTagData? tagData, bool writeStructTag) =>
-        WriteArrayBody(Ar, value.Value!, mappings, tagData, writeStructTag);
+    static void WriteArray(FAion2DatFileWriter Ar, ArrayProperty value, TypeMappings mappings, FPropertyTagData? tagData, bool writeStructTag, string? propertyName) =>
+        WriteArrayBody(Ar, value.Value!, mappings, tagData, writeStructTag, propertyName);
 
-    static void WriteArrayBody(FAion2DatFileWriter Ar, UScriptArray value, TypeMappings mappings, FPropertyTagData? tagData, bool writeStructTag)
+    static void WriteArrayBody(FAion2DatFileWriter Ar, UScriptArray value, TypeMappings mappings, FPropertyTagData? tagData, bool writeStructTag, string? propertyName)
     {
         var items = value.Properties;
         Ar.Write(items.Count);
-        if (writeStructTag && tagData?.InnerType is "StructProperty")
-            WriteStructTag(Ar);
-        foreach (var item in items)
-            WritePropertyTagType(Ar, item, mappings, tagData?.InnerType ?? "StructProperty", tagData?.InnerTypeData, writeStructTag, ReadType.ARRAY);
+        var innerType = tagData?.InnerType ?? "StructProperty";
+        if (!(writeStructTag && tagData?.InnerType is "StructProperty"))
+        {
+            foreach (var item in items)
+                WritePropertyTagType(Ar, item, mappings, innerType, tagData?.InnerTypeData, writeStructTag, ReadType.ARRAY);
+            return;
+        }
+
+        // The tag carries the elements' byte size, so serialize them first.
+        using var elements = new MemoryStream();
+        using (var elementWriter = new FAion2DatFileWriter(elements, Ar.Versions) { UnicodeNames = Ar.UnicodeNames })
+        {
+            foreach (var item in items)
+                WritePropertyTagType(elementWriter, item, mappings, innerType, tagData.InnerTypeData, writeStructTag, ReadType.ARRAY);
+        }
+        WriteStructTag(Ar, propertyName, tagData.InnerTypeData?.StructType, elements.Length);
+        Ar.Write(elements.ToArray());
     }
 
     static void WriteMap(FAion2DatFileWriter Ar, MapProperty value, TypeMappings mappings, FPropertyTagData? tagData)
@@ -170,5 +188,5 @@ public static class FAion2PropertyWriter
     }
 
     public static void WritePropertyTag(FAion2DatFileWriter Ar, FPropertyTag tag, TypeMappings mappings) =>
-        WritePropertyTagType(Ar, tag.Tag!, mappings, tag.PropertyType.Text, tag.TagData, true);
+        WritePropertyTagType(Ar, tag.Tag!, mappings, tag.PropertyType.Text, tag.TagData, true, ReadType.NORMAL, tag.Name.Text);
 }

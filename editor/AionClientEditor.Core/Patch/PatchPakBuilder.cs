@@ -9,7 +9,7 @@ namespace AionClientEditor.Patch;
 /// </summary>
 public static class PatchPakBuilder
 {
-    public const string MountPoint = "../../../Aion2/";
+    public const string MountPoint = "../../../AION2/"; // same casing as the client's own paks
 
     public static void WritePak(string outputPakPath, IReadOnlyDictionary<string, byte[]> virtualPathToOnDiskBytes, FAesKey aesKey)
     {

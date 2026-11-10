@@ -5,6 +5,7 @@ using CUE4Parse.GameTypes.Aion2.Encryption.Aes;
 using CUE4Parse.GameTypes.Aion2.Objects;
 using CUE4Parse.MappingsProvider;
 using CUE4Parse.UE4.Assets.Objects;
+using CUE4Parse.UE4.Assets.Objects.Properties;
 using CUE4Parse.UE4.Readers;
 using CUE4Parse.UE4.Versions;
 
@@ -12,32 +13,41 @@ namespace AionClientEditor.Serialization;
 
 public static class ClientDatSerializer
 {
-    public static byte[] SerializePlaintextTable(FAion2DataTableFile table, IFileProvider provider)
+    public static byte[] SerializePlaintextTable(FAion2DataTableFile table, IFileProvider provider, bool unicodeNames = false)
     {
         var mappings = provider.MappingsContainer?.MappingsForGame
             ?? throw new InvalidOperationException("Usmap mappings are required to serialize tables");
-        return SerializePlaintextTable(table, mappings, provider.Versions);
+        return SerializePlaintextTable(table, mappings, provider.Versions, unicodeNames);
     }
 
-    public static byte[] SerializePlaintextTable(FAion2DataTableFile table, TypeMappings mappings, VersionContainer versions)
+    public static byte[] SerializePlaintextTable(FAion2DataTableFile table, TypeMappings mappings, VersionContainer versions,
+        bool unicodeNames = false)
     {
         using var stream = new MemoryStream();
-        using var writer = new FAion2DatFileWriter(stream, versions);
+        using var writer = new FAion2DatFileWriter(stream, versions) { UnicodeNames = unicodeNames };
         writer.Write(table.Version);
-        writer.WriteAion2String(string.Join(",", table.Ids));
+        writer.WriteName(string.Join(",", table.Ids));
         if (table.Properties.Count != 1) throw new InvalidOperationException("Expected a single Data property");
-        FAion2PropertyWriter.WritePropertyTag(writer, table.Properties[0], mappings);
+        // FAion2DataTableFile reads the top-level row array without a struct tag (readtag: false).
+        var data = table.Properties[0];
+        FAion2PropertyWriter.WritePropertyTagType(writer, data.Tag!, mappings, data.PropertyType.Text, data.TagData,
+            writeStructTag: false, ReadType.ARRAY);
         return stream.ToArray();
     }
 
     public static byte[] SerializeOnDiskTable(FAion2DataTableFile table, string virtualPath, IFileProvider provider, byte[]? originalOnDisk = null)
     {
-        var plaintext = SerializePlaintextTable(table, provider);
         if (originalOnDisk is null || originalOnDisk.Length < 8 || BitConverter.ToUInt32(originalOnDisk, 0) != 13)
-            return plaintext;
+            return SerializePlaintextTable(table, provider);
         Aion2DatFileEncryption.Initialize(provider);
+        var original = Aion2DatFileEncryption.DecryptDataTable(originalOnDisk, virtualPath);
+        var plaintext = SerializePlaintextTable(table, provider, UsesUnicodeNames(original));
         return Aion2DatFileEncryption.EncryptDataTable(plaintext, virtualPath);
     }
+
+    /// <summary>True when a plaintext table stores its id string (and so its names) as UTF-16 (negative length).</summary>
+    public static bool UsesUnicodeNames(byte[] plaintextTable) =>
+        plaintextTable.Length >= 8 && BitConverter.ToInt32(plaintextTable, 4) < 0;
 
     public static byte[] SerializePlaintextL10N(FAion2L10NFile file, VersionContainer versions)
     {
@@ -68,6 +78,8 @@ public static class ClientDatSerializer
             writer.Write(1);
             writer.WriteUnrealFString(file.Namespace);
             writer.WriteMap(file.Entries, writer.WriteUnrealFString, writer.WriteUnrealFString);
+            // OBSERVED: client files end with one more int32 0 (an empty trailing collection the reader ignores).
+            writer.Write(0);
         }
         return inner.ToArray();
     }
@@ -115,16 +127,17 @@ public static class ClientDatSerializer
     public static FAion2DataTableFile ReadPlaintextTable(byte[] data, string virtualPath, IFileProvider provider) =>
         ReadTable(data, virtualPath, provider, encrypted: false);
 
+    /// <summary>
+    /// Reads a table. On-disk (<paramref name="encrypted"/>) bytes go straight to <c>FAion2DataTableFile</c>, which
+    /// decrypts them itself: client tables are version 13, the same value as the encrypted-container magic, so
+    /// decrypting here first would make the constructor try to decrypt the plaintext again.
+    /// Plaintext input is only safe for tables whose version is not 13.
+    /// </summary>
     public static FAion2DataTableFile ReadTable(byte[] data, string virtualPath, IFileProvider provider, bool encrypted)
     {
-        var file = new FakeGameFile(virtualPath, data);
-        if (encrypted && data.Length >= 8 && BitConverter.ToUInt32(data, 0) == 13)
-        {
-            Aion2DatFileEncryption.Initialize(provider);
-            data = Aion2DatFileEncryption.DecryptDataTable(data, virtualPath);
-            file = new FakeGameFile(virtualPath, data);
-        }
-        return new FAion2DataTableFile(file, provider);
+        if (!encrypted && data.Length >= 4 && BitConverter.ToUInt32(data, 0) == 13)
+            throw new NotSupportedException("Plaintext tables with version 13 cannot be told apart from encrypted ones");
+        return new FAion2DataTableFile(new FakeGameFile(virtualPath, data), provider);
     }
 
     public static FAion2L10NFile ReadL10N(byte[] data, string virtualPath, IFileProvider provider) =>

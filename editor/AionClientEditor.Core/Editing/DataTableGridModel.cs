@@ -74,7 +74,7 @@ public sealed class DataTableGridModel
             var rowStruct = structs[i];
             var cells = new List<DataTableGridCell>
             {
-                new() { Display = ResolveRowKey(rowStruct, i, table.Ids), Tag = null, EditKind = PropertyEditKind.ReadOnly },
+                new() { Display = ResolveRowKey(rowStruct, i), Tag = null, EditKind = PropertyEditKind.ReadOnly },
             };
 
             foreach (var col in columns.Skip(1))
@@ -101,10 +101,11 @@ public sealed class DataTableGridModel
         return new DataTableGridModel(columns, rows);
     }
 
-    static string ResolveRowKey(FStructFallback row, int index, string[] ids)
+    // The table header's Ids are one hash per column, not row keys; rows are keyed by their ID property.
+    static string ResolveRowKey(FStructFallback row, int index)
     {
-        if (index < ids.Length && !string.IsNullOrWhiteSpace(ids[index]))
-            return ids[index];
+        if (DataTableRows.RowId(row) is { } id)
+            return id.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         foreach (var name in new[] { "Id", "ID", "Name", "Key", "Code" })
         {

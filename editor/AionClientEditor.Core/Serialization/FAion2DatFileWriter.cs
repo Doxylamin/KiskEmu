@@ -12,6 +12,20 @@ public sealed class FAion2DatFileWriter(Stream stream, VersionContainer versions
 
     public VersionContainer Versions { get; } = versions;
 
+    /// <summary>
+    /// Write names (table ids, NameProperty, EnumProperty) as XORed UTF-16 like the client's own tables do
+    /// (OBSERVED: NpcData's id string has a negative length). Off writes UTF-8, which the reader also accepts.
+    /// </summary>
+    public bool UnicodeNames { get; init; }
+
+    /// <summary>A name-like string as <c>FAion2DatFileArchive.ReadFName</c> reads it.</summary>
+    public void WriteName(string value)
+    {
+        // OBSERVED in NpcTalk: a one-character name ("A") is stored as ANSI, longer ones as XORed UTF-16.
+        if (UnicodeNames && value.Length > 1) WriteUnicodeAion2String(value);
+        else WriteAion2String(value);
+    }
+
     public void WriteAion2String(string value, bool l10n = false)
     {
         if (value.Length == 0)
@@ -51,7 +65,8 @@ public sealed class FAion2DatFileWriter(Stream stream, VersionContainer versions
         }
 
         var bytes = Encoding.Unicode.GetBytes(value + "\0");
-        TensorUtils.Xor(bytes, XorKeyLong);
+        // The client XORs the characters only; the UTF-16 null terminator stays 00 00 (OBSERVED in NpcData).
+        TensorUtils.Xor(bytes.AsSpan(0, bytes.Length - 2), XorKeyLong);
         Write(-bytes.Length / 2);
         Write(bytes);
     }
