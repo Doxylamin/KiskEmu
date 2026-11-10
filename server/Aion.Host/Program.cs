@@ -366,6 +366,11 @@ if (ncGuard.Port is not null)
 // Account site and API (sign-in, launches, staff dashboard). A public host serves it over HTTPS
 // (Aion:Https PEM certificate) unless a TLS proxy in front of it is declared (Aion:Https:Proxy).
 var port = builder.Configuration.GetValue<int?>("Aion:LocalPort") ?? 8780;
+// The staff dashboard on a port of its own (Aion:Web:StaffPort; WebSites.cs), same TLS and bind rules as the account
+// port. Unset: the dashboard stays on the account port at Aion:Web:StaffPath. Never on a world server.
+var staffPort = worldProcess is null ? builder.Configuration.GetValue<int?>("Aion:Web:StaffPort") : null;
+if (staffPort is { } chosenStaffPort && (chosenStaffPort == port || chosenStaffPort is < 1 or > 65535))
+    throw new InvalidOperationException("Aion:Web:StaffPort must be a free port other than the account port (Aion:LocalPort).");
 var https = builder.Configuration.GetSection(AionConfiguration.Https).Get<HttpsOptions>() ?? new HttpsOptions();
 // A world server's HTTP port (status and control for the auth host, staff tools of this world) is plain HTTP on
 // Aion:WorldProcess:ListenAddress (loopback unless a remote world server is reached over the network).
@@ -386,6 +391,11 @@ builder.WebHost.ConfigureKestrel(options =>
     {
         if (accountCertificate is not null) listener.UseHttps(accountCertificate);
     });
+    if (staffPort is { } dashboardPort)
+        options.Listen(https.Proxy ? IPAddress.Loopback : network.Bind, dashboardPort, listener =>
+        {
+            if (accountCertificate is not null) listener.UseHttps(accountCertificate);
+        });
     // The client's own bootstrap and chat requests are plain HTTP (observed policy URLs).
     foreach (var httpPort in new[] { chatPort, platform.Port }.OfType<int>().Where(p => p != port).Distinct())
         options.Listen(network.Bind, httpPort);
@@ -460,6 +470,9 @@ app.Use(async (context, next) =>
     if (context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/internal")) context.Response.Headers.CacheControl = "no-store";
     await next();
 });
+// Player site and staff dashboard on separate ports (Aion:Web:StaffPort): each port answers only its own site.
+if (staffPort is { } siteStaffPort)
+    app.UseSiteSplit(port, siteStaffPort, app.Environment.WebRootPath ?? "wwwroot");
 if (platform.Port is { } platformPort)
 {
     var accountTls = https.Proxy || https.CertificateFile is not null;
@@ -484,9 +497,9 @@ if (app.Services.GetService<Aion.Host.Worlds.WorldLinks>() is { } worldLinks)
 if (debugOptions.Enabled) app.UsePlaytestHttpLogging();
 app.UseWebSockets();
 app.MapSynapseStub();
-// The staff dashboard can live at a private address (Aion:Web:StaffPath, e.g. "/k3x9..."); then
-// /admin.html is not found. Obscurity only: every staff API call still needs a staff sign-in.
-if (builder.Configuration["Aion:Web:StaffPath"] is { Length: > 1 } staffPath && staffPath.StartsWith('/') && staffPath != "/admin.html")
+// Without a staff port the staff dashboard can live at a private address on the account port (Aion:Web:StaffPath,
+// e.g. "/k3x9..."); then /admin.html is not found. Obscurity only: every staff API call still needs a staff sign-in.
+if (staffPort is null && builder.Configuration["Aion:Web:StaffPath"] is { Length: > 1 } staffPath && staffPath.StartsWith('/') && staffPath != "/admin.html")
 {
     var dashboardFile = Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "admin.html");
     app.Use(async (context, next) =>

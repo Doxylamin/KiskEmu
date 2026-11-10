@@ -25,7 +25,7 @@ class ServerEnvTests(unittest.TestCase):
     def args(self, root, **overrides):
         values = dict(public_address='203.0.113.5', bind='0.0.0.0', data=root / 'data', state=root / 'state',
                       proxy=False, certificate=Path('/etc/aion/tls/cert.pem'), key=Path('/etc/aion/tls/key.pem'),
-                      max_connections=200, preload=[1000, 1010], geolocation='59.9,10.7,NO', staff_path=None)
+                      max_connections=200, preload=[1000, 1010], geolocation='59.9,10.7,NO', staff_path=None, staff_port=None)
         values.update(overrides)
         return argparse.Namespace(**values)
 
@@ -39,6 +39,7 @@ class ServerEnvTests(unittest.TestCase):
         self.assertEqual(env['Aion__NcGuard__Capture'], 'false')
         self.assertEqual(env['Aion__Accounts__Registration'], 'false')  # admins create accounts
         self.assertRegex(env['Aion__Web__StaffPath'], r'^/[a-z0-9]{16}$')
+        self.assertNotIn('Aion__Web__StaffPort', env)
         self.assertIn('Password=app-secret;', env['ConnectionStrings__Aion'])
         self.assertIn('Username=aion_auth;', env['ConnectionStrings__Auth'])
         self.assertNotIn('"', env['ConnectionStrings__Aion'])
@@ -46,6 +47,15 @@ class ServerEnvTests(unittest.TestCase):
         self.assertIn('Aion__Https__CertificateFile', env)
         self.assertNotIn('Aion__ChatDevelopmentLogins', env)
         self.assertNotIn('Aion__NcGuard__RewriteHosts', env)
+
+    def test_staff_port_replaces_the_private_address(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            server_data(root / 'data')
+            env = server_env.environment(self.args(root, staff_port=8781, staff_path='/keepthisone'),
+                                         {'aion_app': 'a', 'aion_auth': 'b'})
+        self.assertEqual(env['Aion__Web__StaffPort'], 8781)
+        self.assertNotIn('Aion__Web__StaffPath', env)
 
     def test_proxy_and_missing_data(self):
         with tempfile.TemporaryDirectory() as temp:

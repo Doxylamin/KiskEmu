@@ -59,6 +59,47 @@ Certificate choices for the account site (port 8780), exactly one:
   listens on loopback for the account site and trusts X-Forwarded-For from loopback). The proxy
   must use another public port: 443 belongs to the NCGuard sink.
 
+### Staff dashboard on its own hostname (`--staff-port`)
+
+By default the staff dashboard sits on the account site at a random private address (shown at the
+end of install.sh). With `--staff-port 8781` it gets a port of its own instead, so the player site
+and the dashboard can have separate hostnames (e.g. `world.example.com` and `admin.example.com`):
+
+- port 8780 answers the player site only (no dashboard page, no `/api/admin`),
+- port 8781 answers the dashboard only: the page at `/`, its scripts, `/api/admin`, `/api/status`
+  and the wardrobe files; everything else is 404.
+
+Use it with `--proxy`: the staff port then listens on `127.0.0.1` only and never needs a firewall
+opening. (With a certificate instead of a proxy, the staff port serves the same certificate and
+install.sh opens it in ufw.) One proxy port with both names, e.g. nginx:
+
+```nginx
+server {
+    listen 8443 ssl;  server_name world.example.com;
+    ssl_certificate /etc/letsencrypt/live/world.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/world.example.com/privkey.pem;
+    location / { proxy_pass http://127.0.0.1:8780; proxy_set_header Host $host;
+                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto https; }
+}
+server {
+    listen 8443 ssl;  server_name admin.example.com;
+    ssl_certificate /etc/letsencrypt/live/admin.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/admin.example.com/privkey.pem;
+    # Optional: allow only your staff's addresses here (allow 198.51.100.0/24; deny all;).
+    location / { proxy_pass http://127.0.0.1:8781; proxy_set_header Host $host;
+                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto https; }
+}
+```
+
+or Caddy:
+
+```caddy
+world.example.com:8443 { reverse_proxy 127.0.0.1:8780 }
+admin.example.com:8443 { reverse_proxy 127.0.0.1:8781 }
+```
+
+Never expose 8781 without TLS. Staff sign in with password and authenticator code either way.
+
 What install.sh does:
 
 1. Installs `dotnet-sdk-10.0`, `postgresql`, `python3`, `openssl`, `nodejs`, `npm` (and `certbot` with `--domain`).
