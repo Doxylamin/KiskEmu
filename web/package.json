@@ -9,6 +9,8 @@
     "prebuild": "node -e \"require('fs').rmSync('../server/Aion.Host/wwwroot/assets',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.6",
+    "@fontsource/ibm-plex-sans": "^5.2.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
