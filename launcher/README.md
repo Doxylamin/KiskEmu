@@ -145,7 +145,7 @@ dotnet run --project tests/Aion.Launcher.Checks
 dotnet publish launcher/AionLauncher -c Release -r win-x64 -o research/local/launcher-publish -p:DebugType=none
 # or a launcher for any KiskEmu server (no embedded launcher.json; the player adds servers):
 dotnet publish launcher/AionLauncher -c Release -r win-x64 -o research/local/launcher-generic -p:DebugType=none -p:GenericLauncher=true
-echo 0.4.1 > "research/local/launcher-publish/KiskLauncher.exe.version"
+echo 0.5.0 > "research/local/launcher-publish/KiskLauncher.exe.version"
 scp "research/local/launcher-publish/KiskLauncher.exe" "research/local/launcher-publish/KiskLauncher.exe.version" root@<server>:/var/lib/aion/downloads/
 ```
 
@@ -153,6 +153,15 @@ Signed-in players then see "Download KiskLauncher" on the account page (a five-m
 POST /api/downloads/launcher; `/download/launcher` needs that ticket and saves as `KiskLauncher.exe`).
 Installed copies offer the new file at their next start (the version in `KiskLauncher.exe.version` is what they show; keep
 it equal to `<Version>` in AionLauncher.csproj).
+
+### GitHub releases
+
+`.github/workflows/kisklauncher.yml` runs on GitHub's Windows runners (the GitHub repository mirrors the forge, tags
+included). A push to main that touches the launcher runs the checks and keeps both exes as a workflow artifact. A tag
+`launcher-v<Version>` (for example `git tag launcher-v0.5.0 && git push origin launcher-v0.5.0`) must match
+`<Version>` in AionLauncher.csproj. It also makes a GitHub release with `KiskLauncher.exe` (generic),
+`KiskLauncher-KiskEmu.exe` (KiskEmu's server built in) and `SHA256SUMS`. A server's own download is still the file
+in its downloads folder.
 
 ## Not yet verified (CANDIDATE)
 

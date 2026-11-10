@@ -16,7 +16,7 @@
     <Product>KiskLauncher</Product>
     <AssemblyTitle>KiskLauncher</AssemblyTitle>
     <Description>KiskLauncher: sets up the game and plays on a KiskEmu server.</Description>
-    <Version>0.4.2</Version>
+    <Version>0.5.0</Version>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>

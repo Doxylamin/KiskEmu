@@ -1,0 +1,108 @@
+# KiskLauncher builds on GitHub's Windows runners.
+# - A push to main that touches the launcher (or a manual run): checks, then both exes as a workflow artifact.
+# - A tag launcher-v<version> (equal to <Version> in launcher/AionLauncher/AionLauncher.csproj): the same, then a
+#   GitHub release with the generic exe (no server built in; players add servers), the KiskEmu-server exe, and SHA256SUMS.
+# The exes contain no game files: the game always comes from the player's own Steam install or account.
+name: KiskLauncher
+
+on:
+  push:
+    branches: [main]
+    tags: ['launcher-v*']
+    paths:
+      - 'launcher/**'
+      - 'tests/Aion.Launcher.Checks/**'
+      - '.github/workflows/kisklauncher.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kisklauncher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_NOLOGO: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content launcher/AionLauncher/AionLauncher.csproj
+          $version = ($project.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
+          if (-not $version) { throw "No <Version> in AionLauncher.csproj" }
+          if ($env:GITHUB_REF -like 'refs/tags/launcher-v*' -and $env:GITHUB_REF_NAME -ne "launcher-v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match the project version $version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Launcher checks
+        run: dotnet run --project tests/Aion.Launcher.Checks -c Release
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $common = @('-c', 'Release', '-r', 'win-x64', '-p:DebugType=none')
+          dotnet publish launcher/AionLauncher @common -o out/generic -p:GenericLauncher=true
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet publish launcher/AionLauncher @common -o out/kiskemu
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item out/generic/KiskLauncher.exe release/KiskLauncher.exe
+          Copy-Item out/kiskemu/KiskLauncher.exe release/KiskLauncher-KiskEmu.exe
+          "${{ steps.version.outputs.version }}" | Set-Content -NoNewline -Encoding ascii release/KiskLauncher.exe.version
+          $sums = Get-ChildItem release -Filter *.exe | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
+          }
+          $sums | Set-Content -Encoding ascii release/SHA256SUMS
+          Get-Content release/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KiskLauncher-${{ steps.version.outputs.version }}
+          path: release/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/launcher-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: KiskLauncher-${{ needs.build.outputs.version }}
+          path: release
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          cat > notes.md <<EOF
+          KiskLauncher ${VERSION} for Windows (x64, self-contained single exe, no install of .NET needed).
+
+          - **KiskLauncher.exe**: works with any KiskEmu server. At the first start it asks for the server's
+            account-site address (or use the server's "Add this server" link on its account page).
+          - **KiskLauncher-KiskEmu.exe**: the same launcher with the KiskEmu server already added.
+
+          The launcher contains no game files: it sets up the game from your own Steam install or Steam account.
+          Compare the file's SHA-256 with \`SHA256SUMS\`.
+          EOF
+          gh release create "${GITHUB_REF_NAME}" release/KiskLauncher.exe release/KiskLauncher-KiskEmu.exe release/SHA256SUMS \
+            --repo "${GITHUB_REPOSITORY}" --title "KiskLauncher ${VERSION}" --notes-file notes.md
