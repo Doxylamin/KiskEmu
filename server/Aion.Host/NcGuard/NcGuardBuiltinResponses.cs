@@ -15,6 +15,9 @@ public static class NcGuardBuiltinResponses
 
     static readonly BuiltinRule[] Rules =
     [
+        // OBSERVED official 2026-11-02 (A2Core-ChanAge, Artezianec): the client POSTs a binary body (about 2 KB) to / mid-session
+        // and gets 200 text/html with an empty body. A 404 here went with NCGuard closing the session (0xE0000015).
+        new("bladnoch.ncsoft.com", "POST", "/", "text/html", []),
         new("sdk.gpa.ncsoft.com", "POST", "/authz/token", "application/json", AuthzTokenBody()),
         // CANDIDATE: some client builds call authn after authz; same token envelope until a capture refines it.
         new("sdk.gpa.ncsoft.com", "POST", "/authn/token", "application/json", AuthzTokenBody()),

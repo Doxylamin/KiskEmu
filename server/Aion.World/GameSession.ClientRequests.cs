@@ -65,10 +65,22 @@ public sealed partial class GameSession
                     replies.AddRange(TryMapEventAskNpcInteractFallback((int)target, now));
                 return replies;
             }
+            // NCGuardData_RQ: silent, as the official server (SilentRequests); its envelope shape goes to the playtest log.
+            case 0xe259:
+                LogNcGuardDataRequest(plain);
+                return [];
             // Reports without a reply (SilentRequests).
-            case 0x3651 or 0x3601 or 0xe350 or 0xe259 or 0xffa0 or 0xffa1:
+            case 0x3651 or 0x3601 or 0xe350 or 0xffa0 or 0xffa1:
                 return [];
         }
         return null;
+    }
+
+    /// <summary>Metadata only (NcGuardPacketDiagnostics): sizes and layout, never the opaque bytes.</summary>
+    static void LogNcGuardDataRequest(byte[] plain)
+    {
+        if (PlaytestDebug.Sink is not { Actions: true }) return;
+        var summary = NcGuardPacketDiagnostics.Summarize(plain, 0xe259);
+        PlaytestDebug.Action("ncguard_packet", [.. summary.Select(kv => (kv.Key, kv.Value)), ("reply", "silent")]);
     }
 }
