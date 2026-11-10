@@ -68,7 +68,8 @@ jobs:
           (cd release && sha256sum *.exe | tee SHA256SUMS)
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      # GitHub's upload-artifact@v4 refuses non-github.com hosts; this is Forgejo's compatible fork.
+      - uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: KiskLauncher-${{ env.VERSION }}-${{ github.sha }}
           path: release/
