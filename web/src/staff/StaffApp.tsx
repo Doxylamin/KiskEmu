@@ -6,6 +6,7 @@
 // act on: the realm forwards those requests (?world=…) to that world server; everything else is the realm's.
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError } from '../shared/api';
+import { pageTitle, siteMark, useSiteName } from '../shared/site';
 import { Button, Icon, type StatusMessage } from '../shared/components';
 import { hashOf, useRoute } from '../shared/router';
 import { readSession, writeSession, type SavedSession } from '../shared/session';
@@ -92,6 +93,10 @@ export function StaffApp() {
   const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   const [worlds, setWorlds] = useState<{ worldId: number; name: string; up: boolean }[]>([]);
   const [world, setWorld] = useState<number | null>(readWorld);
+  // The world pages wait for the first world list: before it, their requests would go to the realm without ?world=.
+  const [worldsReady, setWorldsReady] = useState(false);
+  const site = useSiteName();
+  useEffect(() => { document.title = pageTitle('Staff', site); }, [site]);
 
   // A remembered session: still valid and still staff?
   useEffect(() => {
@@ -123,7 +128,7 @@ export function StaffApp() {
       setWorlds(entries);
       setWorld(current => current !== null && entries.some(w => w.worldId === current) ? current
         : (entries.find(w => w.up) ?? entries[0])?.worldId ?? null);
-    }).catch(() => { /* single-world host: no registry */ });
+    }).catch(() => { /* single-world host: no registry */ }).finally(() => { if (live) setWorldsReady(true); });
     load();
     const timer = window.setInterval(load, 15000);
     return () => { live = false; window.clearInterval(timer); };
@@ -159,15 +164,16 @@ export function StaffApp() {
   const accountId = view === 'accounts' ? route[1] ?? null : null;
   const worldName = worlds.find(w => w.worldId === world)?.name ?? null;
   const [group, title] = LABELS[view];
-  const page = (id: View, content: ReactNode) => <div className="view" hidden={view !== id}>{content}</div>;
+  const page = (id: View, content: ReactNode) => worldsReady ? <div className="view" hidden={view !== id}>{content}</div>
+    : view === id ? <div className="view" key={id}><p className="muted page">Loading…</p></div> : null;
   return (
     <div className="app app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">S</span>
+          <span className="brand-mark" aria-hidden="true">{siteMark(site)}</span>
           <div>
-            <strong>Staff</strong>
-            <span className="muted small block">Game administration</span>
+            <strong>{site}</strong>
+            <span className="muted small block">Staff dashboard</span>
           </div>
         </div>
         <nav className="nav" aria-label="Staff pages">

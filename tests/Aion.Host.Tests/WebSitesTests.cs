@@ -22,6 +22,8 @@ public sealed class WebSitesTests : IAsyncDisposable
     [InlineData("/api/admin/me", true)]
     [InlineData("/api/admin/session", true)]
     [InlineData("/api/status", true)]
+    [InlineData("/api/worlds", true)]
+    [InlineData("/api/worlds/1204/anything", false)]
     [InlineData("/wardrobe/items/1.webp", true)]
     [InlineData("/wardrobe-viewer.js", true)]
     [InlineData("/assets/admin-AbC123.js", true)]

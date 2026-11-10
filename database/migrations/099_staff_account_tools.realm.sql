@@ -1,6 +1,10 @@
 -- The staff Accounts page (IAccountDirectory, Authentication/StaffAccountEndpoints.cs) and the staff sign-in read an
 -- account's roles over the account connection: aion_auth had no SELECT on auth.account_roles until now.
 GRANT SELECT ON auth.account_roles TO aion_auth;
+-- The Accounts page also finds accounts by character name (game.character_index): 092 granted SELECT on that table
+-- but not the schema. aion_auth has SELECT on game.character_index and game.characters only; no game function runs
+-- as its owner (none is SECURITY DEFINER), so the schema gives it nothing else.
+GRANT USAGE ON SCHEMA game TO aion_auth;
 
 -- Ending every session of an account from the dashboard. Needs a staff session of a moderator (players only) or an
 -- administrator (anyone but themselves).

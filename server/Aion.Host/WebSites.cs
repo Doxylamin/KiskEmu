@@ -4,7 +4,8 @@ namespace Aion.Host;
 /// The player site and the staff dashboard on separate ports (Aion:Web:StaffPort), so a proxy can give each its own
 /// hostname (e.g. world.example.com → the account port, admin.example.com → the staff port).
 /// <list type="bullet">
-/// <item>Staff port: the dashboard page at "/", its scripts, /api/admin, /api/status and the wardrobe files. Nothing else.</item>
+/// <item>Staff port: the dashboard page at "/", its scripts, /api/admin, /api/status, /api/worlds (world names) and the
+/// wardrobe files. Nothing else.</item>
 /// <item>Account port: the player site and the player API, the realm link and downloads; no dashboard page, no
 /// dashboard scripts, no /api/admin.</item>
 /// </list>
@@ -19,6 +20,7 @@ public static class WebSites
     /// <summary>What a request on the staff port may reach.</summary>
     public static bool StaffAllows(PathString path) =>
         path == "/" || path.StartsWithSegments("/api/admin") || path.StartsWithSegments("/api/status")
+        || path.Equals("/api/worlds", StringComparison.OrdinalIgnoreCase)   // world names (web/src/shared/worlds.ts)
         || path.StartsWithSegments("/wardrobe") || path.StartsWithSegments("/wardrobe-viewer.js")
         || path.StartsWithSegments("/assets") && !Entry(path, "index");
 

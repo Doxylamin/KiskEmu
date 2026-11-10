@@ -66,8 +66,8 @@ end of install.sh). With `--staff-port 8781` it gets a port of its own instead, 
 and the dashboard can have separate hostnames (e.g. `world.example.com` and `admin.example.com`):
 
 - port 8780 answers the player site only (no dashboard page, no `/api/admin`),
-- port 8781 answers the dashboard only: the page at `/`, its scripts, `/api/admin`, `/api/status`
-  and the wardrobe files; everything else is 404.
+- port 8781 answers the dashboard only: the page at `/`, its scripts, `/api/admin`, `/api/status`,
+  `/api/worlds` (world names) and the wardrobe files; everything else is 404.
 
 Use it with `--proxy`: the staff port then listens on `127.0.0.1` only and never needs a firewall
 opening. (With a certificate instead of a proxy, the staff port serves the same certificate and
@@ -192,6 +192,11 @@ sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres python3 /opt/aio
 
 The account site is `https://<domain or address>:8780`; players register there, and the
 launcher signs in there.
+
+The server's name on both sites, in the browser tab, on the launcher download and in authenticator
+apps is `Aion__Web__SiteName` (default `A2Core`). Put it in `/etc/aion/local.env` (update.sh keeps
+that file) and restart `aion-host`; no new build is needed. Authenticators set up earlier keep the
+name they were set up with.
 
 ## Auth host and world servers
 

@@ -3,6 +3,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../shared/api';
 import { Button, Status, type StatusMessage } from '../shared/components';
+import { QrCode } from '../shared/QrCode';
+import { siteMark, useSiteName } from '../shared/site';
 import { describe, type Session } from './StaffApp';
 import { ERRORS, type StaffProfile } from './types';
 
@@ -16,6 +18,7 @@ export function SignIn({ message, onSignedIn, onMessage }:
   { message: StatusMessage | null; onSignedIn: (s: Session, remember: boolean) => void; onMessage: (m: StatusMessage | null) => void }) {
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<Step>({ kind: 'password' });
+  const site = useSiteName();
 
   async function finish(token: string, username: string, remember: boolean) {
     const profile = await api<StaffProfile>('/api/admin/me', { token });
@@ -89,7 +92,7 @@ export function SignIn({ message, onSignedIn, onMessage }:
 
   const hint = step.kind === 'password' ? 'Use an account with a Gamemaster, Moderator or Administrator role.'
     : step.kind === 'code' ? 'Enter the code from your authenticator app, or a recovery code.'
-    : step.kind === 'enroll' ? 'Add this key to an authenticator app, then enter the 6-digit code it shows.'
+    : step.kind === 'enroll' ? 'Scan the code with an authenticator app, then enter the 6-digit code it shows.'
     : 'Save these recovery codes somewhere safe. Each one works once if you lose your authenticator. They are shown only now.';
   const label = step.kind === 'password' ? 'Sign in' : step.kind === 'recovery' ? 'I saved them, continue'
     : step.kind === 'enroll' ? 'Turn on and sign in' : 'Verify';
@@ -97,10 +100,10 @@ export function SignIn({ message, onSignedIn, onMessage }:
     <main className="signin">
       <form className="card card-body stack signin-card" onSubmit={submit}>
         <div className="brand brand-center">
-          <span className="brand-mark" aria-hidden="true" />
+          <span className="brand-mark" aria-hidden="true">{siteMark(site)}</span>
         </div>
         <div className="stack-sm center">
-          <h2>Staff sign-in</h2>
+          <h2>{site} staff sign-in</h2>
           <p className="muted">{hint}</p>
         </div>
         {step.kind === 'password' && (
@@ -127,13 +130,10 @@ export function SignIn({ message, onSignedIn, onMessage }:
         )}
         {step.kind === 'enroll' && (step.secret ? (
           <>
+            {step.uri && <div className="center"><QrCode value={step.uri} label="QR code for your authenticator app" /></div>}
             <div className="field">
-              <span className="small muted">Key</span>
+              <span className="small muted">Can't scan it? Enter this key instead</span>
               <code className="break">{step.secret}</code>
-            </div>
-            <div className="field">
-              <span className="small muted">Or add this address in the app</span>
-              <code className="break small">{step.uri}</code>
             </div>
             <div className="field">
               <label htmlFor="code">6-digit code</label>

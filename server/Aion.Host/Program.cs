@@ -96,7 +96,7 @@ if (accountsReady && worldProcess is null)
 {
     builder.Services.AddSingleton<PostgresAccountAuthentication>(provider =>
     {
-        var auth = new PostgresAccountAuthentication(authConnectionString!);
+        var auth = new PostgresAccountAuthentication(authConnectionString!) { TotpIssuer = SiteName(builder.Configuration) };
         var totpKey = builder.Configuration["Aion:Totp:EncryptionKey"];
         if (string.IsNullOrWhiteSpace(totpKey) && builder.Configuration["Aion:BridgeSecret"] is { Length: >= 32 } bridge)
             totpKey = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(bridge)));
@@ -175,6 +175,9 @@ static IChatDirectory? ChatDirectory(IServiceProvider provider, int world) =>
     : provider.GetService<IWireCharacterRepository>() is { } characters && provider.GetService<Aion.World.WorldPresence>() is { } presence
         ? new WorldChatDirectory(presence, characters, world) : null;
 builder.Services.AddSingleton(provider => new ChatRelay(provider.GetRequiredService<TimeProvider>(), ChatDirectory(provider, chatWorldId)));
+// The server's name (Aion:Web:SiteName) on both web sites and in authenticator apps; trimmed, at most 40 characters.
+static string SiteName(IConfiguration configuration) =>
+    configuration["Aion:Web:SiteName"]?.Trim() is { Length: > 0 } name ? name[..Math.Min(name.Length, 40)] : "A2Core";
 builder.Services.AddSingleton<StompHub>();
 if (builder.Configuration.GetValue<bool>("Aion:ChatDevelopmentLogins"))
     builder.Services.AddSingleton<IChatLoginVerifier, DevelopmentChatLoginVerifier>();
@@ -545,8 +548,10 @@ var downloads = accountsReady && builder.Configuration["Aion:Web:Downloads"] is 
     ? new Downloads(Path.GetFullPath(downloadPath), TimeProvider.System) : null;
 downloads?.Map(app);
 var registrationOpen = builder.Configuration.GetValue<bool?>("Aion:Accounts:Registration") ?? true;
+// siteName (Aion:Web:SiteName): the server's name on the player site and the staff dashboard, read per request so a
+// changed setting needs no new web build.
 app.MapGet("/api/status", () => Results.Ok(new { accountsConfigured = accountsReady, registrationOpen = accountsReady && registrationOpen,
-    launcherAvailable = downloads?.LauncherAvailable ?? false, gameReady = false }));
+    launcherAvailable = downloads?.LauncherAvailable ?? false, gameReady = false, siteName = SiteName(app.Configuration) }));
 if (accountsReady)
 {
     app.MapAccountEndpoints(registrationOpen);

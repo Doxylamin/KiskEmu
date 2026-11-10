@@ -2,6 +2,8 @@
 // addresses (#/security), so a refresh keeps the page. The session survives a refresh (shared/session.ts).
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useWorldNames } from '../shared/worlds';
+import { QrCode } from '../shared/QrCode';
+import { pageTitle, siteMark, useSiteName } from '../shared/site';
 import { api, ApiError } from '../shared/api';
 import { Button, Status, type StatusMessage } from '../shared/components';
 import { readSession, writeSession } from '../shared/session';
@@ -34,6 +36,8 @@ export function PlayerApp() {
   const [restoring, setRestoring] = useState(() => readSession(STORE_KEY) !== null);
   const [status, setStatus] = useState<Status | null>(null);
   const [message, setMessage] = useState<StatusMessage | null>(null);
+  const site = useSiteName();
+  useEffect(() => { if (!session) document.title = pageTitle('Sign in', site); }, [session, site]);
 
   useEffect(() => {
     api<Status>('/api/status').then(setStatus).catch(error => setMessage({ text: describe(error), kind: 'error' }));
@@ -68,7 +72,7 @@ export function PlayerApp() {
   return (
     <div className="site">
       <header className="site-header">
-        <a className="site-brand" href="#/"><span className="site-mark" aria-hidden="true">A</span><span>A2Core</span></a>
+        <a className="site-brand" href="#/"><span className="site-mark" aria-hidden="true">{siteMark(site)}</span><span>{site}</span></a>
         {session
           ? <div className="row"><span className="muted hide-narrow">Signed in as <strong className="ink">{session.username}</strong></span>
               <Button onClick={async () => {
@@ -232,7 +236,10 @@ function Account({ session, status, onSignedOut }:
     api<Character[]>('/api/characters', { token }).then(setCharacters).catch(() => setCharacters([]));
   }, [token, loadMe, loadTickets]);
   useEffect(() => { if (route[0] && !PAGES.includes(route[0] as Page)) navigate([], { replace: true }); }, [route, navigate]);
-  useEffect(() => { document.title = { overview: 'Your account', characters: 'Characters', security: 'Security', support: 'Support' }[page]; }, [page]);
+  const site = useSiteName();
+  useEffect(() => {
+    document.title = pageTitle({ overview: 'Your account', characters: 'Characters', security: 'Security', support: 'Support' }[page], site);
+  }, [page, site]);
 
   const answered = tickets.filter(t => t.status !== 'open' && t.staffNote).length;
   const groups = [{ items: [
@@ -316,13 +323,14 @@ function CharacterTable({ characters }: { characters: Character[] | null }) {
 function LauncherDownload({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const site = useSiteName();
   async function download() {
     setBusy(true); setFailed(false);
     try {
       const { url } = await api<{ url: string }>('/api/downloads/launcher', { method: 'POST', token });
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'A2Core Launcher.exe';
+      link.download = `${site.replace(/[\\/:*?"<>|]/g, '')} Launcher.exe`;
       link.click();
     } catch { setFailed(true); }
     finally { setBusy(false); }
@@ -393,8 +401,9 @@ function TwoStep({ token, onChanged }: { token: string; onChanged: () => void })
           setEnroll(null); setCodes(r.recoveryCodes); await load(); onChanged();
         }); }}>
           <ol className="steps">
-            <li>Add this key in your authenticator app: <code className="break">{enroll.secret}</code>
-              <span className="block muted small">Or the link: <code className="break">{enroll.otpAuthUri}</code></span></li>
+            <li>Scan this code with your authenticator app:
+              <QrCode value={enroll.otpAuthUri} label="QR code for your authenticator app" />
+              <span className="block muted small">Can't scan it? Enter this key instead: <code className="break">{enroll.secret}</code></span></li>
             <li>Enter the 6-digit code it shows.</li>
           </ol>
           <div className="row wrap align-end">

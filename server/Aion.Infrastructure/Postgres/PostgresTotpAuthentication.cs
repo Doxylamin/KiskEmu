@@ -12,7 +12,8 @@ namespace Aion.Infrastructure.Postgres;
 public sealed partial class PostgresAccountAuthentication : ITotpAuthentication, IPlatformSecondaryAuth
 {
     TotpSecretProtection? totpKeys;
-    const string TotpIssuer = "Aion Local";
+    /// <summary>The name authenticator apps show for this server (Aion:Web:SiteName); new enrollments only.</summary>
+    public string TotpIssuer { get; set; } = "Aion Local";
 
     public void ConfigureTotp(string? encryptionKeyBase64)
     {
