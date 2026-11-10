@@ -62,6 +62,7 @@ public sealed class QuestGatingPacketTests
         var cast = new PacketWriter().U16(0x3800).U16(16).I32(skillId).U8(2).Varint(watch.Key).F32(0)
             .Vec3(watch.Position).U8(9).ToArray();
         var castAt = Now + 2000;
+        session.SetPositionForTests(watch.Position);   // in reach (skill use range)
         await session.HandleAsync(cast, castAt);
         await GameSessionTestHelpers.AfterSkillHitsAsync(session, castAt, MapEventScenarioHelpers.SkillHitsLandMs(skillId));
         Assert.True(watch.Hp < watch.HpMax || watch.Dead);

@@ -28,6 +28,7 @@ public sealed class PlaythroughElyosStepTests
         prey!.Immune = false;
         prey.Relationship = 6;
         prey.Hp = 1;
+        session.SetPositionForTests(prey.Position);   // in reach (skill use range)
         var castReplies = await MapEventScenarioHelpers.CombatCastAsync(session, skillId, prey.Key, prey.Position, Now + 100);
         Assert.Contains(castReplies, p => GameSessionTestHelpers.Op(p) == 0x3804);
         prey = session.Targets!.Values.First(t => t.Key == prey.Key);

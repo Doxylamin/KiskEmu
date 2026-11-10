@@ -163,6 +163,7 @@ public sealed class CombatParityTests
         var target = alice.Targets!.Values.First(t => t.NpcId == spawn.NpcId);
         target.Hp = 1;
         var skill = MapEventScenarioHelpers.BasicAttackSkill(alice);
+        alice.SetPositionForTests(target.Position);   // in reach (skill use range)
         await MapEventScenarioHelpers.CombatCastAsync(session: alice, skill, target.Key, alice.Position!.Value, Now + 100);
         Assert.NotEmpty(alice.GroundDrops);
         Assert.Empty(bob.GroundDrops);

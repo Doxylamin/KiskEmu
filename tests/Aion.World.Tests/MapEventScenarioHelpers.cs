@@ -39,9 +39,24 @@ static partial class MapEventScenarioHelpers
     /// <summary>Cast and tick until Skill.dat-scheduled 0x3804 rows land.</summary>
     public static async Task<List<byte[]>> CombatCastAsync(GameSession session, int skillId, int targetKey, Vector3d at, long castAtMs)
     {
-        var replies = await session.HandleAsync(CombatCast(skillId, targetKey, at), castAtMs);
+        var replies = await CastInReachAsync(session, targetKey, CombatCast(skillId, targetKey, at), castAtMs);
         replies.AddRange(await session.TickAsync(castAtMs + SkillHitsLandMs(skillId)));
         return replies;
+    }
+
+    /// <summary>
+    /// Sends a cast with the caster standing on its NPC target, then puts the caster back: scripted kills cast from wherever the
+    /// script left the player, and casts past the skill's use range (NeedSkillUseRange) are refused.
+    /// </summary>
+    public static async Task<List<byte[]>> CastInReachAsync(GameSession session, int targetKey, byte[] cast, long castAtMs)
+    {
+        var stood = session.Position;
+        var npc = session.Targets?.GetValueOrDefault(targetKey);
+        // Only when out of reach (1500 cm: inside every damage skill's use range), so in-reach scripts stay as they were.
+        var moved = npc is not null && stood is { } s && Math.Sqrt(Math.Pow(s.X - npc.Position.X, 2) + Math.Pow(s.Y - npc.Position.Y, 2)) > 1500;
+        if (moved) session.SetPositionForTests(npc!.Position);
+        try { return await session.HandleAsync(cast, castAtMs); }
+        finally { if (moved) session.SetPositionForTests(stood!.Value); }
     }
 
     public static Vector3d? TeleportPoint(string name)
@@ -199,7 +214,7 @@ static partial class MapEventScenarioHelpers
                 target.Relationship = 6;
                 target.Hp = Math.Min(target.Hp, 1);
                 now += 50;
-                await session.HandleAsync(CombatCast(skillId, target.Key, target.Position), now);
+                await CastInReachAsync(session, target.Key, CombatCast(skillId, target.Key, target.Position), now);
                 await session.TickAsync(now + 100);
             }
         }

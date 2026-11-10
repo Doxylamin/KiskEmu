@@ -63,6 +63,7 @@ public sealed class QuestGatingSharedWorldTests
         var hp = prey.Hp;
         prey.Hp = 1;
         var castAt = Now + 50;
+        session.SetPositionForTests(prey.Position);   // in reach (skill use range)
         await session.HandleAsync(CastAt(skillId, prey), castAt);
         await GameSessionTestHelpers.AfterSkillHitsAsync(session, castAt, MapEventScenarioHelpers.SkillHitsLandMs(skillId));
         Assert.True(prey.Dead || session.Quests!.Get("HQ1102020")!.Goals.Any(g => g > 0),
@@ -79,6 +80,8 @@ public sealed class QuestGatingSharedWorldTests
         var skillId = DamageSkillId();
         var hp = watch.Hp;
         var earlyCast = Now + 100;
+        early.SetPositionForTests(watch.Position);   // in reach: refused for the gating, not the range
+        ready.SetPositionForTests(watch.Position);
         await early.HandleAsync(CastAt(skillId, watch), earlyCast);
         await GameSessionTestHelpers.AfterSkillHitsAsync(early, earlyCast, MapEventScenarioHelpers.SkillHitsLandMs(skillId));
         Assert.Equal(hp, watch.Hp);

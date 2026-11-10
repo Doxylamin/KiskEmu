@@ -607,6 +607,13 @@ public sealed class GameData
 
     public SkillDefinition? Skill(int skillId) => classes.Skills.GetValueOrDefault(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
+    sealed record CastRangeFile([property: JsonPropertyName("skills")] Dictionary<string, double>? Skills);
+    static readonly Lazy<Dictionary<string, double>> skillCastRanges = new(() => Load<CastRangeFile>("skill-cast-ranges.json").Skills ?? []);
+
+    /// <summary>Skill.dat NeedSkillUseRange (cm) of a player skill (tools/skill_cast_ranges.py); 0 = no range to check.</summary>
+    public double SkillUseRangeCm(int skillId) =>
+        skillCastRanges.Value.GetValueOrDefault(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
     /// <summary>Skill.dat GroupCoolTimeId; falls back to the skill id when unset in the export.</summary>
     public int CooldownGroup(int skillId) =>
         Skill(skillId) is { GroupCooldownId: > 0 } definition ? definition.GroupCooldownId : skillId;

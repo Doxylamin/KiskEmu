@@ -93,6 +93,7 @@ public sealed class HeroPacketScenarioTests
         var basic = GameData.Embedded.LearnedSkills(profile.Class, session.Level).First(s => s.SkillId >= 10_000_000 &&
             GameData.Embedded.Skill(s.SkillId)?.Damage.Length > 0 && GameData.Embedded.Skill(s.SkillId)!.Cost.Mp == 0);
         var skillId = basic.SkillId;
+        session.SetPositionForTests(watch.Position);   // in reach (skill use range)
         var cast = new PacketWriter().U16(0x3800).U16(16).I32(skillId).U8(2).Varint(watch.Key).F32(0).Vec3(watch.Position).U8(9).ToArray();
         var castAt = Now + 1000;
         var hit = await session.HandleAsync(cast, castAt);

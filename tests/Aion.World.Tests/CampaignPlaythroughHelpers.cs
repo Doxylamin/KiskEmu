@@ -881,7 +881,7 @@ static class CampaignPlaythroughHelpers
                 if (prey.Relationship is not (6 or 11)) prey.Relationship = 6;
                 if (prey.Hp > 1) prey.Hp = 1;
                 var castAt = now + 30 + swing * Math.Max(swingPeriod, MapEventScenarioHelpers.SkillHitsLandMs(skillId) + 80);
-                var cast = await session.HandleAsync(MapEventScenarioHelpers.CombatCast(skillId, prey.Key, prey.Position), castAt);
+                var cast = await MapEventScenarioHelpers.CastInReachAsync(session, prey.Key, MapEventScenarioHelpers.CombatCast(skillId, prey.Key, prey.Position), castAt);
                 await session.TickAsync(castAt + MapEventScenarioHelpers.SkillHitsLandMs(skillId) + 200);
                 _ = cast;
                 now = castAt + Math.Max(swingPeriod, MapEventScenarioHelpers.SkillHitsLandMs(skillId) + 200);

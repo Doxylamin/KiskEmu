@@ -61,14 +61,14 @@ public sealed class ProjectileReleaseTests
         const int tempest = 14340000;
         var session = await RangerAsync(new FakeCharacterStore());
         var dummy = session.Targets![Combat.TrainingDummyKey];
-        await session.HandleAsync(MapEventScenarioHelpers.MoveUpdate(dummy.Position with { X = dummy.Position.X + 2_500 }), Now + 5_000);
+        await session.HandleAsync(MapEventScenarioHelpers.MoveUpdate(dummy.Position with { X = dummy.Position.X + 2_100 }), Now + 5_000);   // within its 20 m use range
         var at = Now + 10_000;
         await session.HandleAsync(new PacketWriter().U16(0x3800).U16(0).I32(tempest).U8(2).Varint((uint)dummy.Key).F32(0).Vec3(dummy.Position).ToArray(), at);
         var sent = new List<(long At, byte[] Packet)>();
         for (var t = 10; t <= 2_000; t += 10)
             foreach (var p in await session.TickAsync(at + t)) sent.Add((t, p));
         var lastHit = sent.Last(s => GameSessionTestHelpers.Op(s.Packet) == 0x3804).At;
-        Assert.True(lastHit > 600);   // 25 m at Speed 5000 after the second release
+        Assert.True(lastHit > 420);   // 21 m at Speed 5000 after the second release (20 m use range + tolerance)
         Assert.True(sent.Single(s => GameSessionTestHelpers.Op(s.Packet) == 0x3806).At >= lastHit);
         Assert.All(sent.Where(s => GameSessionTestHelpers.Op(s.Packet) == 0x3804), s =>
         {

@@ -99,7 +99,8 @@ partial class GameSession
             && (resources.ApMax <= 0 || resources.Ap >= cost.Ap)
             && (SkillFamilyLearned(skill) || normalDodge || chainSkill || CarriedSkill == skill)
             && (weapons.Count == 0 || weapons.Contains(data.WeaponType(equippedWeapon) ?? ""))
-            && UseConditionMet(definition, now, request.TargetKey, skill);
+            && UseConditionMet(definition, now, request.TargetKey, skill)
+            && CastTargetReachValid(definition, skill, request);
         var basicAuto = definition is not null && SkillCooldown.IsBasicAutoAttack(definition);
         var toggleOff = request.HasChangeToggle && request.ChangeToggle is 0 or 2;
         var toggleOn = request.HasChangeToggle && request.ChangeToggle == 1;
