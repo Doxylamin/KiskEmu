@@ -12,9 +12,10 @@ public sealed class CustomNpcTests
 {
     static readonly long Now = 1_700_000_000_000;
     const int TemplateId = 2_999_001, BaseTemplateId = 2_931_044; // Guard Sylvar's NpcData row: a friendly citizen
+    const int MerchantTemplateId = 2_930_643;                      // a general goods merchant (BuySell)
     static readonly int NpcKey = CustomNpcDirectory.KeyOf(TemplateId, 0);
 
-    static CustomNpc Npc(int mapId, Vector3d at, bool enabled = true) => new(TemplateId, "Tester", BaseTemplateId,
+    static CustomNpc Npc(int mapId, Vector3d at, bool enabled = true, int baseTemplateId = BaseTemplateId) => new(TemplateId, "Tester", baseTemplateId,
         new Dictionary<string, string> { ["en-US"] = "Kisk Tester", ["de-DE"] = "Kisk-Prüfer" },
         [new CustomNpcPlacement(mapId, at.X + 200, at.Y, at.Z, 90)],
         [
@@ -26,7 +27,7 @@ public sealed class CustomNpcTests
             new CustomNpcNode("Again", [new Dictionary<string, string> { ["en-US"] = "Back again?" }], null, []),
         ], enabled, DateTimeOffset.UnixEpoch);
 
-    static async Task<(GameSession Session, SharedWorld World, FakeCharacterStore Store)> EnterAsync(bool patched)
+    static async Task<(GameSession Session, SharedWorld World, FakeCharacterStore Store)> EnterAsync(bool patched, int baseTemplateId = BaseTemplateId)
     {
         var store = new FakeCharacterStore();
         var world = new SharedWorld(GameData.Embedded);
@@ -37,7 +38,7 @@ public sealed class CustomNpcTests
         await session.HandleAsync(new PacketWriter().U16(0x361f).Varint((uint)store.States[0].WireId << 16).I32(0).Vec3(Vector3d.Zero).ToArray(), Now);
         await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
         world.CustomNpcs.AssumePatchedClients = patched;
-        world.CustomNpcs.Publish([Npc(session.WorldPlayer!.Map!.MapId, session.Position!.Value)]);
+        world.CustomNpcs.Publish([Npc(session.WorldPlayer!.Map!.MapId, session.Position!.Value, baseTemplateId: baseTemplateId)]);
         await session.TickAsync(Now + 1_000);   // the map places it
         return (session, world, store);
     }
@@ -112,6 +113,25 @@ public sealed class CustomNpcTests
         await session.HandleAsync(Talk(0xe242), Now + 5_100);
         Assert.True(session.CustomNpcFlag("Tester", "met"));
         Assert.True(store.Settings.ContainsKey("custom_npc_flags"));
+    }
+
+    [Fact]
+    public async Task On_a_merchant_base_each_talk_is_refused_so_no_shop_opens_and_shows_the_next_line()
+    {
+        var (session, _, store) = await EnterAsync(patched: false, MerchantTemplateId);
+        Assert.Equal(MerchantTemplateId, AppearedNpcId(await SeeAsync(session)));
+        var kinaBefore = store.Items.Where(i => i.TemplateId == GameSession.KinaItemId).Sum(i => i.Quantity);
+
+        var first = await session.HandleAsync(Talk(0xe240), Now + 5_000);
+        var opened = Assert.Single(first, p => GameSessionTestHelpers.Op(p) == 0xe241);
+        Assert.Equal(1, BitConverter.ToUInt16(opened, 2));
+        Assert.True(HasText(first, GameSession.NoticeNt, "Kisk Tester: Line one …"));
+        Assert.False(session.CustomNpcFlag("Tester", "met"));
+
+        var second = await session.HandleAsync(Talk(0xe240), Now + 6_000);
+        Assert.True(HasText(second, GameSession.NoticeNt, "Kisk Tester: Line two"));
+        Assert.True(session.CustomNpcFlag("Tester", "met"));
+        Assert.Equal(kinaBefore + 1234, store.Items.Where(i => i.TemplateId == GameSession.KinaItemId).Sum(i => i.Quantity));
     }
 
     [Fact]

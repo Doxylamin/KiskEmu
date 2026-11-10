@@ -339,6 +339,7 @@ public sealed partial class GameSession
         {
             openNpcTalk = null;
             openClearMapEventEntryKey = null;
+            if (Shops.IsMerchant(npc.NpcId)) return CustomNpcMerchantTalkAsync(npc, custom, now, ct);
             replies.AddRange(CustomNpcTalkOpened(npc, custom));
             return Task.FromResult(replies);
         }

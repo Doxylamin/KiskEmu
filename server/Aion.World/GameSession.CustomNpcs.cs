@@ -99,6 +99,20 @@ public sealed partial class GameSession
     }
 
     /// <summary>
+    /// 0xe240 on a custom NPC built on a merchant: the interaction is refused (0xe241 result 1) and the request counts as one
+    /// whole talk (the next line; the actions after the last one). An accepted 0xe241 makes the client open the base
+    /// merchant's shop window itself and ask for its goods 50 ms later, whatever the server answers then (live 2026-11-10:
+    /// 0xe240, 0xe241 ok, 0x8c00, 0x8c01 result 1, and the shop still showed). CANDIDATE: what the refusal shows.
+    /// </summary>
+    async Task<List<byte[]>> CustomNpcMerchantTalkAsync(Target npc, CustomNpc custom, long now, CancellationToken ct)
+    {
+        var replies = new List<byte[]> { GamePackets.StartNpcInteractionReply(npc.Key, now + 300_000, result: 1) };
+        replies.AddRange(CustomNpcTalkOpened(npc, custom));
+        replies.AddRange(await CustomNpcTalkFinishedAsync(npc.Key, now, ct));
+        return replies;
+    }
+
+    /// <summary>
     /// 0x8c00 NpcShopOpen_RQ on a custom NPC built on a merchant. A plain citizen gets no [F] from the client unless a quest
     /// step targets it (live 2026-11-10: Guard Sylvar as a base, no 0xe240 at all); a merchant always has [F] and the client
     /// asks for the shop. The shop is refused (0x8c01 result 1) and the request counts as one talk: it shows the next line,
