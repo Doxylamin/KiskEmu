@@ -1,13 +1,20 @@
 <p align="center"><img src="web/src/shared/kiskemu-icon.svg" alt="" width="128" height="128"></p>
 
+<p align="center">
+  <a href="https://discord.gg/7XDVga5N3t"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
+  <a href="deploy/linux/README.md"><img alt="Run a server" src="https://img.shields.io/badge/Server-host_one-4166D8?style=for-the-badge"></a>
+  <a href="launcher/README.md"><img alt="KiskLauncher" src="https://img.shields.io/badge/KiskLauncher-play-4DA6E8?style=for-the-badge"></a>
+  <a href="docs/tools/CLIENT_EDITOR.md"><img alt="Client editor" src="https://img.shields.io/badge/Editor-client_tool-8B43E8?style=for-the-badge"></a>
+  <a href="CONTRIBUTING.md"><img alt="Contributing" src="https://img.shields.io/badge/Contributing-guide-526AAB?style=for-the-badge"></a>
+</p>
+
 # KiskEmu
 
 An open-source server emulator for the AION2 Steam client, with its Windows launcher, KiskLauncher.
 KiskEmu is a community project for learning and interoperability. It is not affiliated with, endorsed by or connected
 to NCSoft. You need your own copy of the game; the client is not included. See [NOTICE.md](NOTICE.md).
-KiskEmu began as a fork of [A2Core](https://github.com/Addiboii/A2Core).
-
-Questions, bug reports and help: join the [KiskEmu Discord](https://discord.gg/7XDVga5N3t).
+KiskEmu began as a fork of [A2Core](https://github.com/Addiboii/A2Core). Questions, bug reports and help: the
+[KiskEmu Discord](https://discord.gg/7XDVga5N3t).
 
 ## What it does
 
