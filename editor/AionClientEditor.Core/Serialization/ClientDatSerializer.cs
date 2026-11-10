@@ -3,6 +3,7 @@ using CUE4Parse.FileProvider;
 using CUE4Parse.FileProvider.Objects;
 using CUE4Parse.GameTypes.Aion2.Encryption.Aes;
 using CUE4Parse.GameTypes.Aion2.Objects;
+using CUE4Parse.MappingsProvider;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Readers;
 using CUE4Parse.UE4.Versions;
@@ -15,8 +16,13 @@ public static class ClientDatSerializer
     {
         var mappings = provider.MappingsContainer?.MappingsForGame
             ?? throw new InvalidOperationException("Usmap mappings are required to serialize tables");
+        return SerializePlaintextTable(table, mappings, provider.Versions);
+    }
+
+    public static byte[] SerializePlaintextTable(FAion2DataTableFile table, TypeMappings mappings, VersionContainer versions)
+    {
         using var stream = new MemoryStream();
-        using var writer = new FAion2DatFileWriter(stream, provider.Versions);
+        using var writer = new FAion2DatFileWriter(stream, versions);
         writer.Write(table.Version);
         writer.WriteAion2String(string.Join(",", table.Ids));
         if (table.Properties.Count != 1) throw new InvalidOperationException("Expected a single Data property");
@@ -46,15 +52,24 @@ public static class ClientDatSerializer
     {
         if (originalOnDisk is null || originalOnDisk.Length < 8 || BitConverter.ToUInt32(originalOnDisk, 0) != 2)
             return SerializePlaintextL10N(file, provider.Versions);
+        Aion2DatFileEncryption.Initialize(provider);
+        return Aion2DatFileEncryption.EncryptL10N(SerializeEncryptedL10NPayload(file, provider.Versions), virtualPath);
+    }
+
+    /// <summary>
+    /// Plaintext inside an AES-encrypted (header version 2) L10N file: int32 1, then plain Unreal FStrings. Unlike the
+    /// unencrypted format these strings carry no XOR (<c>FAion2L10NFile</c> reads them with <c>ReadFString</c>).
+    /// </summary>
+    public static byte[] SerializeEncryptedL10NPayload(FAion2L10NFile file, VersionContainer versions)
+    {
         using var inner = new MemoryStream();
-        using (var writer = new FAion2DatFileWriter(inner, provider.Versions))
+        using (var writer = new FAion2DatFileWriter(inner, versions))
         {
             writer.Write(1);
-            writer.WriteL10NString(file.Namespace);
-            writer.WriteMap(file.Entries, writer.WriteL10NString, writer.WriteL10NString);
+            writer.WriteUnrealFString(file.Namespace);
+            writer.WriteMap(file.Entries, writer.WriteUnrealFString, writer.WriteUnrealFString);
         }
-        Aion2DatFileEncryption.Initialize(provider);
-        return Aion2DatFileEncryption.EncryptL10N(inner.ToArray(), virtualPath);
+        return inner.ToArray();
     }
 
     public static byte[] SerializeMapHierarchy(FAion2MapHierarchyFile file)
