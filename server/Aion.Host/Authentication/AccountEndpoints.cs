@@ -77,10 +77,22 @@ public static class AccountEndpoints
             await auth.SignOutAsync(Bearer(context), ct);
             return Results.NoContent();
         });
-        app.MapGet("/api/accounts/me", async (HttpContext context, IAccountAuthentication auth, CancellationToken ct) =>
+        // The account page's overview: name, since when, two-step verification and the Quna balance (where this host
+        // keeps the accounts; a world server answers the id only).
+        app.MapGet("/api/accounts/me", async (HttpContext context, IAccountAuthentication auth, IServiceProvider services, CancellationToken ct) =>
         {
             var account = await auth.AuthenticateAsync(Bearer(context), ct);
-            return account is null ? Results.Unauthorized() : Results.Ok(new { accountId = account.AccountId });
+            if (account is null) return Results.Unauthorized();
+            if (services.GetService<IAccountDirectory>() is not { } directory || await directory.ProfileAsync(account.AccountId, ct) is not { } profile)
+                return Results.Ok(new { accountId = account.AccountId });
+            var totp = services.GetService<ITotpAuthentication>() is { } t && await t.IsEnabledAsync(account.AccountId, ct);
+            long? quna = null;
+            if (services.GetService<Aion.Application.Gameplay.IQunaWallet>() is { } wallet)
+            {
+                try { quna = (await wallet.BalanceAsync(account.AccountId, ct)).Balance; }
+                catch (System.Data.Common.DbException) { quna = null; }
+            }
+            return Results.Ok(new { accountId = account.AccountId, username = profile.Username, createdAt = profile.CreatedAt, totpEnabled = totp, quna });
         });
         app.MapGet("/api/characters", async (HttpContext context, IAccountAuthentication auth, CharacterService characters, CancellationToken ct) =>
         {

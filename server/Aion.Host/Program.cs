@@ -109,6 +109,8 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddSingleton<ITotpAuthentication>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     // Staff dashboard sessions: password, staff role and authenticator code (migration 098).
     builder.Services.AddSingleton<IStaffSessions>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
+    // Accounts for the account page and the staff Accounts page (migration 099).
+    builder.Services.AddSingleton<IAccountDirectory>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IPlatformSecondaryAuth>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IWorldSessions>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddHostedService<AuthenticationCleanup>();
@@ -550,6 +552,7 @@ if (accountsReady)
     app.MapAccountEndpoints(registrationOpen);
     app.MapTotpEndpoints();
     Aion.Host.Authentication.StaffSessionEndpoints.MapStaffSessionEndpoints(app);
+    Aion.Host.Authentication.StaffAccountEndpoints.MapStaffAccountEndpoints(app);
     app.MapGameplayEndpoints();
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
