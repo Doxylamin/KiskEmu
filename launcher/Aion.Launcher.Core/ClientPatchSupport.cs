@@ -1,7 +1,7 @@
 namespace Aion.Launcher;
 
 /// <summary>
-/// Optional client patch pak (z_A2Core_Patch-Windows_P.*) produced by A2Core Client Editor.
+/// Optional client patch pak (z_A2Core_Patch-Windows_P.*) produced by KiskEmu Client Editor.
 /// The launcher never modifies base paks; it only copies late-mount patch files when the player opts in.
 /// </summary>
 public static class ClientPatchSupport

@@ -15,15 +15,20 @@ namespace Aion.Host;
 public sealed class Downloads(string folder, TimeProvider clock)
 {
     /// <summary>The file in the downloads folder, and the name the browser saves it as (the route is /download/launcher).</summary>
-    public const string LauncherFile = "A2Core Launcher.exe";
+    public const string LauncherFile = "KiskEmu Launcher.exe";
+    /// <summary>The name before the rename: served until a KiskEmu Launcher is published to the same folder.</summary>
+    public const string LegacyLauncherFile = "A2Core Launcher.exe";
     const string Route = "/download/launcher";
-    /// <summary>Optional text file next to the exe with its version, shown by the launcher before it updates.</summary>
-    public const string VersionFile = LauncherFile + ".version";
+    /// <summary>Optional text file next to the exe with its version (exe name + ".version"), shown by the launcher before it updates.</summary>
+    public const string VersionSuffix = ".version";
     static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(5);
     readonly ConcurrentDictionary<string, DateTimeOffset> tickets = new();
     (long Length, DateTime Written, string Sha256)? hashed;
 
-    public bool LauncherAvailable => File.Exists(Path.Combine(folder, LauncherFile));
+    /// <summary>The launcher file served: the KiskEmu one, else the legacy A2Core one; null when neither is there.</summary>
+    string? Current => new[] { LauncherFile, LegacyLauncherFile }.Select(name => Path.Combine(folder, name)).FirstOrDefault(File.Exists);
+
+    public bool LauncherAvailable => Current is not null;
 
     string Issue()
     {
@@ -39,7 +44,8 @@ public sealed class Downloads(string folder, TimeProvider clock)
     /// <summary>The launcher file's hash (computed once per file version), size and version text; null without a launcher.</summary>
     async Task<object?> ManifestAsync(CancellationToken ct)
     {
-        var info = new FileInfo(Path.Combine(folder, LauncherFile));
+        if (Current is not { } path) return null;
+        var info = new FileInfo(path);
         if (!info.Exists) return null;
         string sha256;
         if (hashed is { } cached && cached.Length == info.Length && cached.Written == info.LastWriteTimeUtc) sha256 = cached.Sha256;
@@ -49,7 +55,7 @@ public sealed class Downloads(string folder, TimeProvider clock)
             sha256 = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct));
             hashed = (info.Length, info.LastWriteTimeUtc, sha256);
         }
-        var versionPath = Path.Combine(folder, VersionFile);
+        var versionPath = path + VersionSuffix;
         var version = File.Exists(versionPath) ? (await File.ReadAllTextAsync(versionPath, ct)).Trim() : "";
         return new { sha256, size = info.Length, version = version.Length > 0 ? version : null };
     }
@@ -67,8 +73,8 @@ public sealed class Downloads(string folder, TimeProvider clock)
         app.MapGet("/api/downloads/launcher/manifest", async (CancellationToken ct) =>
             await ManifestAsync(ct) is { } manifest ? Results.Ok(manifest) : Results.NotFound());
         app.MapGet(Route, (string? ticket) =>
-            Valid(ticket) && LauncherAvailable
-                ? Results.File(Path.Combine(folder, LauncherFile), "application/octet-stream", LauncherFile, enableRangeProcessing: true)
+            Valid(ticket) && Current is { } path
+                ? Results.File(path, "application/octet-stream", Path.GetFileName(path), enableRangeProcessing: true)
                 : Results.NotFound());
     }
 }

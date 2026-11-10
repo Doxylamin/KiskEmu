@@ -1,8 +1,13 @@
 # Notice
 
-A2Core is an independent, non-commercial community project for education and interoperability research. It is not
+KiskEmu is an independent, non-commercial community project for education and interoperability research. It is not
 affiliated with, endorsed by or connected to NCSoft Corporation. AION and AION2 are trademarks of NCSoft Corporation;
-they are named only to say which client A2Core works with.
+they are named only to say which client KiskEmu works with.
+
+KiskEmu started as a fork of A2Core (https://github.com/Addiboii/A2Core) and keeps its history and authorship;
+contributions merged from other A2Core forks keep theirs too. Some internal names still carry the old name so existing
+installs keep working: the launcher's data folder `A2CorePrivate` (the private game copy, settings and the game's
+saved-files suffix) and the client patch pak `z_A2Core_Patch-Windows_P`.
 
 The code is original work under the AGPL-3.0 (see LICENSE), with third-party open-source code under its own license:
 CUE4Parse (Apache-2.0, `third_party/CUE4Parse`) and the launcher's NuGet packages SteamKit2 (LGPL-2.1) and QRCoder
@@ -16,7 +21,7 @@ Opcode names in `research/local/tooling/opcodes.json` and several packet layouts
 (https://github.com/nuriland/a2kit, commit fb693ba), MIT License, Copyright (c) 2026 nuri. NOIA2, Aether-Aion2-DPS-meter-Global
 and AIon2-Dps-Meter (GPL-3.0) were used only to compare packet layouts; no code was copied from them.
 
-A2Core contains no game client and no client archive key. Players use their own copy of the game, obtained through
+KiskEmu contains no game client and no client archive key. Players use their own copy of the game, obtained through
 their own Steam account.
 
-Do not use A2Core for commercial purposes: no paid access, donations for perks or item sales.
+Do not use KiskEmu for commercial purposes: no paid access, donations for perks or item sales.

@@ -1,6 +1,6 @@
 # Recording the official server
 
-Many values in A2Core are still marked OURS (our own choice) or CANDIDATE (inferred, not confirmed). The way to settle
+Many values in KiskEmu are still marked OURS (our own choice) or CANDIDATE (inferred, not confirmed). The way to settle
 them is to watch what the official server sends while you play, then compare. This guide covers recording your own
 session, turning it into a readable message timeline, and sharing what you found without exposing your account.
 
@@ -13,7 +13,7 @@ modified, and nothing is sent to the server or to other players.
   LZ4 compression, which the tools unpack. A recording settles what the server sends: replies, notices, values and
   their timing.
 - **Client to server (not readable).** The client ciphers its own direction after the handshake. Request layouts come
-  from our own client traces (the server logs what the client sends to A2Core) and from the client's type mappings.
+  from our own client traces (the server logs what the client sends to KiskEmu) and from the client's type mappings.
 
 ## Setup (Windows)
 
@@ -68,7 +68,7 @@ The first command writes `timeline-13328/` next to the capture:
 
 The second command prints the messages you are interested in. Opcode names come from `tools/data/opcode-names.json`;
 the server code that builds each message is in `server/Aion.Protocol/Native/*Packets.cs` (search for the opcode).
-Comparing an official body with what A2Core sends for the same situation is how a CANDIDATE or OURS value becomes
+Comparing an official body with what KiskEmu sends for the same situation is how a CANDIDATE or OURS value becomes
 OBSERVED. `tools/inspect_capture.py` and `tools/summarize_session.py` check framing and summarize a session without
 printing bodies.
 

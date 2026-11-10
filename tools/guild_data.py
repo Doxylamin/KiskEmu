@@ -1,4 +1,4 @@
-"""Legion (guild) tables for A2Core — levels, donations, agit rent.
+"""Legion (guild) tables for KiskEmu — levels, donations, agit rent.
 
 When GuildLevelingDef / GlobalSetting rows are exported from the pinned client dat, extend build()
 to replace the checked-in thresholds. Until then values match Global client tables (cumulative Legion EXP

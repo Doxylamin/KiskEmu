@@ -198,7 +198,7 @@ sealed class Workflow(LauncherConfig config, LauncherSettings settings)
         var (executable, steamArguments) = AppInfo.LaunchArguments(app, config.SavedDirSuffix);
         var arguments = ClientVersions.Arguments(steamArguments, version);
         if (!executable.Equals(Build.Executable, StringComparison.OrdinalIgnoreCase))
-            throw new LauncherException("Steam's launch entry for the game changed; A2Core Launcher needs an update.");
+            throw new LauncherException("Steam's launch entry for the game changed; KiskEmu Launcher needs an update.");
 
         status("Getting a launch code from the server…");
         var launch = await Account.AuthorizeLaunchAsync(ct);

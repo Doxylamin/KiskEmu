@@ -31,12 +31,12 @@ sealed class MainForm : Form
     public MainForm()
     {
         var version = typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
-        Text = $"A2Core Client Editor {version}";
+        Text = $"KiskEmu Client Editor {version}";
         Width = 1280;
         Height = 760;
         MinimumSize = new Size(960, 600);
         StartPosition = FormStartPosition.CenterScreen;
-        A2CoreTheme.ApplyForm(this);
+        KiskEmuTheme.ApplyForm(this);
 
         var openPaks = new ToolStripButton("Open Paks…");
         openPaks.Click += (_, _) => OpenWorkspace();
@@ -51,20 +51,20 @@ sealed class MainForm : Form
         var revert = new ToolStripButton("Revert patch");
         revert.Click += (_, _) => RevertPatch();
         tool.Items.AddRange([openPaks, save, build, export, import, revert]);
-        A2CoreTheme.ApplyToolStrip(tool);
+        KiskEmuTheme.ApplyToolStrip(tool);
 
-        var brandRail = new BrandRail("A2Core Client Editor", "v" + version);
+        var brandRail = new BrandRail("KiskEmu Client Editor", "v" + version);
 
-        var left = new Panel { Dock = DockStyle.Left, Width = 400, Padding = new Padding(12, 8, 8, 8), BackColor = A2CoreTheme.Background };
+        var left = new Panel { Dock = DockStyle.Left, Width = 400, Padding = new Padding(12, 8, 8, 8), BackColor = KiskEmuTheme.Background };
         left.Controls.Add(tableList);
         left.Controls.Add(filterBox);
         left.Controls.Add(tableHeading);
         tableHeading.BringToFront();
         filterBox.BringToFront();
-        A2CoreTheme.ApplyListBox(tableList);
-        A2CoreTheme.ApplyTextBox(filterBox);
-        A2CoreTheme.ApplyLabel(tableHeading, semibold: true);
-        tableHeading.Font = A2CoreTheme.UiFont(12f, semibold: true);
+        KiskEmuTheme.ApplyListBox(tableList);
+        KiskEmuTheme.ApplyTextBox(filterBox);
+        KiskEmuTheme.ApplyLabel(tableHeading, semibold: true);
+        tableHeading.Font = KiskEmuTheme.UiFont(12f, semibold: true);
 
         grid.CellEndEdit += (_, e) => ApplyGridEdit(e.RowIndex, e.ColumnIndex);
         grid.CellBeginEdit += (_, e) =>
@@ -77,23 +77,23 @@ sealed class MainForm : Form
         };
         grid.SelectionChanged += (_, _) => UpdateDetailsPanel();
 
-        A2CoreTheme.ApplyDataGridView(grid);
+        KiskEmuTheme.ApplyDataGridView(grid);
 
-        var detailsPanel = new Panel { Dock = DockStyle.Bottom, Height = 180, Padding = new Padding(0, 8, 0, 0), BackColor = A2CoreTheme.Background };
+        var detailsPanel = new Panel { Dock = DockStyle.Bottom, Height = 180, Padding = new Padding(0, 8, 0, 0), BackColor = KiskEmuTheme.Background };
         detailsPanel.Controls.Add(detailsBox);
         detailsPanel.Controls.Add(detailsLabel);
-        A2CoreTheme.ApplyTextBox(detailsBox, multiline: true);
-        A2CoreTheme.ApplyLabel(detailsLabel, muted: true);
+        KiskEmuTheme.ApplyTextBox(detailsBox, multiline: true);
+        KiskEmuTheme.ApplyLabel(detailsLabel, muted: true);
 
-        var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 8), BackColor = A2CoreTheme.Background };
+        var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 8), BackColor = KiskEmuTheme.Background };
         right.Controls.Add(grid);
         right.Controls.Add(detailsPanel);
 
-        var workspacePanel = new Panel { Dock = DockStyle.Fill, BackColor = A2CoreTheme.Background };
+        var workspacePanel = new Panel { Dock = DockStyle.Fill, BackColor = KiskEmuTheme.Background };
         workspacePanel.Controls.Add(right);
         workspacePanel.Controls.Add(left);
 
-        var main = new Panel { Dock = DockStyle.Fill, BackColor = A2CoreTheme.Background };
+        var main = new Panel { Dock = DockStyle.Fill, BackColor = KiskEmuTheme.Background };
         main.Controls.Add(workspacePanel);
         main.Controls.Add(tool);
         main.Controls.Add(status);
@@ -101,7 +101,7 @@ sealed class MainForm : Form
         Controls.Add(main);
         Controls.Add(brandRail);
 
-        A2CoreTheme.ApplyStatusLabel(status);
+        KiskEmuTheme.ApplyStatusLabel(status);
 
         tableList.SelectedIndexChanged += (_, _) => LoadSelectedTable();
         filterBox.TextChanged += (_, _) => ApplyFilter();
@@ -188,7 +188,7 @@ sealed class MainForm : Form
             allPaths = workspace.ListTablePaths().ToList();
             ApplyFilter();
             status.Text = $"Mounted {allPaths.Count} tables";
-            status.ForeColor = A2CoreTheme.Muted;
+            status.ForeColor = KiskEmuTheme.Muted;
         }
         catch (Exception ex)
         {
@@ -242,7 +242,7 @@ sealed class MainForm : Form
             }
 
             status.Text = path;
-            status.ForeColor = A2CoreTheme.Muted;
+            status.ForeColor = KiskEmuTheme.Muted;
         }
         catch (Exception ex)
         {

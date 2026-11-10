@@ -91,7 +91,7 @@ public class SerializationRoundTripTests
     [Fact]
     public void PatchProject_json_round_trip()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "a2core-patch-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Combine(Path.GetTempPath(), "kiskemu-patch-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "patch.json");
         var project = new PatchProject { BuildFingerprint = "test", Entries = [new() { VirtualPath = "AION2/Content/Data/Table/X.dat", PayloadFile = "abc.bin", Sha256 = "00" }] };

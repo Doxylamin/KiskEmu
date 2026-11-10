@@ -1,4 +1,4 @@
-# Contributing to A2Core
+# Contributing to KiskEmu
 
 Fixes of every size are welcome: a quest that stalls, a monster that behaves wrongly, a packet field we misread.
 

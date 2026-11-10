@@ -3,7 +3,7 @@
 Deploys from this PC to the server over SSH (ssh config host "aion"; see deploy/linux/README.md).
 
 .DESCRIPTION
--Launcher   Publishes A2Core Launcher (launcher/AionLauncher) as one exe, writes its version file and
+-Launcher   Publishes KiskEmu Launcher (launcher/AionLauncher) as one exe, writes its version file and
             copies both to the server's downloads folder. Installed copies then offer the update.
 -Server     Pushes the current branch to GitHub and runs deploy/linux/update.sh on the server
             (database backup, git pull, rebuild, restart). Players online get a one-minute warning.
@@ -41,18 +41,18 @@ function Invoke-Ssh([string]$command) {
 
 if ($Launcher) {
     $out = Join-Path $root "research/local/launcher-publish"
-    Write-Host "Publishing A2Core Launcher..."
+    Write-Host "Publishing KiskEmu Launcher..."
     Run "dotnet publish `"$(Join-Path $root 'launcher/AionLauncher')`" -c Release -r win-x64 -o `"$out`" -p:DebugType=none -m:1 -p:UseSharedCompilation=false" | Out-Null
-    $exe = Join-Path $out "A2Core Launcher.exe"
+    $exe = Join-Path $out "KiskEmu Launcher.exe"
     $version = (Get-Item $exe).VersionInfo.ProductVersion.Split('+')[0]
     [IO.File]::WriteAllText("$exe.version", "$version`n")
     $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
     $size = (Get-Item $exe).Length
-    Write-Host "A2Core Launcher $version, $size bytes, SHA-256 $hash"
+    Write-Host "KiskEmu Launcher $version, $size bytes, SHA-256 $hash"
     Write-Host "Uploading to ${SshHost}:$DownloadsOnServer ..."
     Run "scp -o BatchMode=yes `"$exe`" `"$exe.version`" `"${SshHost}:$DownloadsOnServer/`""
     # The host serves the files as the aion user; the old launcher name is no longer served.
-    Invoke-Ssh "cd '$DownloadsOnServer' && chown aion:aion 'A2Core Launcher.exe' 'A2Core Launcher.exe.version' && chmod 644 'A2Core Launcher.exe' 'A2Core Launcher.exe.version' && rm -f Launcher.exe Launcher.exe.version && ls -la"
+    Invoke-Ssh "cd '$DownloadsOnServer' && chown aion:aion 'KiskEmu Launcher.exe' 'KiskEmu Launcher.exe.version' && chmod 644 'KiskEmu Launcher.exe' 'KiskEmu Launcher.exe.version' && rm -f Launcher.exe Launcher.exe.version && ls -la"
     Write-Host "Done. Update the pinned message in Discord #downloads with version $version and hash $hash."
 }
 

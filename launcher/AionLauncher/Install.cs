@@ -16,17 +16,30 @@ namespace AionLauncher;
 /// </summary>
 static class Install
 {
-    public const string Name = "A2Core Launcher";
+    public const string Name = "KiskEmu Launcher";
     public const string FileName = Name + ".exe";
-    const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\A2CoreLauncher";
+    const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\KiskEmuLauncher";
+    // The install before the rename (A2Core Launcher). An installed copy updates itself in place, so after the update it
+    // still runs from there; it then installs itself under the new name and removes the old folder, shortcuts and entry.
+    const string LegacyName = "A2Core Launcher";
+    const string LegacyUninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\A2CoreLauncher";
 
-    public static string Folder { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", Name);
+    public static string Folder { get; } = ProgramsFolder(Name);
     public static string ExePath => Path.Combine(Folder, FileName);
     static string DesktopShortcut => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Name + ".lnk");
     static string StartMenuShortcut => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), Name + ".lnk");
+    static string LegacyFolder => ProgramsFolder(LegacyName);
+    static string LegacyExePath => Path.Combine(LegacyFolder, LegacyName + ".exe");
+    static string ProgramsFolder(string name) => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", name);
 
     /// <summary>This process runs from the installed location.</summary>
-    public static bool Running => Environment.ProcessPath is { } exe && string.Equals(Path.GetFullPath(exe), ExePath, StringComparison.OrdinalIgnoreCase);
+    public static bool Running => IsProcess(ExePath);
+
+    /// <summary>This process runs from the old A2Core Launcher install: it moves itself to the new one first.</summary>
+    public static bool RunningLegacy => IsProcess(LegacyExePath);
+
+    static bool IsProcess(string path) =>
+        Environment.ProcessPath is { } exe && string.Equals(Path.GetFullPath(exe), path, StringComparison.OrdinalIgnoreCase);
 
     public static bool Present => File.Exists(ExePath);
 
@@ -55,7 +68,31 @@ static class Install
         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
         key.SetValue("EstimatedSize", (int)(new FileInfo(ExePath).Length / 1024), RegistryValueKind.DWord);
+        RemoveLegacy();
         return ExePath;
+    }
+
+    /// <summary>
+    /// The old A2Core Launcher install, once the new one is in place: its shortcuts, Apps &amp; features entry and folder
+    /// (after this exe exits when it runs from there). Best effort: a leftover never stops the new install.
+    /// </summary>
+    static void RemoveLegacy()
+    {
+        try
+        {
+            foreach (var shortcut in new[] {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), LegacyName + ".lnk"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), LegacyName + ".lnk") })
+                if (File.Exists(shortcut)) File.Delete(shortcut);
+            Registry.CurrentUser.DeleteSubKeyTree(LegacyUninstallKey, throwOnMissingSubKey: false);
+            if (!Directory.Exists(LegacyFolder)) return;
+            if (RunningLegacy)
+                Process.Start(new ProcessStartInfo("cmd.exe", $"/c ping -n 4 127.0.0.1 >nul & rmdir /s /q \"{LegacyFolder}\"")
+                    { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
+            else
+                Directory.Delete(LegacyFolder, recursive: true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
     }
 
     public static string Version => Application.ProductVersion.Split('+')[0];

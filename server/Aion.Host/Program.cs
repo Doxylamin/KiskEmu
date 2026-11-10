@@ -177,7 +177,7 @@ static IChatDirectory? ChatDirectory(IServiceProvider provider, int world) =>
 builder.Services.AddSingleton(provider => new ChatRelay(provider.GetRequiredService<TimeProvider>(), ChatDirectory(provider, chatWorldId)));
 // The server's name (Aion:Web:SiteName) on both web sites and in authenticator apps; trimmed, at most 40 characters.
 static string SiteName(IConfiguration configuration) =>
-    configuration["Aion:Web:SiteName"]?.Trim() is { Length: > 0 } name ? name[..Math.Min(name.Length, 40)] : "A2Core";
+    configuration["Aion:Web:SiteName"]?.Trim() is { Length: > 0 } name ? name[..Math.Min(name.Length, 40)] : "KiskEmu";
 builder.Services.AddSingleton<StompHub>();
 if (builder.Configuration.GetValue<bool>("Aion:ChatDevelopmentLogins"))
     builder.Services.AddSingleton<IChatLoginVerifier, DevelopmentChatLoginVerifier>();

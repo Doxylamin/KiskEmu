@@ -17,7 +17,7 @@ public sealed class PlaytestDebugTests
     [Fact]
     public async Task Sink_writes_packet_and_action_lines()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "a2core-debug-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Combine(Path.GetTempPath(), "kiskemu-debug-" + Guid.NewGuid().ToString("N"));
         var options = new DebugOptions { Enabled = true, LogDirectory = dir, MaxPacketHexBytes = 8 };
         var sink = new PlaytestDebugSink(options, OpcodeCatalog.Load(), NullLogger<PlaytestDebugSink>.Instance);
         PlaytestDebug.Sink = sink;
@@ -36,7 +36,7 @@ public sealed class PlaytestDebugTests
     [Fact]
     public async Task Sink_logs_the_skill_list_and_hotbar_whole()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "a2core-debug-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Combine(Path.GetTempPath(), "kiskemu-debug-" + Guid.NewGuid().ToString("N"));
         var options = new DebugOptions { Enabled = true, LogDirectory = dir, MaxPacketHexBytes = 8 };
         var sink = new PlaytestDebugSink(options, OpcodeCatalog.Load(), NullLogger<PlaytestDebugSink>.Instance);
         var list = new byte[600];

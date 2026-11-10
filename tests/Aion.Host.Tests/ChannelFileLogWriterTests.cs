@@ -13,7 +13,7 @@ public sealed class ChannelFileLogWriterTests
         Assert.Equal("debug-20261030.log", name);
     }
 
-    static string TempLog() => Path.Combine(Path.GetTempPath(), "a2core-channellog-" + Guid.NewGuid().ToString("N") + ".log");
+    static string TempLog() => Path.Combine(Path.GetTempPath(), "kiskemu-channellog-" + Guid.NewGuid().ToString("N") + ".log");
 
     static async Task<long> WaitForLengthAsync(string path, int timeoutMs = 3000)
     {

@@ -1,7 +1,7 @@
 namespace AionClientEditor.App;
 
-/// <summary>A2Core launcher palette (see launcher/AionLauncher/MainForm.cs).</summary>
-static class A2CoreTheme
+/// <summary>KiskEmu launcher palette (see launcher/AionLauncher/MainForm.cs).</summary>
+static class KiskEmuTheme
 {
     public static readonly Color Background = Color.FromArgb(11, 15, 26);
     public static readonly Color Panel = Color.FromArgb(20, 27, 43);
@@ -38,7 +38,7 @@ static class A2CoreTheme
         strip.BackColor = Panel;
         strip.ForeColor = Text1;
         strip.GripStyle = ToolStripGripStyle.Hidden;
-        strip.Renderer = new A2CoreToolStripRenderer();
+        strip.Renderer = new KiskEmuToolStripRenderer();
         strip.Padding = new Padding(8, 4, 8, 4);
         foreach (ToolStripItem item in strip.Items)
         {
@@ -106,9 +106,9 @@ static class A2CoreTheme
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
     }
 
-    sealed class A2CoreToolStripRenderer : ToolStripProfessionalRenderer
+    sealed class KiskEmuToolStripRenderer : ToolStripProfessionalRenderer
     {
-        public A2CoreToolStripRenderer() : base(new A2CoreColorTable()) { }
+        public KiskEmuToolStripRenderer() : base(new KiskEmuColorTable()) { }
 
         protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { }
 
@@ -133,7 +133,7 @@ static class A2CoreTheme
         }
     }
 
-    sealed class A2CoreColorTable : ProfessionalColorTable
+    sealed class KiskEmuColorTable : ProfessionalColorTable
     {
         public override Color ToolStripGradientBegin => Panel;
         public override Color ToolStripGradientMiddle => Panel;

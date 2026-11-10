@@ -10,7 +10,7 @@ public sealed class ServerFileLoggerTests
     [Fact]
     public void Provider_writes_log_line_to_utf8_file()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "a2core-serverlog-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Combine(Path.GetTempPath(), "kiskemu-serverlog-" + Guid.NewGuid().ToString("N"));
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -34,7 +34,7 @@ public sealed class ServerFileLoggerTests
     [Fact]
     public void UniquePath_skips_a_file_the_launcher_tee_already_holds()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "a2core-serverlog-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Combine(Path.GetTempPath(), "kiskemu-serverlog-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         using var tee = new FileStream(Path.Combine(dir, "server-20261030-005524.log"), FileMode.Append, FileAccess.Write, FileShare.Read);
         Assert.Equal(Path.Combine(dir, "server-20261030-005524-host.log"), ServerFileLoggerProvider.UniquePath(dir, "20261030-005524"));

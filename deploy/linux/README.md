@@ -143,7 +143,7 @@ sudo deploy/linux/update.sh
 From the development PC, `tools/deploy.ps1` does this over SSH (ssh config host `aion`: the server's
 address, `User root`, a dedicated key `~/.ssh/id_ed25519_aion` whose public half is in the server's
 `authorized_keys`): `-Server` pushes the current branch and runs update.sh; `-Launcher` publishes
-A2Core Launcher and copies the exe and its version file to `/var/lib/aion/downloads`; `-Status` shows the
+KiskEmu Launcher and copies the exe and its version file to `/var/lib/aion/downloads`; `-Status` shows the
 services and the last log lines.
 
 It backs up the databases (`/var/lib/aion/backups`, newest 10 kept: the realm's `<name>.dump` and one
@@ -194,7 +194,7 @@ The account site is `https://<domain or address>:8780`; players register there, 
 launcher signs in there.
 
 The server's name on both sites, in the browser tab, on the launcher download and in authenticator
-apps is `Aion__Web__SiteName` (default `A2Core`). Put it in `/etc/aion/local.env` (update.sh keeps
+apps is `Aion__Web__SiteName` (default `KiskEmu`). Put it in `/etc/aion/local.env` (update.sh keeps
 that file) and restart `aion-host`; no new build is needed. Authenticators set up earlier keep the
 name they were set up with.
 

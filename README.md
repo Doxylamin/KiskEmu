@@ -1,8 +1,9 @@
-# A2Core
+# KiskEmu
 
 An open-source server emulator and Windows launcher for the AION2 Steam client.
-A2Core is a community project for learning and interoperability. It is not affiliated with, endorsed by or connected
+KiskEmu is a community project for learning and interoperability. It is not affiliated with, endorsed by or connected
 to NCSoft. You need your own copy of the game; the client is not included. See [NOTICE.md](NOTICE.md).
+KiskEmu began as a fork of [A2Core](https://github.com/Addiboii/A2Core).
 
 The server implements login, character creation, the world (NPCs, monsters, objects, quests, map events, dungeons),
 combat, flight, gliding and swimming, inventory, shops, crafting, gathering, parties, legions, chat, mail, and an
@@ -66,7 +67,7 @@ same).
    dotnet publish launcher/AionLauncher -c Release -r win-x64 -o out/launcher -p:DebugType=none
    ```
 
-3. Copy `out/launcher/A2Core Launcher.exe` (and an optional `A2Core Launcher.exe.version`) to
+3. Copy `out/launcher/KiskEmu Launcher.exe` (and an optional `KiskEmu Launcher.exe.version`) to
    `/var/lib/aion/downloads/` on the server. Signed-in players download it from the account page; installed copies
    update themselves.
 

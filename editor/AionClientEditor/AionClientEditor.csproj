@@ -9,10 +9,10 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>..\..\launcher\AionLauncher\icon.ico</ApplicationIcon>
-    <AssemblyName>A2Core Client Editor</AssemblyName>
-    <Product>A2Core Client Editor</Product>
-    <AssemblyTitle>A2Core Client Editor</AssemblyTitle>
-    <Description>Edit AION2 client tables and build patch paks for a private A2Core server.</Description>
+    <AssemblyName>KiskEmu Client Editor</AssemblyName>
+    <Product>KiskEmu Client Editor</Product>
+    <AssemblyTitle>KiskEmu Client Editor</AssemblyTitle>
+    <Description>Edit AION2 client tables and build patch paks for a private KiskEmu server.</Description>
     <Version>0.1.0</Version>
     <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>

@@ -14,7 +14,7 @@ from data_json import write_data_json
 
 ROOT = Path(__file__).resolve().parents[1]
 CRAFTS = ROOT / 'tools/data/crafts.json'
-UA = {'User-Agent': 'Mozilla/5.0 (compatible; A2CoreDataExport/1.0)'}
+UA = {'User-Agent': 'Mozilla/5.0 (compatible; KiskEmuDataExport/1.0)'}
 
 
 def _fetch(recipe_id: int) -> str:

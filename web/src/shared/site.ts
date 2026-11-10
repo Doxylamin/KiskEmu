@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
 
-export const DEFAULT_SITE_NAME = 'A2Core';
+export const DEFAULT_SITE_NAME = 'KiskEmu';
 
 // One request per page load, shared by every component.
 let loading: Promise<string> | null = null;
