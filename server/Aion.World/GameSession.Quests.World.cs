@@ -227,14 +227,16 @@ public sealed partial class GameSession
 
     const byte IncreaseEnvObjReward = 41; // EIncreaseReason kGatherSource (interaction loot)
 
-    async Task<List<byte[]>> GrantEnvObjLootAsync(int envId, CancellationToken ct)
+    /// <summary>An env object's reward tables rolled and granted; the tables are returned so a treasure chest can be used up.</summary>
+    async Task<(List<byte[]> Packets, string[] Tables, bool Granted)> GrantEnvObjLootAsync(WorldObject obj, CancellationToken ct)
     {
-        if (!LootTables.Embedded.HasEnvLoot(envId)) return [];
-        var rolled = LootTables.Embedded.RollEnv(envId, profileRace, rng);
-        if (rolled.Count == 0) return [];
-        if (Store is not { } store || CharacterId is not { } character) return [];
+        var tables = LootTables.Embedded.ResolveEnvLootTableNames(obj.Env, obj.Name, obj.EnvName);
+        if (tables.Length == 0) return ([], tables, false);
+        var rolled = LootTables.Embedded.RollEnv(obj, profileRace, rng);
+        if (rolled.Count == 0) return ([], tables, false);
+        if (Store is not { } store || CharacterId is not { } character) return ([], tables, false);
         var granted = await Stored(async () => await store.GrantLootAsync(character, rolled, ct) ? [[]] : []);
-        return granted.Count == 0 ? [] : await InventoryChangesAsync(ct, IncreaseEnvObjReward, 0);
+        return granted.Count == 0 ? ([], tables, false) : (await InventoryChangesAsync(ct, IncreaseEnvObjReward, 0), tables, true);
     }
 
     async Task<List<byte[]>> CompleteUseAsync(int index, CancellationToken ct, long now = 0)
@@ -263,10 +265,17 @@ public sealed partial class GameSession
         replies.AddRange(monolithReplies);
         var monolithQuest = monolithReplies.Count > 0;
         replies.AddRange(await CreditUseEnvObjQuestAsync(objects[index].Env, ct));
+        var chestUsedUp = false;
         if (!monolithQuest)
-            replies.AddRange(await GrantEnvObjLootAsync(objects[index].Env, ct));
+        {
+            var (lootPackets, tables, granted) = await GrantEnvObjLootAsync(objects[index], ct);
+            replies.AddRange(lootPackets);
+            // A field/dungeon treasure chest is used up once it paid out (from A2Core-ChanAge); quest props stay.
+            chestUsedUp = granted && LootTables.TreasureChestConsumes(tables);
+        }
         // A carried-item box comes back after its FinishDuration even when a map event counts it (FierceHornCave BombBox_02).
-        var consumed = objects[index].Carry is null && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(EventName(objects[index])));
+        var consumed = chestUsedUp
+            || objects[index].Carry is null && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(EventName(objects[index])));
         replies.AddRange(MapEventUsedObject(EventName(objects[index]), now));
         if (consumed || destroyed)
         {

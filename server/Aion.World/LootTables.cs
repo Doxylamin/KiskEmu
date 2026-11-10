@@ -36,7 +36,9 @@ public sealed class LootTables
 
     public bool HasLoot(int npcId) => file.Npcs.ContainsKey(npcId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-    public bool HasEnvLoot(int envId) => file.Envs?.ContainsKey(envId.ToString(System.Globalization.CultureInfo.InvariantCulture)) == true;
+    public bool HasEnvLoot(int envId) => ResolveEnvLootTableNames(envId, null, null).Length > 0;
+
+    public bool HasEnvLoot(WorldObject obj) => ResolveEnvLootTableNames(obj.Env, obj.Name, obj.EnvName).Length > 0;
 
     /// <summary>The items one kill drops for a character of a race (1 Light, 2 Dark), merged by item.</summary>
     public List<(int ItemId, long Count)> Roll(int npcId, int race, Random rng) =>
@@ -44,15 +46,44 @@ public sealed class LootTables
 
     /// <summary>Items granted when an env object interaction completes (reward_manual_* tables).</summary>
     public List<(int ItemId, long Count)> RollEnv(int envId, int race, Random rng) =>
-        RollTables(file.Envs?.GetValueOrDefault(envId.ToString(System.Globalization.CultureInfo.InvariantCulture)), race, rng);
+        RollTables(ResolveEnvLootTableNames(envId, null, null), race, rng);
+
+    /// <summary>Items granted for a placed env object (EnvObjData id, spawner name, optional EnvObjData name).</summary>
+    public List<(int ItemId, long Count)> RollEnv(WorldObject obj, int race, Random rng) =>
+        RollTables(ResolveEnvLootTableNames(obj.Env, obj.Name, obj.EnvName), race, rng);
+
+    /// <summary>
+    /// Reward table names for an env interaction: loot.json envs, then reward_manual_{EnvObjData name}, reward_manual_{spawner}
+    /// and the field-treasure tables named by env id (from A2Core-ChanAge, Artezianec).
+    /// </summary>
+    public string[] ResolveEnvLootTableNames(int envId, string? spawnerName, string? envDataName)
+    {
+        var names = new List<string>();
+        void TryAdd(string? table)
+        {
+            if (string.IsNullOrEmpty(table) || !file.Tables.ContainsKey(table) || names.Contains(table)) return;
+            names.Add(table);
+        }
+        foreach (var table in file.Envs?.GetValueOrDefault(envId.ToString(System.Globalization.CultureInfo.InvariantCulture)) ?? [])
+            TryAdd(table);
+        if (!string.IsNullOrEmpty(envDataName)) TryAdd($"reward_manual_{envDataName}");
+        if (!string.IsNullOrEmpty(spawnerName)) TryAdd($"reward_manual_{spawnerName}");
+        TryAdd($"reward_manual_FieldEvent_L_TreasureBox_{envId}");
+        TryAdd($"reward_manual_FieldEvent_D_TreasureBox_{envId}");
+        return names.ToArray();
+    }
+
+    /// <summary>Whether loot from these tables uses the chest up (field/dungeon treasure, not reusable quest props).</summary>
+    public static bool TreasureChestConsumes(string[] tableNames) =>
+        tableNames.Any(n => n.Contains("TreasureBox", StringComparison.Ordinal) || n.Contains("Dungeon_Seal", StringComparison.Ordinal));
 
     /// <summary>Whether any reward_manual table wired to this env can grant the item (CollectItem rescue gating).</summary>
     public bool EnvCanGrantItem(int envId, int itemId, int race) =>
-        TableNamesGrantItem(file.Envs?.GetValueOrDefault(envId.ToString(System.Globalization.CultureInfo.InvariantCulture)), itemId, race);
+        TableNamesGrantItem(ResolveEnvLootTableNames(envId, null, null), itemId, race);
 
     /// <summary>Whether reward_manual_{EnvObjData.Name} lists the item (same tables as <see cref="RollEnv"/>).</summary>
     public bool ManualEnvTableGrantsItem(string envObjDataName, int itemId, int race) =>
-        TableNamesGrantItem([$"reward_manual_{envObjDataName}"], itemId, race);
+        TableNamesGrantItem(ResolveEnvLootTableNames(0, null, envObjDataName), itemId, race);
 
     bool TableNamesGrantItem(string[]? tableNames, int itemId, int race)
     {
