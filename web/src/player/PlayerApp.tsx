@@ -327,10 +327,12 @@ function LauncherDownload({ token }: { token: string }) {
   async function download() {
     setBusy(true); setFailed(false);
     try {
-      const { url } = await api<{ url: string }>('/api/downloads/launcher', { method: 'POST', token });
+      // A ZIP of KiskLauncher with a launcher.json that adds this server (the exe alone when the server cannot make one).
+      const { url } = await api<{ url: string }>('/api/downloads/launcher?package=zip', { method: 'POST', token });
+      const zip = url.startsWith('/download/launcher.zip');
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${site.replace(/[\\/:*?"<>|]/g, '')} Launcher.exe`;
+      link.download = `${site.replace(/[\\/:*?"<>|]/g, '')} KiskLauncher.${zip ? 'zip' : 'exe'}`;
       link.click();
     } catch { setFailed(true); }
     finally { setBusy(false); }

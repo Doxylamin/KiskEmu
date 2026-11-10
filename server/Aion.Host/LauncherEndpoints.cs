@@ -16,7 +16,7 @@ namespace Aion.Host;
 /// </list>
 /// Settings (Aion:Launcher): ClientVersion (the private version's name, default 2.0.6.0), AllowSteam (offer the player's
 /// own Steam copy as a version, default true), SavedDirSuffix (the client's private saved-folder suffix; without it each
-/// launcher derives one from the server's address).
+/// launcher derives one from the server's address), AccountUrl and CertificateThumbprint (for the download ZIP's launcher.json).
 /// </summary>
 public sealed class LauncherEndpoints(byte[] buildJson, string fingerprint)
 {
@@ -67,16 +67,38 @@ public sealed class LauncherEndpoints(byte[] buildJson, string fingerprint)
         {
             var section = configuration.GetSection("Aion:Launcher");
             var version = section["ClientVersion"]?.Trim() is { Length: > 0 } named ? named[..Math.Min(named.Length, 40)] : "2.0.6.0";
-            var suffix = section["SavedDirSuffix"]?.Trim() is { Length: > 0 } s ? s : null;
             var versions = new List<object> { new { id = version, name = version, kind = "private", build = fingerprint } };
             if (section.GetValue<bool?>("AllowSteam") ?? true) versions.Add(new { id = "steam-latest", name = "Official latest (Steam)", kind = "steam" });
             return Results.Ok(new
             {
-                name = siteName(), serverAddress = publicAddress, bootstrapPort, savedDirSuffix = suffix,
+                name = siteName(), serverAddress = publicAddress, bootstrapPort, savedDirSuffix = SavedDirSuffix(configuration),
                 clientVersions = versions, selectedClientVersion = version,
             });
         });
         app.MapGet("/api/launcher/builds/{id}", (string id) =>
             id.Equals(fingerprint, StringComparison.OrdinalIgnoreCase) ? Results.Bytes(buildJson, "application/json") : Results.NotFound());
+    }
+
+    static string? SavedDirSuffix(IConfiguration configuration) =>
+        configuration["Aion:Launcher:SavedDirSuffix"]?.Trim() is { Length: > 0 } suffix ? suffix : null;
+
+    /// <summary>
+    /// The launcher.json of this server's download ZIP: next to KiskLauncher.exe it adds this server at the launcher's
+    /// first start. The account address is Aion:Launcher:AccountUrl, else the address the player downloaded from (the
+    /// account site itself). Aion:Launcher:CertificateThumbprint (40 hex) pins a self-signed account certificate.
+    /// Without a savedDirSuffix the launcher derives one from the account address.
+    /// </summary>
+    public static byte[] LauncherJson(HttpRequest request, IConfiguration configuration, string siteName, string publicAddress, int bootstrapPort)
+    {
+        var accountUrl = configuration["Aion:Launcher:AccountUrl"]?.Trim().TrimEnd('/') is { Length: > 0 } configured
+            ? configured : $"https://{request.Host.Value}";
+        var pin = configuration["Aion:Launcher:CertificateThumbprint"]?.Replace(":", "").Trim() is { Length: 40 } thumbprint ? thumbprint : null;
+        var json = new Dictionary<string, object?>
+        {
+            ["name"] = siteName, ["accountUrl"] = accountUrl, ["serverAddress"] = publicAddress, ["bootstrapPort"] = bootstrapPort,
+        };
+        if (SavedDirSuffix(configuration) is { } suffix) json["savedDirSuffix"] = suffix;
+        if (pin is not null) json["certificateThumbprint"] = pin;
+        return JsonSerializer.SerializeToUtf8Bytes(json, new JsonSerializerOptions { WriteIndented = true });
     }
 }

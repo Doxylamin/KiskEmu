@@ -31,12 +31,12 @@ public sealed record ClientVersion(
 
 public static class ClientVersions
 {
-    /// <summary>The configured versions (launcher.json "clientVersions"), else the two defaults.</summary>
+    /// <summary>The configured versions (the server's "clientVersions"), else the two defaults.</summary>
     public static IReadOnlyList<ClientVersion> All(LauncherConfig config) =>
         config.ClientVersions is { Length: > 0 } list ? list : ClientVersion.Defaults;
 
     /// <summary>
-    /// The player's choice (<paramref name="chosen"/>, kept in the launcher settings), else launcher.json
+    /// The player's choice (<paramref name="chosen"/>, kept in the launcher settings), else the server's
     /// "selectedClientVersion", else the first (2.0.6.0).
     /// </summary>
     public static ClientVersion Selected(LauncherConfig config, string? chosen = null)
@@ -48,7 +48,7 @@ public static class ClientVersions
     }
 
     /// <summary>
-    /// The Steam game folder for a "steam" version: its own clientPath, else launcher.json
+    /// The Steam game folder for a "steam" version: its own clientPath, else the server entry's
     /// "steamClientPath", else the AION2 folder found through Steam's libraryfolders.vdf. Null when none exists.
     /// </summary>
     public static string? SteamFolder(ClientVersion version, LauncherConfig config, SteamInstall? steam)

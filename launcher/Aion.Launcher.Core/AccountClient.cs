@@ -33,7 +33,7 @@ public sealed class AccountClient : IDisposable
     }
 
     /// <summary>
-    /// A self-signed account certificate is accepted only when its thumbprint is the one in launcher.json.
+    /// A self-signed account certificate is accepted only when its thumbprint is the one pinned for the server.
     /// No thumbprint keeps the normal system trust check.
     /// </summary>
     static HttpMessageHandler Handler(LauncherConfig config)

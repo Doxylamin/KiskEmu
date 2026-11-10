@@ -8,8 +8,7 @@
   <ItemGroup>
     <!-- Reference of the supported client build (tools/launcher_build.py). -->
     <EmbeddedResource Include="../supported-build.json" LogicalName="supported-build.json" />
-    <!-- The server a launcher build starts with; a generic build (-p:GenericLauncher=true) has none and asks for one. -->
-    <EmbeddedResource Include="../launcher.json" LogicalName="launcher.json" Condition="'$(GenericLauncher)' != 'true'" />
+    <!-- No server is built in: a launcher.json next to the exe (a server's download ZIP) adds one, else the player does. -->
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SteamKit2" Version="3.4.0" />

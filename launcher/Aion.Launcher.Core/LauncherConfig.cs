@@ -7,8 +7,8 @@ namespace Aion.Launcher;
 
 /// <summary>
 /// One server the launcher plays on. The launcher keeps one per saved server (from the server's /api/launcher/config,
-/// <see cref="ServerSetup"/>). A launcher built with a launcher.json (embedded, or a launcher.json next to the exe) starts
-/// with that server; a generic build (GenericLauncher=true) asks for one.
+/// <see cref="ServerSetup"/>). No server is built in: a launcher.json next to the exe (what a server's download ZIP
+/// carries) adds that server at the first start; without one the player adds servers.
 /// </summary>
 public sealed record LauncherConfig(
     [property: JsonPropertyName("name")] string Name,
@@ -21,30 +21,22 @@ public sealed record LauncherConfig(
     [property: JsonPropertyName("selectedClientVersion"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SelectedClientVersion = null,
     [property: JsonPropertyName("steamClientPath"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SteamClientPath = null)
 {
-    public static LauncherConfig Load(string? overridePath = null)
+    /// <summary>
+    /// A launcher.json. Without a savedDirSuffix the launcher derives one from the account address, the same one it
+    /// derives when the player adds the server by hand (<see cref="ServerSetup.DerivedSuffix"/>).
+    /// </summary>
+    public static LauncherConfig Load(string path)
     {
-        LauncherConfig config;
-        if (overridePath is not null && File.Exists(overridePath))
-            config = JsonSerializer.Deserialize<LauncherConfig>(File.ReadAllText(overridePath)) ?? throw new InvalidDataException("launcher.json");
-        else
-        {
-            using var stream = typeof(LauncherConfig).Assembly.GetManifestResourceStream("launcher.json")
-                ?? throw new InvalidOperationException("launcher.json is not embedded");
-            config = JsonSerializer.Deserialize<LauncherConfig>(stream) ?? throw new InvalidDataException("launcher.json");
-        }
+        var config = JsonSerializer.Deserialize<LauncherConfig>(File.ReadAllText(path)) ?? throw new InvalidDataException("launcher.json is empty");
+        if (config.Name is null || config.AccountUrl is null || config.ServerAddress is null) throw new InvalidDataException("launcher.json needs name, accountUrl and serverAddress");
+        if (string.IsNullOrEmpty(config.SavedDirSuffix) && Uri.TryCreate(config.AccountUrl, UriKind.Absolute, out var account))
+            config = config with { SavedDirSuffix = ServerSetup.DerivedSuffix(account) };
         config.Validate();
         return config;
     }
 
-    /// <summary>
-    /// The server this build was made for (launcher.json next to the exe, else the embedded one); null for a generic
-    /// build. An invalid file throws, as before.
-    /// </summary>
-    public static LauncherConfig? LoadDefault(string? overridePath = null)
-    {
-        if (overridePath is not null && File.Exists(overridePath)) return Load(overridePath);
-        return typeof(LauncherConfig).Assembly.GetManifestResourceInfo("launcher.json") is null ? null : Load();
-    }
+    /// <summary>The server in a launcher.json next to the exe; null when there is none. An invalid file throws.</summary>
+    public static LauncherConfig? LoadDefault(string path) => File.Exists(path) ? Load(path) : null;
 
     [JsonIgnore] public IPAddress Server => IPAddress.Parse(ServerAddress);
 

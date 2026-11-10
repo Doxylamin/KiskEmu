@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using Aion.Application.Authentication;
 
@@ -11,6 +12,8 @@ namespace Aion.Host;
 /// The launcher updates itself the same way: GET /api/downloads/launcher/manifest (no sign-in: a
 /// hash and size are not secret) tells it what the server's file is, and a launcher that differs
 /// downloads it through a ticket link.
+/// The account page asks for the ZIP instead (POST /api/downloads/launcher?package=zip): KiskLauncher.exe with a
+/// launcher.json next to it that adds this server (the exe itself has no server built in). Self-updates stay exe-only.
 /// </summary>
 public sealed class Downloads(string folder, TimeProvider clock)
 {
@@ -19,6 +22,10 @@ public sealed class Downloads(string folder, TimeProvider clock)
     /// <summary>The name before the rename: served until a KiskLauncher is published to the same folder.</summary>
     public const string LegacyLauncherFile = "A2Core Launcher.exe";
     const string Route = "/download/launcher";
+    const string ZipRoute = "/download/launcher.zip";
+    public const string ZipEntryName = "KiskLauncher.exe";
+    sealed record ZipCache(long Length, DateTime Written, string Json, byte[] Zip);
+    ZipCache? zipped;
     /// <summary>Optional text file next to the exe with its version (exe name + ".version"), shown by the launcher before it updates.</summary>
     public const string VersionSuffix = ".version";
     static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(5);
@@ -60,15 +67,40 @@ public sealed class Downloads(string folder, TimeProvider clock)
         return new { sha256, size = info.Length, version = version.Length > 0 ? version : null };
     }
 
-    public void Map(WebApplication app)
+    /// <summary>
+    /// The ZIP of the current launcher and this server's launcher.json, made once per launcher file and settings (the
+    /// exe barely compresses, so it is stored).
+    /// </summary>
+    byte[] Zip(string path, byte[] launcherJson)
     {
-        app.MapPost("/api/downloads/launcher", async (HttpContext context, IAccountAuthentication auth, CancellationToken ct) =>
+        var info = new FileInfo(path);
+        var json = Convert.ToBase64String(launcherJson);
+        if (zipped is { } cached && cached.Length == info.Length && cached.Written == info.LastWriteTimeUtc && cached.Json == json) return cached.Zip;
+        using var buffer = new MemoryStream();
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            archive.CreateEntryFromFile(path, ZipEntryName, CompressionLevel.NoCompression);
+            var entry = archive.CreateEntry("launcher.json", CompressionLevel.Optimal);
+            using var stream = entry.Open();
+            stream.Write(launcherJson);
+        }
+        var zip = buffer.ToArray();
+        zipped = new ZipCache(info.Length, info.LastWriteTimeUtc, json, zip);
+        return zip;
+    }
+
+    /// <param name="launcherJson">This server's launcher.json for the ZIP (<see cref="LauncherEndpoints.LauncherJson"/>);
+    /// null serves the exe alone.</param>
+    public void Map(WebApplication app, Func<HttpRequest, byte[]>? launcherJson = null)
+    {
+        app.MapPost("/api/downloads/launcher", async (HttpContext context, IAccountAuthentication auth, string? package, CancellationToken ct) =>
         {
             var header = context.Request.Headers.Authorization.ToString();
             if (await auth.AuthenticateAsync(header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? header[7..] : "", ct) is null)
                 return Results.Unauthorized();
             if (!LauncherAvailable) return Results.NotFound();
-            return Results.Ok(new { url = $"{Route}?ticket={Issue()}" });
+            var zip = package == "zip" && launcherJson is not null;
+            return Results.Ok(new { url = $"{(zip ? ZipRoute : Route)}?ticket={Issue()}" });
         }).RequireRateLimiting("account-entry");
         app.MapGet("/api/downloads/launcher/manifest", async (CancellationToken ct) =>
             await ManifestAsync(ct) is { } manifest ? Results.Ok(manifest) : Results.NotFound());
@@ -76,5 +108,10 @@ public sealed class Downloads(string folder, TimeProvider clock)
             Valid(ticket) && Current is { } path
                 ? Results.File(path, "application/octet-stream", Path.GetFileName(path), enableRangeProcessing: true)
                 : Results.NotFound());
+        if (launcherJson is not null)
+            app.MapGet(ZipRoute, (HttpRequest request, string? ticket) =>
+                Valid(ticket) && Current is { } path
+                    ? Results.File(Zip(path, launcherJson(request)), "application/zip", "KiskLauncher.zip", enableRangeProcessing: true)
+                    : Results.NotFound());
     }
 }

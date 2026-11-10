@@ -546,16 +546,18 @@ if (!string.IsNullOrWhiteSpace(wardrobePath) && Directory.Exists(wardrobePath) &
 // Player downloads (the launcher, launcher/AionLauncher) from Aion:Web:Downloads, for signed-in accounts.
 var downloads = accountsReady && builder.Configuration["Aion:Web:Downloads"] is { Length: > 0 } downloadPath && Directory.Exists(downloadPath)
     ? new Downloads(Path.GetFullPath(downloadPath), TimeProvider.System) : null;
-downloads?.Map(app);
+// KiskLauncher's server settings and the client build it checks against (one launcher build plays on any server): on the
+// host that serves the platform bootstrap, i.e. the auth host. The account page's download is then a ZIP whose
+// launcher.json adds this server.
+var launcherEndpoints = accountsReady && platform.Port is not null ? LauncherEndpoints.Embedded() : null;
+downloads?.Map(app, launcherEndpoints is null ? null
+    : request => LauncherEndpoints.LauncherJson(request, app.Configuration, SiteName(app.Configuration), network.PublicAddress, platform.Port!.Value));
 var registrationOpen = builder.Configuration.GetValue<bool?>("Aion:Accounts:Registration") ?? true;
 // siteName (Aion:Web:SiteName): the server's name on the player site and the staff dashboard, read per request so a
 // changed setting needs no new web build.
 app.MapGet("/api/status", () => Results.Ok(new { accountsConfigured = accountsReady, registrationOpen = accountsReady && registrationOpen,
     launcherAvailable = downloads?.LauncherAvailable ?? false, gameReady = false, siteName = SiteName(app.Configuration) }));
-// KiskLauncher's server settings and the client build it checks against (one launcher build plays on any server): on the
-// host that serves the platform bootstrap, i.e. the auth host.
-if (accountsReady && platform.Port is { } launcherBootstrapPort)
-    LauncherEndpoints.Embedded()?.Map(app, () => SiteName(app.Configuration), network.PublicAddress, launcherBootstrapPort);
+launcherEndpoints?.Map(app, () => SiteName(app.Configuration), network.PublicAddress, platform.Port!.Value);
 if (accountsReady)
 {
     app.MapAccountEndpoints(registrationOpen);

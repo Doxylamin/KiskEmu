@@ -91,26 +91,27 @@ The first install creates empty databases and fills only the game tables (catalo
 equipment rules). To apply code changes, run `update.sh`: it backs up the databases, pulls, rebuilds and applies new
 migrations.
 
-## Build the launcher for your server (Windows, .NET 10 SDK)
+## KiskLauncher for your players
 
-1. Edit `launcher/launcher.json`: `accountUrl` (`https://<your server>:8780`), `serverAddress` (its IPv4), `name`.
-   It is embedded at build time; a `launcher.json` next to the exe overrides it.
-2. Build and publish:
+KiskLauncher has no server built in: the same exe plays on any KiskEmu server. Get it from the
+[GitHub releases](https://github.com/Doxylamin/KiskEmu/releases) (or build it, below) and put it in the server's
+downloads folder, `/var/lib/aion/downloads/KiskLauncher.exe` (with an optional `KiskLauncher.exe.version`), or run
+`tools/deploy.ps1 -Launcher`.
 
-   ```powershell
-   dotnet run --project tests/Aion.Launcher.Checks
-   dotnet publish launcher/AionLauncher -c Release -r win-x64 -o out/launcher -p:DebugType=none
-   ```
+Signed-in players download it from the account site as a ZIP: `KiskLauncher.exe` and a `launcher.json` the server
+writes from its own settings (name, account address, game address). Started next to that file, the launcher adds your
+server; installed copies keep it and update themselves from the server. Players who already have KiskLauncher add the
+server with the account page's "Add this server" link, or by typing its account address. The launcher gets the game
+address and the supported client build from `/api/launcher/config`. (Installs of the earlier "A2Core Launcher" update to
+KiskLauncher and move themselves to the new name; the server serves `A2Core Launcher.exe` until a `KiskLauncher.exe`
+is there.)
 
-3. Copy `out/launcher/KiskLauncher.exe` (and an optional `KiskLauncher.exe.version`) to
-   `/var/lib/aion/downloads/` on the server, or run `tools/deploy.ps1 -Launcher`. Signed-in players download it from
-   the account site; installed copies update themselves. (Installs of the earlier "A2Core Launcher" update to
-   KiskLauncher and move themselves to the new name; the server serves `A2Core Launcher.exe` until a
-   `KiskLauncher.exe` is there.)
+Build it yourself (Windows, .NET 10 SDK):
 
-Or skip the per-server build: `-p:GenericLauncher=true` makes a launcher with no server built in. Players add your
-server by its account address (or the account page's "Add this server" link); the launcher gets the name, game
-address and supported client build from `/api/launcher/config`.
+```powershell
+dotnet run --project tests/Aion.Launcher.Checks
+dotnet publish launcher/AionLauncher -c Release -r win-x64 -o out/launcher -p:DebugType=none
+```
 
 Players need a Steam account that owns the game; the launcher downloads the supported build with it.
 

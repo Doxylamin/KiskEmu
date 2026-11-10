@@ -564,7 +564,11 @@ sealed class MainForm : Form
                 entry.Config = config;
             }
             catch (InvalidDataException error) { SetStatus("The server's settings are not usable: " + error.Message, error: true); return; }
-            if (known is null) settings.Servers.Add(entry);
+            if (known is null)
+            {
+                settings.AdoptLegacySignIn(entry);
+                settings.Servers.Add(entry);
+            }
             await SwitchToAsync(entry);
         };
     }
@@ -761,7 +765,7 @@ sealed class MainForm : Form
             var version = workflow.Version;
             var folder = version.IsSteam ? ClientVersions.SteamFolder(version, workflow.Config, steam ??= Workflow.FindSteam()) : version.ClientPath ?? workflow.InstallFolder;
             versionNote.Text = version.IsSteam
-                ? $"Game files: {folder ?? "Steam copy not found (set steamClientPath in launcher.json)"}. Used as-is: not changed, no patch paks; the server supports {versions.FirstOrDefault(v => !v.IsSteam)?.Name ?? "another version"}, so a newer client may not connect."
+                ? $"Game files: {folder ?? "Steam copy not found (Steam's library list does not include AION2)"}. Used as-is: not changed, no patch paks; the server supports {versions.FirstOrDefault(v => !v.IsSteam)?.Name ?? "another version"}, so a newer client may not connect."
                 : $"Game files: {folder}";
         }
         DescribeVersion();

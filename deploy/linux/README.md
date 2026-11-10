@@ -260,8 +260,13 @@ KiskLauncher sets itself up from the account site: `GET /api/launcher/config` (p
 fingerprint; `GET /api/launcher/builds/<fingerprint>` serves that build's file checklist (`launcher/supported-build.json`,
 built into the host). Optional settings: `Aion:Launcher:ClientVersion` (the version's name, default `2.0.6.0`),
 `Aion:Launcher:AllowSteam` (offer "Official latest (Steam)", default true), `Aion:Launcher:SavedDirSuffix` (the
-client's private saved folder; unset, each launcher derives one from the account site's address). Players add the
-server by its account address, or with the account page's `kisklauncher://add` link.
+client's private saved folder; unset, each launcher derives one from the account site's address; keep the value the
+server's players already use when there is one). The account page's launcher download is a ZIP of
+`KiskLauncher.exe` (from the downloads folder) and a `launcher.json` the host writes from these settings, which adds
+this server at the launcher's first start; its account address is the one the player downloaded from, or
+`Aion:Launcher:AccountUrl`, and `Aion:Launcher:CertificateThumbprint` (40 hex) pins a self-signed certificate.
+Players who already have KiskLauncher add the server by its account address, or with the account page's
+`kisklauncher://add` link.
 
 Players also need hosts-file lines pointing the six NC hostnames at this server's address
 (`research/client-installer.md`); the installer/launcher sets those up.

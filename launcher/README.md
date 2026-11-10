@@ -1,8 +1,9 @@
 # KiskLauncher (the player program, Windows)
 
 `KiskLauncher.exe` (project AionLauncher) sets up a private copy of AION2 at the one build the server
-supports and starts it against our server. It ships no NCSoft files: the game comes from the player's
-own Steam account. One self-contained exe: downloaded, it offers to install itself for the Windows user
+supports and starts it against a KiskEmu server. No server is built in: the player adds servers, or a
+server's download ZIP carries a `launcher.json` that adds it. It ships no NCSoft files: the game comes from the
+player's own Steam install or Steam account. One self-contained exe: downloaded, it offers to install itself for the Windows user
 (`%LOCALAPPDATA%\Programs\KiskLauncher`, desktop and Start menu shortcuts, an Apps & features entry whose
 uninstall runs `--uninstall`; no administrator rights), or runs where it is ("Run without installing",
 remembered). The installed copy is the one the self-update replaces.
@@ -17,9 +18,9 @@ Design and evidence: `research/client-installer.md`.
 - `supported-build.json`: every file of Steam depot 3393111 manifest 1699273097574069541 (path, size,
   SHA-256; `tools/launcher_build.py --depot-manifest <Steam>/depotcache/3393111_1699273097574069541.manifest`
   from `research/local/dev-client/verification.json`, keeping only the depot's 1218 files).
-- `launcher.json`: the default server (account URL, IPv4 address, bootstrap port, private saved-folder suffix).
-  Embedded; a `launcher.json` next to the exe overrides it. A generic build (`-p:GenericLauncher=true`) embeds
-  none and starts by asking for a server (see Servers).
+- `launcher.example.json`: what a `launcher.json` next to the exe looks like (a server's download ZIP has one, written
+  by the server: name, account URL, IPv4 address, bootstrap port; optional `savedDirSuffix`, `certificateThumbprint`,
+  `steamClientPath`). It adds that server at the launcher's first start; nothing is embedded in the exe.
 - `AionLauncher/icon.ico` (exe, window, taskbar, shortcuts) and `AionLauncher/emblem.png` (the rail): the KiskEmu
   icon (`web/src/shared/kiskemu-icon.svg`, also the client editor's icon) rendered with resvg; emblem.png is
   1024 px, the ico holds 16-256 px as PNG entries.
@@ -66,11 +67,11 @@ NC's addresses point at our server is not yet tested.
 Play:
 1. Checks sizes (and re-hashes the quick set when those files changed).
 2. Gets a launch authorization and writes
-   `%LOCALAPPDATA%\AION2\Saved_A2CorePrivate\Config\Windows\GamePlatform.ini` with
+   `%LOCALAPPDATA%\AION2\Saved_<suffix>\Config\Windows\GamePlatform.ini` (the server's saved-folder suffix) with
    `ConfigurationServerUrl="http://<server>:8087/c/<authorization>"` (the official Saved_Steam is not touched).
 3. Elevated per session (UAC): hosts lines sending the six NC hostnames to the server; the helper
    removes them when the private copy's processes exit (so the official game is not redirected otherwise).
-4. Starts AION2.exe unelevated with Steam's cached launch arguments, `-saveddirsuffix=A2CorePrivate`.
+4. Starts AION2.exe unelevated with Steam's cached launch arguments, `-saveddirsuffix=<suffix>`.
 The session stays signed in for further plays; it signs out when the launcher closes unless it is kept.
 
 Uninstall (the Play page, or Apps & features) removes the firewall rules, any hosts lines, the settings,
@@ -79,9 +80,13 @@ the installed program with its shortcuts and (if chosen) the private copy.
 ## Servers
 
 The launcher keeps a list of servers (`launcher-settings.json`), each with its own sign-in, kept session and
-chosen client version. A build with an embedded `launcher.json` adds that server once (an older launcher's
-sign-in and game copy move into the new layout then); a generic build has no server until the player adds one.
+chosen client version. A `launcher.json` next to the exe adds its server once and makes it the current one (the
+installed copy and its updates keep it in the settings, without the file); without one the launcher starts on the
+servers it has, or asks for one. An older launcher's game copy moves into the new layout, and its user name goes to
+the first server added. Its kept session is dropped: the launcher cannot tell which server it was for.
 
+- **The account site's download** is a ZIP (`POST /api/downloads/launcher?package=zip`, then `/download/launcher.zip`
+  with the ticket): `KiskLauncher.exe` and the server's `launcher.json`. Self-updates download the exe alone.
 - **Add a server**: the player types the account site's address (`world.example.com`, `host:port` or
   `https://...`; without a port the launcher also tries 8780). The launcher reads `GET /api/launcher/config`
   (no sign-in) and shows the server's name, account site and game address before it is added. A certificate
@@ -98,10 +103,10 @@ sign-in and game copy move into the new layout then); a generic build has no ser
 - Each private client version names its build by fingerprint (SHA-256 over the quick-check files' `path\0size\0sha256\n`
   lines, `tools/launcher_build.py`). The embedded `supported-build.json` is used when it matches; another build's
   reference comes from `GET /api/launcher/builds/<fingerprint>`, is checked against the fingerprint (and that
-  every path stays inside the game folder) and cached under `%LOCALAPPDATA%\A2CorePrivateuilds`. The server
+  every path stays inside the game folder) and cached under `%LOCALAPPDATA%\A2CorePrivate\builds`. The server
   sends only this checklist: the game files always come from the player's own Steam install or Steam account.
-- Game copies are per build and shared by every server on it (`AION2` for the embedded build, `AION2-<fingerprint>`
-  otherwise). The firewall rules allow one server address; playing on a server with another address re-points
+- Game copies are per build and shared by every server on it (`AION2` for the build in `supported-build.json`,
+  `AION2-<fingerprint>` otherwise). The firewall rules allow one server address; playing on a server with another address re-points
   them (one UAC prompt).
 
 ## Client versions
@@ -115,23 +120,14 @@ The Play page has a **Client version** dropdown (dark theme, like the rest). The
   **read-only**: no file in the Steam folder is written, so no patch paks (they would land in its Paks
   folder), no size/hash check (it is newer than the reference) and no firewall rules (they are per exe
   path and would also block the official game). The redirect works without touching game files: the
-  private `Saved_A2CorePrivate\...\GamePlatform.ini` (via `-saveddirsuffix=A2CorePrivate`) plus the
-  per-session hosts lines. The folder is `clientPath` of the version, else `steamClientPath`, else the
-  AION2 folder found through Steam's `libraryfolders.vdf`.
+  private `Saved_<suffix>\...\GamePlatform.ini` (via `-saveddirsuffix=<suffix>`) plus the per-session hosts
+  lines. The folder is `clientPath` of the version, else `steamClientPath` (from the `launcher.json` the server was
+  added with), else the AION2 folder found through Steam's `libraryfolders.vdf`.
 
 The server still runs 2.0.6.0 data and opcodes and has no client-version check, so a newer client may
-start but fail or misbehave in-game. Optional keys:
+start but fail or misbehave in-game. The server's settings `Aion:Launcher:ClientVersion` and `Aion:Launcher:AllowSteam`
+choose what it offers (`deploy/linux/README.md`).
 
-```json
-"steamClientPath": "Z:\\SteamLibrary\\steamapps\\common\\AION2",
-"selectedClientVersion": "steam-latest",
-"clientVersions": [
-  { "id": "2.0.6.0", "name": "2.0.6.0", "kind": "private" },
-  { "id": "steam-latest", "name": "Official latest (Steam)", "kind": "steam", "launchArgs": [] }
-]
-```
-
-Each entry may set `clientPath` (its game folder) and `launchArgs` (added after Steam's arguments).
 ## Third-party components
 
 SteamKit2 (LGPL-2.1, https://github.com/SteamRE/SteamKit) and QRCoder (MIT) are NuGet packages
@@ -143,25 +139,22 @@ used) download the same manifest.
 ```powershell
 dotnet run --project tests/Aion.Launcher.Checks
 dotnet publish launcher/AionLauncher -c Release -r win-x64 -o research/local/launcher-publish -p:DebugType=none
-# or a launcher for any KiskEmu server (no embedded launcher.json; the player adds servers):
-dotnet publish launcher/AionLauncher -c Release -r win-x64 -o research/local/launcher-generic -p:DebugType=none -p:GenericLauncher=true
-echo 0.5.0 > "research/local/launcher-publish/KiskLauncher.exe.version"
+echo 0.5.1 > "research/local/launcher-publish/KiskLauncher.exe.version"
 scp "research/local/launcher-publish/KiskLauncher.exe" "research/local/launcher-publish/KiskLauncher.exe.version" root@<server>:/var/lib/aion/downloads/
 ```
 
-Signed-in players then see "Download KiskLauncher" on the account page (a five-minute link from
-POST /api/downloads/launcher; `/download/launcher` needs that ticket and saves as `KiskLauncher.exe`).
+Signed-in players then see "Download launcher" on the account page (a five-minute link from
+POST /api/downloads/launcher; the ZIP with the server's `launcher.json`, see Servers).
 Installed copies offer the new file at their next start (the version in `KiskLauncher.exe.version` is what they show; keep
 it equal to `<Version>` in AionLauncher.csproj).
 
 ### GitHub releases
 
 `.github/workflows/kisklauncher.yml` runs on GitHub's Windows runners (the GitHub repository mirrors the forge, tags
-included). A push to main that touches the launcher runs the checks and keeps both exes as a workflow artifact. A tag
-`launcher-v<Version>` (for example `git tag launcher-v0.5.0 && git push origin launcher-v0.5.0`) must match
-`<Version>` in AionLauncher.csproj. It also makes a GitHub release with `KiskLauncher.exe` (generic),
-`KiskLauncher-KiskEmu.exe` (KiskEmu's server built in) and `SHA256SUMS`. A server's own download is still the file
-in its downloads folder.
+included). A push to main that touches the launcher runs the checks and keeps the exe as a workflow artifact. A tag
+`launcher-v<Version>` (for example `git tag launcher-v0.5.1 && git push origin launcher-v0.5.1`) must match
+`<Version>` in AionLauncher.csproj. It also makes a GitHub release with `KiskLauncher.exe` and `SHA256SUMS`. A server
+serves the same exe from its downloads folder.
 
 ## Not yet verified (CANDIDATE)
 

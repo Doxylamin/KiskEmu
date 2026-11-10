@@ -12,7 +12,7 @@ static class Program
         // After a self-update: the previous exe (still closing) and any unfinished download.
         if (Environment.ProcessPath is { } exe) _ = LauncherUpdate.RemoveLeftoversAsync(exe);
         ApplicationConfiguration.Initialize();
-        // The server this build was made for (launcher.json next to the exe, else the embedded one); a generic build has none.
+        // A launcher.json next to the exe (a server's download ZIP) adds that server; no server is built in.
         LauncherConfig? defaultServer;
         try { defaultServer = LauncherConfig.LoadDefault(Path.Combine(AppContext.BaseDirectory, "launcher.json")); }
         catch (Exception error) when (error is InvalidDataException or System.Text.Json.JsonException)

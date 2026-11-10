@@ -13,8 +13,12 @@ void Check(bool condition, string label)
 }
 
 // ---------- Config ----------
-var config = LauncherConfig.Load();
-Check(config.Server.ToString() == config.ServerAddress && config.AccountUrl.StartsWith("https://"), "embedded config");
+// No server is built in; the checks use the example launcher.json (what a server's download ZIP carries).
+var example = AppContext.BaseDirectory;
+while (example is not null && !File.Exists(Path.Combine(example, "launcher", "launcher.example.json"))) example = Path.GetDirectoryName(example);
+var config = LauncherConfig.Load(Path.Combine(example ?? throw new Exception("launcher/launcher.example.json not found"), "launcher", "launcher.example.json"));
+Check(config.Server.ToString() == config.ServerAddress && config.AccountUrl.StartsWith("https://"), "example launcher.json");
+Check(config.SavedDirSuffix == ServerSetup.DerivedSuffix(new Uri(config.AccountUrl)), "no savedDirSuffix: derived from the account address, as for a server added by hand");
 Check(config.BootstrapUrl(new string('A', 64)) == $"http://{config.ServerAddress}:{config.BootstrapPort}/c/{new string('A', 64)}", "bootstrap URL carries the code");
 (config with { CertificateThumbprint = new string('a', 40) }).Validate();
 checks++;
@@ -151,7 +155,7 @@ Check(ServerSetup.AddressFromLink("kisklauncher://remove?url=x") is null && Serv
 {
     var temp = Directory.CreateTempSubdirectory("a2default").FullName;
     var file = Path.Combine(temp, "launcher.json");
-    Check(LauncherConfig.LoadDefault(file)?.AccountUrl == config.AccountUrl, "embedded default server when no file");
+    Check(LauncherConfig.LoadDefault(file) is null, "no launcher.json next to the exe: no server");
     File.WriteAllText(file, System.Text.Json.JsonSerializer.Serialize(config with { Name = "Override" }));
     Check(LauncherConfig.LoadDefault(file)?.Name == "Override", "launcher.json next to the exe wins");
     Directory.Delete(temp, true);

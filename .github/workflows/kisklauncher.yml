@@ -58,7 +58,7 @@ jobs:
         shell: pwsh
         run: |
           $common = @('-c', 'Release', '-r', 'win-x64', '-p:DebugType=none')
-          dotnet publish launcher/AionLauncher @common -o out/launcher -p:GenericLauncher=true
+          dotnet publish launcher/AionLauncher @common -o out/launcher
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force release | Out-Null
           Copy-Item out/launcher/KiskLauncher.exe release/KiskLauncher.exe

@@ -226,7 +226,7 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
     {
         var version = Version;
         var folder = version.IsSteam
-            ? ClientVersions.SteamFolder(version, config, steam) ?? throw new LauncherException("The Steam copy of AION2 was not found. Set steamClientPath in launcher.json.")
+            ? ClientVersions.SteamFolder(version, config, steam) ?? throw new LauncherException("The Steam copy of AION2 was not found in Steam's libraries.")
             : version.ClientPath ?? InstallFolder ?? throw new LauncherException("The game is not installed.");
         if (Elevated.GameRunning(folder)) throw new LauncherException("The game is already running.");
         GameFolder = folder;

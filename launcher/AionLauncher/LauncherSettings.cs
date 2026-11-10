@@ -65,7 +65,7 @@ sealed class LauncherSettings
     public List<ServerEntry> Servers { get; set; } = [];
     /// <summary>The account URL of the server in use.</summary>
     public string? CurrentServer { get; set; }
-    /// <summary>The build-in default server (launcher.json) once added, so a removed one does not come back.</summary>
+    /// <summary>The server of the launcher.json next to the exe, once added, so a removed one does not come back.</summary>
     public string? SeededDefault { get; set; }
     public Dictionary<string, ClientCopy> Copies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -96,8 +96,9 @@ sealed class LauncherSettings
     public ClientCopy Copy(string fingerprint) => Copies.TryGetValue(fingerprint, out var copy) ? copy : Copies[fingerprint] = new ClientCopy();
 
     /// <summary>
-    /// The server this build was made for becomes a saved server once, carrying the older launcher's sign-in; the older
-    /// launcher's game copy becomes the copy of the embedded build (the one it was checked against).
+    /// The server of a launcher.json next to the exe becomes a saved server once (and the current one: the player opened
+    /// that server's download). The older launcher's game copy becomes the copy of the embedded build (the one it was
+    /// checked against); its user name goes to the first server added (<see cref="AdoptLegacySignIn"/>).
     /// </summary>
     public bool Migrate(LauncherConfig? defaultServer, string embeddedFingerprint)
     {
@@ -105,12 +106,12 @@ sealed class LauncherSettings
         if (defaultServer is not null && !defaultServer.AccountUrl.Equals(SeededDefault, StringComparison.OrdinalIgnoreCase))
         {
             if (Find(defaultServer.AccountUrl) is null)
-                Servers.Insert(0, new ServerEntry
-                {
-                    Config = defaultServer, Username = Username, KeepSignedIn = KeepSignedIn ?? true, SessionToken = SessionToken,
-                    SessionExpiresAt = SessionExpiresAt, SelectedClientVersion = SelectedClientVersion,
-                });
-            SeededDefault = defaultServer.AccountUrl;
+            {
+                var entry = new ServerEntry { Config = defaultServer };
+                AdoptLegacySignIn(entry);
+                Servers.Insert(0, entry);
+            }
+            SeededDefault = CurrentServer = defaultServer.AccountUrl;
             changed = true;
         }
         if (InstallFolder is not null)
@@ -124,16 +125,27 @@ sealed class LauncherSettings
         if (DownloadFolder is not null && DownloadBuild is null) { DownloadBuild = embeddedFingerprint; changed = true; }
         if (InstallFolder is not null || VerifiedStamp is not null) changed = true;
         InstallFolder = VerifiedStamp = null;
-        // The older sign-in belongs to the default server: a generic build (none) leaves it for a build that has one.
-        if (defaultServer is not null)
-        {
-            if (Username is not null || SessionToken is not null || SelectedClientVersion is not null || KeepSignedIn is not null) changed = true;
-            Username = SessionToken = SelectedClientVersion = null;
-            KeepSignedIn = null;
-            SessionExpiresAt = null;
-        }
+        // The older launcher's kept session was for the server built into it, which this launcher cannot know: it is
+        // dropped rather than sent to another server.
+        if (SessionToken is not null || SessionExpiresAt is not null) changed = true;
+        SessionToken = null;
+        SessionExpiresAt = null;
         if (CurrentServer is null && Servers.Count > 0) { CurrentServer = Servers[0].Url; changed = true; }
         return changed;
+    }
+
+    /// <summary>
+    /// The first server added after an older launcher (before saved servers) gets its user name, "Keep me signed in"
+    /// choice and client version, so the sign-in page is filled in as before.
+    /// </summary>
+    public void AdoptLegacySignIn(ServerEntry entry)
+    {
+        if (Servers.Count > 0 || Username is null && KeepSignedIn is null && SelectedClientVersion is null) return;
+        entry.Username ??= Username;
+        entry.KeepSignedIn = KeepSignedIn ?? entry.KeepSignedIn;
+        entry.SelectedClientVersion ??= SelectedClientVersion;
+        Username = SelectedClientVersion = null;
+        KeepSignedIn = null;
     }
 
     public SteamDownload.SignIn? SteamSignIn()
