@@ -45,6 +45,8 @@ public sealed class StaffAccessTests
     [InlineData(StaffPermission.ManageStaff, StaffRank.Administrator)]
     [InlineData(StaffPermission.ManageQuna, StaffRank.Administrator)]
     [InlineData(StaffPermission.EditShop, StaffRank.Administrator)]
+    [InlineData(StaffPermission.ViewCustomNpcs, StaffRank.Gamemaster)]
+    [InlineData(StaffPermission.EditCustomNpcs, StaffRank.Administrator)]
     [InlineData(StaffPermission.ManageWorlds, StaffRank.Administrator)]
     [InlineData(StaffPermission.ManageServer, StaffRank.Administrator)]
     [InlineData(StaffPermission.ManageAccounts, StaffRank.Administrator)]

@@ -131,6 +131,9 @@ public static class RealmLinkEndpoints
         // The custom shop goods this world sells (game.custom_shop_goods, staff dashboard: Shop).
         link.MapGet("/shop/goods", async (IServiceProvider services, CancellationToken ct) =>
             services.GetService<ICustomShopCatalog>() is { } shop ? Results.Ok(await shop.GoodsAsync(ct)) : Results.Ok(Array.Empty<CustomShopGoods>()));
+        // The custom NPCs this world places (game.custom_npcs, staff dashboard: NPCs).
+        link.MapGet("/custom-npcs", async (IServiceProvider services, CancellationToken ct) =>
+            services.GetService<ICustomNpcCatalog>() is { } npcs ? Results.Ok(await npcs.NpcsAsync(ct)) : Results.Ok(Array.Empty<CustomNpc>()));
         // This world's chat announcement (scheduled restart, staff announcement on that world) to its chat sessions.
         link.MapPost("/chat", async (LinkText input, HttpContext ctx, IServiceProvider services) =>
         {
@@ -254,6 +257,8 @@ public sealed class RealmLinkClient
     public Task<QunaResult?> QunaRefundAsync(LinkQunaRefund input, CancellationToken ct) => Send<QunaResult>(HttpMethod.Post, "quna/refund", input, ct, repeatable: true);
     public async Task<IReadOnlyList<CustomShopGoods>> ShopGoodsAsync(CancellationToken ct) =>
         await Send<List<CustomShopGoods>>(HttpMethod.Get, "shop/goods", null, ct) ?? throw new RealmLinkException("The realm sent no shop goods.");
+    public async Task<IReadOnlyList<CustomNpc>> CustomNpcsAsync(CancellationToken ct) =>
+        await Send<List<CustomNpc>>(HttpMethod.Get, "custom-npcs", null, ct) ?? throw new RealmLinkException("The realm sent no custom NPCs.");
 }
 
 /// <summary>
@@ -285,6 +290,40 @@ public sealed class LinkedCustomShopCatalog(RealmLinkClient link, ILogger<Linked
                 nextRead = DateTimeOffset.UtcNow + Retry;
             }
             return goods;
+        }
+        finally { gate.Release(); }
+    }
+}
+
+/// <summary>
+/// A world server's custom NPCs: the realm's, read over the realm link at most every 30 seconds; the last list
+/// stays in use while the realm cannot be reached.
+/// </summary>
+public sealed class LinkedCustomNpcCatalog(RealmLinkClient link, ILogger<LinkedCustomNpcCatalog> logger) : ICustomNpcCatalog
+{
+    static readonly TimeSpan Fresh = TimeSpan.FromSeconds(30), Retry = TimeSpan.FromSeconds(5);
+    readonly SemaphoreSlim gate = new(1, 1);
+    IReadOnlyList<CustomNpc> npcs = [];
+    DateTimeOffset nextRead = DateTimeOffset.MinValue;
+
+    public async Task<IReadOnlyList<CustomNpc>> NpcsAsync(CancellationToken ct = default)
+    {
+        if (DateTimeOffset.UtcNow < nextRead) return npcs;
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (DateTimeOffset.UtcNow < nextRead) return npcs;
+            try
+            {
+                npcs = await link.CustomNpcsAsync(ct);
+                nextRead = DateTimeOffset.UtcNow + Fresh;
+            }
+            catch (Exception error) when (error is HttpRequestException or RealmLinkException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                logger.LogWarning("Custom NPCs from the realm: {Error}", error.Message);
+                nextRead = DateTimeOffset.UtcNow + Retry;
+            }
+            return npcs;
         }
         finally { gate.Release(); }
     }

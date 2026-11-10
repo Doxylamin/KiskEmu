@@ -634,7 +634,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 // NPC's layer entry) the official answer is the failure 0x3e08 with key 0 (OBSERVED #9656); the talk mode ends on it.
                 if (reloading || targets?.ContainsKey(npcKey) != true) return [GamePackets.FinishNpcInteractionReply(0, FinishNoConversation)];
                 return await WithMapEventClearsFlushedAsync(
-                    [GamePackets.FinishNpcInteractionReply(npcKey), .. MapEventTalked(npcKey, null, close: true, now), .. await NpcInteractionFinishedAsync(npcKey, now, ct)], ct);
+                    [GamePackets.FinishNpcInteractionReply(npcKey), .. targets[npcKey].Custom is null ? MapEventTalked(npcKey, null, close: true, now) : [], .. await NpcInteractionFinishedAsync(npcKey, now, ct)], ct);
             // NpcConversation_RQ {npc key, func value}: the dialog choice of an EnterInstanceLayer NPC (OBSERVED reply 0x4007 before the move).
             case 0x4006 when plain.Length >= 7: return NpcConversation(plain, now);
             case 0xe244 when NpcKeyFromBody(plain) is { } npcKey: return [GamePackets.KeepAliveNpcInteractionReply(npcKey, now + 300_000)];
@@ -1403,6 +1403,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 await LoadQuickSlotsAsync(store, state.Summary.CharacterId, ct);
                 var settings = await store.CharacterSettingsAsync(state.Summary.CharacterId, ct);
                 LoadSettings(settings);
+                LoadCustomNpcFlags(settings);
                 LoadBuffSettings(settings, now);
                 LoadSkillCustomizing(settings);
                 await LoadBuybackAsync(store, state.Summary.CharacterId, ct);
@@ -2889,6 +2890,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (now >= aiMap.AiTickAt)
             {
                 aiMap.AiTickAt = now + 50;
+                if (options.World is { } shared) aiMap.SyncCustomNpcs(shared.CustomNpcs, shared.Data);
                 SyncSharedMapAiKillPreserve(aiMap);
                 aiMap.Ai.DefenseOf ??= key => aiMap.Players.TryGetValue(key, out var p) ? p.Session.Defense : 0;
                 aiMap.Ai.PlayerLevelOf ??= key => aiMap.Players.TryGetValue(key, out var p) ? p.Session.Level : 1;

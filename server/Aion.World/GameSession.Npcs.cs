@@ -109,7 +109,7 @@ public sealed partial class GameSession
             var dy = t.Position.Y - at.Y;
             if (dx * dx + dy * dy > NpcViewRange * NpcViewRange) continue;
             seenNpcs.Add(t.Key);
-            replies.Add(GamePackets.NpcAppear(Grounded(t).Appearance()));
+            replies.Add(GamePackets.NpcAppear(SessionAppear(Grounded(t))));
         }
         return replies;
     }

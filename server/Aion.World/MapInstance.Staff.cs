@@ -22,7 +22,7 @@ public sealed partial class MapInstance
             if (d <= radius) near.Add((d, t));
         }
         return near.OrderBy(n => n.D).Take(limit).Select(n => new MonsterView(n.T.Key, n.T.NpcId, n.T.Name, n.T.Level, Math.Round(n.T.Position.X),
-            Math.Round(n.T.Position.Y), n.T.Dead, n.T.Hostile, n.T.Key >= FirstStaffKey,
+            Math.Round(n.T.Position.Y), n.T.Dead, n.T.Hostile, n.T.Key >= FirstStaffKey && !CustomNpcDirectory.IsCustomKey(n.T.Key),
             Ai.Brains.TryGetValue(n.T.Key, out var brain) && brain.Engaged)).ToList();
     }
 
@@ -93,7 +93,7 @@ public sealed partial class MapInstance
         var count = 0;
         foreach (var t in Targets.Values)
         {
-            if (t.Key < FirstStaffKey || t.CorpseRemoved && t.Dead && !RespawnAt.ContainsKey(t.Key)) continue;
+            if (t.Key < FirstStaffKey || CustomNpcDirectory.IsCustomKey(t.Key) || t.CorpseRemoved && t.Dead && !RespawnAt.ContainsKey(t.Key)) continue;
             t.Hp = 0;
             t.CorpseRemoved = true;
             RespawnAt.Remove(t.Key);

@@ -41,6 +41,7 @@ public static partial class StaffToolsEndpoints
         });
 
         MapShop(staff);
+        MapCustomNpcs(staff);
 
         // ---------- Moderation ----------
         staff.MapGet("/sanctions", async (bool? all, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>

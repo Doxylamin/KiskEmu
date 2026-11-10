@@ -129,7 +129,7 @@ public sealed partial class GameSession
 
     NpcAppearance QuestGatedAppear(Target t)
     {
-        var appear = t.Appearance();
+        var appear = SessionAppear(t);
         if (questLog?.PendingKillNpcIds().Contains(t.NpcId) == true)
         {
             var ab = new AbnormalWire(1, QuestUntargetableAbnormal, -1, Target.PermanentExpiry, CasterKey: t.Key, RangeBase: t.Position);

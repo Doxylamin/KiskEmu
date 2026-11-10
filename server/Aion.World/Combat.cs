@@ -73,6 +73,9 @@ public sealed class Target
     public int GroggyMax { get; set; }
     public int GroggyEnergy { get; set; }
 
+    /// <summary>A custom NPC (staff dashboard: NPCs) this target places; null for every other NPC.</summary>
+    public Aion.Application.Gameplay.CustomNpc? Custom { get; init; }
+
     public bool Dead => Hp <= 0;
     /// <summary>The corpse was removed (0x3642) and the NPC waits for its respawn.</summary>
     public bool CorpseRemoved { get; set; }

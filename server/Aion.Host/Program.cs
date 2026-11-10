@@ -120,6 +120,10 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddSingleton<PostgresCustomShop>();
     builder.Services.AddSingleton<ICustomShopAdmin>(provider => provider.GetRequiredService<PostgresCustomShop>());
     builder.Services.AddSingleton<ICustomShopCatalog>(provider => provider.GetRequiredService<PostgresCustomShop>());
+    // Custom NPCs (migration 102): edited on the dashboard, placed and run by every world.
+    builder.Services.AddSingleton<PostgresCustomNpcs>();
+    builder.Services.AddSingleton<ICustomNpcAdmin>(provider => provider.GetRequiredService<PostgresCustomNpcs>());
+    builder.Services.AddSingleton<ICustomNpcCatalog>(provider => provider.GetRequiredService<PostgresCustomNpcs>());
     // The account Quna wallets (migration 095): the realm's; changes are pushed to the world the account plays on.
     builder.Services.AddSingleton<PostgresQunaWallet>();
     builder.Services.AddSingleton<IQunaWallet>(provider =>
@@ -154,6 +158,7 @@ else if (accountsReady)
     builder.Services.AddSingleton<Aion.Host.Realm.RealmLinkService>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Realm.RealmLinkService>());
     builder.Services.AddSingleton<ICustomShopCatalog, Aion.Host.Realm.LinkedCustomShopCatalog>();
+    builder.Services.AddSingleton<ICustomNpcCatalog, Aion.Host.Realm.LinkedCustomNpcCatalog>();
     // Quna is the realm's account wallet (server/DATABASES.md): spent and refunded over the realm link; only the realm adds Quna.
     builder.Services.AddSingleton<IQunaWallet, Aion.Host.Realm.LinkedQunaWallet>();
     builder.Services.AddSingleton<IShopLedger>(provider => new PostgresShopLedger(provider.GetRequiredService<NpgsqlDataSource>()));
@@ -411,6 +416,8 @@ if (worldProcess is not null)
 {
     app.Logger.LogInformation("World server for world {World} ({Name}) on game port {Port}", native.WorldId, worldProcess.Name, native.GamePort);
     Aion.World.GameSession.ConfigureCustomShop(app.Services.GetService<ICustomShopCatalog>());
+    Aion.World.CustomNpcWorld.Configure(app.Services.GetService<ICustomNpcCatalog>(), app.Services.GetService<Aion.World.SharedWorld>(),
+        builder.Configuration.GetValue<bool?>("Aion:CustomNpcs:AssumePatchedClients") ?? false, message => app.Logger.LogInformation("{Message}", message));
     Aion.Host.Worlds.WorldEndpoints.MapWorldProcessEndpoints(app, worldProcess, native.WorldId);
     // The staff dashboard's world tools (maintenance, announcements, players, live map, restart) for this world, reached
     // through the auth host (?world=…); every request still needs a staff sign-in.

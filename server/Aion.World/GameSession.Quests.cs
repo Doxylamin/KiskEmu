@@ -334,6 +334,14 @@ public sealed partial class GameSession
             LogNpcTalkRefused(npcKey, 0, null, "unknown_npc_key");
             return Task.FromResult(replies);
         }
+        // A custom NPC (staff dashboard: NPCs) talks its own dialog; its base template's quests and map events stay out of it.
+        if (npc.Custom is { } custom)
+        {
+            openNpcTalk = null;
+            openClearMapEventEntryKey = null;
+            replies.AddRange(CustomNpcTalkOpened(npc, custom));
+            return Task.FromResult(replies);
+        }
         replies.AddRange(MapEventTalked(npcKey, null, close: false, now));
         openNpcTalk = questLog?.OpenTalks(npc.NpcId) is { Count: > 0 } talks ? (npcKey, talks) : null;
         openClearMapEventEntryKey = openNpcTalk is null && IsOpenClearMapEventEntryNpc(npc) ? npcKey : null;
@@ -344,6 +352,7 @@ public sealed partial class GameSession
     async Task<List<byte[]>> NpcInteractionFinishedAsync(int npcKey, long now, CancellationToken ct)
     {
         if (targets?.GetValueOrDefault(npcKey) is not { } npc) return [];
+        if (npc.Custom is not null) return await CustomNpcTalkFinishedAsync(npcKey, now, ct);
         var replies = new List<byte[]>();
         if (openNpcTalk is { } open && open.NpcKey == npcKey && questLog is not null)
         {

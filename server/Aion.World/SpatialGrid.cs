@@ -54,6 +54,9 @@ public sealed class SpatialGrid(double cellSize = SpatialGrid.DefaultCellSize)
         return grid;
     }
 
+    /// <summary>Rebuilds a map's NPC grid on its next use (NPCs placed somewhere else under the same keys).</summary>
+    public static void InvalidateNpcs(Dictionary<int, Target> targets) => npcGrids.Remove(targets);
+
     static readonly ConcurrentDictionary<int, SpatialGrid> objectGrids = new();
 
     /// <summary>A map's quest objects and gather nodes by index (they never move).</summary>

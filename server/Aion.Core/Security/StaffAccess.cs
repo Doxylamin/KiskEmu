@@ -15,6 +15,7 @@ public enum StaffPermission
     Announce,             // announcements
     HandleTickets,        // read and answer tickets, read the chat log
     ViewMonsters,         // the monsters of a map
+    ViewCustomNpcs,       // the custom NPCs and their dialogs
     // Moderator: act on players.
     Sanction,             // mute, kick, ban and lift (on players; staff need ManageStaff)
     DisableAccounts,      // disable player accounts
@@ -27,6 +28,7 @@ public enum StaffPermission
     ManageStaff,          // roles, and sanctions or disabling of staff accounts
     ManageQuna,           // add or take Quna
     EditShop,             // edit custom shop goods
+    EditCustomNpcs,       // create, change and remove custom NPCs
     ManageWorlds,         // add, change, start, stop, restart worlds and their tokens
     ManageServer,         // restart, maintenance, backups, debug switches
     ManageAccounts,       // new accounts, password and authenticator resets
@@ -79,7 +81,7 @@ public static class StaffAccess
     {
         StaffPermission.ViewDashboard or StaffPermission.ViewAudit or StaffPermission.ViewEconomy or StaffPermission.ViewShop
             or StaffPermission.AssistPlayers or StaffPermission.Announce or StaffPermission.HandleTickets
-            or StaffPermission.ViewMonsters => StaffRank.Gamemaster,
+            or StaffPermission.ViewMonsters or StaffPermission.ViewCustomNpcs => StaffRank.Gamemaster,
         StaffPermission.Sanction or StaffPermission.DisableAccounts or StaffPermission.ViewAccounts or StaffPermission.EditCharacters
             or StaffPermission.RewardCharacters or StaffPermission.ManageEvents or StaffPermission.ManageMonsters => StaffRank.Moderator,
         _ => StaffRank.Administrator,
