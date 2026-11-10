@@ -6,7 +6,7 @@
     {
       "index": 0,
       "ecurrency_category": "GameCashPending",
-      "source": "RefreshCurrency_NT group 145 and/or HTTP pending_balance",
+      "source": "GET virtual_currency/v2.0/me/balances?currency_group_id=145, the balance_info_list entry with currency_id 103 (OBSERVED 2026-11-10: only that entry moved the counter; 7, 95, 96, 102, 109 and RefreshCurrency_NT did not)",
       "ecurrency_category_id": 103
     },
     {
@@ -24,7 +24,7 @@
     {
       "index": 3,
       "ecurrency_category": "GameCash",
-      "source": "ItemDepotList_RS 0x5611 bag stacks item 535300006; GNB bar wiring TBD (no official capture with Quna owned)",
+      "source": "ItemDepotList_RS 0x5611 bag stacks item 535300006; the Quna counter is slot 0 (GameCashPending 103), not this item; 535300006 is a Usable Quna Recharge voucher",
       "ecurrency_category_id": 7
     }
   ],
@@ -57,7 +57,7 @@
   "server_behavior": {
     "item_depot_list_0x5611": "Includes bag stacks for 535300006 (GameCash item) and 930100001 (kinah), same as pre-#271 09fd30c",
     "world_entry_refresh_currency_nt": "Not sent at world entry (official entry captures show no 0x3bd1; prior group-145 key-7 push was speculative)",
-    "gnb_quna_display": "Deferred until Fiddler/pcap of a character that owns Quna on live"
+    "gnb_quna_display": "Solved: the HTTP balances answer, currency_id 103 entry (see slot 0). Official 2026-11-04 purchase: no game message carries the balance; the bought Quna Recharge item 535300006 is added and removed at once"
   },
   "gnb_investigation": {
     "usmap_mapping": "research/local/tooling/mappings/AION2-5.3.2.0-2.0.6.0.usmap",

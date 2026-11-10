@@ -17,12 +17,17 @@ public sealed class PlatformVirtualCurrencyTests
     {
         using var doc = JsonDocument.Parse(ShopQunaBalanceService.JsonBody(50_000, GameSession.QunaBmCurrencyGroupId));
         var root = doc.RootElement;
-        Assert.Equal("1", root.GetProperty("balance_info_list_count").GetString());
+        Assert.Equal("2", root.GetProperty("balance_info_list_count").GetString());
         Assert.Equal("50000.000000", root.GetProperty("total_balance").GetString());
         var row = root.GetProperty("balance_info_list")[0];
         Assert.Equal(GameSession.QunaBmCurrencyGroupId.ToString(), row.GetProperty("currency_group_id").GetString());
         Assert.Equal(GameSession.QunaVirtualCurrencyId.ToString(), row.GetProperty("currency_id").GetString());
         Assert.Equal("50000.000000", row.GetProperty("balance").GetString());
+        // The Quna counter (top left, Currency Info) shows the GameCashPending entry only.
+        var counter = root.GetProperty("balance_info_list")[1];
+        Assert.Equal("103", counter.GetProperty("currency_id").GetString());
+        Assert.Equal(GameSession.QunaBmCurrencyGroupId.ToString(), counter.GetProperty("currency_group_id").GetString());
+        Assert.Equal("50000.000000", counter.GetProperty("balance").GetString());
     }
 
     [Fact]

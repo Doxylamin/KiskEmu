@@ -9,7 +9,8 @@ namespace Aion.World;
 // packets, so the bag shows a virtual stack (never stored) whose count is the wallet balance, refreshed after a spend or
 // refund and when the realm pushes a change (/internal/world/quna/balance). Without a wallet (development logins) Quna stays
 // a plain bag item as before.
-// Kinah is bag item 930100001 on 0x5611 (GoldCombined). GNB slot wiring for Quna is unverified — see tools/data/currency_hud.json.
+// Kinah is bag item 930100001 on 0x5611 (GoldCombined). The Quna counter (top left, Currency Info) reads neither the bag nor
+// RefreshCurrency_NT: it is the currency_id 103 (GameCashPending) entry of the HTTP balances answer, ShopQunaBalanceService.JsonBody.
 // HTTP GET virtual_currency/v2.0/me/balances uses currency_id 109 with currency_group_id 145 (GameCash), 110 with 158 (Mileage).
 // RefreshCurrency_NT (0x3bd1) map keys in usmap are ECurrencyCategory (7 GameCash, 6 Mileage), not the HTTP currency_id field.
 public sealed partial class GameSession

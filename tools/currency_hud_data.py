@@ -22,7 +22,7 @@ GNB_BAR_SLOTS = [
     {
         'index': 0,
         'ecurrency_category': 'GameCashPending',
-        'source': 'RefreshCurrency_NT group 145 and/or HTTP pending_balance',
+        'source': 'GET virtual_currency/v2.0/me/balances?currency_group_id=145, the balance_info_list entry with currency_id 103 (OBSERVED 2026-11-10: only that entry moved the counter; 7, 95, 96, 102, 109 and RefreshCurrency_NT did not)',
     },
     {
         'index': 1,
@@ -37,7 +37,7 @@ GNB_BAR_SLOTS = [
     {
         'index': 3,
         'ecurrency_category': 'GameCash',
-        'source': f'ItemDepotList_RS 0x5611 bag stacks item {QUNA_ITEM}; GNB bar wiring TBD',
+        'source': f'ItemDepotList_RS 0x5611 bag stacks item {QUNA_ITEM}; the Quna counter is slot 0 (GameCashPending 103), not this item; 535300006 is a Usable Quna Recharge voucher',
     },
 ]
 
@@ -80,7 +80,7 @@ def main() -> None:
         'server_behavior': {
             'item_depot_list_0x5611': f'Includes bag stacks for {QUNA_ITEM} and {KINA_ITEM}',
             'world_entry_refresh_currency_nt': 'Not sent at world entry (no official 0x3bd1 on entry capture)',
-            'gnb_quna_display': 'Deferred until live capture with Quna owned',
+            'gnb_quna_display': 'Solved: the HTTP balances answer, currency_id 103 entry (see slot 0). Official 2026-11-04 purchase: no game message carries the balance; the bought Quna Recharge item 535300006 is added and removed at once',
         },
         'ecurrency_category': categories,
     })

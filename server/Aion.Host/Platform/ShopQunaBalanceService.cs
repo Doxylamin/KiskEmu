@@ -48,35 +48,43 @@ public sealed class ShopQunaBalanceService(
     GameSession? SessionByWireAccount(string wireAccountId) =>
         presence.All.FirstOrDefault(e => string.Equals(e.Session.WireAccountId, wireAccountId, StringComparison.OrdinalIgnoreCase))?.Session;
 
-    /// <summary>Official balance_info_list shape for one currency_group_id query (145 GameCash Quna, 158 mileage).</summary>
-    public static byte[] JsonBody(long qunaInBag, int currencyGroupId)
-    {
-        var (currencyId, balance) = currencyGroupId switch
-        {
-            GameSession.QunaBmCurrencyGroupId => (GameSession.QunaVirtualCurrencyId, qunaInBag),
-            GameSession.MileageCurrencyGroupId => (GameSession.MileageVirtualCurrencyId, 0L),
-            _ => (GameSession.QunaVirtualCurrencyId, 0L),
-        };
-        return JsonBodyFor(currencyGroupId, currencyId, balance);
-    }
+    /// <summary>
+    /// ECurrencyCategory GameCashPending: the entry of the GameCash answer the client's Quna counter shows (the top-left HUD
+    /// slot and Currency Info; GnbCurrencyTableItem's first slot). OBSERVED 2026-11-10 on a test server: of entries with
+    /// currency_id 7, 95, 96, 102, 103 and 109 in one answer, the counter showed exactly the 103 amount and ignored the
+    /// rest; with only 109 it stayed 0. The official game connection never carries the balance (a purchase on 2026-11-04
+    /// delivered a Quna Recharge item 535300006 that the server removed at once, and no message held the amount), so the
+    /// counter comes from this answer alone, read at login.
+    /// </summary>
+    public const int GameCashPendingCurrencyId = 103;
 
-    public static byte[] JsonBodyFor(int currencyGroupId, int currencyId, long balance)
+    /// <summary>Official balance_info_list shape for one currency_group_id query (145 GameCash Quna, 158 mileage).</summary>
+    public static byte[] JsonBody(long qunaInBag, int currencyGroupId) => currencyGroupId switch
+    {
+        // 109 for the shop's checks as before, 103 for the Quna counter (see GameCashPendingCurrencyId); the total once.
+        GameSession.QunaBmCurrencyGroupId => JsonBodyFor(currencyGroupId, [GameSession.QunaVirtualCurrencyId, GameCashPendingCurrencyId], qunaInBag),
+        GameSession.MileageCurrencyGroupId => JsonBodyFor(currencyGroupId, [GameSession.MileageVirtualCurrencyId], 0L),
+        _ => JsonBodyFor(currencyGroupId, [GameSession.QunaVirtualCurrencyId], 0L),
+    };
+
+    public static byte[] JsonBodyFor(int currencyGroupId, int currencyId, long balance) => JsonBodyFor(currencyGroupId, [currencyId], balance);
+
+    /// <summary>One balance_info_list entry per currency id, each with the balance; total_balance is the balance once.</summary>
+    public static byte[] JsonBodyFor(int currencyGroupId, IReadOnlyList<int> currencyIds, long balance)
     {
         var amount = balance.ToString("F6", CultureInfo.InvariantCulture);
         var zero = "0.000000";
+        var group = currencyGroupId.ToString(CultureInfo.InvariantCulture);
         return JsonSerializer.SerializeToUtf8Bytes(new
         {
-            balance_info_list = new[]
+            balance_info_list = currencyIds.Select(id => new
             {
-                new
-                {
-                    currency_id = currencyId.ToString(CultureInfo.InvariantCulture),
-                    currency_group_id = currencyGroupId.ToString(CultureInfo.InvariantCulture),
-                    balance = amount,
-                    pending_balance = zero,
-                },
-            },
-            balance_info_list_count = "1",
+                currency_id = id.ToString(CultureInfo.InvariantCulture),
+                currency_group_id = group,
+                balance = amount,
+                pending_balance = zero,
+            }).ToArray(),
+            balance_info_list_count = currencyIds.Count.ToString(CultureInfo.InvariantCulture),
             total_pending_balance = zero,
             total_balance = amount,
         }, PlatformResponses.Plain);
