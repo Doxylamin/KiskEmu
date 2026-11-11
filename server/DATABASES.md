@@ -104,7 +104,7 @@ with another account or amount is `request_conflict`. The ledger cannot be updat
 - **Only the realm adds Quna.** Staff do it on the dashboard: a character's Overview tab shows the account's
   wallet, and admins add or take Quna there (`GET`/`POST /api/admin/accounts/{id}/quna`, reason `staff`, request
   `staff:<id>`, the admin and the note in the ledger's details). The realm link has no grant, so a world server
-  (even a compromised one with a valid token) cannot mint Quna; a refund only gives back a spend of the same amount.
+  (even a compromised one with a valid token) cannot mint Quna; a refund only gives back a purchase (reason `purchase`, not a staff deduction) of the same amount, once.
 - **A world server** has no Quna in its database. It spends and refunds over the realm link
   (`LinkedQunaWallet`, the realm socket while it is open, HTTP otherwise; the realm records the calling world).
   A purchase takes the Quna first, then runs its own transaction (items, limits, `game.shop_orders`); when that

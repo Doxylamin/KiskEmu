@@ -20,6 +20,7 @@ public sealed class ShopTables
         [property: JsonPropertyName("goods")] Dictionary<string, long[]> Goods,
         [property: JsonPropertyName("sell")] Dictionary<string, long> Sell,
         [property: JsonPropertyName("coin_shops")] Dictionary<string, string>? CoinShops,
+        [property: JsonPropertyName("coin_shop_goods")] Dictionary<string, Dictionary<string, string[]>>? CoinShopGoods,
         [property: JsonPropertyName("guild_shops")] string[]? GuildShops,
         [property: JsonPropertyName("random_shops")] RandomShopsFile? RandomShops);
 
@@ -57,7 +58,15 @@ public sealed class ShopTables
 
     /// <summary>A goods row listed in a named shop for a race.</summary>
     public GoodsRow? GoodsInShop(string shop, int race, int goodsId) =>
-        file.Shops.TryGetValue(shop, out var races) && races.TryGetValue(Key(race), out var list) && list.Contains(Key(goodsId)) ? Row(goodsId) : null;
+        ShopList(shop, race) is { } list && list.Contains(Key(goodsId)) ? Row(goodsId) : null;
+
+    /// <summary>The goods ids a shop lists for a race: an NPC/guild shop, else a coin shop (its GameShop.dat GoodsList).</summary>
+    string[]? ShopList(string shop, int race) =>
+        (file.Shops.TryGetValue(shop, out var races) || file.CoinShopGoods?.TryGetValue(shop, out races) == true)
+        && races!.TryGetValue(Key(race), out var list) ? list : null;
+
+    /// <summary>How many goods a shop lists for a race (0 for an unknown shop).</summary>
+    public int ShopGoodsCount(string shop, int race) => ShopList(shop, race)?.Length ?? 0;
 
     /// <summary>A goods row the merchant sells to a race; null otherwise.</summary>
     public GoodsRow? Goods(int npcId, int race, int goodsId) =>
@@ -68,7 +77,7 @@ public sealed class ShopTables
         file.Npcs.TryGetValue(Key(npcId), out var shop) ? LimitedGoodsInShop(shop, race) : [];
 
     public IEnumerable<(int GoodsId, GoodsRow Row)> LimitedGoodsInShop(string shop, int race) =>
-        file.Shops.TryGetValue(shop, out var races) && races.TryGetValue(Key(race), out var list)
+        ShopList(shop, race) is { } list
             ? list.Select(id => (Id: int.Parse(id, System.Globalization.CultureInfo.InvariantCulture), Row: GoodsInShop(shop, race, int.Parse(id, System.Globalization.CultureInfo.InvariantCulture))))
                 .Where(x => x.Row is { Limit: > 0 }).Select(x => (x.Id, x.Row!))
             : [];

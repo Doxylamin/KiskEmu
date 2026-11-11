@@ -93,7 +93,8 @@ public sealed class MemoryQunaWallet : IQunaWallet
     {
         QunaLedgerEntry? spend;
         lock (gate) spend = ledger.FirstOrDefault(e => e.RequestId == spendRequestId);
-        if (spend is null || spend.AccountId != account || spend.Delta >= 0) return Task.FromResult(Refused(account, QunaWalletRules.NotFound));
+        // Only a purchase is given back, not a staff deduction (105_quna_refund_purchases.realm.sql).
+        if (spend is null || spend.AccountId != account || spend.Reason != QunaWalletRules.Purchase || spend.Delta >= 0) return Task.FromResult(Refused(account, QunaWalletRules.NotFound));
         var details = JsonSerializer.SerializeToElement(new { refunds = spendRequestId });
         return Task.FromResult(Apply(new QunaRequest(account, QunaWalletRules.RefundId(spendRequestId), -spend.Delta, QunaWalletRules.Refund,
             worldId ?? spend.WorldId, spend.CharacterId, details), -spend.Delta));

@@ -65,7 +65,7 @@ def build(tables=TABLES, npc_table=NPCDATA, catalog=CATALOG):
     for row in _rows(tables / 'table-001.json'):
         by_name[row['Name']] = str(value(row['ID']))
     lists = {row['Name']: row for row in _rows(tables / 'table-002.json')}
-    coin_shops, guild_npcs, goods_lists = {}, {}, {}
+    coin_shops, coin_shop_goods, guild_npcs, goods_lists = {}, {}, {}, {}
     shops = {}
     for row in _rows(tables / 'table-002.json'):
         goods_lists[row['Name']] = {
@@ -74,10 +74,8 @@ def build(tables=TABLES, npc_table=NPCDATA, catalog=CATALOG):
         }
     for row in _rows(tables / 'table-000.json'):
         shop_type = str(row.get('ShopType', ''))
-        if shop_type.endswith('CoinShop'):
-            coin_shops[str(value(row['ID']))] = row['Name']
-            continue
-        if shop_type not in ('EShopType::NpcShop', 'EShopType::GuildShop'):
+        is_coin = shop_type.endswith('CoinShop')
+        if not is_coin and shop_type not in ('EShopType::NpcShop', 'EShopType::GuildShop'):
             continue
         per_race = {'1': [], '2': []}
         for list_name in row.get('GoodsList') or []:
@@ -86,6 +84,12 @@ def build(tables=TABLES, npc_table=NPCDATA, catalog=CATALOG):
                 continue
             for race in RACES.get(tab.get('Race'), ['1', '2']):
                 per_race[race].extend(by_name[g] for g in tab.get('GoodsList') or [] if g in by_name and by_name[g] in goods)
+        if is_coin:
+            # A CoinShop row names its goods lists like an NPC shop (GameShop.dat GoodsList, OBSERVED in the client
+            # table): arena and battlefield sell the abyss lists, not lists named after themselves.
+            coin_shops[str(value(row['ID']))] = row['Name']
+            coin_shop_goods[row['Name']] = per_race
+            continue
         shops[row['Name']] = per_race
         if shop_type.endswith('GuildShop'):
             guild_npcs[row['Name']] = per_race
@@ -100,7 +104,7 @@ def build(tables=TABLES, npc_table=NPCDATA, catalog=CATALOG):
                 npcs[str(value(row['ID']))] = values[0]
     return {'source': 'GameShop/GameShopGoods/GameShopGoodsList + NpcData + Item.dat (tools/shop_data.py)',
             'npcs': npcs, 'shops': shops, 'goods': goods, 'sell': sell,
-            'coin_shops': coin_shops, 'guild_shops': list(guild_npcs.keys()),
+            'coin_shops': coin_shops, 'coin_shop_goods': coin_shop_goods, 'guild_shops': list(guild_npcs.keys()),
             'goods_lists': goods_lists or None}
 
 
