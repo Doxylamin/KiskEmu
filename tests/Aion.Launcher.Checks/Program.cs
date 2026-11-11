@@ -231,12 +231,14 @@ try
         "private folder: with both, KiskPrivate wins and the old one is not touched");
     Check(PrivateFolder.Rebase(Path.Combine(parent, "A2CorePrivate", "AION2")) == Path.Combine(parent, "KiskPrivate", "AION2"),
         "private folder: a path in the old folder points at the new one once that exists");
-    // The old folder in use (a file open without sharing): it stays, and the path is kept until the next start.
+    // The old folder in use (a file open without sharing): it stays, and the path is kept until the next start. Only
+    // Windows refuses to rename a folder with an open file; elsewhere the rename simply succeeds.
     Directory.Delete(Path.Combine(parent, "KiskPrivate"), recursive: true);
     var busy = Path.Combine(parent, "A2CorePrivate", "busy.bin");
     using (var open = new FileStream(busy, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
     {
-        Check(PrivateFolder.Resolve(parent) == Path.Combine(parent, "A2CorePrivate") && PrivateFolder.Rebase(busy) == busy,
+        if (OperatingSystem.IsWindows())
+            Check(PrivateFolder.Resolve(parent) == Path.Combine(parent, "A2CorePrivate") && PrivateFolder.Rebase(busy) == busy,
             "private folder: in use, the old folder is used as it is");
     }
     Check(PrivateFolder.Resolve(parent) == Path.Combine(parent, "KiskPrivate") && File.Exists(Path.Combine(parent, "KiskPrivate", "busy.bin")),
