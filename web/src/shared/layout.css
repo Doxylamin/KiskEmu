@@ -3,6 +3,8 @@
 .page-header-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .page-header h1 { font-size: 28px; line-height: 1.2; font-weight: 700; overflow-wrap: anywhere; }
 .page-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* A select among header buttons is as wide as its options, not the whole row (that pushed the buttons below it). */
+.page-header-actions > .select, .section-head .select { width: auto; }
 
 .section { overflow: hidden; }
 .section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }

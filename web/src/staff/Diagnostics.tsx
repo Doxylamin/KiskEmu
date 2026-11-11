@@ -101,7 +101,7 @@ export function DiagnosticsCard({ call, worlds, active }: { call: Call; worlds: 
 
         <div className="row-between wrap">
           <h3>Client requests without a reply</h3>
-          {data?.unanswered && <Button size="sm" onClick={clear}>Clear list</Button>}
+          {rows.length > 0 && <Button size="sm" onClick={clear}>Clear list</Button>}
         </div>
         <p className="muted small">
           Requests this server handled without sending anything back, since {data?.unanswered ? time(data.unanswered.since) : '…'}.
