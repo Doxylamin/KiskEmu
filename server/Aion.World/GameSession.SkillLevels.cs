@@ -7,10 +7,11 @@ namespace Aion.World;
 // Gladiator raising skill 11020000 to level 2, #18470-18472): the client's SkillLevelUp_RQ 0x383f {skill i32} (the 0x38
 // run of the combat messages, positional opcode + 0x157), the reply 0x3840 {result u16 0, skill i32},
 // SkillLevelUpdate_NT 0x3813 {count 1, skill i32, Skill {mask 01, skill i32, level u8, original u8, 5 zero bytes},
-// reason u8 3 SkillPointLevelUp}, then SkillPointUpdate_NT 0x5105 {count 1, mask 01, type u8 1 Point, point varint}
-// (body 0101010f = 15 points left on wire; usmap CommonSkillPointInfo._point is the remaining count). Points: Exp.dat BonusSkillPoint at
-// the character level (cumulative, CANDIDATE) minus the costs spent (SkillAcquireData Mastery rows: levels 2-4 cost 1, 5-7 cost 2,
-// 8-10 cost 4). The server enforces the budget; 0x5105 carries <see cref="SkillPointsLeft"/>.
+// reason u8 3 SkillPointLevelUp}, then SkillPointUpdate_NT 0x5105 {count u8 1, type u8 1 Point, point u16} where the point is
+// the points SPENT (OBSERVED, see GamePackets.SkillPointUpdate); the client subtracts it from its own total. Points: Exp.dat
+// BonusSkillPoint at the character level (cumulative, CANDIDATE) minus the costs spent (SkillAcquireData Mastery rows: levels 2-4
+// cost 1, 5-7 cost 2, 8-10 cost 4). The server enforces the budget (<see cref="SkillPointsLeft"/>); 0x5105 carries
+// <see cref="SpentSkillPoints"/>.
 // Points per level: Exp.dat BonusSkillPoint is cumulative and flat from level 45 (203 points), see GameData.SkillPoints.
 public sealed partial class GameSession
 {
@@ -98,10 +99,10 @@ public sealed partial class GameSession
     public int SkillPointsLeft => Math.Max(0, data.SkillPoints(level) - SpentSkillPoints());
 
     /// <summary>
-    /// 0x5105 after a purchase / level down / reset / level-up / refusal and at world entry: remaining skill points
-    /// (usmap CommonSkillPointInfo._point; also SkillLevelReset_RS._modify_points).
+    /// 0x5105 after a purchase / level down / reset / level-up / refusal and at world entry: the skill points spent
+    /// (usmap CommonSkillPointInfo._point; OBSERVED official values rise with level-ups and fall with resets).
     /// </summary>
-    byte[] SkillPointUpdate() => GamePackets.SkillPointUpdate(SkillPointsLeft, SkillPointTypePoint);
+    byte[] SkillPointUpdate() => GamePackets.SkillPointUpdate(SpentSkillPoints(), SkillPointTypePoint);
 
     void RefreshWireClientSkillList(IReadOnlyList<(int SkillId, int Level)> kitAfterChainOverlay) =>
         wireClientSkillList = kitAfterChainOverlay.ToList();
@@ -278,8 +279,10 @@ public sealed partial class GameSession
 
     /// <summary>
     /// 0x3843 SkillLevelReset_RQ {ESkillAcquireType u8, skill i32}: the skill (or every bought level when skill is 0) back
-    /// to level 1 with the points refunded (free, OURS). Reply 0x3844 {result u16, type, skill, modify list {skill → level},
-    /// modify points [{type u8 Point, extra points}]} (usmap fields, CANDIDATE), then the level updates (SkillLevelModify).
+    /// to level 1 with the points refunded (free, OURS). Reply 0x3844 {result u16, type u8, skill i32, modify list count +
+    /// {skill i32 → level u8}, modify points count + {type u8 Point, refunded u16}}, then the level updates (SkillLevelModify).
+    /// OBSERVED official (2026-10-13 and 11-04 captures): 0000 01 c0b51501 01 c0b51501 01 01 01 1500 (skill 18200000 back to
+    /// level 1, 21 points refunded); the next 0x5105 is the spent points less the refund. usmap: _modify_list is a map int → byte.
     /// </summary>
     async Task<List<byte[]>> SkillLevelResetAsync(byte[] plain, CancellationToken ct)
     {
@@ -290,11 +293,12 @@ public sealed partial class GameSession
         var targets = (skillId == 0
             ? persistedSkillLevels.Keys.Union(skillLevels.Keys).Where(HasPurchasedMastery).ToList()
             : HasPurchasedMastery(skillId) ? [skillId] : []).ToList();
+        var spentBefore = SpentSkillPoints();
         byte[] Reply(int result, IReadOnlyList<int> reset)
         {
             var w = PacketWriter.Opcode(SkillLevelResetRs).U16(result).U8(acquireType).I32(skillId).Varint((uint)reset.Count);
-            foreach (var id in reset) w.I32(id).I32(KitSkillLevel(id));
-            return w.Varint(1).AppendSkillPointInfo(SkillPointsLeft, SkillPointTypePoint).ToArray();
+            foreach (var id in reset) w.I32(id).U8(KitSkillLevel(id));
+            return w.Varint(1).AppendSkillPointInfo(Math.Max(0, spentBefore - SpentSkillPoints()), SkillPointTypePoint).ToArray();
         }
         if (targets.Count == 0) return [Reply(1, []), ..SkillPointClientSync()];
         var updates = new List<byte[]>();

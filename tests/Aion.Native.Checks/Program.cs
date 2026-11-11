@@ -331,8 +331,8 @@ var boughtLevel = await pointed.HandleAsync(new PacketWriter().U16(0x383f).I32(1
 Check(SkillMasteryCoreOpcodes(boughtLevel).SequenceEqual([0x3656, 0x3840, 0x3813, 0x5105])
       && boughtLevel[1].SequenceEqual(Convert.FromHexString("4038" + "0000" + "D0FFA700"))
       && boughtLevel[2].SequenceEqual(Convert.FromHexString("1338" + "01" + "D0FFA700" + "01" + "D0FFA700" + "0202" + "0000000000" + "03"))   // original = the bought level (2)
-      && boughtLevel[3].SequenceEqual(Convert.FromHexString("05510101010f")) && pointed.SkillLevel(11010000) == 2,
-      "SkillLevelUp_RQ 0x383f: 0x3656 then 0x3840, 0x3813 and 0x5105 laid out as recorded (level 2 for one point, 15 remaining)");
+      && boughtLevel[3].SequenceEqual(Convert.FromHexString("055101010100")) && pointed.SkillLevel(11010000) == 2,
+      "SkillLevelUp_RQ 0x383f: 0x3656 then 0x3840, 0x3813 and 0x5105 laid out as recorded (level 2 for one point; 0x5105 carries the 1 point spent)");
 Check((await pointed.HandleAsync(new PacketWriter().U16(0x383f).I32(99999999).ToArray(), Now))[0].AsSpan(2, 2).SequenceEqual(BitConverter.GetBytes((ushort)GameSession.SkillAcquireNotFoundData))
       && (await game.HandleAsync(new PacketWriter().U16(0x383f).I32(11010000).ToArray(), Now))[0].AsSpan(2, 2).SequenceEqual(BitConverter.GetBytes((ushort)GameSession.SkillAcquireNotEnoughSkillPoint)),
       "an unknown skill is refused (EResult 6185 kSkill_Acquire_NotFoundData); without skill points, 6191 NotEnoughSkillPoint");
