@@ -49,6 +49,9 @@ sealed class MainForm : Form
     bool handingOver;
 
     readonly bool uninstall;
+    /// <summary>Discord Rich Presence (null while it is turned off); <see cref="playingSince"/> is set while the game runs.</summary>
+    DiscordPresence? presence;
+    DateTimeOffset? playingSince;
 
     public MainForm(LauncherSettings settings, bool uninstall = false, string? link = null)
     {
@@ -91,10 +94,25 @@ sealed class MainForm : Form
             // A kept session ("Keep me signed in") stays valid for the next start; otherwise the session ends here.
             if (workflow is not null && workflow.Account.SignedIn && !handingOver && workflow.Profile.Session() is null) Task.Run(() => workflow.Account.SignOutAsync()).Wait(TimeSpan.FromSeconds(3));
         };
-        Shown += async (_, _) => { Fit(); if (uninstall) ShowUninstall(); else await StartAsync(); };
+        FormClosed += (_, _) => { presence?.Dispose(); presence = null; };
+        Shown += async (_, _) => { Fit(); if (uninstall) ShowUninstall(); else { ShowPresence(); await StartAsync(); } };
     }
 
     int S(int pixels) => LogicalToDeviceUnits(pixels);
+
+    /// <summary>
+    /// Shows the server in use (and the game while it runs) in Discord, or nothing when the player turned it off. Never
+    /// waits: <see cref="DiscordPresence"/> sends it in the background and does nothing while Discord is not running.
+    /// </summary>
+    void ShowPresence()
+    {
+        if (!settings.DiscordRichPresence) { presence?.Dispose(); presence = null; return; }
+        presence ??= new DiscordPresence(settings.DiscordApplicationId);
+        // TODO(discord-character): the character being played (name, level, class for the class image). The server's
+        // GET /api/characters lists name and level but neither the class nor which character is in the world now; it needs
+        // a server endpoint for the account's current character (with its class name) before this can be filled in.
+        presence.Update(new PresenceState(workflow?.Config.Name, workflow?.Config.AccountUrl, playingSince, Character: null));
+    }
     string Title => workflow is null ? $"{Install.Name} {Install.Version}" : $"{workflow.Config.Name} {Install.Version}";
     /// <summary>The width page controls take: the page's current width (so they follow the window), at least a readable minimum.</summary>
     int ContentWidth => Math.Max(S(320), stack.ClientSize.Width - S(8));
@@ -298,6 +316,7 @@ sealed class MainForm : Form
             return;
         }
         Text = Title;
+        ShowPresence();
         rail.Invalidate();
         if (workflow.Profile.Session() is { } saved)
         {
@@ -498,6 +517,7 @@ sealed class MainForm : Form
                 settings.Save();
                 workflow = settings.Current is { } next ? new Workflow(next, settings) : null!;
                 Text = Title;
+        ShowPresence();
                 await ContinueAsync();
             });
     }
@@ -582,6 +602,7 @@ sealed class MainForm : Form
         settings.Save();
         if (workflow?.Profile != server) workflow = new Workflow(server, settings);
         Text = Title;
+        ShowPresence();
         rail.Invalidate();
         await ContinueAsync();
     }
@@ -779,7 +800,15 @@ sealed class MainForm : Form
             DescribeVersion();
         };
         var patchPaks = AddCheck("Apply client patch paks (z_A2Core_Patch-Windows_P) before launch", workflow.Settings.AllowClientPatchPaks);
-        patchPaks.Margin = new Padding(0, 0, 0, S(8));
+        patchPaks.Margin = new Padding(0, 0, 0, S(4));
+        var discord = AddCheck("Show the server and the game in Discord", workflow.Settings.DiscordRichPresence);
+        discord.Margin = new Padding(0, 0, 0, S(8));
+        discord.CheckedChanged += (_, _) =>
+        {
+            workflow.Settings.DiscordRichPresence = discord.Checked;
+            workflow.Settings.Save();
+            ShowPresence();
+        };
         var play = AddButton("Play", primary: true, null, wide: true);
         play.Height = S(56); play.Font = new Font("Segoe UI Semibold", 14F);
         AcceptButton = play;
@@ -810,9 +839,19 @@ sealed class MainForm : Form
                 using var game = await workflow.PlayAsync(found, s => SetStatus(s), ProgressReporter(), ct);
                 SetStatus("Playing. KiskLauncher waits here until the game closes.");
                 WindowState = FormWindowState.Minimized;
-                await game.WaitForExitAsync(CancellationToken.None);
-                // The client may hand over to child processes; wait for the whole copy to close.
-                while (Elevated.GameRunning(workflow.GameFolder ?? workflow.InstallFolder!)) await Task.Delay(2000, CancellationToken.None);
+                playingSince = DateTimeOffset.UtcNow;
+                ShowPresence();
+                try
+                {
+                    await game.WaitForExitAsync(CancellationToken.None);
+                    // The client may hand over to child processes; wait for the whole copy to close.
+                    while (Elevated.GameRunning(workflow.GameFolder ?? workflow.InstallFolder!)) await Task.Delay(2000, CancellationToken.None);
+                }
+                finally
+                {
+                    playingSince = null;
+                    ShowPresence();
+                }
                 WindowState = FormWindowState.Normal;
                 SetStatus("Game closed.");
             }, all);

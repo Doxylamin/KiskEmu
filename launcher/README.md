@@ -128,6 +128,25 @@ The server still runs 2.0.6.0 data and opcodes and has no client-version check, 
 start but fail or misbehave in-game. The server's settings `Aion:Launcher:ClientVersion` and `Aion:Launcher:AllowSteam`
 choose what it offers (`deploy/linux/README.md`).
 
+## Discord
+
+With Discord running on the same PC the launcher shows a Rich Presence (`Aion.Launcher.Core/DiscordPresence.cs`, a small
+client for Discord's local IPC pipe `\\.\pipe\discord-ipc-0..9`; no extra package). The logo (`kisklauncher`) is the large
+image; text and button come from the server in use, never from the launcher:
+
+- In the launcher: "In the launcher", the server's name.
+- Playing: "Playing on <server>", "In game", and the time since Play started the game; back to the launcher state when the
+  game's processes have closed.
+- A "Server website" button opening the server's account site (only an https address).
+
+Without Discord nothing fails: the launcher tries again every 30 seconds in the background. Closing the launcher clears
+the presence. The Play page's **Show the server and the game in Discord** box turns it off (`"DiscordRichPresence": false`
+in `launcher-settings.json`; on by default); `"DiscordApplicationId"` there uses another Discord application (with the
+same asset keys). The character being played (name, level and the class image: `assassin`, `chanter`, `cleric`,
+`elementalist`, `fighter`, `gladiator`, `ranger`, `sorcerer`, `templar`) is ready in the presence but not filled in yet:
+the server has no endpoint that names the account's current character and its class (`GET /api/characters` has name
+and level only).
+
 ## Third-party components
 
 SteamKit2 (LGPL-2.1, https://github.com/SteamRE/SteamKit) and QRCoder (MIT) are NuGet packages

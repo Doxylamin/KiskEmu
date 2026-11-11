@@ -79,6 +79,10 @@ sealed class LauncherSettings
     public string? SteamToken { get; set; }
     /// <summary>When true, copy z_A2Core_Patch-Windows_P.* from the client editor deploy folder before starting the game.</summary>
     public bool AllowClientPatchPaks { get; set; }
+    /// <summary>Show the server and the game in Discord (Rich Presence; on by default). Off: nothing is sent to Discord.</summary>
+    public bool DiscordRichPresence { get; set; } = true;
+    /// <summary>Another Discord application for the presence (its art needs the same asset keys); null: KiskLauncher's.</summary>
+    public string? DiscordApplicationId { get; set; }
 
     // Launchers before saved servers kept one server's sign-in and one game copy here (read once by Migrate).
     public string? InstallFolder { get; set; }
