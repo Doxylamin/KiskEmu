@@ -45,11 +45,12 @@ public static class PrivateFolder
         string full;
         try { full = Path.GetFullPath(path); }
         catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException) { return path; }
-        var parts = full.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        // The root (C:\, \\server\share\ or /) is kept whole: splitting it would drop the leading / of a Unix path.
+        var root = Path.GetPathRoot(full) ?? "";
+        var parts = full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         var at = Array.FindIndex(parts, p => p.Equals(LegacyName, StringComparison.OrdinalIgnoreCase));
-        if (at <= 0) return path;
-        var parent = string.Join(Path.DirectorySeparatorChar, parts[..at]);
-        if (parent.EndsWith(':')) parent += Path.DirectorySeparatorChar;
+        if (at < 0 || (at == 0 && root.Length == 0)) return path;
+        var parent = Path.Combine([root, .. parts[..at]]);
         var resolved = Resolve(parent);
         if (!Path.GetFileName(resolved).Equals(Name, StringComparison.OrdinalIgnoreCase)) return path;
         return Path.Combine([resolved, .. parts[(at + 1)..]]);
