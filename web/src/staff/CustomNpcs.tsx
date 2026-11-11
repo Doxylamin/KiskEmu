@@ -156,8 +156,8 @@ export function CustomNpcs({ call, active, isAdmin }: { call: Call; active: bool
     <main className="page">
       <header className="page-head">
         <div>
-          <h1>NPCs</h1>
-          <p className="muted">NPCs you place in the worlds, with their own names and dialogs.</p>
+          <h1>NPCs <span className="badge">Beta</span></h1>
+          <p className="muted">NPCs you place in the worlds. They look and are named like the official merchant you pick, and say their lines as notices.</p>
         </div>
         <div className="row">
           <Button size="sm" disabled={!list?.npcs.length} onClick={exportTexts}><Icon name="open" size={16} /> Export texts</Button>
@@ -270,7 +270,7 @@ export function CustomNpcs({ call, active, isAdmin }: { call: Call; active: bool
               <li>Each NPC looks like the official NPC you pick and stands where you place it, on every world, within a minute of saving.</li>
               <li>When a player talks to it, the first dialog whose conditions hold plays. Its actions run when the player finishes the last line.</li>
               <li>Flags belong to each character and this NPC: set one at the end of a dialog and give the next dialog that flag as a condition (or the first one “not flag”) to move the story on or pay a reward once.</li>
-              <li>Names and lines show in the game's own dialog once players have the patch pak: export the texts and build it with the client tool (see docs/CUSTOM_NPCS.md). Until then players see the official NPC and read the lines as notices, one per talk.</li>
+              <li>Players see the official merchant's look and name, and read the lines as notices, one per press of the interaction key. Custom names and the game's own dialog window would need a patch pak, which the game does not load (see docs/CUSTOM_NPCS.md).</li>
             </ul>
           </section>
         )}

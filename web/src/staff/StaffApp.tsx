@@ -59,7 +59,8 @@ const STORE_KEY = 'aion-staff-session';
 const readSaved = () => readSession(STORE_KEY);
 const writeSaved = (saved: SavedSession | null, remember = false) => writeSession(STORE_KEY, saved, remember);
 
-interface NavEntry { id: View; label: string; icon: string; permission?: string }
+/** beta: a feature still being tried out, marked in the nav. */
+interface NavEntry { id: View; label: string; icon: string; permission?: string; beta?: boolean }
 const NAV: { name: string; items: NavEntry[] }[] = [
   { name: 'Overview', items: [
     { id: 'dashboard', label: 'Dashboard', icon: 'overview', permission: 'viewDashboard' },
@@ -74,7 +75,7 @@ const NAV: { name: string; items: NavEntry[] }[] = [
     { id: 'broadcast', label: 'Announcements & events', icon: 'broadcast', permission: 'announce' },
     { id: 'rewards', label: 'Rewards', icon: 'gift', permission: 'rewardCharacters' },
     { id: 'shop', label: 'Shop', icon: 'shop', permission: 'viewShop' },
-    { id: 'npcs', label: 'NPCs', icon: 'pin', permission: 'viewCustomNpcs' },
+    { id: 'npcs', label: 'NPCs', icon: 'pin', permission: 'viewCustomNpcs', beta: true },
     { id: 'economy', label: 'Economy', icon: 'coins', permission: 'viewEconomy' },
   ] },
   { name: 'System', items: [
@@ -184,7 +185,7 @@ export function StaffApp() {
               <p className="nav-heading">{g.name}</p>
               {g.items.map(item => (
                 <a key={item.id} href={hashOf(item.id)} className="nav-item" aria-current={view === item.id ? 'page' : undefined}>
-                  <Icon name={item.icon} /> <span>{item.label}</span>
+                  <Icon name={item.icon} /> <span>{item.label}</span>{item.beta && <span className="badge">Beta</span>}
                 </a>
               ))}
             </div>
