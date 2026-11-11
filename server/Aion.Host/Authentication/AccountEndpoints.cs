@@ -134,6 +134,7 @@ public static class AccountEndpoints
             var account = await auth.AuthenticateAsync(Bearer(context), ct);
             return account is null ? Results.Unauthorized() : Results.Ok(await characters.ListAsync(account, ct));
         });
+        app.MapCharacterPageEndpoints();
         app.MapGet("/api/characters/{id:guid}", async (Guid id, HttpContext context, IAccountAuthentication auth, CharacterPersistenceService characters, CancellationToken ct) =>
         {
             var account = await auth.AuthenticateAsync(Bearer(context), ct);
@@ -149,6 +150,95 @@ public static class AccountEndpoints
             var ticket = await auth.IssueGameTicketAsync(Bearer(context), input.WorldId, ct);
             return ticket is null ? Results.Unauthorized() : Results.Ok(ticket);
         }).RequireRateLimiting("account-entry");
+    }
+
+    /// <summary>
+    /// The account site's character page: one of the signed-in account's own characters (another account's is 404, as a
+    /// missing one), with what its world server knows (stored and live) and, when that world does not answer, the realm's
+    /// character index and presence report.
+    /// </summary>
+    public static void MapCharacterPageEndpoints(this WebApplication app) =>
+        app.MapGet("/api/characters/{id:guid}/details", async (Guid id, HttpContext context, IAccountAuthentication auth, CharacterService characters,
+            IServiceProvider services, CancellationToken ct) =>
+        {
+            var account = await auth.AuthenticateAsync(Bearer(context), ct);
+            if (account is null) return Results.Unauthorized();
+            if (await characters.FindAsync(account, id, ct) is not { } summary) return Results.NotFound();
+            return Results.Ok(await CharacterPage(services, account, summary, ct));
+        });
+
+    /// <summary>
+    /// The character page for an owned character (the caller checked ownership): its world server's details on an auth
+    /// host with world servers, this host's own store otherwise, then the realm's presence report for what they lack.
+    /// </summary>
+    static async Task<object> CharacterPage(IServiceProvider services, Aion.Core.Accounts.VerifiedAccount account,
+        Aion.Core.Characters.CharacterSummary summary, CancellationToken ct)
+    {
+        CharacterDetails? details = null;
+        try
+        {
+            if (services.GetService<Aion.Host.Worlds.WorldLinks>() is { } links)
+            {
+                if (await links.RunningAsync(summary.WorldId, ct) is { } world)
+                    details = await links.CharacterAsync(world, account.AccountId, summary.CharacterId, ct);
+            }
+            else details = await CharacterDetailsReader.LocalAsync(services, account, summary.CharacterId, ct);
+        }
+        catch (System.Data.Common.DbException) { details = null; }
+        // A world's answer about another character than the one asked for is not used.
+        if (details is not null && details.CharacterId != summary.CharacterId) details = null;
+
+        CurrentlyPlaying? playing = null;
+        if (services.GetService<IAccountPresence>() is { } presence)
+        {
+            try
+            {
+                if (await presence.PlayingAsync(account.AccountId, ct) is { } now && now.Character.CharacterId == summary.CharacterId && now.WorldId == summary.WorldId)
+                    playing = now;
+            }
+            catch (System.Data.Common.DbException) { }
+        }
+
+        string? worldName = null;
+        if (services.GetService<Aion.Application.Gameplay.IWorldRegistry>() is { } registry)
+        {
+            try { worldName = (await registry.ListAsync(ct)).FirstOrDefault(w => w.WorldId == summary.WorldId)?.Name; }
+            catch (System.Data.Common.DbException) { }
+        }
+
+        var online = details?.Live == true || playing is not null;
+        var location = details?.Location;
+        // The world did not answer: the map its last presence report named (no position).
+        if (location is null && playing?.Character.MapId is { } reportedMap)
+            location = new CharacterLocation(reportedMap, Aion.World.MapNames.Of(reportedMap), null, null, null, null);
+        var lastPlayed = summary.LastPlayedUnixMs > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(summary.LastPlayedUnixMs) : (DateTimeOffset?)null;
+        if (details is not null && (details.LastLoginAt ?? details.LastLogoutAt) is not null)
+            lastPlayed = new[] { details.LastLoginAt, details.LastLogoutAt }.Max();
+        return new
+        {
+            characterId = summary.CharacterId,
+            name = details?.Name ?? summary.Name,
+            worldId = summary.WorldId,
+            worldName,
+            level = details?.Live == true ? details.Level : playing?.Character.Level ?? details?.Level ?? summary.Level,
+            race = details?.Race ?? summary.Race,
+            gender = details?.Gender,
+            className = details?.Live == true ? details.ClassName : playing?.Character.ClassName ?? details?.ClassName,
+            ascension = details?.Ascension,
+            experience = details?.Experience,
+            online,
+            inWorldSince = details?.Live == true ? details.InWorldSince : playing?.Since,
+            combatPower = details?.CombatPower,
+            highestCombatPower = details?.HighestCombatPower,
+            location,
+            // Live: where the character is now; else where it was last saved (or last reported).
+            locationLive = location is not null && online && (details?.Live == true || details?.Location is null),
+            legion = details?.Legion,
+            createdAt = details?.CreatedAt,
+            lastPlayedAt = lastPlayed,
+            // "world": the world server's own data; "index": the realm's character index only (the world did not answer).
+            source = details is null ? "index" : "world",
+        };
     }
 
     private static string Bearer(HttpContext context)

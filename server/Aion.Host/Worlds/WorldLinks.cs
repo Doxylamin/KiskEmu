@@ -77,6 +77,13 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
         }
     }
 
+    /// <summary>
+    /// An account's character as its world server keeps it, stored and live (/internal/world/character); null when the
+    /// world does not answer or the account does not own the character there. The realm checked ownership first.
+    /// </summary>
+    public Task<Authentication.CharacterDetails?> CharacterAsync(WorldRecord world, Guid account, Guid character, CancellationToken ct) =>
+        SendAsync<Authentication.CharacterDetails>(world, HttpMethod.Get, $"/internal/world/character?account={account:D}&character={character:D}", null, ct);
+
     public async Task<IReadOnlyList<WorldPresenceEntry>?> PresenceAsync(WorldRecord world, CancellationToken ct) =>
         await SendAsync<List<WorldPresenceEntry>>(world, HttpMethod.Get, "/internal/world/presence", null, ct);
 

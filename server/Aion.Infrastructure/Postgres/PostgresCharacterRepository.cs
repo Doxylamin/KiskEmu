@@ -33,12 +33,14 @@ public sealed partial class PostgresCharacterRepository(NpgsqlDataSource dataSou
     public async Task<CharacterSummary?> FindOwnedAsync(Guid accountId, Guid characterId, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand($"""
-            SELECT {SummaryColumns} FROM game.characters c JOIN auth.accounts a USING(account_id)
+            SELECT {SummaryColumns},c.race,{LastPlayedMs} FROM game.characters c JOIN auth.accounts a USING(account_id)
             WHERE c.account_id=$1 AND c.character_id=$2 AND a.disabled_at IS NULL
             """);
         Scope(command, accountId, characterId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? ReadSummary(reader) : null;
+        // Race and last played as the list has them (the account site's character page).
+        return await reader.ReadAsync(cancellationToken)
+            ? ReadSummary(reader) with { Race = reader.GetInt32(5), LastPlayedUnixMs = reader.GetInt64(6) } : null;
     }
 
     public async Task<CharacterState?> LoadOwnedAsync(Guid accountId, Guid characterId, CancellationToken cancellationToken)

@@ -52,6 +52,15 @@ level, race, times). Each world server sends the changes every 15 s (a full list
 the login port's character counts, the account page and chat find characters without opening a world
 database.
 
+The account site's character page (`GET /api/characters/{id}/details`, `#/characters/<id>`) is the one account
+view that needs more than the index. The realm checks that the signed-in account owns the character in the
+index (another account's character answers 404, like a missing one), then asks the character's world server
+(`GET /internal/world/character?account=&character=`, control token; the world checks ownership again in its
+own query): the stored row (class, experience, last saved map and position, legion) and, while the character
+is in that world, its live level, combat power, map and position. When the world does not answer, the page
+shows the index and the realm's presence report (`source: "index"`). Map names are region names
+(`Aion.World/MapNames.cs`, CANDIDATE, from the maps' teleport point names), not the client's localized names.
+
 ## The realm link
 
 `/internal/realm/*` on the auth host (the account site's port; plain loopback HTTP for managed worlds).
