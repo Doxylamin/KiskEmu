@@ -57,8 +57,14 @@ public sealed class FieldBossTimerTests
         Assert.Equal(85, timers.Definitions.Count);
         Assert.Equal(("boss", 1010, 2101120), (timers.ByCode[Dartan].Kind, timers.ByCode[Dartan].MapId, timers.ByCode[Dartan].NpcId));
         Assert.Equal("named", timers.ByCode[Neikel].Kind);
-        Assert.Equal((FieldBossTimers.BossMinMinutes, FieldBossTimers.BossMaxMinutes), timers.Range(Dartan));
-        Assert.Equal((FieldBossTimers.NamedMinMinutes, FieldBossTimers.NamedMaxMinutes), timers.Range(Neikel));
+        // Fixed waits fitted to the official captures (CANDIDATE), Altgard mirrored by index; the level-80 regions keep a range.
+        Assert.Equal((360, 360), timers.Range(Dartan));
+        Assert.Equal((180, 180), timers.Range(Neikel));
+        Assert.Equal((180, 180), timers.Range(101008));
+        Assert.Equal((180, 180), timers.Range(111008));
+        Assert.Equal((120, 120), timers.Range(101017));
+        var region = timers.Definitions.First(d => d.MapId == 1011);
+        Assert.Equal((FieldBossTimers.BossMinMinutes, FieldBossTimers.BossMaxMinutes), timers.Range(region.Code));
         var map = new SharedWorld(GameData.Embedded) { Clock = () => Now }.Map(1010);
         Assert.Equal(24, timers.Definitions.Count(d => d.MapId == 1010 && map.FieldBossTarget(d.Code) is not null));
     }
@@ -70,7 +76,7 @@ public sealed class FieldBossTimerTests
         var world = World(store, Now);
         var boss = Kill(world.Map(1010), Dartan, Now);
         var respawn = world.Map(1010).RespawnAt[boss.Key];
-        Assert.InRange(respawn, Now + FieldBossTimers.BossMinMinutes * Minute, Now + FieldBossTimers.BossMaxMinutes * Minute);
+        Assert.Equal(Now + 360 * Minute, respawn);
         await world.FieldBosses.FlushAsync();
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(Now), store.Rows[Dartan].KilledAt);
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(respawn), store.Rows[Dartan].RespawnAt);
@@ -160,9 +166,49 @@ public sealed class FieldBossTimerTests
         var respawn = restarted.FieldBosses.Killed(Neikel, Now + 2 * Minute);
         Assert.InRange(respawn, Now + 32 * Minute, Now + 47 * Minute);
         Assert.True(restarted.FieldBosses.SetRange(Neikel, null, null));
-        Assert.Equal((FieldBossTimers.NamedMinMinutes, FieldBossTimers.NamedMaxMinutes), restarted.FieldBosses.Range(Neikel));
+        Assert.Equal((180, 180), restarted.FieldBosses.Range(Neikel));
         await restarted.FieldBosses.FlushAsync();
         Assert.Null(store.Rows[Neikel].MinMinutes);
+    }
+
+    static long Utc(int year, int month, int day, int hour, int minute) => new DateTimeOffset(year, month, day, hour, minute, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+    [Fact]
+    public async Task Abyss_bosses_return_at_the_next_time_of_their_official_schedule()
+    {
+        // Now is Monday 2026-10-26 07:33:20 UTC.
+        var store = new MemoryStore();
+        var world = World(store, Now);
+        world.FieldBosses.TimeZone = TimeZoneInfo.Utc;
+        Assert.Equal(13, world.FieldBosses.Definitions.Count(d => d.Schedule is not null));
+        Assert.Equal("Sun, Fri 21:00", world.FieldBosses.ByCode[2003].Schedule!.Describe());
+        Assert.Equal("every 3 h from 01:00", world.FieldBosses.ByCode[2002].Schedule!.Describe());
+        Assert.Null(world.FieldBosses.ByCode[Dartan].Schedule);
+
+        // 2003 (Sun, Fri 21:00), killed on the Abyss map: back on Friday at 21:00, stored as such.
+        var map = world.Map(20);
+        var boss = Kill(map, 2003, Now);
+        Assert.Equal(Utc(2026, 10, 30, 21, 0), map.RespawnAt[boss.Key]);
+        Assert.Equal("Sun, Fri 21:00", world.FieldBosses.View(world.FieldBosses.ByCode[2003], map, GameData.Embedded, Now).Schedule);
+        await world.FieldBosses.FlushAsync();
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(Utc(2026, 10, 30, 21, 0)), store.Rows[2003].RespawnAt);
+
+        // Killed at its own time: the next one. Cycles: 2002 every 3 h from 01:00, 2001 every 12 h from 10:30.
+        Assert.Equal(Utc(2026, 11, 1, 21, 0), world.FieldBosses.Killed(2003, Utc(2026, 10, 30, 21, 0)));
+        Assert.Equal(Utc(2026, 10, 26, 10, 0), world.FieldBosses.Killed(2002, Now));
+        Assert.Equal(Utc(2026, 10, 26, 10, 30), world.FieldBosses.Killed(2001, Now));
+        Assert.Equal(Utc(2026, 10, 27, 1, 0), world.FieldBosses.Killed(2002, Utc(2026, 10, 26, 22, 0)));
+
+        // The schedule is in server local time: 2203 (Mon, Thu, Sat 21:30) at UTC+9 is 12:30 UTC that Monday.
+        world.FieldBosses.TimeZone = TimeZoneInfo.CreateCustomTimeZone("UTC+9", TimeSpan.FromHours(9), "UTC+9", "UTC+9");
+        Assert.Equal(Utc(2026, 10, 26, 12, 30), world.FieldBosses.Killed(2203, Now));
+
+        // A staff range replaces the schedule; reset brings it back.
+        world.FieldBosses.TimeZone = TimeZoneInfo.Utc;
+        Assert.True(world.FieldBosses.SetRange(2003, 60, 60));
+        Assert.Equal(Now + 60 * Minute, world.FieldBosses.Killed(2003, Now));
+        Assert.True(world.FieldBosses.SetRange(2003, null, null));
+        Assert.Equal(Utc(2026, 10, 26, 21, 0) + 4 * 24 * 60 * Minute, world.FieldBosses.Killed(2003, Now));
     }
 
     [Fact]

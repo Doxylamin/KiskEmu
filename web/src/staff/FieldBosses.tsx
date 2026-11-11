@@ -9,6 +9,7 @@ import type { FieldBoss, FieldBossList } from './types';
 
 const hours = (minutes: number) => `${Math.round(minutes / 6) / 10} h`;
 const range = (b: FieldBoss) => b.minMinutes === b.maxMinutes ? hours(b.minMinutes) : `${hours(b.minMinutes)} – ${hours(b.maxMinutes)}`;
+const defaultTimer = (b: FieldBoss) => b.schedule ? `the official schedule, ${b.schedule} (server time)` : `${hours(b.defaultMinMinutes)} – ${hours(b.defaultMaxMinutes)}`;
 
 function until(ms: number, now: number) {
   const s = Math.max(0, Math.round((ms - now) / 1000));
@@ -51,7 +52,7 @@ export function FieldBosses({ call, active, canRespawn, canEditTimers }: { call:
   });
   const editTimer = (b: FieldBoss) => setPrompt({
     title: `Respawn timer of ${npcName(b.name)}`, confirmLabel: 'Save',
-    body: `After each kill the boss returns after a random time in this range. Default: ${hours(b.defaultMinMinutes)} – ${hours(b.defaultMaxMinutes)}. The current wait is not changed.`,
+    body: `After each kill the boss returns after a random time in this range. Default: ${defaultTimer(b)}. The current wait is not changed.`,
     fields: [
       { name: 'min', label: 'Shortest (hours)', type: 'number', required: true, value: String(b.minMinutes / 60) },
       { name: 'max', label: 'Longest (hours)', type: 'number', required: true, value: String(b.maxMinutes / 60) },
@@ -61,7 +62,7 @@ export function FieldBosses({ call, active, canRespawn, canEditTimers }: { call:
   });
   const resetTimer = (b: FieldBoss) => setConfirm({
     title: `Reset the timer of ${npcName(b.name)}?`, confirmLabel: 'Reset',
-    body: `Back to the default range, ${hours(b.defaultMinMinutes)} – ${hours(b.defaultMaxMinutes)}, from its next kill on.`,
+    body: `Back to the default, ${defaultTimer(b)}, from its next kill on.`,
     onConfirm: () => act(`${b.code}/timer`, 'DELETE', `Timer of ${npcName(b.name)} reset.`),
   });
 
@@ -92,7 +93,11 @@ export function FieldBosses({ call, active, canRespawn, canEditTimers }: { call:
                   <td data-label="Next respawn" className="nowrap" title={b.respawnAt ? new Date(b.respawnAt).toLocaleString() : undefined}>
                     {b.status === 'dead' && b.respawnAt ? until(b.respawnAt, now) : b.status === 'due' ? 'when a player is on the map' : <span className="faint">–</span>}
                   </td>
-                  <td data-label="Timer" className="nowrap">{range(b)} {b.customTimer ? <Badge>custom</Badge> : <span className="faint small">default</span>}</td>
+                  <td data-label="Timer" className="nowrap">
+                    {b.customTimer ? <>{range(b)} <Badge>custom</Badge></>
+                      : b.schedule ? <>{b.schedule} <span className="faint small">official schedule</span></>
+                      : <>{range(b)} <span className="faint small">default</span></>}
+                  </td>
                   <td className="nowrap">
                     {canRespawn && b.status === 'dead' && <Button size="sm" onClick={() => respawn(b)}>Respawn now</Button>}{' '}
                     {canEditTimers && <Button size="sm" variant="ghost" onClick={() => editTimer(b)}>Timer…</Button>}{' '}
@@ -105,7 +110,7 @@ export function FieldBosses({ call, active, canRespawn, canEditTimers }: { call:
           </table>
         </div>
       </section>
-      <p className="faint small">Default timers are estimates (official servers draw a different wait after each kill); set your own per boss.</p>
+      <p className="faint small">The Abyss bosses follow their official schedule (server time). Verteron's waits are fitted to official captures, Altgard's mirror them, and the level-80 regions' ranges are estimates; set your own per boss.</p>
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
       <PromptDialog request={prompt} onClose={() => setPrompt(null)} />
     </main>
