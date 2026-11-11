@@ -1,8 +1,9 @@
 # Custom NPCs
 
-Staff can place NPCs of their own in the worlds. Each one looks like an official NPC, has its own name, and talks in the
-client's own lower-third dialog. The player continues each line with the interaction key, and the server can act when
-the dialog ends: give items or Kina, set a flag, show a notice, teleport.
+Staff can place NPCs of their own in the worlds. Each one looks like an official merchant and talks to the player: each
+press of the interaction key shows the next line as a centre-screen notice, and the server can act after the last line:
+give items or Kina, set a flag, show a notice, teleport. The NPC keeps the merchant's name; a custom name and the
+client's lower-third dialog would need a patch pak, which the supported client does not load ("In-game results").
 
 The pieces:
 
@@ -46,6 +47,10 @@ Ids: the NPC gets its own NpcData id from 2999000 to 2999999, above every offici
 
 ## Ship the names and lines (patch pak)
 
+> **The supported client does not load the pak (OBSERVED 2026-11-11).** Custom names and the lower-third dialog are
+> therefore not available. See "In-game results" below. The steps in this section stay for a client that accepts
+> extra paks.
+
 Without the pak, players see the official NPC the custom one looks like, with that NPC's name. Each talk then shows the
 next line as a centre-screen notice, "Name: line", in the client's language; actions still run after the last line.
 
@@ -75,20 +80,26 @@ To show the custom name and the real dialog:
 4. Rebuild the pak whenever names or lines change or an NPC is added; placements, conditions and actions need no new
    pak.
 
-## In-game check (still open)
+## In-game results
 
-The server side is covered by `tests/Aion.World.Tests/CustomNpcTests.cs`. The client side is CANDIDATE until it is tried
-in game:
+The server side is covered by `tests/Aion.World.Tests/CustomNpcTests.cs`. Tried on a test server with the supported
+client:
 
-- whether the client loads an unsigned extra pak with appended NpcData, NpcTalk and String rows;
-- whether `PlayNpcTalk` with the talk name, sent right after the interaction opens (0xe241), plays the lines as a
-  continue-style dialog;
-- when the client then sends 0xe242. It may close the interaction at once, within 15 ms, when it has no talk of its own
-  to play; the actions would then run while the lines still show.
+- **Interaction key** (OBSERVED 2026-11-10):
+  - On a quest NPC as the base (Guard Sylvar), the client sends nothing at all: no [F] without an open quest step.
+  - On a merchant base, [F] always works. An accepted interaction (0xe241 result 0) makes the client open the
+    merchant's shop window by itself.
+  - The server therefore refuses the interaction (0xe241 result 1) and shows the next line as a notice. That works: the
+    lines come one per [F], no shop opens, and the actions run after the last line.
+- **Patch pak** (OBSERVED 2026-11-11):
+  - A pak built by `custom-npcs` was put into the client's Paks folder of the launcher's private copy and the client
+    restarted.
+  - The pak also renamed the general merchant (`--rename-npc 2930643=...`). His name stayed the official one, with an
+    empty `.sig` and with no `.sig` at all.
+  - With `Aion:CustomNpcs:AssumePatchedClients=true`, NPC 2999000 did not show at all (the client does not know it).
+  - So the client does not load extra paks that are not signed by the publisher. Every official pak has a non-empty
+    `.sig` (532 bytes to 186 KB).
+- **Still untried**, as it needs a loaded pak: whether `PlayNpcTalk` with a custom talk name plays the lines as a
+  continue-style dialog, and when the client then sends 0xe242.
 
-Test steps:
-
-1. Build the pak from a test NPC.
-2. Start a private client copy with it.
-3. Set `Aion:CustomNpcs:AssumePatchedClients=true` on a test world.
-4. Talk to the NPC: check the name, the lines with continue, and the reward at the end.
+Keep `Aion:CustomNpcs:AssumePatchedClients` off: with it on, players see no custom NPC at all.

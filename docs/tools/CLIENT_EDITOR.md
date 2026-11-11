@@ -55,7 +55,7 @@ Modified **base** utoc/ucas/pak bytes **fail** quick/full checks — the editor 
 ### Game client (best-effort, not exhaustively reversed here)
 
 - IoStore containers ship with `.sig` sidecars; `tools/extract_iostore.py` notes signatures are **not** verified during extraction.
-- NCGuard / executable integrity beyond pak mounts was **not** fully reversed in this repo. Treat in-game rejection of unsigned patch paks as **possible** until validated on a live client (CANDIDATE: the custom NPC pak is the first one to check in game).
+- NCGuard / executable integrity beyond pak mounts was **not** fully reversed in this repo. OBSERVED 2026-11-11: the supported client does **not** load an extra pak without a publisher signature. An official NPC renamed by `kisk-client-tool custom-npcs --rename-npc` kept its name, with an empty `.sig` and with none (docs/CUSTOM_NPCS.md, "In-game results").
 - UE mount order loads later `pakchunk*` / `z_*` names after base chunks; a separate patch pak is the intended modding path (same as other UE titles).
 
 ## Headless tool (`kisk-client-tool`)
