@@ -9,6 +9,26 @@ namespace Aion.Launcher;
 /// <summary>The character being played, for the presence's small image and text (when the launcher knows it).</summary>
 public sealed record PresenceCharacter(string Name, int Level, string? ClassName);
 
+/// <summary>The server's GET /api/characters/current answer, as far as the Discord status uses it.</summary>
+public static class CurrentCharacter
+{
+    /// <summary>
+    /// The character to show: only when the account is in the game and lets others see it (showPlaying, default true when
+    /// the server leaves it out). Null for anything else, a malformed answer included.
+    /// </summary>
+    public static PresenceCharacter? Parse(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object) return null;
+        if (!root.TryGetProperty("inGame", out var inGame) || inGame.ValueKind != JsonValueKind.True) return null;
+        if (root.TryGetProperty("showPlaying", out var show) && show.ValueKind == JsonValueKind.False) return null;
+        if (!root.TryGetProperty("character", out var c) || c.ValueKind != JsonValueKind.Object) return null;
+        if (!c.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String || name.GetString() is not { Length: > 0 and <= 64 } text) return null;
+        var level = c.TryGetProperty("level", out var l) && l.ValueKind == JsonValueKind.Number && l.TryGetInt32(out var n) && n is > 0 and <= 1000 ? n : 0;
+        var className = c.TryGetProperty("className", out var k) && k.ValueKind == JsonValueKind.String && k.GetString() is { Length: > 0 and <= 32 } cls ? cls : null;
+        return new PresenceCharacter(text, level, className);
+    }
+}
+
 /// <summary>
 /// What the launcher shows in Discord: the server in use (its name and account site come from the saved server, never
 /// from the launcher itself), and while the game runs, since when and (when known) the character.

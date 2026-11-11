@@ -42,6 +42,7 @@ public sealed record LinkSession(string Token, Guid AccountId, int WorldId, Date
 public sealed record LinkToken(string Token);
 /// <summary>A game login's address for the realm's platform API (/clients/remember): the session token proves the account.</summary>
 public sealed record LinkClient(string Token, string Address);
+public sealed record LinkPlaying(string Token, PlayingCharacter? Character);
 public sealed record LinkIdentity(Guid AccountId, int WorldId);
 public sealed record LinkRealmState(MaintenanceState Maintenance, IReadOnlyList<Sanction> Sanctions, IReadOnlyList<ScheduledEvent> Events);
 public sealed record LinkTicket(Guid? Account, string? CharacterName, string Category, string Content);
@@ -111,6 +112,13 @@ public static class RealmLinkEndpoints
             if (!System.Net.IPAddress.TryParse(input.Address, out var address)) return Results.BadRequest(new { error = "invalid_address" });
             if (services.GetService<IPlatformSecondaryAuth>() is { } platform) await platform.RememberClientAsync(address, who.Account.AccountId, ct);
             return Results.NoContent();
+        });
+        // The character a game connection of this world plays (null: back in the lobby), about every minute while connected:
+        // the launcher's Discord status and the account page's "In game". Only for a session of this world.
+        link.MapPost("/sessions/playing", async (LinkPlaying input, HttpContext ctx, IWorldSessions sessions, CancellationToken ct) =>
+        {
+            if (await sessions.ValidateAsync(input.Token, ct) is not { } who || who.WorldId != World(ctx).WorldId) return Results.Unauthorized();
+            return await sessions.ReportPlayingAsync(input.Token, input.Character, ct) ? Results.NoContent() : Results.Unauthorized();
         });
         link.MapPost("/sessions/close", async (LinkToken input, HttpContext ctx, IWorldSessions sessions, CancellationToken ct) =>
         {
@@ -258,6 +266,8 @@ public sealed class RealmLinkClient
     /// <summary>False when the realm no longer knows the session (it was closed).</summary>
     public Task<bool> RememberClientAsync(string token, System.Net.IPAddress address, CancellationToken ct) =>
         Send<bool>(HttpMethod.Post, "clients/remember", new LinkClient(token, address.ToString()), ct, repeatable: true);
+    public Task<bool> ReportPlayingAsync(string token, PlayingCharacter? character, CancellationToken ct) =>
+        Send<bool>(HttpMethod.Post, "sessions/playing", new LinkPlaying(token, character), ct, repeatable: true);
     public Task<AccountSnapshot?> AuthenticateAsync(string token, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Post, "authenticate", new LinkToken(token), ct, repeatable: true);
     public Task<AccountSnapshot?> AccountAsync(Guid account, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Get, $"accounts/{account:D}", null, ct);
     public Task<LinkRealmState?> StateAsync(CancellationToken ct) => Send<LinkRealmState>(HttpMethod.Get, "state", null, ct);
@@ -448,6 +458,9 @@ public sealed class LinkedWorldSessions(RealmLinkClient link, AccountMirrorServi
         valid.TryRemove(token, out _);
         await link.CloseSessionAsync(token, ct);
     }
+
+    public Task<bool> ReportPlayingAsync(string token, PlayingCharacter? character, CancellationToken ct = default) =>
+        link.ReportPlayingAsync(token, character, ct);
 }
 
 /// <summary>

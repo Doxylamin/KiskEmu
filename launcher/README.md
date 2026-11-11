@@ -142,10 +142,14 @@ image; text and button come from the server in use, never from the launcher:
 Without Discord nothing fails: the launcher tries again every 30 seconds in the background. Closing the launcher clears
 the presence. The Play page's **Show the server and the game in Discord** box turns it off (`"DiscordRichPresence": false`
 in `launcher-settings.json`; on by default); `"DiscordApplicationId"` there uses another Discord application (with the
-same asset keys). The character being played (name, level and the class image: `assassin`, `chanter`, `cleric`,
-`elementalist`, `fighter`, `gladiator`, `ranger`, `sorcerer`, `templar`) is ready in the presence but not filled in yet:
-the server has no endpoint that names the account's current character and its class (`GET /api/characters` has name
-and level only).
+same asset keys).
+
+While the game runs, the launcher asks the server every 30 seconds which character the account plays
+(`GET /api/characters/current`, with the account session, so players behind one address each see their own) and shows
+"Naicha · Cleric · Lv 38" with the class image (`assassin`, `chanter`, `cleric`, `elementalist`, `fighter`, `gladiator`,
+`ranger`, `sorcerer`, `templar`). The world reports the character about once a minute, so a new character or level shows
+within about a minute and a half. Players who turn off **Show what I play** on the account page's Security tab get the
+server and "In game" only. A server without the endpoint leaves the character out.
 
 ## Third-party components
 

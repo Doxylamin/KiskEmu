@@ -306,6 +306,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     public int? MapId => InWorld ? worldMap : null;
     /// <summary>The selected stored character, when the account is authenticated.</summary>
     public Guid? CharacterId => selected?.Summary.CharacterId;
+    /// <summary>The selected stored character's race (1 Light, 2 Dark), else 0.</summary>
+    public int CharacterRace => selected?.Race ?? 0;
 
     static ushort Opcode(byte[] body) => body.Length >= 2 ? (ushort)(body[0] | body[1] << 8) : (ushort)0;
 

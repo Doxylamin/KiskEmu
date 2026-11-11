@@ -275,6 +275,19 @@ if (File.Exists(steam.AppInfoPath))
         Check(DiscordActivity.ButtonUrl(bad) is null && DiscordActivity.Build(new PresenceState("World", bad))["buttons"] is null, "no button for a non-https URL: " + bad);
     Check(DiscordActivity.ButtonUrl("https://example.org/account") == "https://example.org/account", "https URL kept for the button");
 
+    // GET /api/characters/current: the character only while in the game and when the account shows it.
+    static PresenceCharacter? Current(string json) { using var d = System.Text.Json.JsonDocument.Parse(json); return CurrentCharacter.Parse(d.RootElement); }
+    Check(Current("""{"inGame":true,"showPlaying":true,"worldId":1,"character":{"name":"Naicha","level":38,"className":"Cleric","race":1}}""")
+        == new PresenceCharacter("Naicha", 38, "Cleric"), "current character: name, level and class");
+    Check(Current("""{"inGame":true,"character":{"name":"Naicha","level":38,"className":null}}""") == new PresenceCharacter("Naicha", 38, null),
+        "current character: showPlaying left out counts as shown, no class kept as none");
+    Check(Current("""{"inGame":false,"showPlaying":true}""") is null, "current character: none while not in the game");
+    Check(Current("""{"inGame":true,"showPlaying":false,"character":{"name":"Naicha","level":38}}""") is null, "current character: hidden when the account opted out");
+    Check(Current("""{"inGame":true,"character":{"name":"","level":38}}""") is null && Current("[]") is null
+        && Current("""{"inGame":"yes","character":{"name":"N"}}""") is null, "current character: malformed answers show nothing");
+    Check(Current("""{"inGame":true,"character":{"name":"N","level":-4,"className":"Gladiator"}}""") == new PresenceCharacter("N", 0, "Gladiator"),
+        "current character: a level out of range is left out");
+
     // No Discord (no pipe of that name): nothing throws, nothing connects, closing is quick.
     var missing = new DiscordPresence(null, $"kisk-missing-{Guid.NewGuid():N}-");
     missing.Update(new PresenceState(config.Name, site));

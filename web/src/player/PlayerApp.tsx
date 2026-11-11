@@ -5,7 +5,7 @@ import { useWorldNames } from '../shared/worlds';
 import { QrCode } from '../shared/QrCode';
 import { pageTitle, siteIcon, useSiteName } from '../shared/site';
 import { api, ApiError } from '../shared/api';
-import { Button, Status, type StatusMessage } from '../shared/components';
+import { Badge, Button, Status, type StatusMessage } from '../shared/components';
 import { readSession, writeSession } from '../shared/session';
 import { useRoute } from '../shared/router';
 import { EmptyState, PageHeader, Section, SideNav, StatTile, formatDate, formatNumber } from '../shared/layout';
@@ -13,7 +13,9 @@ import { EmptyState, PageHeader, Section, SideNav, StatTile, formatDate, formatN
 const STORE_KEY = 'aion-account-session';
 
 interface Character { name: string; level: number; worldId: number }
-interface Me { accountId: string; username?: string; createdAt?: string; totpEnabled?: boolean; quna?: number | null }
+interface Me { accountId: string; username?: string; createdAt?: string; totpEnabled?: boolean; quna?: number | null; showPlaying?: boolean }
+/** GET /api/characters/current: the character the account plays right now (by its session, not its address). */
+interface Playing { inGame: boolean; showPlaying: boolean; worldId?: number; character?: { name: string; level: number; className: string | null } }
 interface Status { accountsConfigured: boolean; registrationOpen?: boolean; launcherAvailable?: boolean }
 interface MyTicket { id: number; createdAt: string; category: string; content: string; status: string; staffNote: string; handledAt: string | null }
 interface Session { token: string; username: string }
@@ -224,6 +226,7 @@ function Account({ session, status, onSignedOut }:
   const [me, setMe] = useState<Me | null>(null);
   const [characters, setCharacters] = useState<Character[] | null>(null);
   const [tickets, setTickets] = useState<MyTicket[]>([]);
+  const [playing, setPlaying] = useState<Playing | null>(null);
   const { token } = session;
 
   const loadMe = useCallback(() => api<Me>('/api/accounts/me', { token }).then(setMe).catch(error => {
@@ -235,6 +238,14 @@ function Account({ session, status, onSignedOut }:
     loadTickets();
     api<Character[]>('/api/characters', { token }).then(setCharacters).catch(() => setCharacters([]));
   }, [token, loadMe, loadTickets]);
+  // "In game" next to the character being played: asked again every minute (a world reports about that often).
+  useEffect(() => {
+    let live = true;
+    const load = () => api<Playing>('/api/characters/current', { token }).then(p => { if (live) setPlaying(p); }).catch(() => { if (live) setPlaying(null); });
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [token]);
   useEffect(() => { if (route[0] && !PAGES.includes(route[0] as Page)) navigate([], { replace: true }); }, [route, navigate]);
   const site = useSiteName();
   useEffect(() => {
@@ -253,17 +264,17 @@ function Account({ session, status, onSignedOut }:
     <div className="account-layout">
       <SideNav groups={groups} current={page} label="Account" />
       <main className="account-main">
-        {page === 'overview' && <Overview me={me} username={session.username} characters={characters} tickets={tickets} token={token} launcher={Boolean(status?.launcherAvailable)} />}
-        {page === 'characters' && <Characters characters={characters} />}
-        {page === 'security' && <Security token={token} onChanged={loadMe} onSignedOut={onSignedOut} />}
+        {page === 'overview' && <Overview me={me} username={session.username} characters={characters} playing={playing} tickets={tickets} token={token} launcher={Boolean(status?.launcherAvailable)} />}
+        {page === 'characters' && <Characters characters={characters} playing={playing} />}
+        {page === 'security' && <Security token={token} me={me} onChanged={loadMe} onSignedOut={onSignedOut} />}
         {page === 'support' && <Support token={token} characters={characters ?? []} tickets={tickets} onSent={loadTickets} />}
       </main>
     </div>
   );
 }
 
-function Overview({ me, username, characters, tickets, token, launcher }:
-  { me: Me | null; username: string; characters: Character[] | null; tickets: MyTicket[]; token: string; launcher: boolean }) {
+function Overview({ me, username, characters, playing, tickets, token, launcher }:
+  { me: Me | null; username: string; characters: Character[] | null; playing: Playing | null; tickets: MyTicket[]; token: string; launcher: boolean }) {
   const worlds = new Set((characters ?? []).map(c => c.worldId)).size;
   const answered = tickets.find(t => t.status !== 'open' && t.staffNote);
   return (
@@ -279,7 +290,7 @@ function Overview({ me, username, characters, tickets, token, launcher }:
         </div>
         <StatTile label="Characters" value={characters === null ? '—' : characters.length} note={characters?.length ? `On ${worlds} ${worlds === 1 ? 'world' : 'worlds'}` : 'Create one in the game.'} />
       </div>
-      <CharacterTable characters={characters} />
+      <CharacterTable characters={characters} playing={playing} />
       <Section title="Support" actions={<a className="btn btn-secondary" href="#/support">Open support</a>}>
         <p className="muted">{answered ? `The team answered your ticket #${answered.id}.` : 'Questions, bug reports and player reports go to the team from here.'}</p>
       </Section>
@@ -287,16 +298,17 @@ function Overview({ me, username, characters, tickets, token, launcher }:
   );
 }
 
-function Characters({ characters }: { characters: Character[] | null }) {
+function Characters({ characters, playing }: { characters: Character[] | null; playing: Playing | null }) {
   return (
     <>
       <PageHeader eyebrow="Account" title="Characters" sub="New characters are made in the game." />
-      <CharacterTable characters={characters} />
+      <CharacterTable characters={characters} playing={playing} />
     </>
   );
 }
 
-function CharacterTable({ characters }: { characters: Character[] | null }) {
+function CharacterTable({ characters, playing }: { characters: Character[] | null; playing: Playing | null }) {
+  const inGame = (c: Character) => Boolean(playing?.inGame && playing.worldId === c.worldId && playing.character?.name === c.name);
   const worldName = useWorldNames();
   const byWorld = new Map<number, Character[]>();
   for (const c of characters ?? []) byWorld.set(c.worldId, [...(byWorld.get(c.worldId) ?? []), c]);
@@ -310,7 +322,13 @@ function CharacterTable({ characters }: { characters: Character[] | null }) {
               {[...byWorld.entries()].sort(([a], [b]) => a - b).map(([world, list]) => (
                 <tbody key={world}>
                   <tr className="table-group"><th scope="rowgroup" colSpan={2}>{worldName(world)}</th></tr>
-                  {list.map(c => <tr key={c.name}><td className="strong">{c.name}</td><td className="num mono">{c.level}</td></tr>)}
+                  {list.map(c => (
+                    <tr key={c.name}>
+                      <td className="strong">{c.name}{inGame(c) && <> <Badge tone="ok">In game</Badge></>}</td>
+                      {/* The live level while playing (the list's is the last saved one). */}
+                      <td className="num mono">{inGame(c) ? playing?.character?.level ?? c.level : c.level}</td>
+                    </tr>
+                  ))}
                 </tbody>
               ))}
             </table>
@@ -353,12 +371,13 @@ function DownloadIcon() {
 
 /* ---------- Security ---------- */
 
-function Security({ token, onChanged, onSignedOut }:
-  { token: string; onChanged: () => void; onSignedOut: (text: string, kind?: StatusMessage['kind']) => void }) {
+function Security({ token, me, onChanged, onSignedOut }:
+  { token: string; me: Me | null; onChanged: () => void; onSignedOut: (text: string, kind?: StatusMessage['kind']) => void }) {
   return (
     <>
       <PageHeader eyebrow="Account" title="Security" />
       <TwoStep token={token} onChanged={onChanged} />
+      <ShowPlaying token={token} me={me} onChanged={onChanged} />
       <ChangePassword token={token} onSignedOut={onSignedOut} />
       <SignOutEverywhere token={token} onSignedOut={onSignedOut} />
     </>
@@ -487,6 +506,35 @@ function ChangePassword({ token, onSignedOut }: { token: string; onSignedOut: (t
         </div>
         <Status message={message} />
       </form>
+    </Section>
+  );
+}
+
+/** The show-playing opt-out: whether others see the character this account plays (KiskLauncher's Discord status names it). */
+function ShowPlaying({ token, me, onChanged }: { token: string; me: Me | null; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<StatusMessage | null>(null);
+  if (me?.showPlaying === undefined) return null;
+  async function change(show: boolean) {
+    setBusy(true); setMessage(null);
+    try {
+      await api('/api/accounts/me/preferences', { method: 'PUT', token, body: { showPlaying: show } });
+      onChanged();
+      setMessage({ text: show ? 'Others can see what you play.' : 'Others no longer see what you play.', kind: 'ok' });
+    } catch { setMessage({ text: 'The setting was not saved. Try again.', kind: 'error' }); }
+    finally { setBusy(false); }
+  }
+  return (
+    <Section>
+      <div className="stack-sm">
+        <h2 className="h-section">Show what I play</h2>
+        <p className="muted">While you are in the game, KiskLauncher's Discord status shows your character's name, class and level. Turn this off to show only the server. Your own account pages always show it to you.</p>
+        <label className="check">
+          <input type="checkbox" checked={me.showPlaying} disabled={busy} onChange={e => change(e.target.checked)} />
+          <span>Show my character when I'm in the game</span>
+        </label>
+        <Status message={message} />
+      </div>
     </Section>
   );
 }

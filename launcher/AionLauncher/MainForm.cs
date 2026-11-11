@@ -52,6 +52,8 @@ sealed class MainForm : Form
     /// <summary>Discord Rich Presence (null while it is turned off); <see cref="playingSince"/> is set while the game runs.</summary>
     DiscordPresence? presence;
     DateTimeOffset? playingSince;
+    /// <summary>The character played now (from the server while the game runs), for the Discord status; null when unknown.</summary>
+    PresenceCharacter? playingCharacter;
 
     public MainForm(LauncherSettings settings, bool uninstall = false, string? link = null)
     {
@@ -108,10 +110,31 @@ sealed class MainForm : Form
     {
         if (!settings.DiscordRichPresence) { presence?.Dispose(); presence = null; return; }
         presence ??= new DiscordPresence(settings.DiscordApplicationId);
-        // TODO(discord-character): the character being played (name, level, class for the class image). The server's
-        // GET /api/characters lists name and level but neither the class nor which character is in the world now; it needs
-        // a server endpoint for the account's current character (with its class name) before this can be filled in.
-        presence.Update(new PresenceState(workflow?.Config.Name, workflow?.Config.AccountUrl, playingSince, Character: null));
+        presence.Update(new PresenceState(workflow?.Config.Name, workflow?.Config.AccountUrl, playingSince,
+            playingSince is null ? null : playingCharacter));
+    }
+    /// <summary>
+    /// While the game runs: asks the server every 30 seconds which character this account plays (its session, not its
+    /// address) and updates the Discord status when it changes. Ends quietly on cancel; a failed ask keeps the last answer.
+    /// </summary>
+    async Task WatchCharacterAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                if (settings.DiscordRichPresence && workflow is { Account.SignedIn: true } current)
+                {
+                    PresenceCharacter? now;
+                    try { now = await current.Account.CurrentCharacterAsync(ct); }
+                    catch (AccountException) { now = playingCharacter; }
+                    catch (System.Text.Json.JsonException) { now = playingCharacter; }
+                    if (now != playingCharacter && !ct.IsCancellationRequested) { playingCharacter = now; ShowPresence(); }
+                }
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            }
+        }
+        catch (OperationCanceledException) { }
     }
     string Title => workflow is null ? $"{Install.Name} {Install.Version}" : $"{workflow.Config.Name} {Install.Version}";
     /// <summary>The width page controls take: the page's current width (so they follow the window), at least a readable minimum.</summary>
@@ -841,6 +864,8 @@ sealed class MainForm : Form
                 WindowState = FormWindowState.Minimized;
                 playingSince = DateTimeOffset.UtcNow;
                 ShowPresence();
+                using var watching = new CancellationTokenSource();
+                var watch = WatchCharacterAsync(watching.Token);
                 try
                 {
                     await game.WaitForExitAsync(CancellationToken.None);
@@ -849,7 +874,10 @@ sealed class MainForm : Form
                 }
                 finally
                 {
+                    watching.Cancel();
+                    await watch;
                     playingSince = null;
+                    playingCharacter = null;
                     ShowPresence();
                 }
                 WindowState = FormWindowState.Normal;

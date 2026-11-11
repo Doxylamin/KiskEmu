@@ -358,6 +358,8 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         Task? wake = null;
         var lastData = DateTimeOffset.UtcNow;
         string? present = null;
+        // What this connection plays, for the realm (Discord status, the account page): per world session, so per account.
+        PlayingReporter? playing = null;
         var unanswered = new HashSet<int>();
         var trace = Aion.World.WorldDebug.TraceDirectory is { Length: > 0 } traceDir ? new ClientTrace(traceDir) : null;
         var traceWrittenAt = Environment.TickCount64;
@@ -409,7 +411,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
                         if (header == 0x3613)
                         {
                             if (authenticated) { Logger.LogInformation("Native game closed: replay_rejected"); return; }
-                            session.Store = await AuthenticateAsync(plain, clientAddress, ct);
+                            (session.Store, playing) = await AuthenticateAsync(plain, clientAddress, ct);
                             if (session.Store is { } opened && turn is not null) session.Store = TurnStore.Wrap(opened, turn);
                             if (session.Store is null) { Logger.LogInformation("Native game closed: rejected"); return; }
                             if (services.GetService<IPlatformSecondaryAuth>() is { } platformAuth)
@@ -488,6 +490,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
                         if (present is not null) presence.Enter(present, session, session.Store?.AccountId);
                     }
                 }
+                playing?.Tick(session, now, ct);
                 pending ??= stream.ReadAsync(chunk, ct).AsTask();
                 wake ??= session.OutboxWaitAsync(ct);
                 var woken = await Task.WhenAny(pending, wake, Task.Delay(TickInterval, ct));
@@ -565,33 +568,34 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         catch (ObjectDisposedException) { }
     }
 
-    async Task<INativeCharacterStore?> AuthenticateAsync(byte[] plain, IPAddress? clientAddress, CancellationToken ct)
+    async Task<(INativeCharacterStore? Store, PlayingReporter? Playing)> AuthenticateAsync(byte[] plain, IPAddress? clientAddress, CancellationToken ct)
     {
         var sessions = services.GetService<IWorldSessions>();
-        if (sessions is null) return null;
+        if (sessions is null) return default;
         ClientIdentity identity;
         try { identity = ClientIdentity.Parse(plain, game: true); }
-        catch (ProtocolException) { return null; }
+        catch (ProtocolException) { return default; }
         var (wireAccount, grant) = identity.Session();
         var opened = await sessions.OpenAsync(identity.AuthnToken, wireAccount, grant, Options.WorldId, ct);
-        if (opened is null) return null;
+        if (opened is null) return default;
         // The login port (maybe another process) recorded the picked row's race for this world's lobby.
         if (opened.Race is { } race && services.GetService<WorldChoices>() is { } choices)
             choices.Pick(wireAccount.ToString(System.Globalization.CultureInfo.InvariantCulture), race);
         var who = await sessions.ValidateAsync(opened.Token, ct);
-        if (who is null) return null;
+        if (who is null) return default;
         if (services.GetService<Aion.Host.Authentication.ServerControl>() is { } control && await control.LoginBlockedAsync(who.Account.AccountId, ct) is { } blocked)
         {
             Logger.LogInformation("Native game login refused: {Reason}", blocked);
-            return null;
+            return default;
         }
         // A world server has no platform auth of its own: the realm keeps this address for the account (the platform API's
         // Quna balance, which the client's Quna counter shows, names the account by it). Without it the address the
         // launcher registered lapses 15 minutes after the launch and the counter shows 0.
         if (clientAddress is not null && services.GetService<IPlatformSecondaryAuth>() is null && services.GetService<Aion.Host.Realm.RealmLinkClient>() is { } realm)
             _ = KeepClientAddressAsync(realm, opened.Token, clientAddress, ct);
-        return new ServiceNativeCharacterStore(opened.Token, who, sessions, services.GetRequiredService<IWireCharacterRepository>(),
+        var store = new ServiceNativeCharacterStore(opened.Token, who, sessions, services.GetRequiredService<IWireCharacterRepository>(),
             services.GetRequiredService<IGameplayStore>(), services.GetRequiredService<CharacterPersistenceService>(),
             services.GetService<IQunaWallet>());
+        return (store, new PlayingReporter(sessions, opened.Token, Logger));
     }
 }

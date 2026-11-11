@@ -42,4 +42,24 @@ public sealed partial class PostgresAccountAuthentication : IWorldSessions
         await using var q=source.CreateCommand("DELETE FROM auth.world_sessions WHERE token_hash=$1");
         q.Parameters.AddWithValue(Hash(token)); await q.ExecuteNonQueryAsync(ct);
     }
+    public async Task<bool> ReportPlayingAsync(string token,PlayingCharacter? character,CancellationToken ct=default)
+    {
+        if(!ValidToken(token)) return false;
+        // playing_since starts when the character changes (SET reads the row's old values) and stays while it does not.
+        await using var q=source.CreateCommand("""
+            UPDATE auth.world_sessions SET
+              playing_since=CASE WHEN $2::uuid IS NULL THEN NULL WHEN character_id IS DISTINCT FROM $2::uuid OR playing_since IS NULL THEN now() ELSE playing_since END,
+              character_id=$2,character_name=$3,character_level=$4,character_class=$5,character_race=$6,map_id=$7,seen_at=now()
+            WHERE token_hash=$1 AND expires_at>now() RETURNING 1
+            """);
+        q.Parameters.AddWithValue(Hash(token));
+        q.Parameters.Add(new Npgsql.NpgsqlParameter{Value=(object?)character?.CharacterId??DBNull.Value,NpgsqlDbType=NpgsqlTypes.NpgsqlDbType.Uuid});
+        q.Parameters.Add(new Npgsql.NpgsqlParameter{Value=(object?)Clip(character?.Name,64)??DBNull.Value,NpgsqlDbType=NpgsqlTypes.NpgsqlDbType.Text});
+        q.Parameters.Add(new Npgsql.NpgsqlParameter{Value=character is null ? DBNull.Value : Math.Clamp(character.Level,0,1000),NpgsqlDbType=NpgsqlTypes.NpgsqlDbType.Integer});
+        q.Parameters.Add(new Npgsql.NpgsqlParameter{Value=(object?)Clip(character?.ClassName,32)??DBNull.Value,NpgsqlDbType=NpgsqlTypes.NpgsqlDbType.Text});
+        q.Parameters.Add(new Npgsql.NpgsqlParameter{Value=character is null ? DBNull.Value : (short)Math.Clamp(character.Race,short.MinValue,short.MaxValue),NpgsqlDbType=NpgsqlTypes.NpgsqlDbType.Smallint});
+        q.Parameters.Add(new Npgsql.NpgsqlParameter{Value=(object?)character?.MapId??DBNull.Value,NpgsqlDbType=NpgsqlTypes.NpgsqlDbType.Integer});
+        return await q.ExecuteScalarAsync(ct) is not null;
+    }
+    static string? Clip(string? text,int max)=>string.IsNullOrEmpty(text) ? null : text.Length<=max ? text : text[..max];
 }

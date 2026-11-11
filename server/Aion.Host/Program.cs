@@ -113,6 +113,8 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddSingleton<IAccountDirectory>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IPlatformSecondaryAuth>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddSingleton<IWorldSessions>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
+    // Who is in the game now and the account's show-playing preference (migration 103): /api/characters/current.
+    builder.Services.AddSingleton<IAccountPresence>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
     builder.Services.AddHostedService<AuthenticationCleanup>();
     // Staff tools: maintenance, sanctions, chat log, tickets, events, population, economy (migration 028).
     builder.Services.AddSingleton<IStaffTools, PostgresStaffTools>();
