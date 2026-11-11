@@ -57,4 +57,7 @@ public sealed partial class NpcAi
 
     /// <summary>Tests: the hate a monster holds against <paramref name="key"/>.</summary>
     internal long HateOf(Target target, int key) => brains.TryGetValue(target.Key, out var brain) ? brain.Hate.GetValueOrDefault(key) : 0;
+
+    /// <summary>The keys a monster holds hate against (everyone who damaged or taunted it since it last reset).</summary>
+    internal IReadOnlyList<int> HateKeys(Target target) => brains.TryGetValue(target.Key, out var brain) ? [.. brain.Hate.Keys] : [];
 }
