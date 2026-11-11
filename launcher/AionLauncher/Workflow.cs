@@ -87,13 +87,13 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
 
     /// <summary>
     /// The private copy's folder, on the same drive as its source so placing it is a hard link or a
-    /// move (no extra space): under %LOCALAPPDATA% on the system drive, else &lt;drive&gt;:\A2CorePrivate.
+    /// move (no extra space): under %LOCALAPPDATA% on the system drive, else &lt;drive&gt;:\KiskPrivate.
     /// The embedded build keeps the folder name launchers always used (AION2); another build gets its own.
     /// </summary>
     public string TargetFor(string source)
     {
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var root = ClientFiles.SameVolume(source, local) ? Path.Combine(local, "A2CorePrivate") : Path.Combine(Path.GetPathRoot(Path.GetFullPath(source))!, "A2CorePrivate");
+        var root = ClientFiles.SameVolume(source, local) ? PrivateFolder.Local : PrivateFolder.Resolve(Path.GetPathRoot(Path.GetFullPath(source))!);
         return Path.Combine(root, CopyName);
     }
 
@@ -123,7 +123,7 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
 
     /// <summary>
     /// Where the download goes: the folder of an interrupted download, else %LOCALAPPDATA% on the
-    /// system drive when it has room, else &lt;drive&gt;:\A2CorePrivate\AION2 on the fixed drive with the
+    /// system drive when it has room, else &lt;drive&gt;:\KiskPrivate\AION2 on the fixed drive with the
     /// most free space. Null when no drive has room.
     /// </summary>
     public string? DownloadFolder()
@@ -134,7 +134,7 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
         if (FreeBytes(local) > Build.TotalBytes + reserve) return local;
         var best = DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
             .OrderByDescending(d => d.AvailableFreeSpace).FirstOrDefault();
-        return best is not null && best.AvailableFreeSpace > Build.TotalBytes + reserve ? Path.Combine(best.RootDirectory.FullName, "A2CorePrivate", CopyName) : null;
+        return best is not null && best.AvailableFreeSpace > Build.TotalBytes + reserve ? Path.Combine(PrivateFolder.Resolve(best.RootDirectory.FullName), CopyName) : null;
     }
 
     /// <summary>
@@ -278,7 +278,7 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
         helper.Dispose();
         for (var i = 0; i < 30 && !HostsFile.HasBlock(await File.ReadAllTextAsync(HostsFile.SystemPath, ct)); i++) await Task.Delay(500, ct);
         if (!HostsFile.HasBlock(await File.ReadAllTextAsync(HostsFile.SystemPath, ct)))
-            throw new LauncherException("The hosts entries were not added (see elevated.log in %LOCALAPPDATA%\\A2CorePrivate).");
+            throw new LauncherException("The hosts entries were not added (see elevated.log in %LOCALAPPDATA%\\KiskPrivate).");
 
         if (!version.IsSteam) ClientPatchSupport.DeployIfEnabled(folder, settings.AllowClientPatchPaks);
         else if (settings.AllowClientPatchPaks) status("Client patch paks are not applied to the Steam copy (its files are never changed).");

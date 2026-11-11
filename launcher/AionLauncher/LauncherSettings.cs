@@ -50,14 +50,14 @@ sealed class ClientCopy
 }
 
 /// <summary>
-/// What the launcher remembers (%LOCALAPPDATA%\A2CorePrivate\launcher-settings.json): the saved servers, the private
+/// What the launcher remembers (%LOCALAPPDATA%\KiskPrivate\launcher-settings.json, <see cref="PrivateFolder"/>): the saved servers, the private
 /// game copies (one per client build, shared by every server on that build), and during a download the Steam sign-in
 /// (encrypted, to resume; removed when the game is installed). Settings of launchers before saved servers are moved into
 /// this layout once (<see cref="Migrate"/>).
 /// </summary>
 sealed class LauncherSettings
 {
-    public static string Folder { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "A2CorePrivate");
+    public static string Folder => PrivateFolder.Local;
     static string FilePath => Path.Combine(Folder, "launcher-settings.json");
     /// <summary>Build references downloaded from servers, by fingerprint.</summary>
     public static string BuildsFolder => Path.Combine(Folder, "builds");
@@ -77,7 +77,7 @@ sealed class LauncherSettings
     public string? SteamAccount { get; set; }
     /// <summary>Steam refresh token, DPAPI-protected (current Windows user), base64.</summary>
     public string? SteamToken { get; set; }
-    /// <summary>When true, copy z_A2Core_Patch-Windows_P.* from the client editor deploy folder before starting the game.</summary>
+    /// <summary>When true, copy z_KiskEmu_Patch-Windows_P.* from the client editor deploy folder before starting the game.</summary>
     public bool AllowClientPatchPaks { get; set; }
 
     // Launchers before saved servers kept one server's sign-in and one game copy here (read once by Migrate).
@@ -178,9 +178,29 @@ sealed class LauncherSettings
             // A saved server whose settings no longer pass the checks (edited by hand) is dropped rather than used.
             settings.Servers.RemoveAll(s => { try { s.Config.Validate(); return false; } catch (Exception e) when (e is InvalidDataException or NullReferenceException) { return true; } });
             settings.Copies = new Dictionary<string, ClientCopy>(settings.Copies, StringComparer.OrdinalIgnoreCase);
+            if (settings.MoveLegacyFolders()) settings.Save();
             return settings;
         }
         catch (JsonException) { return new(); }
+    }
+
+    /// <summary>
+    /// Game copies and an interrupted download stored under an old A2CorePrivate folder: their paths after that folder was
+    /// renamed to KiskPrivate (<see cref="PrivateFolder.Rebase"/>). A moved copy's firewall rules name the old program
+    /// paths, so they are set up again at the next Play (otherwise the rules would no longer hold the game in).
+    /// </summary>
+    public bool MoveLegacyFolders()
+    {
+        var changed = false;
+        foreach (var copy in Copies.Values)
+        {
+            if (PrivateFolder.Rebase(copy.Folder) is not { } moved || moved == copy.Folder) continue;
+            copy.Folder = moved;
+            copy.FirewallAddress = null;
+            changed = true;
+        }
+        if (PrivateFolder.Rebase(DownloadFolder) is { } download && download != DownloadFolder) { DownloadFolder = download; changed = true; }
+        return changed;
     }
 
     public void Save()

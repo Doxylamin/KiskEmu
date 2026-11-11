@@ -176,7 +176,7 @@ Check(kv.Object("libraryfolders")!.Object("1")!.String("path") == @"G:\SteamLibr
 var ini = GamePlatformIni.WithBootstrap("[/Script/Aion2.AionGamePlatformUserSettings]\r\nFunnelLogHistory=1\r\n\r\n[/Script/Aion2.AionGamePlatformSettings]\r\nOld=1\r\n", "http://1.2.3.4:8087/c/AB");
 Check(ini.Contains("FunnelLogHistory=1") && !ini.Contains("Old=1") && ini.Contains("ConfigurationServerUrl=\"http://1.2.3.4:8087/c/AB\""), "settings section replaced, others kept");
 Check(GamePlatformIni.WithBootstrap(ini, "http://1.2.3.4:8087/c/CD").Split("[/Script/Aion2.AionGamePlatformSettings]").Length == 2, "settings section appears once");
-Check(GamePlatformIni.PathFor(@"C:\L", "A2CorePrivate").Replace('\\', '/').EndsWith("AION2/Saved_A2CorePrivate/Config/Windows/GamePlatform.ini"), "private saved folder");
+Check(GamePlatformIni.PathFor(@"C:\L", "KiskPrivate").Replace('\\', '/').EndsWith("AION2/Saved_KiskPrivate/Config/Windows/GamePlatform.ini"), "private saved folder");
 
 // ---------- Hosts ----------
 var server = IPAddress.Parse("203.0.113.5");
@@ -196,6 +196,53 @@ Check(FirewallRules.BlockedRanges(IPAddress.Parse("10.0.0.1"))[0] == "0.0.0.0-10
 var commands = FirewallRules.Commands([@"C:\G\AION2.exe"], server).ToList();
 Check(commands.Count == 4 && commands[0].Contains("delete rule") && commands[1].Contains($"delete rule name=\"{FirewallRules.LegacyRuleName}\"")
     && commands[2].Contains("dir=out") && commands[3].Contains("dir=in") && commands[2].Contains("program=\"C:\\G\\AION2.exe\""), "firewall commands (legacy rule deleted too)");
+
+// ---------- The private folder: KiskPrivate, an old A2CorePrivate renamed in place ----------
+var privateRoot = Directory.CreateTempSubdirectory("kisk-private-checks");
+try
+{
+    var parent = privateRoot.FullName;
+    Check(PrivateFolder.Resolve(parent) == Path.Combine(parent, "KiskPrivate") && !Directory.Exists(Path.Combine(parent, "KiskPrivate")),
+        "private folder: KiskPrivate when neither exists (nothing created)");
+    var legacyCopy = Path.Combine(parent, "A2CorePrivate", "AION2");
+    Directory.CreateDirectory(Path.Combine(legacyCopy, "Aion2"));
+    File.WriteAllText(Path.Combine(legacyCopy, "Aion2", "game.txt"), "kept");
+    Check(PrivateFolder.Rebase(legacyCopy) == Path.Combine(parent, "KiskPrivate", "AION2")
+        && File.ReadAllText(Path.Combine(parent, "KiskPrivate", "AION2", "Aion2", "game.txt")) == "kept"
+        && !Directory.Exists(Path.Combine(parent, "A2CorePrivate")), "private folder: an old A2CorePrivate is renamed with its contents");
+    Check(PrivateFolder.Rebase(legacyCopy) == Path.Combine(parent, "KiskPrivate", "AION2"), "private folder: a stored old path follows the moved folder");
+    var elsewhere = Path.Combine(parent, "Games", "AION2");
+    Check(PrivateFolder.Rebase(elsewhere) == elsewhere && PrivateFolder.Rebase(null) is null && PrivateFolder.Rebase("") == "",
+        "private folder: other paths stay as they are");
+    // Both exist (an old launcher made the old one again): the new one is used and the old one is left alone.
+    Directory.CreateDirectory(Path.Combine(parent, "A2CorePrivate"));
+    Check(PrivateFolder.Resolve(parent) == Path.Combine(parent, "KiskPrivate") && Directory.Exists(Path.Combine(parent, "A2CorePrivate")),
+        "private folder: with both, KiskPrivate wins and the old one is not touched");
+    Check(PrivateFolder.Rebase(Path.Combine(parent, "A2CorePrivate", "AION2")) == Path.Combine(parent, "KiskPrivate", "AION2"),
+        "private folder: a path in the old folder points at the new one once that exists");
+    // The old folder in use (a file open without sharing): it stays, and the path is kept until the next start.
+    Directory.Delete(Path.Combine(parent, "KiskPrivate"), recursive: true);
+    var busy = Path.Combine(parent, "A2CorePrivate", "busy.bin");
+    using (var open = new FileStream(busy, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+    {
+        Check(PrivateFolder.Resolve(parent) == Path.Combine(parent, "A2CorePrivate") && PrivateFolder.Rebase(busy) == busy,
+            "private folder: in use, the old folder is used as it is");
+    }
+    Check(PrivateFolder.Resolve(parent) == Path.Combine(parent, "KiskPrivate") && File.Exists(Path.Combine(parent, "KiskPrivate", "busy.bin")),
+        "private folder: moved at the next try");
+
+    // The patch pak: KiskEmu's name; files under the old A2Core name leave the game copy.
+    var game = Path.Combine(parent, "game");
+    var paks = ClientPatchSupport.GamePaksFolder(game);
+    Directory.CreateDirectory(paks);
+    foreach (var ext in new[] { ".pak", ".sig" }) File.WriteAllText(Path.Combine(paks, ClientPatchSupport.LegacyPatchBaseName + ext), "old");
+    File.WriteAllText(Path.Combine(paks, "pakchunk0-Windows.pak"), "base");
+    ClientPatchSupport.DeployIfEnabled(game, enabled: false);
+    Check(ClientPatchSupport.PatchBaseName == "z_KiskEmu_Patch-Windows_P" && !File.Exists(Path.Combine(paks, ClientPatchSupport.LegacyPatchBaseName + ".pak"))
+        && !File.Exists(Path.Combine(paks, ClientPatchSupport.LegacyPatchBaseName + ".sig")) && File.Exists(Path.Combine(paks, "pakchunk0-Windows.pak")),
+        "patch pak: the old A2Core pak is removed, base paks stay");
+}
+finally { try { privateRoot.Delete(recursive: true); } catch (IOException) { } }
 
 // ---------- File checks and placement ----------
 var root = Directory.CreateTempSubdirectory("aion-launcher-checks");
@@ -238,9 +285,9 @@ var steam = new SteamInstall(steamRoot);
 if (File.Exists(steam.AppInfoPath))
 {
     var app = AppInfo.Read(File.ReadAllBytes(steam.AppInfoPath), SteamInstall.AppId);
-    var (executable, arguments) = AppInfo.LaunchArguments(app, "A2CorePrivate");
+    var (executable, arguments) = AppInfo.LaunchArguments(app, "KiskPrivate");
     Check(executable.Equals("AION2/Binaries/Win64/AION2.exe", StringComparison.OrdinalIgnoreCase), "real appinfo: launch executable");
-    Check(arguments.Contains("-saveddirsuffix=A2CorePrivate") && arguments.Any(a => a.StartsWith("-lp:")) && arguments.Contains("-steam"), "real appinfo: launch arguments with our suffix");
+    Check(arguments.Contains("-saveddirsuffix=KiskPrivate") && arguments.Any(a => a.StartsWith("-lp:")) && arguments.Contains("-steam"), "real appinfo: launch arguments with our suffix");
     Check(steam.Libraries().Count >= 1 && steam.FindApp() is { } found && Directory.Exists(found.Folder), "real Steam: libraries and AION2 install");
     Console.WriteLine("Real Steam cache parsed.");
 }

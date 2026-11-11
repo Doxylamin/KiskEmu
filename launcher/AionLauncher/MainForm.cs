@@ -778,7 +778,7 @@ sealed class MainForm : Form
             if (!workflow.Version.IsSteam && !workflow.Installed) { await NextAsync(); return; }
             DescribeVersion();
         };
-        var patchPaks = AddCheck("Apply client patch paks (z_A2Core_Patch-Windows_P) before launch", workflow.Settings.AllowClientPatchPaks);
+        var patchPaks = AddCheck("Apply client patch paks (z_KiskEmu_Patch-Windows_P) before launch", workflow.Settings.AllowClientPatchPaks);
         patchPaks.Margin = new Padding(0, 0, 0, S(8));
         var play = AddButton("Play", primary: true, null, wide: true);
         play.Height = S(56); play.Font = new Font("Segoe UI Semibold", 14F);

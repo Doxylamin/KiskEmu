@@ -4,7 +4,7 @@ using CUE4Parse.UE4.Versions;
 namespace AionClientEditor.Patch;
 
 /// <summary>
-/// Builds a late-mount patch pak (z_A2Core_Patch-Windows_P.pak) from edited on-disk bytes.
+/// Builds a late-mount patch pak (z_KiskEmu_Patch-Windows_P.pak) from edited on-disk bytes.
 /// Uses the client's pak layout (v11, encrypted index, uncompressed AES payloads), read back with CUE4Parse in tests.
 /// </summary>
 public static class PatchPakBuilder
@@ -37,7 +37,7 @@ public static class PatchPakBuilder
         // Mirror for the launcher's opt-in deploy step.
         var launcherDeploy = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "A2CorePrivate", "client-patches", "deploy");
+            "KiskPrivate", "client-patches", "deploy");
         Directory.CreateDirectory(launcherDeploy);
         File.Copy(pakPath, Path.Combine(launcherDeploy, PatchStorage.PakBaseName + ".pak"), overwrite: true);
         File.Copy(Path.Combine(gamePaksFolder, PatchStorage.PakBaseName + ".sig"),

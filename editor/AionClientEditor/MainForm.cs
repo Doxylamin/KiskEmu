@@ -321,7 +321,7 @@ sealed class MainForm : Form
         if (workspace is null) return;
         using var dialog = new FolderBrowserDialog
         {
-            Description = "Select the game's Content\\Paks folder to deploy z_A2Core_Patch-Windows_P.pak",
+            Description = "Select the game's Content\\Paks folder to deploy z_KiskEmu_Patch-Windows_P.pak",
             SelectedPath = AionClientSession.DefaultPaksFolder(),
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;

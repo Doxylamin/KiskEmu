@@ -6,7 +6,7 @@ sealed class EditorSettings
 {
     static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "A2CorePrivate",
+        "KiskPrivate",
         "client-editor-settings.json");
 
     public string? LastPaksFolder { get; set; }

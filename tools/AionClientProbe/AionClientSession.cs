@@ -55,7 +55,7 @@ public sealed class AionClientSession : IDisposable
     public static string DefaultPaksFolder()
     {
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(local, "A2CorePrivate", "AION2", "Aion2", "Content", "Paks");
+        return Path.Combine(local, "KiskPrivate", "AION2", "Aion2", "Content", "Paks");
     }
 
     public static string DefaultToolingRoot() =>

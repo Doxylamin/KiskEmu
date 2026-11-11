@@ -129,7 +129,7 @@ class DotnetPlatformHostTests(unittest.TestCase):
                          json.dumps({'authn_token': 'local-dev-token'}).encode())
         self.assertSession(self.request('GET', '/local-api-gate/sessions/v1.0/local-abc')[1])
         self.assertEqual(self.request('GET', '/local-api-gate/sessions/v1.0/0b4f6a3c-1d2e-4f50-8a9b-0c1d2e3f4a5b')[0], 200)
-        # A fresh saved folder has no stored session ID (the launcher's Saved_A2CorePrivate).
+        # A fresh saved folder has no stored session ID (the launcher's Saved_<server suffix>).
         status, body = self.request('GET', '/local-api-gate/sessions/v1.0/')
         self.assertEqual(status, 200)
         self.assertSession(body)

@@ -3,11 +3,11 @@ namespace AionClientEditor.Patch;
 public static class PatchStorage
 {
     public static string RootFolder =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "A2CorePrivate", "client-patches");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KiskPrivate", "client-patches");
 
     public static string ManifestPath => Path.Combine(RootFolder, "patch-project.json");
     public static string PayloadFolder => Path.Combine(RootFolder, "payloads");
-    public static string PakBaseName => "z_A2Core_Patch-Windows_P";
+    public static string PakBaseName => "z_KiskEmu_Patch-Windows_P";
 
     public static PatchProject LoadOrCreate() =>
         File.Exists(ManifestPath) ? PatchProject.Load(ManifestPath) : new PatchProject();

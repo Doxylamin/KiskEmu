@@ -370,7 +370,7 @@ public static partial class PlatformBootstrapEndpoints
     static readonly string[] Known = ["/MobileAppConfigSdk/app/key", "/MobileAppConfigSdk/app/policy", "/local-api-gate", "/local-login-web", "/local-login-api"];
 
     // Session lookup by a stored ID (a UUID, or the session this server issued) or with none: a fresh
-    // saved folder (the launcher's Saved_A2CorePrivate) asks GET .../sessions/v1.0/ (observed 2026-10-15).
+    // saved folder (the launcher's Saved_<server suffix>) asks GET .../sessions/v1.0/ (observed 2026-10-15).
     // The answer is the same placeholder session; identity comes from the launch code at authn_token.
     [GeneratedRegex(@"^/local-api-gate/sessions/v1\.0/(?:[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})?$")]
     private static partial Regex SessionPath();

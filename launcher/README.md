@@ -49,7 +49,7 @@ next one itself; the player only confirms and answers Windows prompts.
    and the manifest request code of depot 3393111 manifest 1699273097574069541 and fetches every
    chunk from Steam's content servers into the private folder (16 chunks in parallel, each checked
    against its SHA-1 id; a bad chunk is fetched again from another server). The folder is
-   `%LOCALAPPDATA%\A2CorePrivate\AION2` when the system drive has room, else `<drive>:\A2CorePrivate\AION2`
+   `%LOCALAPPDATA%\KiskPrivate\AION2` when the system drive has room, else `<drive>:\KiskPrivate\AION2`
    on the fixed drive with the most free space. Pausing or closing keeps the download: finished
    files are listed in `.download-state`, other existing chunks are kept when their SHA-1 matches,
    and the Steam refresh token is kept (DPAPI, current Windows user) so resuming needs no new scan;
@@ -103,7 +103,7 @@ the first server added. Its kept session is dropped: the launcher cannot tell wh
 - Each private client version names its build by fingerprint (SHA-256 over the quick-check files' `path\0size\0sha256\n`
   lines, `tools/launcher_build.py`). The embedded `supported-build.json` is used when it matches; another build's
   reference comes from `GET /api/launcher/builds/<fingerprint>`, is checked against the fingerprint (and that
-  every path stays inside the game folder) and cached under `%LOCALAPPDATA%\A2CorePrivate\builds`. The server
+  every path stays inside the game folder) and cached under `%LOCALAPPDATA%\KiskPrivate\builds`. The server
   sends only this checklist: the game files always come from the player's own Steam install or Steam account.
 - Game copies are per build and shared by every server on it (`AION2` for the build in `supported-build.json`,
   `AION2-<fingerprint>` otherwise). The firewall rules allow one server address; playing on a server with another address re-points
@@ -128,6 +128,16 @@ The server still runs 2.0.6.0 data and opcodes and has no client-version check, 
 start but fail or misbehave in-game. The server's settings `Aion:Launcher:ClientVersion` and `Aion:Launcher:AllowSteam`
 choose what it offers (`deploy/linux/README.md`).
 
+## The KiskPrivate folder
+
+Launchers before 0.6 kept everything in `A2CorePrivate`. At its first start KiskLauncher renames
+`%LOCALAPPDATA%\A2CorePrivate`, and `<drive>:\A2CorePrivate` of a game copy on another drive, to `KiskPrivate` in
+place: the same drive, so no copying, and the game copy's hard links to the Steam install stay. Saved game copies
+and an interrupted download follow the move, and a moved copy's firewall rules are set up again at the next Play
+(they name the game's programs by path). While the old folder is in use (the game or an older launcher running from
+it), it is used as it is and the move is tried at the next start. Client patch paks under the old name
+(`z_A2Core_Patch-Windows_P.*`) are removed from the game copy at Play.
+
 ## Third-party components
 
 SteamKit2 (LGPL-2.1, https://github.com/SteamRE/SteamKit) and QRCoder (MIT) are NuGet packages
@@ -139,7 +149,7 @@ used) download the same manifest.
 ```powershell
 dotnet run --project tests/Aion.Launcher.Checks
 dotnet publish launcher/AionLauncher -c Release -r win-x64 -o research/local/launcher-publish -p:DebugType=none
-echo 0.5.1 > "research/local/launcher-publish/KiskLauncher.exe.version"
+echo 0.6.0 > "research/local/launcher-publish/KiskLauncher.exe.version"
 scp "research/local/launcher-publish/KiskLauncher.exe" "research/local/launcher-publish/KiskLauncher.exe.version" root@<server>:/var/lib/aion/downloads/
 ```
 
