@@ -112,7 +112,8 @@ What install.sh does:
    `credentials.json`), applies migrations, imports the catalogue, installs starter profiles,
    class skills and the equipment rules (`tools/equipment_rules.py`). Later runs apply new migrations only.
 6. Writes `/etc/aion/aion.env` (`tools/server_env.py`; mode 640, contains database passwords).
-7. Installs and starts `aion-postgres.service` and `aion-host.service`.
+7. Installs and starts `aion-postgres.service` and `aion-host.service`, and enables `aion-backup.timer`
+   (daily verified backups, see "Backups").
 
 ## Dashboard icons and 3D preview
 
@@ -151,19 +152,79 @@ It backs up the databases (`/var/lib/aion/backups`, newest 10 kept: the realm's 
 with the options of the last install: rebuilds the host, applies new migrations, restarts.
 New server data (re-extracted terrain etc.): copy a new archive and run install.sh with `--data`.
 
-Restore a backup if an update goes wrong:
+If an update goes wrong, restore its `before-update-*` set (see "Restoring a backup" below).
+
+## Backups
+
+Besides the backup before every update, `aion-backup.timer` (installed and enabled by install.sh, on
+the auth host and on every world server) runs `aion-backup.service` daily at 04:30 (up to 15 minutes
+later; a run missed while the machine was off happens at the next boot). It runs as `aion`
+(`tools/postgres_dev.py scheduled-backup /var/lib/aion/backups`):
+
+1. dumps the realm database and every world database on the machine into a set
+   `scheduled-<YYYYmmdd-HHMMSS>.dump` plus `scheduled-<...>.world-<id>.dump`, in a hidden folder first;
+2. **verifies** every file by restoring it into a disposable database (`verify-backup`) and checking
+   that it has its migrations; only then does the set join the others;
+3. applies the retention to the `scheduled-*` sets: the newest set of each of the last
+   `AION_BACKUP_KEEP_DAILY` days (default 7) and the newest of each of the last
+   `AION_BACKUP_KEEP_WEEKLY` ISO weeks (default 4) are kept, the rest deleted. `before-update-*`
+   (newest 10, update.sh) and `before-restore-*` (never deleted; remove them by hand) are not touched.
+
+A failed run deletes only its own files, keeps every older set and leaves the unit failed. Settings go in
+`/etc/aion/local.env` (update.sh keeps that file); the timer reads them at the next run:
 
 ```bash
-sudo systemctl stop aion-host
-sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres /usr/lib/postgresql/*/bin/pg_restore --clean --if-exists -h 127.0.0.1 -p 55432 -U aion_admin -d aion /var/lib/aion/backups/<file>.dump
-# and each world database from its own file:
-sudo runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres /usr/lib/postgresql/*/bin/pg_restore --clean --if-exists -h 127.0.0.1 -p 55432 -U aion_admin -d aion_world_<id> /var/lib/aion/backups/<file>.world-<id>.dump
+AION_BACKUP_KEEP_DAILY=7
+AION_BACKUP_KEEP_WEEKLY=4
+AION_PG_TIMEOUT=7200   # large databases: seconds a dump or restore may take (default 1800, 0: no limit)
 ```
 
-A backup from before the split (one file) restores the old single database; the next update splits it
-again. Drop the world databases first (`DROP DATABASE aion_world_<id>`), or the split keeps them.
+Checking on it:
 
-(pg_restore asks for the aion_admin password from `/var/lib/aion/postgres/credentials.json`.)
+```bash
+systemctl list-timers aion-backup.timer             # last and next run
+systemctl status aion-backup                        # last run's result ("failed" when it did not verify)
+journalctl -u aion-backup -n 30                     # what each run backed up, verified and removed
+sudo cat /var/lib/aion/backups/last-scheduled.json  # the same as JSON: ok, files with sizes and counts, error
+sudo systemctl start aion-backup                    # a backup now (waits until it is verified)
+```
+
+Another time of day: `sudo systemctl edit aion-backup.timer` with `[Timer]`, `OnCalendar=` and then
+e.g. `OnCalendar=*-*-* 05:00:00`. The verification needs free database space about the size of the
+largest database for a moment. `/var/lib/aion/backups` stays on the same disk: copy sets elsewhere
+(e.g. rsync of the folder as root) for a backup that survives losing the machine.
+
+`AION_PG_TIMEOUT` (or `postgres_dev.py --timeout SECONDS`) is the limit of every long database
+operation: migrations, catalogue import, dumps, restores and their verification (quick queries keep
+their 3 minutes). In `/etc/aion/local.env` it applies to install.sh, update.sh, restore.sh and the timer
+alike; raise it when migrations or a backup of a large database time out.
+
+### Restoring a backup
+
+A set is restored as a whole: the realm and the world databases of the same moment, so accounts,
+the character index and the worlds' characters agree.
+
+```bash
+sudo ls -l /var/lib/aion/backups
+cd ~/aion
+sudo deploy/linux/restore.sh /var/lib/aion/backups/scheduled-<YYYYmmdd-HHMMSS>.dump
+```
+
+Name the set by its realm file, also on a world server (whose sets have only `.world-<id>.dump`
+files). restore.sh asks first (`--yes` skips the question), then:
+
+1. stops `aion-host` (every world on this host with it; players are disconnected);
+2. backs up the current databases to `before-restore-<time>.dump` (restore.sh that set to undo);
+3. verifies every file of the set in a disposable database, and only then drops and recreates each
+   database the set has a file for and restores it (`postgres_dev.py restore <set> --yes`; world
+   databases the set has no file for are left as they are and listed);
+4. applies the migrations of the installed code (`migrate` and `ensure-worlds`, on a world server
+   `create-world <id>`), so an older backup works with the current host;
+5. starts `aion-host`.
+
+A backup from before the split (one file) restores the old single database; the migrations then split
+it again, but keep world databases that already exist: drop those first (`DROP DATABASE
+aion_world_<id>`) when restoring such a backup.
 
 ## Getting the code onto the server
 
