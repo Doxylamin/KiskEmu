@@ -90,9 +90,29 @@ public sealed partial class Aion2DatFileEncryption
 
         public FDataTableHeader(GenericBufferReader Ar, ulong seed)
         {
+            var compressedKey = DeriveHeaderKey(seed, EHeaderType.CompressedDataTable);
+            if (_useHeaderPermutation && Ar.Length - Ar.Position >= 0x10)
+            {
+                // KiskEmu: versioned clients (2.0.11) shuffle a compressed table's four header fields like an L10N
+                // header (type, aligned, packed, raw in 2.0.11); a stream table keeps its layout under the new root.
+                var data = Ar.ReadArray<byte>(0x10);
+                FAion2DatFileArchive.DecryptData(data, compressedKey[..0x10]);
+                var (type, raw, packed, aligned) = ShuffledHeaderFields(data);
+                if (type == EEncryptionType.CompressedAES)
+                {
+                    EncryptionType = type;
+                    PackedSize = packed;
+                    AlignedSize = aligned;
+                    RawSize = raw;
+                    OutputSize = 0;
+                    return;
+                }
+
+                Ar.Position -= 0x10;
+            }
+
             var encodedPrefix = Ar.ReadArray<byte>(8);
             var compressedPrefix = encodedPrefix.AsSpan().ToArray();
-            var compressedKey = DeriveHeaderKey(seed, EHeaderType.CompressedDataTable);
             FAion2DatFileArchive.DecryptData(compressedPrefix, compressedKey);
 
             using var prefixAr = new GenericBufferReader(compressedPrefix);

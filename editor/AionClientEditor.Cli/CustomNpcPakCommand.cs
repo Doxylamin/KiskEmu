@@ -160,7 +160,8 @@ static class CustomNpcPakCommand
     {
         Aion2DatFileEncryption.Initialize(provider);
         var expected = Aion2DatFileEncryption.DecryptDataTable(raw, path);
-        var actual = ClientDatSerializer.SerializePlaintextTable(table, provider, ClientDatSerializer.UsesUnicodeNames(expected));
+        var actual = ClientDatSerializer.SerializePlaintextTable(table, provider, ClientDatSerializer.UsesUnicodeNames(expected),
+            ClientDatSerializer.UsesUnicodeIds(expected));
         if (!expected.AsSpan().SequenceEqual(actual))
             throw new InvalidOperationException($"{path}: re-serialized table differs from the client's ({FirstDifference(expected, actual)}, {SaveMismatch(outDir, path, expected, actual)}); refusing to patch it");
     }

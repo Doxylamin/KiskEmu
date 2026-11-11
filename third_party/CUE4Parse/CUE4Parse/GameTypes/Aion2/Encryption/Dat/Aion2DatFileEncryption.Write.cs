@@ -34,11 +34,20 @@ public sealed partial class Aion2DatFileEncryption
             throw new ParserException("L10N encryption key not found in manifest");
 
         var payload = EncryptCompressedPayload(plaintext, key, out var packedSize);
-        var header = new byte[0x10];
-        BinaryPrimitives.WriteInt32LittleEndian(header, packedSize);
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(4), (int)EEncryptionType.CompressedAES);
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(8), payload.Length);
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(12), plaintext.Length);
+        byte[] header;
+        if (_useHeaderPermutation)
+        {
+            // KiskEmu: a versioned client (2.0.11) reads the four fields in its shuffled order.
+            header = ShuffledHeaderBytes(EEncryptionType.CompressedAES, plaintext.Length, packedSize, payload.Length);
+        }
+        else
+        {
+            header = new byte[0x10];
+            BinaryPrimitives.WriteInt32LittleEndian(header, packedSize);
+            BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(4), (int)EEncryptionType.CompressedAES);
+            BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(8), payload.Length);
+            BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(12), plaintext.Length);
+        }
         FAion2DatFileArchive.DecryptData(header, DeriveHeaderKey(seed, EHeaderType.Localization));
 
         using var output = new MemoryStream();
@@ -96,6 +105,20 @@ public sealed partial class Aion2DatFileEncryption
     static byte[] EncryptCompressedDataTable(byte[] plaintext, ulong seed, FAesKey key)
     {
         var payload = EncryptCompressedPayload(plaintext, key, out var packedSize);
+        if (_useHeaderPermutation)
+        {
+            // KiskEmu: a versioned client (2.0.11) reads the four fields in its shuffled order, XORed with the first
+            // 16 bytes of the compressed header key.
+            var header = ShuffledHeaderBytes(EEncryptionType.CompressedAES, plaintext.Length, packedSize, payload.Length);
+            FAion2DatFileArchive.DecryptData(header, DeriveHeaderKey(seed, EHeaderType.CompressedDataTable)[..0x10]);
+            using var versioned = new MemoryStream();
+            using var versionedWriter = new BinaryWriter(versioned);
+            versionedWriter.Write(13);
+            versionedWriter.Write(header);
+            versionedWriter.Write(payload);
+            return versioned.ToArray();
+        }
+
         var prefix = new byte[8];
         BinaryPrimitives.WriteInt32LittleEndian(prefix, packedSize);
         BinaryPrimitives.WriteInt32LittleEndian(prefix.AsSpan(4), (int)EEncryptionType.CompressedAES);

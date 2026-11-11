@@ -13,20 +13,23 @@ namespace AionClientEditor.Serialization;
 
 public static class ClientDatSerializer
 {
-    public static byte[] SerializePlaintextTable(FAion2DataTableFile table, IFileProvider provider, bool unicodeNames = false)
+    public static byte[] SerializePlaintextTable(FAion2DataTableFile table, IFileProvider provider, bool unicodeNames = false,
+        bool? unicodeIds = null)
     {
         var mappings = provider.MappingsContainer?.MappingsForGame
             ?? throw new InvalidOperationException("Usmap mappings are required to serialize tables");
-        return SerializePlaintextTable(table, mappings, provider.Versions, unicodeNames);
+        return SerializePlaintextTable(table, mappings, provider.Versions, unicodeNames, unicodeIds);
     }
 
     public static byte[] SerializePlaintextTable(FAion2DataTableFile table, TypeMappings mappings, VersionContainer versions,
-        bool unicodeNames = false)
+        bool unicodeNames = false, bool? unicodeIds = null)
     {
         using var stream = new MemoryStream();
         using var writer = new FAion2DatFileWriter(stream, versions) { UnicodeNames = unicodeNames };
         writer.Write(table.Version);
-        writer.WriteName(string.Join(",", table.Ids));
+        var ids = string.Join(",", table.Ids);
+        if ((unicodeIds ?? unicodeNames) && ids.Length > 1) writer.WriteUnicodeAion2String(ids);
+        else writer.WriteAion2String(ids);
         if (table.Properties.Count != 1) throw new InvalidOperationException("Expected a single Data property");
         // FAion2DataTableFile reads the top-level row array without a struct tag (readtag: false).
         var data = table.Properties[0];
@@ -41,13 +44,29 @@ public static class ClientDatSerializer
             return SerializePlaintextTable(table, provider);
         Aion2DatFileEncryption.Initialize(provider);
         var original = Aion2DatFileEncryption.DecryptDataTable(originalOnDisk, virtualPath);
-        var plaintext = SerializePlaintextTable(table, provider, UsesUnicodeNames(original));
+        var plaintext = SerializePlaintextTable(table, provider, UsesUnicodeNames(original), UsesUnicodeIds(original));
         return Aion2DatFileEncryption.EncryptDataTable(plaintext, virtualPath);
     }
 
-    /// <summary>True when a plaintext table stores its id string (and so its names) as UTF-16 (negative length).</summary>
-    public static bool UsesUnicodeNames(byte[] plaintextTable) =>
+    /// <summary>True when a plaintext table stores its id string as UTF-16 (negative length).</summary>
+    public static bool UsesUnicodeIds(byte[] plaintextTable) =>
         plaintextTable.Length >= 8 && BitConverter.ToInt32(plaintextTable, 4) < 0;
+
+    /// <summary>
+    /// True when a plaintext table stores its names as UTF-16 (negative length). Clients before 2.0.11 stored the id string
+    /// the same way as the names; 2.0.11 keeps the id string single-byte while its names are UTF-16 (OBSERVED in NpcData
+    /// and String). After the id string come the row count and the first row: its name (tables keyed by name, String) or
+    /// its numeric id and then its name (NpcData), so either of the next two ints is a negative length.
+    /// </summary>
+    public static bool UsesUnicodeNames(byte[] plaintextTable)
+    {
+        if (plaintextTable.Length < 8) return false;
+        var idLength = BitConverter.ToInt32(plaintextTable, 4);
+        if (idLength < 0) return true;
+        var rows = 8L + idLength + 4;
+        bool Negative(long at) => at + 4 <= plaintextTable.Length && BitConverter.ToInt32(plaintextTable, (int) at) < 0;
+        return Negative(rows) || Negative(rows + 4);
+    }
 
     public static byte[] SerializePlaintextL10N(FAion2L10NFile file, VersionContainer versions)
     {
