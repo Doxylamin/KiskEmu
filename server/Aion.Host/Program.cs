@@ -22,6 +22,11 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddServerFileLog(builder.Configuration);
+// The staff dashboard's diagnostics card: recent warnings and errors, and the client requests left unanswered (memory only).
+var logCounter = new Aion.Host.Diagnostics.LogCounter();
+builder.Logging.AddProvider(logCounter);
+builder.Services.AddSingleton(logCounter);
+builder.Services.AddSingleton<Aion.Host.Diagnostics.UnansweredRequests>();
 // Auth host and world servers (as an authserver and its worldservers, sharing one database): with account logins the
 // host that runs the login port is the auth host (login, world list, account site, platform bootstrap, chat, staff
 // dashboard) and runs no world itself. Every world is a world server, a host in world role (Aion:Role=world) running one
@@ -431,6 +436,7 @@ if (worldProcess is not null)
     app.MapGameplayEndpoints(accounts: false);
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
+    Aion.Host.Diagnostics.DiagnosticsEndpoints.Map(app, "world").RequireRateLimiting("admin");
     app.MapGet("/health/live", () => Results.Ok(new { status = "alive" }));
     app.Run();
     return;
@@ -577,6 +583,7 @@ if (accountsReady)
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapTicketEndpoints(app);
+    Aion.Host.Diagnostics.DiagnosticsEndpoints.Map(app, "realm").RequireRateLimiting("admin");
     Aion.Host.Worlds.WorldEndpoints.MapWorldEndpoints(app);
     Aion.Host.Realm.RealmLinkEndpoints.Map(app);
     var bridgeSecret = builder.Configuration["Aion:BridgeSecret"];
