@@ -96,6 +96,8 @@ client:
     restarted.
   - The pak also renamed the general merchant (`--rename-npc 2930643=...`). His name stayed the official one, with an
     empty `.sig` and with no `.sig` at all.
+  - A pak with only that rename (no new rows), named `z_KiskEmu_Test-Windows_999_P.pak` so the engine ranks it above
+    the official `_0_P` paks, changed nothing either.
   - With `Aion:CustomNpcs:AssumePatchedClients=true`, NPC 2999000 did not show at all (the client does not know it).
   - So the client does not load extra paks that are not signed by the publisher. Every official pak has a non-empty
     `.sig` (532 bytes to 186 KB).
