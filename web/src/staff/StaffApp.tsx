@@ -1,5 +1,5 @@
 // Staff dashboard: the realm-wide Dashboard, accounts, the live map with the game's maps, characters, moderation,
-// announcements, rewards, the shop, custom NPCs, the economy, worlds, server health and the activity log, through the audited
+// announcements, rewards, the shop, custom NPCs, field bosses, the economy, worlds, server health and the activity log, through the audited
 // /api/admin endpoints. The server checks the rank on every request; this page only hides controls. Pages have hash
 // URLs (#/accounts/<id>) so a refresh or Back keeps them. "Keep me signed in" keeps the staff session in localStorage;
 // otherwise it lives in sessionStorage until the tab closes. The world picker chooses the world server the world tools
@@ -18,6 +18,7 @@ import { NewAccountDialog } from './NewAccount';
 import { Dashboard } from './Dashboard';
 import { Economy } from './Economy';
 import { Events } from './Events';
+import { FieldBosses } from './FieldBosses';
 import { Home } from './Home';
 import { Moderation } from './Moderation';
 import { Overview } from './Overview';
@@ -42,7 +43,7 @@ export type Call = <T>(path: string, options?: { method?: string; body?: unknown
 // The staff endpoints a world server answers for its own world: its live state and the data in its own database
 // (characters, inventories, GM commands, rewards, gameplay audit). Accounts, sanctions, tickets and the catalogue stay
 // the realm's (server/DATABASES.md).
-const WORLD_TOOLS = /^\/api\/admin\/(live|server|restart|maintenance|announce|economy|players\/|maps\/\d+\/monsters|characters|commands|rewards|audit|debug|shop\/orders)/;
+const WORLD_TOOLS = /^\/api\/admin\/(live|server|restart|maintenance|announce|economy|players\/|maps\/\d+\/monsters|field-bosses|characters|commands|rewards|audit|debug|shop\/orders)/;
 const WORLD_KEY = 'aion-staff-world';
 function withWorld(path: string, world: number | null): string {
   if (world === null || !WORLD_TOOLS.test(path)) return path;
@@ -51,9 +52,9 @@ function withWorld(path: string, world: number | null): string {
 function readWorld(): number | null {
   try { const v = Number(window.localStorage.getItem(WORLD_KEY)); return Number.isInteger(v) && v > 0 ? v : null; } catch { return null; }
 }
-type View = 'dashboard' | 'overview' | 'accounts' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'shop' | 'npcs' | 'economy' | 'activity' | 'worlds' | 'server' | 'staff';
+type View = 'dashboard' | 'overview' | 'bosses' | 'accounts' | 'characters' | 'moderation' | 'broadcast' | 'rewards' | 'shop' | 'npcs' | 'economy' | 'activity' | 'worlds' | 'server' | 'staff';
 /** The pages whose data is one world server's: the world picker shows on these. */
-const WORLD_VIEWS: View[] = ['overview', 'characters', 'broadcast', 'rewards', 'shop', 'economy', 'activity', 'server'];
+const WORLD_VIEWS: View[] = ['overview', 'bosses', 'characters', 'broadcast', 'rewards', 'shop', 'economy', 'activity', 'server'];
 
 const STORE_KEY = 'aion-staff-session';
 const readSaved = () => readSession(STORE_KEY);
@@ -76,6 +77,7 @@ const NAV: { name: string; items: NavEntry[] }[] = [
     { id: 'rewards', label: 'Rewards', icon: 'gift', permission: 'rewardCharacters' },
     { id: 'shop', label: 'Shop', icon: 'shop', permission: 'viewShop' },
     { id: 'npcs', label: 'NPCs', icon: 'pin', permission: 'viewCustomNpcs', beta: true },
+    { id: 'bosses', label: 'Field bosses', icon: 'shield', permission: 'viewMonsters' },
     { id: 'economy', label: 'Economy', icon: 'coins', permission: 'viewEconomy' },
   ] },
   { name: 'System', items: [
@@ -232,6 +234,7 @@ export function StaffApp() {
         {page('rewards', <Rewards call={call} isAdmin={allowed('rewardEveryone')} />)}
         {page('shop', <Shop call={call} active={view === 'shop'} isAdmin={allowed('editShop')} worldName={worldName} />)}
         {page('npcs', <CustomNpcs call={call} active={view === 'npcs'} isAdmin={allowed('editCustomNpcs')} />)}
+        {page('bosses', <FieldBosses call={call} active={view === 'bosses'} canRespawn={allowed('manageMonsters')} canEditTimers={allowed('editFieldBossTimers')} />)}
         {page('economy', <Economy call={call} active={view === 'economy'} onOpen={openCharacter} />)}
         {page('activity', <Activity call={call} active={view === 'activity'} onOpen={openCharacter} />)}
         {page('worlds', <Worlds call={call} active={view === 'worlds'} />)}

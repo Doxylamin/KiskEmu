@@ -164,6 +164,8 @@ else if (accountsReady)
     // Quna is the realm's account wallet (server/DATABASES.md): spent and refunded over the realm link; only the realm adds Quna.
     builder.Services.AddSingleton<IQunaWallet, Aion.Host.Realm.LinkedQunaWallet>();
     builder.Services.AddSingleton<IShopLedger>(provider => new PostgresShopLedger(provider.GetRequiredService<NpgsqlDataSource>()));
+    // Field boss respawn timers (migration 104): the world database keeps a dead boss dead across restarts.
+    builder.Services.AddSingleton<IFieldBossStore>(provider => new PostgresFieldBosses(provider.GetRequiredService<NpgsqlDataSource>()));
 }
 // Optional Lime chat API for the dev client (policy ChatServerURL), on its own loopback port.
 var chatPort = worldProcess is null ? builder.Configuration.GetValue<int?>("Aion:ChatPort") : null;
@@ -420,6 +422,8 @@ if (worldProcess is not null)
     Aion.World.GameSession.ConfigureCustomShop(app.Services.GetService<ICustomShopCatalog>());
     Aion.World.CustomNpcWorld.Configure(app.Services.GetService<ICustomNpcCatalog>(), app.Services.GetService<Aion.World.SharedWorld>(),
         builder.Configuration.GetValue<bool?>("Aion:CustomNpcs:AssumePatchedClients") ?? false, message => app.Logger.LogInformation("{Message}", message));
+    Aion.World.FieldBossWorld.Configure(app.Services.GetService<IFieldBossStore>(), app.Services.GetService<Aion.World.SharedWorld>(),
+        message => app.Logger.LogInformation("{Message}", message));
     Aion.Host.Worlds.WorldEndpoints.MapWorldProcessEndpoints(app, worldProcess, native.WorldId);
     // The staff dashboard's world tools (maintenance, announcements, players, live map, restart) for this world, reached
     // through the auth host (?world=…); every request still needs a staff sign-in.

@@ -30,6 +30,7 @@ public sealed partial class MapInstance
     public int RespawnAll(long now)
     {
         var count = 0;
+        RespawnFieldBosses(now);
         foreach (var t in Targets.Values)
             if (t.Dead && (t.Key < FirstStaffKey || RespawnAt.ContainsKey(t.Key)))
             {
@@ -49,7 +50,7 @@ public sealed partial class MapInstance
             if (!Targets.TryGetValue(key, out var t) || t.Dead || !t.Hostile || t.Key == Combat.TrainingDummyKey) continue;
             if ((t.Position.X - x) * (t.Position.X - x) + (t.Position.Y - y) * (t.Position.Y - y) > radius * radius) continue;
             t.Hp = 0;
-            RespawnAt[t.Key] = now + respawnMs;
+            RespawnAt[t.Key] = FieldBossKilled(t, now) ?? now + respawnMs;
             packets.Add(GamePackets.NpcHp(t.Key, 0));
             packets.Add(GamePackets.TargetUpdate(t.Key));
             packets.AddRange(Ai.Killed(t));

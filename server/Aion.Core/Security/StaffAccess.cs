@@ -23,12 +23,13 @@ public enum StaffPermission
     EditCharacters,       // character edits and item grants (POST /commands)
     RewardCharacters,     // rewards to one character
     ManageEvents,         // create and delete scheduled events
-    ManageMonsters,       // spawn, clear and respawn monsters
+    ManageMonsters,       // spawn, clear and respawn monsters (and field bosses)
     // Administrator: run the server.
     ManageStaff,          // roles, and sanctions or disabling of staff accounts
     ManageQuna,           // add or take Quna
     EditShop,             // edit custom shop goods
     EditCustomNpcs,       // create, change and remove custom NPCs
+    EditFieldBossTimers,  // the respawn range of each field boss
     ManageWorlds,         // add, change, start, stop, restart worlds and their tokens
     ManageServer,         // restart, maintenance, backups, debug switches
     ManageAccounts,       // new accounts, password and authenticator resets
