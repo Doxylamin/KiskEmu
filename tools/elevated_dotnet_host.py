@@ -38,6 +38,7 @@ class ElevatedHost:
 
 def start_elevated_host(dll, environment, directory):
     directory = Path(directory).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
     config = directory / 'dotnet-start.json'
     helper = Path(__file__).with_name('run_elevated_dotnet_host.ps1').resolve()
     settings = {k: v for k, v in environment.items()

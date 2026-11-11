@@ -9,13 +9,16 @@ distribution's PostgreSQL binaries (AION_PG_BIN, else the newest
 """
 import argparse
 import csv
+from datetime import datetime
 import glob
 import hashlib
 import json
 import locale
 import os
 from pathlib import Path
+import re
 import secrets
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +32,20 @@ WINDOWS = os.name == 'nt'
 # The realm database (accounts, staff tools, world registry); world databases are <realm>_world_<id>. AION_PG_REALM: a
 # disposable realm beside the real one (tools/check_multi_world.py; the host's world supervisor passes it on).
 REALM = os.environ.get('AION_PG_REALM') or 'aion'
+
+
+# AION_PG_TIMEOUT (or --timeout): the seconds a long operation may take (migrations, catalogue import, dumps, restores);
+# 0 means no limit. Large databases on slow disks need more than the default.
+LONG_TIMEOUT = 1800
+
+
+def long_timeout():
+    value = os.environ.get('AION_PG_TIMEOUT', '').strip()
+    if not value:
+        return LONG_TIMEOUT
+    if not value.isdigit():
+        raise ValueError(f'AION_PG_TIMEOUT must be a whole number of seconds (0: no limit), not {value!r}')
+    return int(value) or None
 
 
 def default_database():
@@ -95,9 +112,9 @@ def run(binary, args=(), *, text=None, role='aion_admin', database=None, check=T
     return result
 
 
-def sql(text, *, role='aion_admin', database=None, check=True):
+def sql(text, *, role='aion_admin', database=None, check=True, timeout=180):
     return run('psql', ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'], text=text,
-               role=role, database=database, check=check)
+               role=role, database=database, check=check, timeout=timeout)
 
 
 def setup(realm=True):
@@ -206,7 +223,7 @@ def migration_files(role, before=None, start=None):
 
 
 def migrate(database=None, role='realm', before=None, start=None):
-    sql(migration_script(migration_files(role, before, start)), database=database or REALM)
+    sql(migration_script(migration_files(role, before, start)), database=database or REALM, timeout=long_timeout())
 
 
 def database_exists(name):
@@ -243,7 +260,9 @@ def realm_worlds(managed_only=False):
 
 def create_database(name):
     sql(f'CREATE DATABASE {name} OWNER aion_owner;', database='postgres')
-    sql(f'REVOKE ALL ON DATABASE {name} FROM PUBLIC; GRANT CONNECT ON DATABASE {name} TO aion_app;', database=name)
+    # The realm is the account site's too (aion_auth; setup()).
+    roles = 'aion_app,aion_auth' if name == REALM else 'aion_app'
+    sql(f'REVOKE ALL ON DATABASE {name} FROM PUBLIC; GRANT CONNECT ON DATABASE {name} TO {roles};', database=name)
 
 
 # The split (migrations 092/093): one realm database (accounts, staff tools, world registry, character index) and one
@@ -297,9 +316,9 @@ def clone_world(world_id):
     create_database(name)
     with tempfile.TemporaryDirectory(dir=HOME) as scratch:
         dump = Path(scratch) / 'realm.dump'
-        run('pg_dump', ['-Fc', '-f', dump], timeout=1800)
-        run('pg_restore', ['--exit-on-error', '--dbname', name, dump], timeout=1800)
-    sql(PRUNE_WORLD.format(world=int(world_id)), database=name)
+        run('pg_dump', ['-Fc', '-f', dump], timeout=long_timeout())
+        run('pg_restore', ['--exit-on-error', '--dbname', name, dump], timeout=long_timeout())
+    sql(PRUNE_WORLD.format(world=int(world_id)), database=name, timeout=long_timeout())
     migrate(name, 'world')
     return name
 
@@ -467,7 +486,7 @@ def import_catalog(directory, database=None):
             stream.write(f"INSERT INTO catalog.{kind}(build_id,template_id,name,category,definition) SELECT {literal(build_id)},(document->>'id')::integer,document->>'name',document->>'category',document FROM incoming WHERE document->>'kind'='{kind}' ON CONFLICT DO NOTHING;\n")
         stream.write('COMMIT;\n')
     try:
-        run('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-f', path], database=database, timeout=1800)
+        run('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-f', path], database=database, timeout=long_timeout())
     finally:
         path.unlink(missing_ok=True)
     return {'build_id': build_id, 'counts': counts}
@@ -483,7 +502,7 @@ def backup(output):
         raise ValueError('Backup destination already exists')
     output.parent.mkdir(parents=True, exist_ok=True)
     for path, name in targets:
-        run('pg_dump', ['-Fc', '-f', path], database=name, timeout=1800)
+        run('pg_dump', ['-Fc', '-f', path], database=name, timeout=long_timeout())
     return [path for path, _ in targets]
 
 
@@ -493,13 +512,128 @@ def verify_backup(path):
     sql(f'CREATE DATABASE {name};', database='postgres')
     try:
         run('pg_restore', ['--no-owner', '--no-privileges', '--exit-on-error',
-                           '--dbname', name, Path(path).resolve()])
+                           '--dbname', name, Path(path).resolve()], timeout=long_timeout())
         return sql("SELECT 'items='||count(*) FROM catalog.items;"
                    "SELECT 'skills='||count(*) FROM catalog.skills;"
                    "SELECT 'migrations='||count(*) FROM public.schema_migrations;", database=name).stdout.strip()
     finally:
         # Name consists only of this fixed prefix and freshly generated hex.
         sql(f'DROP DATABASE {name};', database='postgres')
+
+
+def backup_set_files(path):
+    """(file, database) of one backup set: the realm's PATH (when it exists; a world-only machine writes none) and its
+    <stem>.world-<id><suffix> siblings."""
+    path = Path(path)
+    files = [(path, REALM)] if path.exists() else []
+    pattern = re.compile(re.escape(path.stem) + r'\.world-(\d+)' + re.escape(path.suffix) + '$')
+    for sibling in sorted(path.parent.glob(f'{glob.escape(path.stem)}.world-*{path.suffix}')):
+        match = pattern.match(sibling.name)
+        if match:
+            files.append((sibling, world_database(match.group(1))))
+    return files
+
+
+# Scheduled backups (deploy/linux/aion-backup.timer): scheduled-<YYYYmmdd-HHMMSS>.dump plus its world files.
+SCHEDULED = re.compile(r'^scheduled-(\d{8}-\d{6})(?:\.world-\d+)?\.dump$')
+STAMP = '%Y%m%d-%H%M%S'
+
+
+def scheduled_sets(directory):
+    """Time -> the files of each scheduled backup set in DIRECTORY (other backups, e.g. before-update-*, are not in it)."""
+    sets = {}
+    for path in Path(directory).glob('scheduled-*.dump'):
+        match = SCHEDULED.match(path.name)
+        if match:
+            sets.setdefault(datetime.strptime(match.group(1), STAMP), []).append(path)
+    return sets
+
+
+def retained(times, daily, weekly):
+    """The backup times kept: the newest of each of the last DAILY days that have a backup, and the newest of each of
+    the last WEEKLY ISO weeks that have one (a set can count for both)."""
+    keep = set()
+    for count, period in ((daily, lambda t: t.date()), (weekly, lambda t: tuple(t.isocalendar())[:2])):
+        newest = {}
+        for time in sorted(times, reverse=True):
+            newest.setdefault(period(time), time)
+        keep.update(sorted(newest.values(), reverse=True)[:count])
+    return keep
+
+
+def retention_setting(name, default):
+    value = os.environ.get(name, '').strip() or str(default)
+    if not value.isdigit():
+        raise ValueError(f'{name} must be a whole number, not {value!r}')
+    return int(value)
+
+
+def scheduled_backup(directory, daily, weekly, now=None):
+    """A backup set of every database here, each file restored into a disposable database (verify_backup) before it
+    counts; then the scheduled sets past the retention are deleted. The outcome goes to stdout (the journal) and to
+    DIRECTORY/last-scheduled.json. A failed run deletes only its own files and keeps every older set."""
+    if daily < 1 or weekly < 0:
+        raise ValueError('Keep at least one daily backup (and 0 or more weekly ones)')
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    now = now or datetime.now()
+    stamp = now.strftime(STAMP)
+    status = {'time': now.isoformat(timespec='seconds'), 'ok': False, 'files': [], 'removed': []}
+    # Dumped and verified apart, so a set beside the kept ones is always whole and restorable.
+    incoming = directory / f'.incoming-{stamp}'
+    for stale in directory.glob('.incoming-*'):
+        shutil.rmtree(stale, ignore_errors=True)
+    try:
+        files = backup(incoming / f'scheduled-{stamp}.dump')
+        if not files:
+            raise ValueError('No databases to back up')
+        for path in files:
+            counts = dict(line.split('=', 1) for line in verify_backup(path).split() if '=' in line)
+            if int(counts.get('migrations', 0)) < 1:
+                raise ValueError(f'{path.name} restored without migrations')
+            size = path.stat().st_size
+            status['files'].append({'name': path.name, 'bytes': size, 'verified': counts})
+            print(f'Backup verified: {path.name} ({size} bytes; ' + ', '.join(f'{k} {v}' for k, v in counts.items()) + ')')
+        for path in files:
+            os.replace(path, directory / path.name)
+        sets = scheduled_sets(directory)
+        keep = retained(sets, daily, weekly)
+        for time in sorted(set(sets) - keep):
+            for path in sets[time]:
+                path.unlink()
+                status['removed'].append(path.name)
+        status['ok'] = True
+        status['kept'] = sorted(t.strftime(STAMP) for t in keep)
+        print(f'Backup scheduled-{stamp}: {len(files)} file(s) verified; {len(keep)} set(s) kept'
+              f' (daily {daily}, weekly {weekly}); {len(status["removed"])} old file(s) removed')
+    except Exception as error:
+        status['error'] = str(error)
+        print(f'Backup scheduled-{stamp} FAILED: {error}', file=sys.stderr)
+        raise
+    finally:
+        shutil.rmtree(incoming, ignore_errors=True)
+        report = directory / 'last-scheduled.json.new'
+        report.write_text(json.dumps(status, indent=2), encoding='utf-8')
+        os.replace(report, directory / 'last-scheduled.json')
+    return status
+
+
+def restore(path):
+    """Replaces the realm and world databases with backup set PATH (the realm's file name; its .world-<id> files come
+    with it). Every file is verified in a disposable database before anything is dropped. World databases here that
+    the set has no file for stay as they are. The servers must be stopped (deploy/linux/restore.sh)."""
+    files = backup_set_files(path)
+    if not files:
+        raise ValueError(f'No backup files for {path}')
+    for file, _ in files:
+        verify_backup(file)
+    for file, name in files:
+        # Names come from REALM and world_database(), never from the file.
+        if database_exists(name):
+            sql(f'DROP DATABASE {name} WITH (FORCE);', database='postgres')
+        create_database(name)
+        run('pg_restore', ['--exit-on-error', '--dbname', name, Path(file).resolve()], database=name, timeout=long_timeout())
+    return files
 
 
 ROLES = ('gamemaster', 'moderator', 'admin')
@@ -518,6 +652,9 @@ def role_statement(username, role, revoke=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--timeout', type=int, metavar='SECONDS',
+                        help=f'limit of long operations: migrations, catalogue import, dumps, restores (default '
+                             f'AION_PG_TIMEOUT, else {LONG_TIMEOUT}; 0: no limit)')
     sub = parser.add_subparsers(dest='command', required=True)
     for command in ('start', 'stop', 'status', 'migrate'):
         sub.add_parser(command)
@@ -536,11 +673,24 @@ def main():
     backup_parser.add_argument('output', type=Path)
     verify = sub.add_parser('verify-backup')
     verify.add_argument('path', type=Path)
+    scheduled = sub.add_parser('scheduled-backup', help='a verified backup set into DIRECTORY, then the retention (aion-backup.timer)')
+    scheduled.add_argument('directory', type=Path)
+    scheduled.add_argument('--daily', type=int, help='days kept (default AION_BACKUP_KEEP_DAILY, else 7)')
+    scheduled.add_argument('--weekly', type=int, help='weeks kept (default AION_BACKUP_KEEP_WEEKLY, else 4)')
+    restore_parser = sub.add_parser('restore', help='replace the realm and world databases with a backup set (servers stopped)')
+    restore_parser.add_argument('path', type=Path, help="the set's realm file name (<name>.dump), also on a world-only machine")
+    restore_parser.add_argument('--yes', action='store_true', help='required: the current databases are replaced')
     staff = sub.add_parser('role', help='grant or revoke a gamemaster/moderator/admin role (operator only)')
     staff.add_argument('username')
     staff.add_argument('role', choices=ROLES)
     staff.add_argument('--revoke', action='store_true')
     args = parser.parse_args()
+    if args.timeout is not None:
+        if args.timeout < 0:
+            parser.error('--timeout must be 0 or more')
+        # Through the environment, so the seeding tools started from here get it too.
+        os.environ['AION_PG_TIMEOUT'] = str(args.timeout)
+    long_timeout()  # a bad AION_PG_TIMEOUT fails here, not halfway through
     if args.command == 'setup':
         setup(realm=not args.world_only)
         print(f'PostgreSQL configured at 127.0.0.1:{PORT}' + ('' if args.world_only else ', database aion; migrations applied.'))
@@ -572,6 +722,18 @@ def main():
             print('Backup saved:', path)
     elif args.command == 'verify-backup':
         print(verify_backup(args.path))
+    elif args.command == 'scheduled-backup':
+        daily = args.daily if args.daily is not None else retention_setting('AION_BACKUP_KEEP_DAILY', 7)
+        weekly = args.weekly if args.weekly is not None else retention_setting('AION_BACKUP_KEEP_WEEKLY', 4)
+        scheduled_backup(args.directory, daily, weekly)
+    elif args.command == 'restore':
+        if not args.yes:
+            raise SystemExit('restore replaces the databases; pass --yes (deploy/linux/restore.sh takes a backup first).')
+        restored = restore(args.path)
+        for file, name in restored:
+            print(f'Restored {name} from {file}')
+        for name in sorted(set(local_world_databases().values()) - {name for _, name in restored}):
+            print(f'Not in the backup, left as it was: {name}', file=sys.stderr)
     elif args.command == 'role':
         changed = sql(role_statement(args.username, args.role, args.revoke)).stdout.strip()
         exists = sql(f"SELECT count(*) FROM auth.accounts WHERE provider='local' AND subject={literal(args.username)};").stdout.strip()

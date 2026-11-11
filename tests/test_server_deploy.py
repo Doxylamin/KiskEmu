@@ -162,5 +162,37 @@ class PackServerDataTests(unittest.TestCase):
                                           'navmesh': source / 'navmesh', 'catalog': source / 'game-catalog-v2'})
 
 
+class BackupTimerTests(unittest.TestCase):
+    """deploy/linux: install.sh installs the daily backup timer; its unit runs a command postgres_dev.py has."""
+    LINUX = Path(__file__).resolve().parents[1] / 'deploy/linux'
+
+    def test_install_sets_up_the_timer_without_loosening_permissions(self):
+        install = (self.LINUX / 'install.sh').read_text(encoding='utf-8')
+        self.assertIn('install -d -o aion -g aion -m 750 $STATE/backups', install)
+        self.assertIn('deploy/linux/aion-backup.service" > /etc/systemd/system/aion-backup.service', install)
+        self.assertIn('/etc/systemd/system/aion-backup.timer', install)
+        self.assertIn('systemctl enable --now aion-backup.timer', install)
+        self.assertNotRegex(install, r'chmod [0-7]*[0-7][1-7] +\$STATE|chmod -R')
+
+    def test_units(self):
+        service = (self.LINUX / 'aion-backup.service').read_text(encoding='utf-8')
+        timer = (self.LINUX / 'aion-backup.timer').read_text(encoding='utf-8')
+        self.assertIn('User=aion', service)
+        self.assertIn('Type=oneshot', service)
+        self.assertIn('EnvironmentFile=-/etc/aion/local.env', service)
+        self.assertIn('ReadWritePaths=/var/lib/aion', service)
+        self.assertIn('AION_PG_BIN=@PG_BIN@', service)
+        self.assertRegex(service, r'ExecStart=/usr/bin/python3 /opt/aion/src/tools/postgres_dev.py scheduled-backup /var/lib/aion/backups\n')
+        self.assertIn('OnCalendar=', timer)
+        self.assertIn('Persistent=true', timer)
+        self.assertIn('WantedBy=timers.target', timer)
+
+    def test_restore_script_backs_up_first(self):
+        restore = (self.LINUX / 'restore.sh').read_text(encoding='utf-8')
+        self.assertLess(restore.index('systemctl stop aion-host'), restore.index('as_aion backup "$BEFORE"'))
+        self.assertLess(restore.index('as_aion backup "$BEFORE"'), restore.index('as_aion restore "$SET" --yes'))
+        self.assertLess(restore.index('as_aion restore'), restore.index('as_aion migrate'))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,13 @@
+# Daily verified database backup (aion-backup.service). Another time: systemctl edit aion-backup.timer
+# ([Timer] OnCalendar= then OnCalendar=*-*-* 05:00:00). Next run: systemctl list-timers aion-backup.timer
+[Unit]
+Description=Daily AION2 database backup
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=15min
+# A run missed while the machine was off happens at the next boot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

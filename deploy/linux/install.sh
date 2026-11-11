@@ -87,7 +87,9 @@ cp -r "$REPO/tools" "$REPO/database" $SRC/
 dotnet publish "$REPO/server/Aion.Host/Aion.Host.csproj" -c Release -o $HOST.new --nologo
 rm -rf $HOST && mv $HOST.new $HOST
 
-as_aion() { cd / && runuser -u aion -- env AION_PG_HOME="$AION_PG_HOME" AION_PG_BIN="$PG_BIN" "$@"; }
+# AION_PG_TIMEOUT (seconds for migrations, dumps and restores on large databases) from the environment or local.env.
+[[ -n "${AION_PG_TIMEOUT:-}" || ! -f $CONFIG/local.env ]] || AION_PG_TIMEOUT="$(sed -n 's/^AION_PG_TIMEOUT=//p' $CONFIG/local.env | tail -1 | tr -dc 0-9)"
+as_aion() { cd / && runuser -u aion -- env AION_PG_HOME="$AION_PG_HOME" AION_PG_BIN="$PG_BIN" ${AION_PG_TIMEOUT:+AION_PG_TIMEOUT="$AION_PG_TIMEOUT"} "$@"; }
 FIRST=0
 [[ -f $AION_PG_HOME/credentials.json ]] || FIRST=1
 systemctl stop aion-host 2>/dev/null || true
@@ -161,10 +163,15 @@ chown root:aion $CONFIG/aion.env.new && chmod 640 $CONFIG/aion.env.new && mv $CO
 
 sed "s#@PG_BIN@#$PG_BIN#" "$REPO/deploy/linux/aion-postgres.service" > /etc/systemd/system/aion-postgres.service
 cp "$REPO/deploy/linux/aion-host.service" /etc/systemd/system/aion-host.service
+# Daily verified backups into /var/lib/aion/backups (owned by aion, like the rest of /var/lib/aion).
+install -d -o aion -g aion -m 750 $STATE/backups
+sed "s#@PG_BIN@#$PG_BIN#" "$REPO/deploy/linux/aion-backup.service" > /etc/systemd/system/aion-backup.service
+cp "$REPO/deploy/linux/aion-backup.timer" /etc/systemd/system/aion-backup.timer
 systemctl daemon-reload
 systemctl enable --now aion-postgres
 systemctl enable aion-host
 systemctl restart aion-host
+systemctl enable --now aion-backup.timer
 
 if [[ -n "$WORLD" ]] && command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow "$GAME_PORT"/tcp

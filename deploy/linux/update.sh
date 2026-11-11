@@ -22,7 +22,10 @@ fi
 # database's dump plus one <name>.world-<id>.dump per world database on this machine (a world server has only those).
 install -d -o aion -g aion -m 750 /var/lib/aion/backups
 BACKUP=/var/lib/aion/backups/before-update-$(date +%Y%m%d-%H%M%S).dump
-(cd / && runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres \
+# AION_PG_TIMEOUT for large databases, from the environment or local.env (install.sh reads it the same way).
+[[ -n "${AION_PG_TIMEOUT:-}" || ! -f /etc/aion/local.env ]] || AION_PG_TIMEOUT="$(sed -n 's/^AION_PG_TIMEOUT=//p' /etc/aion/local.env | tail -1 | tr -dc 0-9)"
+export AION_PG_TIMEOUT="${AION_PG_TIMEOUT:-}"
+(cd / && runuser -u aion -- env AION_PG_HOME=/var/lib/aion/postgres ${AION_PG_TIMEOUT:+AION_PG_TIMEOUT="$AION_PG_TIMEOUT"} \
   AION_PG_BIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)" \
   python3 /opt/aion/src/tools/postgres_dev.py backup "$BACKUP")
 ls -1t /var/lib/aion/backups/before-update-*.dump 2>/dev/null | sed -E 's#\.world-[0-9]+\.dump$#.dump#' | awk '!seen[$0]++' | tail -n +11 |

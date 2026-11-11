@@ -242,6 +242,179 @@ class CommandLineTests(unittest.TestCase):
             called.assert_called_once_with(target)
 
 
+class TimeoutSettingTests(unittest.TestCase):
+    def test_long_timeout_from_the_environment(self):
+        from unittest import mock
+        import tools.postgres_dev as pg
+        for value, expected in (('', pg.LONG_TIMEOUT), ('7200', 7200), (' 60 ', 60), ('0', None)):
+            with mock.patch.dict(os.environ, {'AION_PG_TIMEOUT': value}):
+                self.assertEqual(pg.long_timeout(), expected)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(pg.long_timeout(), pg.LONG_TIMEOUT)
+        for bad in ('-5', '1h', '2.5'):
+            with mock.patch.dict(os.environ, {'AION_PG_TIMEOUT': bad}), self.assertRaisesRegex(ValueError, 'AION_PG_TIMEOUT'):
+                pg.long_timeout()
+
+    def test_long_operations_use_it_and_quick_queries_keep_theirs(self):
+        from unittest import mock
+        import tools.postgres_dev as pg
+        with mock.patch.dict(os.environ, {'AION_PG_TIMEOUT': '9000'}), mock.patch.object(pg, 'run') as run:
+            pg.migrate('aion_world_1204', 'world')
+            pg.sql('SELECT 1;')
+        self.assertEqual(run.call_args_list[0].kwargs['timeout'], 9000)
+        self.assertEqual(run.call_args_list[1].kwargs['timeout'], 180)
+        with mock.patch.dict(os.environ, {'AION_PG_TIMEOUT': '0'}), mock.patch.object(pg, 'run') as run, \
+             mock.patch.object(pg, 'database_exists', return_value=True), \
+             mock.patch.object(pg, 'local_world_databases', return_value={}), tempfile.TemporaryDirectory() as scratch:
+            pg.backup(Path(scratch) / 'out.dump')
+        self.assertIsNone(run.call_args.kwargs['timeout'])
+
+    def test_timeout_flag_sets_the_environment(self):
+        import sys
+        from unittest import mock
+        import tools.postgres_dev as pg
+        with mock.patch.dict(os.environ, {}), mock.patch.object(pg, 'verify_backup', return_value='ok') as verify, \
+             mock.patch.object(sys, 'argv', ['postgres_dev.py', '--timeout', '5400', 'verify-backup', 'x.dump']), \
+             mock.patch('builtins.print'):
+            pg.main()
+            self.assertEqual(os.environ['AION_PG_TIMEOUT'], '5400')
+            self.assertEqual(pg.long_timeout(), 5400)
+        verify.assert_called_once()
+
+
+class BackupRetentionTests(unittest.TestCase):
+    def test_keeps_the_newest_per_day_and_per_week(self):
+        from datetime import datetime, timedelta
+        from tools.postgres_dev import retained
+        # Daily at 04:30 for 60 days up to Wednesday 2026-11-11, plus a manual run that day.
+        last = datetime(2026, 11, 11, 4, 30)
+        times = [last - timedelta(days=d) for d in range(60)] + [datetime(2026, 11, 11, 12, 0)]
+        keep = retained(times, daily=7, weekly=4)
+        days = sorted({t.date() for t in keep}, reverse=True)
+        # 7 days (the manual run replaces that day's 04:30 one), and the Sundays closing the 3 weeks before this one.
+        self.assertIn(datetime(2026, 11, 11, 12, 0), keep)
+        self.assertNotIn(datetime(2026, 11, 11, 4, 30), keep)
+        self.assertEqual(days[:7], [(last - timedelta(days=d)).date() for d in range(7)])
+        self.assertEqual({t for t in keep if t.date() < days[6]},
+                         {datetime(2026, 11, 1, 4, 30), datetime(2026, 10, 25, 4, 30)})
+        self.assertEqual(len(keep), 9)
+        self.assertEqual(retained(times, daily=1, weekly=0), {datetime(2026, 11, 11, 12, 0)})
+        # The 60 days touch 10 ISO weeks; this week's newest is also a daily one, so 12 weeks keep 3 + 9.
+        self.assertEqual(len(retained(times, daily=3, weekly=12)), 3 + 9)
+        self.assertEqual(retained([], 7, 4), set())
+
+    def make_backup(self, directory, worlds=(1204, 1300), realm=True):
+        """A stand-in for backup(): the realm and world files of a set, in the folder it is asked for."""
+        def backup(output):
+            output.parent.mkdir(parents=True, exist_ok=True)
+            files = ([output] if realm else []) + [output.with_name(f'{output.stem}.world-{w}{output.suffix}') for w in worlds]
+            for path in files:
+                path.write_bytes(b'PGDMP')
+            return files
+        return backup
+
+    def test_scheduled_backup_verifies_moves_and_prunes(self):
+        from datetime import datetime
+        from unittest import mock
+        import json
+        import tools.postgres_dev as pg
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            for stamp in ('20261101-043000', '20261105-043000', '20261109-043000', '20261110-043000'):
+                for suffix in ('.dump', '.world-1204.dump'):
+                    (directory / f'scheduled-{stamp}{suffix}').write_bytes(b'old')
+            (directory / 'before-update-20261001-120000.dump').write_bytes(b'kept')
+            (directory / '.incoming-20261110-043000').mkdir()  # a crashed run
+            verified = []
+            with mock.patch.object(pg, 'backup', side_effect=self.make_backup(directory)), \
+                 mock.patch.object(pg, 'verify_backup', side_effect=lambda p: verified.append(p.name) or 'items=5\nskills=2\nmigrations=104'), \
+                 mock.patch('builtins.print'):
+                status = pg.scheduled_backup(directory, daily=2, weekly=1, now=datetime(2026, 11, 11, 4, 30))
+            names = sorted(p.name for p in directory.iterdir())
+            report = json.loads((directory / 'last-scheduled.json').read_text(encoding='utf-8'))
+        self.assertEqual(verified, ['scheduled-20261111-043000.dump', 'scheduled-20261111-043000.world-1204.dump',
+                                    'scheduled-20261111-043000.world-1300.dump'])
+        self.assertEqual(names, ['before-update-20261001-120000.dump', 'last-scheduled.json',
+                                 'scheduled-20261110-043000.dump', 'scheduled-20261110-043000.world-1204.dump',
+                                 'scheduled-20261111-043000.dump', 'scheduled-20261111-043000.world-1204.dump',
+                                 'scheduled-20261111-043000.world-1300.dump'])
+        self.assertTrue(status['ok'] and report['ok'])
+        self.assertEqual(report['kept'], ['20261110-043000', '20261111-043000'])
+        self.assertEqual(len(report['removed']), 6)
+        self.assertEqual(report['files'][0]['verified'], {'items': '5', 'skills': '2', 'migrations': '104'})
+
+    def test_a_failed_verification_keeps_the_older_sets(self):
+        from datetime import datetime
+        from unittest import mock
+        import contextlib
+        import io
+        import json
+        import tools.postgres_dev as pg
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            old = [directory / f'scheduled-2026100{d}-043000.dump' for d in range(1, 4)]
+            for path in old:
+                path.write_bytes(b'old')
+            with mock.patch.object(pg, 'backup', side_effect=self.make_backup(directory, realm=False)), \
+                 mock.patch.object(pg, 'verify_backup', side_effect=RuntimeError('pg_restore failed: broken')), \
+                 mock.patch('builtins.print'), self.assertRaisesRegex(RuntimeError, 'broken'):
+                pg.scheduled_backup(directory, daily=1, weekly=0, now=datetime(2026, 11, 11, 4, 30))
+            self.assertEqual(sorted(p.name for p in directory.iterdir()), ['last-scheduled.json'] + [p.name for p in old])
+            report = json.loads((directory / 'last-scheduled.json').read_text(encoding='utf-8'))
+            self.assertFalse(report['ok'])
+            self.assertIn('broken', report['error'])
+            # A dump without migrations does not count as verified either.
+            with mock.patch.object(pg, 'backup', side_effect=self.make_backup(directory)), \
+                 mock.patch.object(pg, 'verify_backup', return_value='items=0\nskills=0\nmigrations=0'), \
+                 mock.patch('builtins.print'), self.assertRaisesRegex(ValueError, 'without migrations'):
+                pg.scheduled_backup(directory, daily=1, weekly=0, now=datetime(2026, 11, 11, 4, 31))
+            self.assertEqual(len(list(directory.glob('scheduled-*'))), 3)
+        with self.assertRaises(ValueError):
+            pg.scheduled_backup(Path('unused'), daily=0, weekly=4)
+
+    def test_retention_settings_and_command(self):
+        import sys
+        from unittest import mock
+        import tools.postgres_dev as pg
+        with mock.patch.dict(os.environ, {'AION_BACKUP_KEEP_DAILY': '14', 'AION_BACKUP_KEEP_WEEKLY': ''}), \
+             mock.patch.object(pg, 'scheduled_backup') as called, \
+             mock.patch.object(sys, 'argv', ['postgres_dev.py', 'scheduled-backup', 'backups']):
+            pg.main()
+        called.assert_called_once_with(Path('backups'), 14, 4)
+        with mock.patch.dict(os.environ, {'AION_BACKUP_KEEP_DAILY': 'many'}), self.assertRaisesRegex(ValueError, 'KEEP_DAILY'):
+            pg.retention_setting('AION_BACKUP_KEEP_DAILY', 7)
+
+    def test_restore_takes_the_whole_set_and_needs_yes(self):
+        import sys
+        from unittest import mock
+        import tools.postgres_dev as pg
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            for name in ('set.dump', 'set.world-1204.dump', 'set.world-1300.dump', 'set.world-x.dump', 'other.world-9.dump'):
+                (directory / name).write_bytes(b'PGDMP')
+            self.assertEqual([(p.name, db) for p, db in pg.backup_set_files(directory / 'set.dump')],
+                             [('set.dump', 'aion'), ('set.world-1204.dump', 'aion_world_1204'), ('set.world-1300.dump', 'aion_world_1300')])
+            # A world server's set has no realm file.
+            self.assertEqual([db for _, db in pg.backup_set_files(directory / 'other.dump')], ['aion_world_9'])
+            self.assertEqual(pg.backup_set_files(directory / 'none.dump'), [])
+            calls = []
+            with mock.patch.object(pg, 'verify_backup', side_effect=lambda p: calls.append(('verify', p.name))), \
+                 mock.patch.object(pg, 'database_exists', return_value=True), \
+                 mock.patch.object(pg, 'sql', side_effect=lambda text, **_: calls.append(('sql', text))), \
+                 mock.patch.object(pg, 'run', side_effect=lambda binary, args, **_: calls.append((binary, args[-1].name))):
+                pg.restore(directory / 'set.dump')
+            # Every file is verified before the first database is dropped.
+            self.assertEqual([c[0] for c in calls[:3]], ['verify'] * 3)
+            self.assertIn('DROP DATABASE aion WITH (FORCE)', calls[3][1])
+            self.assertIn('GRANT CONNECT ON DATABASE aion TO aion_app,aion_auth', ' '.join(c[1] for c in calls if c[0] == 'sql'))
+            self.assertEqual([c[1] for c in calls if c[0] == 'pg_restore'], ['set.dump', 'set.world-1204.dump', 'set.world-1300.dump'])
+            with mock.patch.object(pg, 'restore') as restore, \
+                 mock.patch.object(sys, 'argv', ['postgres_dev.py', 'restore', str(directory / 'set.dump')]), \
+                 self.assertRaises(SystemExit):
+                pg.main()
+            restore.assert_not_called()
+
+
 class RoleStatementTests(unittest.TestCase):
     def test_role_statement_targets_one_local_account(self):
         grant = role_statement('staffuser', 'admin')
