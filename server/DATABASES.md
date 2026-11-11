@@ -8,7 +8,7 @@ own PostgreSQL, and no world can read another world's characters or the accounts
 | Database | Name | Holds | Used by |
 | --- | --- | --- | --- |
 | Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`), the account Quna wallets and their ledger (`game.quna_wallets`, `game.quna_ledger`); the catalogue (dashboard) | auth host |
-| World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests, shop purchases and limits, the purchase ledger `game.shop_orders`, memberships), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
+| World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests, shop purchases and limits, the purchase ledger `game.shop_orders`, memberships, field boss timers `game.field_bosses`), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
 
 ## Migrations
 

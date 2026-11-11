@@ -35,6 +35,7 @@
     <EmbeddedResource Include="../../tools/data/boxes.json" LogicalName="boxes.json" />
     <EmbeddedResource Include="../../tools/data/levels.json" LogicalName="levels.json" />
     <EmbeddedResource Include="../../tools/data/resurrect.json" LogicalName="resurrect.json" />
+    <EmbeddedResource Include="../../tools/data/field-bosses.json" LogicalName="field-bosses.json" />
     <EmbeddedResource Include="../../tools/data/loot.json" LogicalName="loot.json" />
     <EmbeddedResource Include="../../tools/data/shops.json" LogicalName="shops.json" />
     <EmbeddedResource Include="../../tools/data/platform_goods.json" LogicalName="platform_goods.json" />

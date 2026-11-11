@@ -95,6 +95,8 @@ export interface ServerHealth {
 /** GET /api/admin/audit. */
 export interface AuditEntry { id: number; at: string; action: string; characterId: string | null; characterName: string | null; actorName: string | null; details: string }
 
+ERRORS.invalid_timer = 'Give the shortest and longest wait in hours (the longest at least the shortest, at most 7 days).';
+ERRORS.world_only = 'Pick a world: this is answered by a world server.';
 ERRORS.not_online = 'That player is no longer in the world.';
 ERRORS.not_possible = 'The game could not do that right now.';
 ERRORS.invalid_announcement = 'Write a message of up to 200 characters.';
@@ -103,6 +105,12 @@ ERRORS.invalid_destination = 'Give a map ID (and optionally X, Y and Z).';
 ERRORS.invalid_restart = 'Choose between 0 and 120 minutes.';
 
 /** GET /api/admin/maps/{id}/monsters. */
+/** A field boss (GET /api/admin/field-bosses). Times are Unix ms; status "due": its time has come, it appears when a player is on the map. */
+export interface FieldBoss {
+  code: number; mapId: number; npcId: number; name: string; level: number; kind: 'named' | 'boss'; status: 'alive' | 'dead' | 'due'; mapLoaded: boolean;
+  killedAt: number | null; respawnAt: number | null; minMinutes: number; maxMinutes: number; defaultMinMinutes: number; defaultMaxMinutes: number; customTimer: boolean;
+}
+export interface FieldBossList { loaded: boolean; now: number; bosses: FieldBoss[] }
 export interface MonsterView { key: number; npcId: number; name: string; level: number; x: number; y: number; dead: boolean; hostile: boolean; staff: boolean; engaged: boolean }
 export interface NpcChoice { npcId: number; name: string; level: number; hostile: boolean }
 

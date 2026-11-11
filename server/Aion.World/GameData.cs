@@ -234,6 +234,14 @@ public sealed class GameData
 
     static readonly Lazy<ResurrectFile> resurrect = new(() => Load<ResurrectFile>("resurrect.json"));
 
+    sealed record FieldBossFile([property: JsonPropertyName("bosses")] int[][] Bosses);
+
+    static readonly Lazy<IReadOnlyList<(int Code, int MapId, int NpcId)>> fieldBosses = new(() =>
+        [.. Load<FieldBossFile>("field-bosses.json").Bosses.Where(b => b.Length >= 3).Select(b => (b[0], b[1], b[2]))]);
+
+    /// <summary>The client's WorldMapFieldNamed field bosses the server spawns: code, map, NpcData id (tools/field_bosses.py).</summary>
+    public IReadOnlyList<(int Code, int MapId, int NpcId)> FieldBosses => fieldBosses.Value;
+
     /// <summary>AFK auto-resurrection delay in seconds (Resurrect.dat / guidebooks: 900 s on global).</summary>
     public int AutoResurrectSec => Math.Max(1, resurrect.Value.AutoResurrectSec);
 

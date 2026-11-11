@@ -2032,7 +2032,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         {
             var due = respawnAt[key];
             if (!Targets.TryGetValue(key, out var target) || !target.Dead) continue;
-            if (!target.CorpseRemoved && now >= due - RespawnMs + CorpseMs)
+            // A field boss's corpse goes CorpseMs after its kill (its respawn is hours later).
+            if (!target.CorpseRemoved && now >= (worldPlayer?.Map?.FieldBossCorpseAt(key, now) ?? due - RespawnMs + CorpseMs))
             {
                 target.CorpseRemoved = true;
                 replies.Add(GamePackets.Death(target.Key));
@@ -2109,7 +2110,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         {
             if (victim.OwnerKey != 0) { replies.AddRange(fights.Killed(victim)); replies.AddRange(SummonDied(victim, now)); continue; }
             if (killer.OwnerKey == playerKey) { replies.AddRange(PlayerKilledNpc(victim, 0, killer.Key, now)); continue; }
-            respawnAt[victim.Key] = now + RespawnMs;
+            respawnAt[victim.Key] = worldPlayer?.Map?.FieldBossKilled(victim, now) ?? now + RespawnMs;
             replies.Add(GamePackets.TargetUpdate(victim.Key));
             replies.Add(GamePackets.Kill(victim.Key, 0, killer.Key, 0, "", npcCasterDataId: killer.NpcId));   // an NPC killer: server 0, its NPC code
             replies.AddRange(fights.Killed(victim));

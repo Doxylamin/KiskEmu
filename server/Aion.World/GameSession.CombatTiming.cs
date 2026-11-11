@@ -296,7 +296,7 @@ partial class GameSession
     List<byte[]> PlayerKilledNpc(Target target, int skillId, int killerKey, long now)
     {
         var replies = new List<byte[]>();
-        respawnAt[target.Key] = now + RespawnMs;
+        respawnAt[target.Key] = worldPlayer?.Map?.FieldBossKilled(target, now) ?? now + RespawnMs;
         killedNpcs.Add(target.NpcId);
         replies.AddRange(AchieveKill(target.NpcId));
         replies.AddRange(BossChallengeKilled(target, now));

@@ -27,6 +27,12 @@ public sealed class SharedWorld(GameData data)
     public GatherDailyLimiter GatherLimiter { get; } = new();
     public GameData Data => data;
 
+    /// <summary>Field boss respawn timers (stored in the world database by FieldBossWorld).</summary>
+    public FieldBossTimers FieldBosses { get; } = new(data);
+
+    /// <summary>Unix ms now (tests set their own clock).</summary>
+    public Func<long> Clock { get; set; } = () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
     /// <summary>The custom NPCs this host places (the realm's, refreshed by CustomNpcWorld).</summary>
     public CustomNpcDirectory CustomNpcs { get; } = new();
 
@@ -43,6 +49,7 @@ public sealed class SharedWorld(GameData data)
         {
             maps[key] = map = new MapInstance(mapId, Combat.MapTargets(data, mapId), new NpcAi(new Random(), data)) { Instance = instance };
             if (instance == 0) map.SyncCustomNpcs(CustomNpcs, data);
+            if (instance == 0) map.SyncFieldBosses(FieldBosses, Clock());
             if (instance != 0 && MapEventTables.Embedded.DungeonOfMap(mapId) is { } room)
                 Patch20261028.ScaleBossHp(map.Targets.Values, MapEventTables.Embedded.DungeonIdOfMap(mapId), room);
         }

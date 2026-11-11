@@ -30,7 +30,8 @@ public static partial class StaffToolsEndpoints
 
     const int KinaItemId = GameSession.KinaItemId;
 
-    public static void MapStaffToolsEndpoints(this WebApplication app)
+    /// <summary>/api/admin with the "admin" rate limit; a GameplayException answers 403 (forbidden) or 400 with its code.</summary>
+    public static RouteGroupBuilder AdminGroup(IEndpointRouteBuilder app)
     {
         var staff = app.MapGroup("/api/admin").RequireRateLimiting("admin");
         staff.AddEndpointFilter(async (context, next) =>
@@ -39,9 +40,16 @@ public static partial class StaffToolsEndpoints
             catch (GameplayException error)
             { return error.Code == "forbidden" ? Results.StatusCode(403) : Results.BadRequest(new { error = error.Code }); }
         });
+        return staff;
+    }
+
+    public static void MapStaffToolsEndpoints(this WebApplication app)
+    {
+        var staff = AdminGroup(app);
 
         MapShop(staff);
         MapCustomNpcs(staff);
+        MapFieldBosses(staff);
 
         // ---------- Moderation ----------
         staff.MapGet("/sanctions", async (bool? all, HttpContext ctx, IAccountAuthentication auth, IStaffTools tools, CancellationToken ct) =>
