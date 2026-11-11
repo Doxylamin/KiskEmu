@@ -8,6 +8,7 @@ public static class AccountEndpoints
 {
     private sealed record Credentials(string? Username, string? Password, bool? Remember = null);
     private sealed record TicketRequest(int WorldId);
+    private sealed record PreferencesInput(bool? ShowPlaying);
 
     /// <param name="registration">Self-registration on the account page (Aion:Accounts:Registration); when off,
     /// only admins create accounts (POST /api/admin/accounts).</param>
@@ -86,13 +87,47 @@ public static class AccountEndpoints
             if (services.GetService<IAccountDirectory>() is not { } directory || await directory.ProfileAsync(account.AccountId, ct) is not { } profile)
                 return Results.Ok(new { accountId = account.AccountId });
             var totp = services.GetService<ITotpAuthentication>() is { } t && await t.IsEnabledAsync(account.AccountId, ct);
+            var showPlaying = services.GetService<IAccountPresence>() is not { } shows || await shows.ShowsPlayingAsync(account.AccountId, ct);
             long? quna = null;
             if (services.GetService<Aion.Application.Gameplay.IQunaWallet>() is { } wallet)
             {
                 try { quna = (await wallet.BalanceAsync(account.AccountId, ct)).Balance; }
                 catch (System.Data.Common.DbException) { quna = null; }
             }
-            return Results.Ok(new { accountId = account.AccountId, username = profile.Username, createdAt = profile.CreatedAt, totpEnabled = totp, quna });
+            return Results.Ok(new { accountId = account.AccountId, username = profile.Username, createdAt = profile.CreatedAt, totpEnabled = totp, quna, showPlaying });
+        });
+        // The account page's preferences. showPlaying (default on): whether others see the character the account plays
+        // (the launcher's Discord status leaves it out when off). The account's own page shows it either way.
+        app.MapPut("/api/accounts/me/preferences", async (PreferencesInput input, HttpContext context, IAccountAuthentication auth, IServiceProvider services, CancellationToken ct) =>
+        {
+            var account = await auth.AuthenticateAsync(Bearer(context), ct);
+            if (account is null) return Results.Unauthorized();
+            if (services.GetService<IAccountPresence>() is not { } presence) return Results.NotFound();
+            if (input.ShowPlaying is { } show) await presence.SetShowsPlayingAsync(account.AccountId, show, ct);
+            return Results.Ok(new { showPlaying = await presence.ShowsPlayingAsync(account.AccountId, ct) });
+        });
+        // The character the signed-in account plays right now, by its account session (bearer), never by address: players
+        // who share one address each see their own. The launcher's Discord status and the account page's "In game" read it.
+        // inGame false: no game connection of the account reported a character in the last 3 minutes.
+        app.MapGet("/api/characters/current", async (HttpContext context, IAccountAuthentication auth, IServiceProvider services, CancellationToken ct) =>
+        {
+            var account = await auth.AuthenticateAsync(Bearer(context), ct);
+            if (account is null) return Results.Unauthorized();
+            if (services.GetService<IAccountPresence>() is not { } presence) return Results.NotFound();
+            var showPlaying = await presence.ShowsPlayingAsync(account.AccountId, ct);
+            if (await presence.PlayingAsync(account.AccountId, ct) is not { } playing) return Results.Ok(new { inGame = false, showPlaying });
+            string? worldName = null;
+            if (services.GetService<Aion.Application.Gameplay.IWorldRegistry>() is { } registry)
+            {
+                try { worldName = (await registry.ListAsync(ct)).FirstOrDefault(w => w.WorldId == playing.WorldId)?.Name; }
+                catch (System.Data.Common.DbException) { }
+            }
+            var c = playing.Character;
+            return Results.Ok(new
+            {
+                inGame = true, showPlaying, worldId = playing.WorldId, worldName, since = playing.Since,
+                character = new { characterId = c.CharacterId, name = c.Name, level = c.Level, className = c.ClassName, race = c.Race, mapId = c.MapId },
+            });
         });
         app.MapGet("/api/characters", async (HttpContext context, IAccountAuthentication auth, CharacterService characters, CancellationToken ct) =>
         {

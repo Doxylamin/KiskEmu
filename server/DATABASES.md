@@ -66,6 +66,7 @@ Every request carries `X-World-Id: <id>` and `Authorization: Bearer <token>`:
 | --- | --- |
 | `POST register` | sign-in every 60 s: game host and port, control host, port and token, version (a remote world's addresses come only from here) |
 | `POST sessions/open`, `sessions/validate`, `sessions/close` | game logins (the routed grant from the login port) |
+| `POST sessions/playing` | the character a game connection plays (null in the lobby), about every minute while connected: `GET /api/characters/current` (migration 103) |
 | `POST authenticate`, `GET accounts/{id}` | staff sign-ins on the world's control port (staff sessions only, migration 098); account snapshots for the mirror |
 | `GET state`, `POST maintenance` | maintenance and active sanctions (cached 2 s) |
 | `POST tickets`, `POST chat` | `//report` tickets; announcements and staff chat |

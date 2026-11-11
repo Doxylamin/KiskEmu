@@ -138,6 +138,29 @@ and an interrupted download follow the move, and a moved copy's firewall rules a
 it), it is used as it is and the move is tried at the next start. Client patch paks under the old name
 (`z_A2Core_Patch-Windows_P.*`) are removed from the game copy at Play.
 
+## Discord
+
+With Discord running on the same PC the launcher shows a Rich Presence (`Aion.Launcher.Core/DiscordPresence.cs`, a small
+client for Discord's local IPC pipe `\\.\pipe\discord-ipc-0..9`; no extra package). The logo (`kisklauncher`) is the large
+image; text and button come from the server in use, never from the launcher:
+
+- In the launcher: "In the launcher", the server's name.
+- Playing: "Playing on <server>", "In game", and the time since Play started the game; back to the launcher state when the
+  game's processes have closed.
+- A "Server website" button opening the server's account site (only an https address).
+
+Without Discord nothing fails: the launcher tries again every 30 seconds in the background. Closing the launcher clears
+the presence. The Play page's **Show the server and the game in Discord** box turns it off (`"DiscordRichPresence": false`
+in `launcher-settings.json`; on by default); `"DiscordApplicationId"` there uses another Discord application (with the
+same asset keys).
+
+While the game runs, the launcher asks the server every 30 seconds which character the account plays
+(`GET /api/characters/current`, with the account session, so players behind one address each see their own) and shows
+"Naicha · Cleric · Lv 38" with the class image (`assassin`, `chanter`, `cleric`, `elementalist`, `fighter`, `gladiator`,
+`ranger`, `sorcerer`, `templar`). The world reports the character about once a minute, so a new character or level shows
+within about a minute and a half. Players who turn off **Show what I play** on the account page's Security tab get the
+server and "In game" only. A server without the endpoint leaves the character out.
+
 ## Third-party components
 
 SteamKit2 (LGPL-2.1, https://github.com/SteamRE/SteamKit) and QRCoder (MIT) are NuGet packages

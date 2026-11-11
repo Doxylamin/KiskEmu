@@ -292,10 +292,107 @@ if (File.Exists(steam.AppInfoPath))
     Console.WriteLine("Real Steam cache parsed.");
 }
 
+// ---------- Discord Rich Presence (no Discord needed) ----------
+{
+    var site = config.AccountUrl;
+    var lobby = DiscordActivity.Build(new PresenceState(config.Name, site));
+    Check(lobby["details"]!.GetValue<string>() == "In the launcher" && lobby["state"]!.GetValue<string>() == config.Name && lobby["timestamps"] is null,
+        "presence in the launcher: the server's name");
+    Check(lobby["assets"]!["large_image"]!.GetValue<string>() == DiscordActivity.LogoAsset && lobby["assets"]!["small_image"] is null, "presence: the logo, no class image");
+    Check(lobby["buttons"]!.AsArray().Count == 1 && lobby["buttons"]![0]!["url"]!.GetValue<string>() == "https://world.example.com:8780/"
+        && lobby["buttons"]![0]!["label"]!.GetValue<string>().Length <= 32, "presence button: the server's account site");
+    var since = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.Zero);
+    var playing = DiscordActivity.Build(new PresenceState(config.Name, site, since));
+    Check(playing["details"]!.GetValue<string>() == $"Playing on {config.Name}" && playing["state"]!.GetValue<string>() == "In game"
+        && playing["timestamps"]!["start"]!.GetValue<long>() == since.ToUnixTimeMilliseconds(), "presence while playing: since the game started");
+    var character = DiscordActivity.Build(new PresenceState(config.Name, site, since, new PresenceCharacter("Naicha", 38, "cleric")));
+    Check(character["state"]!.GetValue<string>() == "Naicha · Cleric · Lv 38" && character["assets"]!["small_image"]!.GetValue<string>() == "cleric"
+        && character["assets"]!["small_text"]!.GetValue<string>() == "Naicha · Cleric · Lv 38", "presence with a character: class image and text");
+    Check(DiscordActivity.Build(new PresenceState(config.Name, site, since, new PresenceCharacter("Naicha", 38, "Bard")))["assets"]!["small_image"] is null,
+        "a class without an image shows none");
+    Check(DiscordActivity.Build(new PresenceState(null, null))["state"] is null && DiscordActivity.Build(new PresenceState(" ", null))["state"] is null,
+        "no server yet: no state line");
+    Check(DiscordActivity.Build(new PresenceState("W", null))["state"]!.GetValue<string>().Length == 2
+        && DiscordActivity.Build(new PresenceState(new string('n', 300), null))["state"]!.GetValue<string>().Length == 128, "text fields kept to 2-128 characters");
+    foreach (var name in new[] { "assassin", "chanter", "cleric", "elementalist", "fighter", "gladiator", "ranger", "sorcerer", "templar" })
+        Check(DiscordActivity.ClassAsset(name) == name && DiscordActivity.ClassAsset(name.ToUpperInvariant()) == name && DiscordActivity.ClassAsset($" {name} ") == name, "class asset: " + name);
+    Check(DiscordActivity.ClassAsset("Spiritmaster") == "elementalist" && DiscordActivity.ClassAsset("Warrior") == "fighter", "class asset aliases");
+    Check(DiscordActivity.ClassAsset(null) is null && DiscordActivity.ClassAsset("") is null && DiscordActivity.ClassAsset("bard") is null, "no class asset for unknown classes");
+    foreach (var bad in new[] { null, "", "http://world.example.com", "ftp://world.example.com", "javascript:alert(1)", "world.example.com", "https://user@world.example.com/", "/relative" })
+        Check(DiscordActivity.ButtonUrl(bad) is null && DiscordActivity.Build(new PresenceState("World", bad))["buttons"] is null, "no button for a non-https URL: " + bad);
+    Check(DiscordActivity.ButtonUrl("https://example.org/account") == "https://example.org/account", "https URL kept for the button");
+
+    // GET /api/characters/current: the character only while in the game and when the account shows it.
+    static PresenceCharacter? Current(string json) { using var d = System.Text.Json.JsonDocument.Parse(json); return CurrentCharacter.Parse(d.RootElement); }
+    Check(Current("""{"inGame":true,"showPlaying":true,"worldId":1,"character":{"name":"Naicha","level":38,"className":"Cleric","race":1}}""")
+        == new PresenceCharacter("Naicha", 38, "Cleric"), "current character: name, level and class");
+    Check(Current("""{"inGame":true,"character":{"name":"Naicha","level":38,"className":null}}""") == new PresenceCharacter("Naicha", 38, null),
+        "current character: showPlaying left out counts as shown, no class kept as none");
+    Check(Current("""{"inGame":false,"showPlaying":true}""") is null, "current character: none while not in the game");
+    Check(Current("""{"inGame":true,"showPlaying":false,"character":{"name":"Naicha","level":38}}""") is null, "current character: hidden when the account opted out");
+    Check(Current("""{"inGame":true,"character":{"name":"","level":38}}""") is null && Current("[]") is null
+        && Current("""{"inGame":"yes","character":{"name":"N"}}""") is null, "current character: malformed answers show nothing");
+    Check(Current("""{"inGame":true,"character":{"name":"N","level":-4,"className":"Gladiator"}}""") == new PresenceCharacter("N", 0, "Gladiator"),
+        "current character: a level out of range is left out");
+
+    // No Discord (no pipe of that name): nothing throws, nothing connects, closing is quick.
+    var missing = new DiscordPresence(null, $"kisk-missing-{Guid.NewGuid():N}-");
+    missing.Update(new PresenceState(config.Name, site));
+    await Task.Delay(600);
+    Check(!missing.Connected, "no Discord: not connected");
+    var closing = System.Diagnostics.Stopwatch.StartNew();
+    missing.Dispose();
+    missing.Update(null);
+    missing.Dispose();
+    Check(closing.Elapsed < TimeSpan.FromSeconds(3), "no Discord: closes without waiting");
+
+    // A stand-in for Discord's pipe: the handshake, the activity, and the clear when the launcher closes.
+    var prefix = $"kisk-fake-{Guid.NewGuid():N}-";
+    using var fake = new System.IO.Pipes.NamedPipeServerStream(prefix + "0", System.IO.Pipes.PipeDirection.InOut, 1,
+        System.IO.Pipes.PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous);
+    var presence = new DiscordPresence("123456789", prefix);
+    presence.Update(new PresenceState(config.Name, site));
+    using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    await fake.WaitForConnectionAsync(wait.Token);
+    var (op, hello) = await Frames.ReadAsync(fake, wait.Token);
+    Check(op == 0 && hello!["v"]!.GetValue<int>() == 1 && hello["client_id"]!.GetValue<string>() == "123456789", "handshake: v1 with the application id");
+    await Frames.WriteAsync(fake, 1, """{"cmd":"DISPATCH","evt":"READY","data":{"v":1}}""", wait.Token);
+    var (setOp, set) = await Frames.ReadAsync(fake, wait.Token);
+    Check(setOp == 1 && set!["cmd"]!.GetValue<string>() == "SET_ACTIVITY" && set["args"]!["pid"]!.GetValue<int>() == Environment.ProcessId
+        && set["args"]!["activity"]!["details"]!.GetValue<string>() == "In the launcher", "SET_ACTIVITY carries the activity");
+    await Frames.WriteAsync(fake, 1, $$$"""{"cmd":"SET_ACTIVITY","nonce":"{{{set!["nonce"]!.GetValue<string>()}}}","data":{}}""", wait.Token);
+    for (var i = 0; i < 50 && !presence.Connected; i++) await Task.Delay(20);
+    Check(presence.Connected, "connected to the stand-in");
+    var clearTask = Frames.ReadAsync(fake, wait.Token);
+    presence.Dispose();
+    var (clearOp, clear) = await clearTask;
+    Check(clearOp == 1 && clear!["cmd"]!.GetValue<string>() == "SET_ACTIVITY" && clear["args"]!["activity"] is null, "closing clears the presence");
+}
+
 Console.WriteLine($"{checks} launcher checks passed.");
 
 /// <summary>An account server that answers from a function (no network).</summary>
 sealed class StubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => respond(request);
+}
+
+/// <summary>Discord IPC frames (little-endian op and length, then UTF-8 JSON) for the stand-in pipe.</summary>
+static class Frames
+{
+    public static async Task<(int Op, System.Text.Json.Nodes.JsonNode? Payload)> ReadAsync(Stream stream, CancellationToken ct)
+    {
+        var header = new byte[8];
+        await stream.ReadExactlyAsync(header, ct);
+        var body = new byte[BitConverter.ToInt32(header, 4)];
+        await stream.ReadExactlyAsync(body, ct);
+        return (BitConverter.ToInt32(header, 0), System.Text.Json.Nodes.JsonNode.Parse(body));
+    }
+
+    public static async Task WriteAsync(Stream stream, int op, string json, CancellationToken ct)
+    {
+        var body = Encoding.UTF8.GetBytes(json);
+        await stream.WriteAsync(BitConverter.GetBytes(op).Concat(BitConverter.GetBytes(body.Length)).Concat(body).ToArray(), ct);
+        await stream.FlushAsync(ct);
+    }
 }

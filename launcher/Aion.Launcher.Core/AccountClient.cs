@@ -117,6 +117,20 @@ public sealed class AccountClient : IDisposable
         return launch;
     }
 
+    /// <summary>
+    /// The character this account plays right now, for the Discord status (GET /api/characters/current, by the account
+    /// session, so players sharing one address each get their own). Null when not in the game yet, when the account turned
+    /// "Show what I play" off on its account page, or when the server predates the endpoint.
+    /// </summary>
+    public async Task<PresenceCharacter?> CurrentCharacterAsync(CancellationToken ct = default)
+    {
+        if (token is null) return null;
+        using var response = await Send(HttpMethod.Get, "/api/characters/current", null, ct);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized || !response.IsSuccessStatusCode) return null;
+        using var json = await System.Text.Json.JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        return CurrentCharacter.Parse(json.RootElement);
+    }
+
     /// <summary>The server's launcher file, or null when the server offers none.</summary>
     public async Task<LauncherManifest?> LauncherManifestAsync(CancellationToken ct = default)
     {
