@@ -109,6 +109,8 @@ ERRORS.invalid_restart = 'Choose between 0 and 120 minutes.';
 export interface FieldBoss {
   code: number; mapId: number; npcId: number; name: string; level: number; kind: 'named' | 'boss'; status: 'alive' | 'dead' | 'due'; mapLoaded: boolean;
   killedAt: number | null; respawnAt: number | null; minMinutes: number; maxMinutes: number; defaultMinMinutes: number; defaultMaxMinutes: number; customTimer: boolean;
+  /** The official schedule (server local time, e.g. "Sun, Fri 21:00"), used instead of the default range; null for most bosses. */
+  schedule: string | null;
 }
 export interface FieldBossList { loaded: boolean; now: number; bosses: FieldBoss[] }
 export interface MonsterView { key: number; npcId: number; name: string; level: number; x: number; y: number; dead: boolean; hostile: boolean; staff: boolean; engaged: boolean }

@@ -116,6 +116,8 @@ public sealed class StaffFieldBossTests : IAsyncDisposable
         Assert.Equal(FieldBossTimers.BossMinMinutes, dartan.GetProperty("minMinutes").GetInt32());
         Assert.False(dartan.GetProperty("customTimer").GetBoolean());
         Assert.Equal("alive", Boss(list, 101001).GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, dartan.GetProperty("schedule").ValueKind);
+        Assert.Equal("Sun, Fri 21:00", Boss(list, 2003).GetProperty("schedule").GetString());
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(Request(HttpMethod.Get, "/api/admin/field-bosses", "nobody"))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(Request(HttpMethod.Get, "/api/admin/field-bosses", "player"))).StatusCode);

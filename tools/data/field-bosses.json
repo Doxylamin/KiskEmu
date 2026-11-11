@@ -1,6 +1,7 @@
 {
   "source": {
-    "bosses": "WorldMapFieldNamed (ID, FieldNamedName -> NpcData), Global/EU client of 2026-11-04; map from MapData spawns"
+    "bosses": "WorldMapFieldNamed (ID, FieldNamedName -> NpcData), Global/EU client of 2026-11-04; map from MapData spawns",
+    "schedules": "WorldMapFieldNamed PeriodSpawnId -> PeriodSpawn (Time, Cycle, bSunday..bSaturday), Global/EU client of 2026-11-04, unchanged in 2.0.11 of 2026-11-11"
   },
   "bosses": [
     [
@@ -428,5 +429,124 @@
       1111,
       2406991
     ]
-  ]
+  ],
+  "schedules": {
+    "2001": {
+      "time": 630,
+      "cycle": 720,
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "2002": {
+      "time": 60,
+      "cycle": 180,
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "2003": {
+      "time": 1260,
+      "cycle": 0,
+      "days": [
+        0,
+        5
+      ]
+    },
+    "2004": {
+      "time": 1260,
+      "cycle": 0,
+      "days": [
+        0,
+        5
+      ]
+    },
+    "2005": {
+      "time": 1260,
+      "cycle": 0,
+      "days": [
+        0,
+        5
+      ]
+    },
+    "2006": {
+      "time": 1290,
+      "cycle": 0,
+      "days": [
+        4,
+        6
+      ]
+    },
+    "2007": {
+      "time": 1290,
+      "cycle": 0,
+      "days": [
+        4,
+        6
+      ]
+    },
+    "2008": {
+      "time": 1290,
+      "cycle": 0,
+      "days": [
+        4,
+        6
+      ]
+    },
+    "2201": {
+      "time": 1260,
+      "cycle": 0,
+      "days": [
+        0,
+        5
+      ]
+    },
+    "2202": {
+      "time": 1260,
+      "cycle": 0,
+      "days": [
+        0,
+        5
+      ]
+    },
+    "2203": {
+      "time": 1290,
+      "cycle": 0,
+      "days": [
+        1,
+        4,
+        6
+      ]
+    },
+    "2204": {
+      "time": 1290,
+      "cycle": 0,
+      "days": [
+        1,
+        4,
+        6
+      ]
+    },
+    "2205": {
+      "time": 1290,
+      "cycle": 0,
+      "days": [
+        1,
+        4,
+        6
+      ]
+    }
+  }
 }

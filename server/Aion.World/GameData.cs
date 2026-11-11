@@ -234,13 +234,22 @@ public sealed class GameData
 
     static readonly Lazy<ResurrectFile> resurrect = new(() => Load<ResurrectFile>("resurrect.json"));
 
-    sealed record FieldBossFile([property: JsonPropertyName("bosses")] int[][] Bosses);
+    sealed record FieldBossScheduleRow([property: JsonPropertyName("time")] int Time, [property: JsonPropertyName("cycle")] int Cycle,
+        [property: JsonPropertyName("days")] int[] Days);
+    sealed record FieldBossFile([property: JsonPropertyName("bosses")] int[][] Bosses,
+        [property: JsonPropertyName("schedules")] Dictionary<string, FieldBossScheduleRow>? Schedules = null);
 
+    static readonly Lazy<FieldBossFile> fieldBossFile = new(() => Load<FieldBossFile>("field-bosses.json"));
     static readonly Lazy<IReadOnlyList<(int Code, int MapId, int NpcId)>> fieldBosses = new(() =>
-        [.. Load<FieldBossFile>("field-bosses.json").Bosses.Where(b => b.Length >= 3).Select(b => (b[0], b[1], b[2]))]);
+        [.. fieldBossFile.Value.Bosses.Where(b => b.Length >= 3).Select(b => (b[0], b[1], b[2]))]);
+    static readonly Lazy<IReadOnlyDictionary<int, FieldBossSchedule>> fieldBossSchedules = new(() =>
+        (fieldBossFile.Value.Schedules ?? []).ToDictionary(kv => int.Parse(kv.Key), kv => new FieldBossSchedule(kv.Value.Time, kv.Value.Cycle, kv.Value.Days)));
 
     /// <summary>The client's WorldMapFieldNamed field bosses the server spawns: code, map, NpcData id (tools/field_bosses.py).</summary>
     public IReadOnlyList<(int Code, int MapId, int NpcId)> FieldBosses => fieldBosses.Value;
+
+    /// <summary>The field bosses with a fixed spawn schedule (the client's PeriodSpawn rows; the 13 Abyss bosses), by code.</summary>
+    public IReadOnlyDictionary<int, FieldBossSchedule> FieldBossSchedules => fieldBossSchedules.Value;
 
     /// <summary>AFK auto-resurrection delay in seconds (Resurrect.dat / guidebooks: 900 s on global).</summary>
     public int AutoResurrectSec => Math.Max(1, resurrect.Value.AutoResurrectSec);

@@ -9,16 +9,56 @@ namespace Aion.World;
 // (game.field_bosses, migration 104), so a restart keeps a dead boss dead until its time. OBSERVED (official field boss tables
 // 0x9101 in our captures of 2026-11-02 to 11-05): the respawn time is fixed at the kill and kept to the millisecond; the
 // periods vary from kill to kill (101008 and 101009 ~3.0 h, 101006 at most 1.8 h, others at least 5.9 h; the big bosses
-// 101021 and 101024 at least 10.8 h). The client data has no period (PeriodSpawnId names a server table), so the default
-// ranges are CANDIDATE and staff can change them per boss.
+// 101021 and 101024 at least 10.8 h). The 13 Abyss bosses have a fixed schedule in the client's PeriodSpawn table: they come
+// back at the schedule's next time after the kill. The other bosses have no period in the client data, so their default
+// ranges are CANDIDATE. Staff can set a range per boss, which replaces the schedule too.
 
-/// <summary>A field boss: its WorldMapFieldNamed code, map, NPC and default respawn range.</summary>
-public sealed record FieldBossDefinition(int Code, int MapId, int NpcId, string Kind, int DefaultMinMinutes, int DefaultMaxMinutes);
+/// <summary>A fixed spawn schedule (client PeriodSpawn): <paramref name="TimeMinutes"/> after midnight server local time, then
+/// every <paramref name="CycleMinutes"/> that day (0: once), on <paramref name="Days"/> (0 = Sunday).</summary>
+public sealed record FieldBossSchedule(int TimeMinutes, int CycleMinutes, int[] Days)
+{
+    static readonly string[] DayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    /// <summary>The first scheduled time after <paramref name="now"/> (Unix ms), in <paramref name="zone"/>'s local time.</summary>
+    public long Next(long now, TimeZoneInfo zone)
+    {
+        var today = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeMilliseconds(now), zone).Date;
+        for (var day = -1; day <= 8; day++)
+        {
+            var date = today.AddDays(day);
+            if (!Days.Contains((int)date.DayOfWeek)) continue;
+            for (var minute = TimeMinutes; minute < 24 * 60; minute += CycleMinutes)
+            {
+                var local = date.AddMinutes(minute);
+                if (!zone.IsInvalidTime(local) && new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, zone)).ToUnixTimeMilliseconds() is var at && at > now)
+                    return at;
+                if (CycleMinutes <= 0) break;
+            }
+        }
+        return now + 7L * 24 * 60 * 60_000;
+    }
+
+    /// <summary>"every 3 h from 01:00" or "Sun, Fri 21:00".</summary>
+    public string Describe()
+    {
+        var time = $"{TimeMinutes / 60:00}:{TimeMinutes % 60:00}";
+        var days = Days.Length == 7 ? "" : string.Join(", ", Days.Order().Select(d => DayNames[d]));
+        var cycle = CycleMinutes % 60 == 0 ? $"{CycleMinutes / 60} h" : $"{CycleMinutes} min";
+        return CycleMinutes > 0
+            ? $"every {cycle} from {time}" + (days == "" ? "" : $" ({days})")
+            : (days == "" ? "daily" : days) + $" {time}";
+    }
+}
+
+/// <summary>A field boss: its WorldMapFieldNamed code, map, NPC, default respawn range and official schedule (if any).</summary>
+public sealed record FieldBossDefinition(int Code, int MapId, int NpcId, string Kind, int DefaultMinMinutes, int DefaultMaxMinutes,
+    FieldBossSchedule? Schedule = null);
 
 /// <summary>A field boss for the staff page. Times are Unix ms. Status: alive, dead (until RespawnAt) or due (its time has
 /// come; it appears at the next tick of a player on the map).</summary>
 public sealed record FieldBossView(int Code, int MapId, int NpcId, string Name, int Level, string Kind, string Status, bool MapLoaded,
-    long? KilledAt, long? RespawnAt, int MinMinutes, int MaxMinutes, int DefaultMinMinutes, int DefaultMaxMinutes, bool CustomTimer);
+    long? KilledAt, long? RespawnAt, int MinMinutes, int MaxMinutes, int DefaultMinMinutes, int DefaultMaxMinutes, bool CustomTimer,
+    string? Schedule);
 
 /// <summary>The host's field boss timers: definitions, the last kill and respawn of each, staff ranges; thread-safe.</summary>
 public sealed class FieldBossTimers
@@ -50,7 +90,7 @@ public sealed class FieldBossTimers
             var spawn = data.NpcPlaced(npcId, mapId);
             var boss = spawn is null || spawn.Grade >= 6 || spawn.Level >= 65;
             list.Add(new FieldBossDefinition(code, mapId, npcId, boss ? "boss" : "named",
-                boss ? BossMinMinutes : NamedMinMinutes, boss ? BossMaxMinutes : NamedMaxMinutes));
+                boss ? BossMinMinutes : NamedMinMinutes, boss ? BossMaxMinutes : NamedMaxMinutes, data.FieldBossSchedules.GetValueOrDefault(code)));
         }
         Definitions = list;
         ByCode = list.ToDictionary(d => d.Code);
@@ -59,10 +99,14 @@ public sealed class FieldBossTimers
     public IReadOnlyList<FieldBossDefinition> Definitions { get; }
     public IReadOnlyDictionary<int, FieldBossDefinition> ByCode { get; }
 
+    /// <summary>The time zone of the official schedules' "server local time" (the host's, by default).</summary>
+    public TimeZoneInfo TimeZone { get; set; } = TimeZoneInfo.Local;
+
     /// <summary>Whether the stored timers were read (until then a kill is kept and stored, the rest is the default).</summary>
     public bool Loaded { get; private set; }
 
-    /// <summary>The respawn range in minutes (the staff's, else the default).</summary>
+    /// <summary>The respawn range in minutes (the staff's, else the default; without a staff range a boss with a schedule uses
+    /// the schedule instead).</summary>
     public (int Min, int Max) Range(int code)
     {
         var d = ByCode[code];
@@ -70,15 +114,17 @@ public sealed class FieldBossTimers
             return states.TryGetValue(code, out var s) && s.MinMinutes is { } min && s.MaxMinutes is { } max ? (min, max) : (d.DefaultMinMinutes, d.DefaultMaxMinutes);
     }
 
-    /// <summary>The boss died now: its respawn time (Unix ms), drawn from its range, stored.</summary>
+    /// <summary>The boss died now: its respawn time (Unix ms), stored. The staff's range, else the boss's schedule (its next
+    /// time), else the default range.</summary>
     public long Killed(int code, long now)
     {
         var (min, max) = Range(code);
         long respawn;
         lock (gate)
         {
-            respawn = now + (long)((min + random.NextDouble() * (max - min)) * 60_000);
             var s = StateOf(code);
+            respawn = s.MinMinutes is null && ByCode[code].Schedule is { } schedule ? schedule.Next(now, TimeZone)
+                : now + (long)((min + random.NextDouble() * (max - min)) * 60_000);
             s.KilledAt = now;
             s.RespawnAt = respawn;
         }
@@ -189,7 +235,7 @@ public sealed class FieldBossTimers
         var status = target is { Dead: true } ? (respawnAt > now || map!.RespawnAt.GetValueOrDefault(target.Key) > now ? "dead" : "due")
             : target is null && respawnAt > now ? "dead" : "alive";
         return new FieldBossView(d.Code, d.MapId, d.NpcId, target?.Name ?? spawn?.Name ?? "", target?.Level ?? spawn?.Level ?? 0, d.Kind, status, map is not null,
-            killedAt, status == "alive" ? null : respawnAt, min, max, d.DefaultMinMinutes, d.DefaultMaxMinutes, custom);
+            killedAt, status == "alive" ? null : respawnAt, min, max, d.DefaultMinMinutes, d.DefaultMaxMinutes, custom, d.Schedule?.Describe());
     }
 
     State StateOf(int code)

@@ -46,15 +46,39 @@ announced respawn time.
   - The big bosses 101021 (Eternal Gartua) and 101024 (High Commander Lagta) took at least 10.8 h.
   - Reshanta's 2003 took at least 6.2 h.
 
-The client data has no respawn period: `PeriodSpawnId` points at a table only the server has. So the defaults are
-**CANDIDATE** (`FieldBossTimers`):
+#### The Abyss bosses: official schedules
+
+The client's `PeriodSpawn` table gives the 13 Abyss bosses a fixed schedule. Their WorldMapFieldNamed rows have
+SpawnType `PeriodSpawn` and a `PeriodSpawnId`. `tools/field_bosses.py schedules <WorldMapFieldNamed dump> <PeriodSpawn dump>`
+writes them into `tools/data/field-bosses.json`. The data is the same in the clients of 2026-11-04 and 2.0.11 (2026-11-11).
+
+| Codes | Map | Schedule (server local time) |
+| --- | --- | --- |
+| 2001 | 20 | every 12 h from 10:30 |
+| 2002 | 20 | every 3 h from 01:00 |
+| 2003 – 2005 | 20 | Sunday and Friday, 21:00 |
+| 2006 – 2008 | 20 | Thursday and Saturday, 21:30 |
+| 2201 – 2202 | 22 | Sunday and Friday, 21:00 |
+| 2203 – 2205 | 22 | Monday, Thursday and Saturday, 21:30 |
+
+A killed Abyss boss comes back at the first time of its schedule after the kill. "Server local time" is the world
+host's time zone (`FieldBossTimers.TimeZone`); which zone the official servers use is not known.
+
+CANDIDATE: a boss that is never killed stays up. Whether official Abyss bosses also leave or appear only at their time
+is not known; our captures cover Verteron only.
+
+#### The other bosses: candidate ranges
+
+The other 72 bosses (starter field maps, level-80 regions) have SpawnType `Basic` and no PeriodSpawn row, so the client
+data gives them no period. Their defaults are **CANDIDATE** (`FieldBossTimers`):
 
 | Kind | Which | Default range |
 | --- | --- | --- |
 | named | grade 1-5 below level 65 (the starter field maps' named monsters) | 1.5 – 6 h |
-| boss | grade 6 and up, level 65 and up (Abyss, level-80 regions) | 6 – 12 h |
+| boss | grade 6 and up, level 65 and up (level-80 regions) | 6 – 12 h |
 
-Staff can set a range per boss, from 1 minute to 7 days. Set both ends to the same value for a fixed wait.
+Staff can set a range per boss, from 1 minute to 7 days. It also replaces an Abyss boss's schedule until it is reset.
+Set both ends to the same value for a fixed wait.
 
 Not done: the server does not send the official field boss table (`0x9101`) yet, so the client's world map does not list
 the bosses. Its layout is known only in part: there is an optional byte we cannot explain yet. The captures show no kill
