@@ -54,6 +54,8 @@ body { background: var(--bg); }
 
 /* Pages */
 .page { overflow: auto; padding: 22px 26px 30px; display: flex; flex-direction: column; gap: 16px; }
+/* A page scrolls; its cards keep their height (a card's overflow: hidden would otherwise let it shrink and clip). */
+.page > * { flex-shrink: 0; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .page-head h1 { font-size: 22px; letter-spacing: .01em; }
 
