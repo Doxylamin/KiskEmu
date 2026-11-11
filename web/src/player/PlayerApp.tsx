@@ -7,12 +7,14 @@ import { pageTitle, siteIcon, useSiteName } from '../shared/site';
 import { api, ApiError } from '../shared/api';
 import { Badge, Button, Status, type StatusMessage } from '../shared/components';
 import { readSession, writeSession } from '../shared/session';
-import { useRoute } from '../shared/router';
+import { hashOf, useRoute } from '../shared/router';
+import { CharacterPage } from './CharacterPage';
 import { EmptyState, PageHeader, Section, SideNav, StatTile, formatDate, formatNumber } from '../shared/layout';
 
 const STORE_KEY = 'aion-account-session';
 
-interface Character { name: string; level: number; worldId: number }
+/** GET /api/characters: the account's characters (the realm's character index). */
+interface Character { characterId: string; name: string; level: number; worldId: number }
 interface Me { accountId: string; username?: string; createdAt?: string; totpEnabled?: boolean; quna?: number | null; showPlaying?: boolean }
 /** GET /api/characters/current: the character the account plays right now (by its session, not its address). */
 interface Playing { inGame: boolean; showPlaying: boolean; worldId?: number; character?: { name: string; level: number; className: string | null } }
@@ -248,9 +250,12 @@ function Account({ session, status, onSignedOut }:
   }, [token]);
   useEffect(() => { if (route[0] && !PAGES.includes(route[0] as Page)) navigate([], { replace: true }); }, [route, navigate]);
   const site = useSiteName();
+  // #/characters/<id>: one character's page (it sets its own title).
+  const characterId = page === 'characters' ? route[1] : undefined;
   useEffect(() => {
+    if (characterId) return;
     document.title = pageTitle({ overview: 'Your account', characters: 'Characters', security: 'Security', support: 'Support' }[page], site);
-  }, [page, site]);
+  }, [page, site, characterId]);
 
   const answered = tickets.filter(t => t.status !== 'open' && t.staffNote).length;
   const groups = [{ items: [
@@ -265,7 +270,9 @@ function Account({ session, status, onSignedOut }:
       <SideNav groups={groups} current={page} label="Account" />
       <main className="account-main">
         {page === 'overview' && <Overview me={me} username={session.username} characters={characters} playing={playing} tickets={tickets} token={token} launcher={Boolean(status?.launcherAvailable)} />}
-        {page === 'characters' && <Characters characters={characters} playing={playing} />}
+        {page === 'characters' && (characterId
+          ? <CharacterPage key={characterId} id={characterId} token={token} onSignedOut={onSignedOut} />
+          : <Characters characters={characters} playing={playing} />)}
         {page === 'security' && <Security token={token} me={me} onChanged={loadMe} onSignedOut={onSignedOut} />}
         {page === 'support' && <Support token={token} characters={characters ?? []} tickets={tickets} onSent={loadTickets} />}
       </main>
@@ -301,7 +308,7 @@ function Overview({ me, username, characters, playing, tickets, token, launcher 
 function Characters({ characters, playing }: { characters: Character[] | null; playing: Playing | null }) {
   return (
     <>
-      <PageHeader eyebrow="Account" title="Characters" sub="New characters are made in the game." />
+      <PageHeader eyebrow="Account" title="Characters" sub="New characters are made in the game. Open one for its details and where it is." />
       <CharacterTable characters={characters} playing={playing} />
     </>
   );
@@ -324,7 +331,7 @@ function CharacterTable({ characters, playing }: { characters: Character[] | nul
                   <tr className="table-group"><th scope="rowgroup" colSpan={2}>{worldName(world)}</th></tr>
                   {list.map(c => (
                     <tr key={c.name}>
-                      <td className="strong">{c.name}{inGame(c) && <> <Badge tone="ok">In game</Badge></>}</td>
+                      <td className="strong"><a className="character-link" href={hashOf('characters', c.characterId)}>{c.name}</a>{inGame(c) && <> <Badge tone="ok">In game</Badge></>}</td>
                       {/* The live level while playing (the list's is the last saved one). */}
                       <td className="num mono">{inGame(c) ? playing?.character?.level ?? c.level : c.level}</td>
                     </tr>

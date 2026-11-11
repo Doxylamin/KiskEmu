@@ -223,6 +223,12 @@ public static class WorldEndpoints
             var kicked = input.KickAccount is { } account ? serverControl.KickAccount(account, input.Reason is { Length: > 0 } reason ? reason : "Banned") : 0;
             return Results.Ok(new { value = kicked });
         });
+        // The account site's character page (GET /api/characters/{id}/details on the realm, which checked ownership): this
+        // world's stored row and, while the character is here, its live state. The account is checked again in the query.
+        control.MapGet("/character", async (Guid account, Guid character, IServiceProvider services, CancellationToken ct) =>
+            account == Guid.Empty ? Results.NotFound()
+                : await Authentication.CharacterDetailsReader.LocalAsync(services, new VerifiedAccount(account), character, ct) is { } details
+                    ? Results.Ok(details) : Results.NotFound());
         control.MapGet("/blocked", async (Guid from, Guid to, IGameplayStore game, CancellationToken ct) =>
             Results.Ok(new { value = await game.AnyBlockBetweenAsync(from, to, ct) }));
         // The realm's wallet changed (server/DATABASES.md, Quna): the account's sessions here show the new balance.
