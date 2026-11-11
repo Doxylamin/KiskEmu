@@ -1899,7 +1899,10 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (!dodging && meetsCastRules && IsExactHeldCastDuplicate(request, body, now))
                 return [CastReplyFor(request, false)];
             var queued = MaybeQueueEarlyChainCast(body, request, chainSkill, chainAllowed, castGapOk, nextCastAcceptAtMs);
-            if (!releasingSkillCharge && HasDeferredQueuedCast(now)) return queued;
+            // Another cast while a chain step waits is not queued, so it used to get no 0x3801 at all, and the client blocks on
+            // that handshake. CANDIDATE: refused with the OBSERVED 9-byte not-ready 0x3801, like any other cast that is not ready.
+            if (!releasingSkillCharge && HasDeferredQueuedCast(now))
+                return queued.Count > 0 || IsQueuedCastWire(request, body) ? queued : [CastReplyFor(request, false)];
             if (queued.Count > 0) return queued;
             LogSkillCastRefusal(request, skill, definition, meetsCastRules, chainAllowed, cooldownReady, castGapOk, cost, weapons);
             // A sprint dash refused for cost or cooldown stays on the 9-byte form. The mask-first reply drops the sprint.

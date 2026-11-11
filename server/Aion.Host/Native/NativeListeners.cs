@@ -481,7 +481,9 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
                     if (header == 0x362E)
                         Logger.LogInformation("Native game BuilderCmd_RQ ({Length} bytes): {Body}", plain.Length,
                             Convert.ToHexString(plain.AsSpan(0, Math.Min(plain.Length, 1024))));
-                    else if (replies.Count == 0 && header >= 0 && !GameSession.SilentRequests.Contains(header) && GameSession.PositionReport(plain) is null)
+                    // A queued early chain step (0x3800 with a cast waiting) is answered by the tick, not here: not unanswered.
+                    else if (replies.Count == 0 && header >= 0 && !GameSession.SilentRequests.Contains(header) && GameSession.PositionReport(plain) is null
+                        && !(header == 0x3800 && session.CastQueued))
                     {
                         // Every one for the dashboard's diagnostics card; the log line once per connection.
                         unansweredLog?.Record(header, plain);

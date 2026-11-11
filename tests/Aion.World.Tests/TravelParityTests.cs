@@ -106,6 +106,32 @@ public sealed class TravelParityTests
     }
 
     [Fact]
+    public async Task Air_path_to_a_far_off_target_stays_bounded_and_answers()
+    {
+        // A 0x3719 aimed at 1e30 saturated the step count to int.MaxValue and ran the process out of memory.
+        var start = new Vector3d(1000, 2000, 300);
+        var path = GameSession.AirPath(start, new Vector3d(1e30, 1e30, 300));
+        Assert.Equal(GameSession.MaxAirSteps + 4, path.Count);   // target, approach, steps + 1 cruise points, start
+        Assert.Equal(start, path[^1].Point);
+        Assert.Equal(5, GameSession.AirPath(start, new Vector3d(double.NaN, 0, 0)).Count);   // one step: two cruise points
+
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
+        var here = session.Position!.Value;
+        var rq = new PacketWriter().U16(0x3719).Bool(false).Vec3(here).Vec3(new Vector3d(1e30, 1e30, here.Z)).ToArray();
+        var reply = Assert.Single(await session.HandleAsync(rq, Now + 1));
+        Assert.Equal(0x3745, GameSessionTestHelpers.Op(reply));
+    }
+
+    [Fact]
+    public void Air_path_within_a_map_keeps_its_6000_steps()
+    {
+        var start = new Vector3d(0, 0, 0);
+        var path = GameSession.AirPath(start, new Vector3d(60_000, 0, 0));
+        Assert.Equal(14, path.Count);   // 10 steps: target, approach, 11 cruise points, start
+    }
+
+    [Fact]
     public void Flight_gauge_constants_match_oct_pin_observation()
     {
         Assert.Equal(250_000, GameSession.FpMax);

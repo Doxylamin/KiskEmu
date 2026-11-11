@@ -90,6 +90,15 @@ public sealed partial class GameSession
 
     bool HasDeferredQueuedCast(long now) => queuedCastWire is not null && now < queuedCastAtMs;
 
+    /// <summary>
+    /// An early chain step waits in the queue: its 0x3801 comes from the tick (DrainQueuedHeldCast), so the 0x3800 that queued
+    /// it, and the client's resends of it, get no reply of their own. The host leaves these off the unanswered-requests list.
+    /// </summary>
+    public bool CastQueued => queuedCastWire is not null;
+
+    bool IsQueuedCastWire(CastRequest request, byte[] body) =>
+        queuedCastWire is { } wire && ParseCast(wire) is { } queued && HeldCastWireKeyOf(queued, wire) == HeldCastWireKeyOf(request, body);
+
     List<byte[]> RefuseReplacedQueuedCast()
     {
         if (queuedCastWire is not { } old || ParseCast(old) is not { } request)

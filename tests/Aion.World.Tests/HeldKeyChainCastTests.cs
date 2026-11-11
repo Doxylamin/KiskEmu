@@ -62,6 +62,27 @@ public sealed class HeldKeyChainCastTests
     }
 
     [Fact]
+    public async Task Other_cast_while_a_chain_step_is_queued_is_refused_not_left_unanswered()
+    {
+        var session = await RangerAsync();
+        var rapid = GameSessionTestHelpers.LiveGameData.ChainFollowUpIds(14_020_000).First();
+        var t = Now + 8000;
+        await session.HandleAsync(Cast(14_020_000), t);
+        var early = await session.HandleAsync(Cast(rapid), t + 40);
+        Assert.Empty(early);                  // queued: the tick answers it
+        Assert.True(session.CastQueued);
+        Assert.Empty(await session.HandleAsync(Cast(rapid), t + 57));   // a resend of the queued step
+
+        const int unlearned = 14_999_000;
+        var other = await session.HandleAsync(Cast(unlearned), t + 60);
+        var refusal = Assert.Single(other);
+        Assert.Equal(0x3801, GameSessionTestHelpers.Op(refusal));
+        Assert.Equal(GameSession.CastNotReadyResult, GameSession.CastResultCode(refusal));
+        Assert.Equal(GamePackets.CastReply(false, unlearned, 0, false, 0, includeUid: false, refusal: GameSession.CastNotReadyResult), refusal);
+        Assert.True(session.CastQueued);      // the queued chain step is kept
+    }
+
+    [Fact]
     public async Task Early_chain_cast_is_queued_then_accepts_after_swing_lockout()
     {
         var data = GameSessionTestHelpers.LiveGameData;
