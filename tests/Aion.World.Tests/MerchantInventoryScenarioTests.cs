@@ -98,6 +98,35 @@ public sealed class MerchantInventoryScenarioTests
     }
 
     [Fact]
+    public async Task Coin_shop_sells_the_goods_of_its_goods_lists()
+    {
+        // GameShop.dat: coin_shop_arena (990006) lists shop_L_abyss_usable; goods 401015101 = item 530116008 for 500 Abyss points.
+        const int abyssPoint = 930100003, goodsId = 401015101, itemId = 530116008;
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
+        store.Items.Add(FakeCharacterStore.BagItem(abyssPoint, 1_000, 960));
+        await session.InventoryChangesAsync(default);
+        var buy = await session.HandleAsync(new PacketWriter().U16(GameSession.CoinShopBuyRq).I32(990006).Varint(1).I32(goodsId).I32(1).ToArray(), Now);
+        Assert.Equal(GameSession.CoinShopBuyRs, GameSessionTestHelpers.Op(buy[0]));
+        Assert.Equal(0, BitConverter.ToUInt16(buy[0], 2));
+        Assert.Contains(store.Items, i => i.TemplateId == itemId);
+        Assert.Equal(500, store.Items.Single(i => i.TemplateId == abyssPoint).Quantity);
+    }
+
+    [Fact]
+    public void Coin_shops_list_goods_from_their_client_goods_lists()
+    {
+        var shops = ShopTables.Embedded;
+        // Arena and battlefield sell the abyss lists (GameShop.dat GoodsList), not lists named after themselves.
+        Assert.NotNull(shops.GoodsInShop("coin_shop_arena", 1, 401015101));
+        Assert.NotNull(shops.GoodsInShop("coin_shop_battlefield", 1, 401015101));
+        Assert.Null(shops.GoodsInShop("coin_shop_L_battlepass", 2, 401015101));
+        foreach (var dataId in new[] { 990001, 990003, 990006, 990007, 990008, 990009 })
+            foreach (var race in new[] { 1, 2 })
+                Assert.True(shops.ShopGoodsCount(shops.CoinShopName(dataId)!, race) > 0, $"{dataId} race {race}");
+    }
+
+    [Fact]
     public async Task Decompose_increments_grade_scoped_achievement()
     {
         const int rareDecomposeAch = 343101900;
