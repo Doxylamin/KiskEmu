@@ -89,3 +89,11 @@
 .day-bars { height: 120px; display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; align-items: end; }
 .day-bars span { display: block; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .85; }
 .day-bars span:hover { opacity: 1; }
+
+/* Dashboard diagnostics card: sortable headers, hex bodies. */
+.sort-button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: inherit; }
+.sort-button:hover { color: var(--accent); }
+.diagnostics-table .hex-cell { font-family: var(--mono); font-size: 12px; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+.diagnostics-table .hex-full { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; word-break: break-all; }
+.diagnostics-body td { background: var(--panel-2); }
+.diagnostics-log li { flex-wrap: wrap; }

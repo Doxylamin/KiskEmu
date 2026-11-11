@@ -361,6 +361,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         // What this connection plays, for the realm (Discord status, the account page): per world session, so per account.
         PlayingReporter? playing = null;
         var unanswered = new HashSet<int>();
+        var unansweredLog = services.GetService<Aion.Host.Diagnostics.UnansweredRequests>();
         var trace = Aion.World.WorldDebug.TraceDirectory is { Length: > 0 } traceDir ? new ClientTrace(traceDir) : null;
         var traceWrittenAt = Environment.TickCount64;
         // The server frame clock 0x3600 (i64 ms): OBSERVED every 50 ms for the whole official session (26,964 in 1,348 s, map loads
@@ -480,8 +481,13 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
                     if (header == 0x362E)
                         Logger.LogInformation("Native game BuilderCmd_RQ ({Length} bytes): {Body}", plain.Length,
                             Convert.ToHexString(plain.AsSpan(0, Math.Min(plain.Length, 1024))));
-                    else if (replies.Count == 0 && header >= 0 && !GameSession.SilentRequests.Contains(header) && GameSession.PositionReport(plain) is null && unanswered.Add(header))
-                        Logger.LogInformation("Native game unanswered opcode 0x{Opcode:x4} ({Length} bytes)", header, plain.Length);
+                    else if (replies.Count == 0 && header >= 0 && !GameSession.SilentRequests.Contains(header) && GameSession.PositionReport(plain) is null)
+                    {
+                        // Every one for the dashboard's diagnostics card; the log line once per connection.
+                        unansweredLog?.Record(header, plain);
+                        if (unanswered.Add(header))
+                            Logger.LogInformation("Native game unanswered opcode 0x{Opcode:x4} ({Length} bytes)", header, plain.Length);
+                    }
                     // In the world after 0x3622; out of it again on 0x3625 (back to character selection).
                     if (session.CharacterName != present)
                     {

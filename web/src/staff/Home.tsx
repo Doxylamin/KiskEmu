@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Icon } from '../shared/components';
 import { EmptyState, Facts, PageHeader, Section, StatTile, formatNumber } from '../shared/layout';
 import { describe, type Call } from './StaffApp';
+import { DiagnosticsCard } from './Diagnostics';
 import { can, type Economy, type PopulationPoint, type StaffProfile, type WorldList } from './types';
 
 interface NamedCount { name: string; count: number }
@@ -117,6 +118,8 @@ export function Home({ call, profile, active }: { call: Call; profile: StaffProf
           </div>
         )}
       </Section>
+
+      {can(profile, 'viewDiagnostics') && <DiagnosticsCard call={call} worlds={rows} active={active} />}
 
       {filter === null && stats && (
         <div className="split-2">

@@ -33,6 +33,7 @@ public enum StaffPermission
     ManageServer,         // restart, maintenance, backups, debug switches
     ManageAccounts,       // new accounts, password and authenticator resets
     RewardEveryone,       // rewards to every character
+    ViewDiagnostics,      // process health, recent errors and the client requests left unanswered (diagnostics card)
 }
 
 /// <summary>
