@@ -544,6 +544,27 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         }
     }
 
+    /// <summary>
+    /// Keeps the address on the realm while the session is open: now, then every 5 minutes (the realm keeps it 15), so the
+    /// client's later platform API calls (it asks for the Quna balance again after a credit) still name this account.
+    /// Ends when the realm no longer knows the session (closed at logout or disconnect) or the host stops.
+    /// </summary>
+    async Task KeepClientAddressAsync(Aion.Host.Realm.RealmLinkClient realm, string token, IPAddress address, CancellationToken ct)
+    {
+        try
+        {
+            while (true)
+            {
+                try { if (!await realm.RememberClientAsync(token, address, ct)) return; }
+                catch (Exception error) when (error is HttpRequestException or Aion.Host.Realm.RealmLinkException or TaskCanceledException && !ct.IsCancellationRequested)
+                { Logger.LogWarning("Realm did not keep the client address: {Error}", error.Message); }
+                await Task.Delay(TimeSpan.FromMinutes(5), ct);
+            }
+        }
+        catch (Exception) when (ct.IsCancellationRequested) { }
+        catch (ObjectDisposedException) { }
+    }
+
     async Task<INativeCharacterStore?> AuthenticateAsync(byte[] plain, IPAddress? clientAddress, CancellationToken ct)
     {
         var sessions = services.GetService<IWorldSessions>();
@@ -568,11 +589,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         // Quna balance, which the client's Quna counter shows, names the account by it). Without it the address the
         // launcher registered lapses 15 minutes after the launch and the counter shows 0.
         if (clientAddress is not null && services.GetService<IPlatformSecondaryAuth>() is null && services.GetService<Aion.Host.Realm.RealmLinkClient>() is { } realm)
-        {
-            try { await realm.RememberClientAsync(opened.Token, clientAddress, ct); }
-            catch (Exception error) when (error is HttpRequestException or Aion.Host.Realm.RealmLinkException or TaskCanceledException && !ct.IsCancellationRequested)
-            { Logger.LogWarning("Realm did not keep the client address: {Error}", error.Message); }
-        }
+            _ = KeepClientAddressAsync(realm, opened.Token, clientAddress, ct);
         return new ServiceNativeCharacterStore(opened.Token, who, sessions, services.GetRequiredService<IWireCharacterRepository>(),
             services.GetRequiredService<IGameplayStore>(), services.GetRequiredService<CharacterPersistenceService>(),
             services.GetService<IQunaWallet>());

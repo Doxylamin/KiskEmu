@@ -255,7 +255,8 @@ public sealed class RealmLinkClient
     public Task<LinkSession?> OpenSessionAsync(LinkSessionOpen input, CancellationToken ct) => Send<LinkSession>(HttpMethod.Post, "sessions/open", input, ct);
     public Task<LinkIdentity?> ValidateSessionAsync(string token, CancellationToken ct) => Send<LinkIdentity>(HttpMethod.Post, "sessions/validate", new LinkToken(token), ct, repeatable: true);
     public Task CloseSessionAsync(string token, CancellationToken ct) => Send<bool>(HttpMethod.Post, "sessions/close", new LinkToken(token), ct);
-    public Task RememberClientAsync(string token, System.Net.IPAddress address, CancellationToken ct) =>
+    /// <summary>False when the realm no longer knows the session (it was closed).</summary>
+    public Task<bool> RememberClientAsync(string token, System.Net.IPAddress address, CancellationToken ct) =>
         Send<bool>(HttpMethod.Post, "clients/remember", new LinkClient(token, address.ToString()), ct, repeatable: true);
     public Task<AccountSnapshot?> AuthenticateAsync(string token, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Post, "authenticate", new LinkToken(token), ct, repeatable: true);
     public Task<AccountSnapshot?> AccountAsync(Guid account, CancellationToken ct) => Send<AccountSnapshot>(HttpMethod.Get, $"accounts/{account:D}", null, ct);
