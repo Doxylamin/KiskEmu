@@ -61,6 +61,8 @@ static class CustomNpcPakCommand
         var summary = CustomNpcPatch.Apply(definitions, tables[NpcDataPath].Table, tables[NpcTalkPath].Table,
             tables[StringPath].Table, l10nFiles.ToDictionary(p => p.Key, p => p.Value.File, StringComparer.OrdinalIgnoreCase),
             talkTemplate);
+        foreach (var rename in options.GetAll("rename-npc"))
+            RenameOfficialNpc(rename, tables[NpcDataPath].Table, tables[StringPath].Table, l10nFiles.Values.Select(v => v.File));
 
         var payloads = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
         foreach (var (path, (raw, table)) in tables)
@@ -100,6 +102,27 @@ static class CustomNpcPakCommand
         foreach (var npc in summary.Npcs)
             Console.Error.WriteLine($"  {npc.Slug}: template {npc.TemplateId} (base {npc.BaseTemplateId}), talks {string.Join(", ", npc.Talks.Select(t => t.TalkName))}");
         return Task.FromResult(0);
+    }
+
+    /// <summary>
+    /// --rename-npc &lt;NpcData id&gt;=&lt;text&gt;: replaces an official NPC's name in every language. A test of whether the
+    /// client loads the patch pak at all: the changed name shows on an NPC the client already knows.
+    /// </summary>
+    static void RenameOfficialNpc(string spec, FAion2DataTableFile npcData, FAion2DataTableFile strings, IEnumerable<FAion2L10NFile> l10n)
+    {
+        var eq = spec.IndexOf('=');
+        if (eq <= 0 || !long.TryParse(spec[..eq], out var id) || eq == spec.Length - 1)
+            throw new ArgumentException($"--rename-npc expects <NpcData id>=<text>, not '{spec}'");
+        var text = spec[(eq + 1)..];
+        var row = DataTableRows.FindRow(npcData, id) ?? throw new KeyNotFoundException($"--rename-npc: NpcData {id} not found");
+        var nameKey = DataTableRows.GetPath(row, "Desc.Key") ?? throw new KeyNotFoundException($"--rename-npc: NpcData {id} has no Desc.Key");
+        var stringRow = DataTableRows.FindRowByName(strings, nameKey) ?? throw new KeyNotFoundException($"--rename-npc: String {nameKey} not found");
+        var bodyKey = DataTableRows.GetPath(stringRow, "Body.Key") ?? throw new KeyNotFoundException($"--rename-npc: String {nameKey} has no Body.Key");
+        var changed = 0;
+        foreach (var file in l10n)
+            if (file.Entries.ContainsKey(bodyKey)) { file.Entries[bodyKey] = text; changed++; }
+        if (changed == 0) throw new KeyNotFoundException($"--rename-npc: {bodyKey} is in no L10N file");
+        Console.Error.WriteLine($"rename: NpcData {id} ({nameKey} -> {bodyKey}) = '{text}' in {changed} L10N files");
     }
 
     /// <summary>Mounts the written pak on its own and reads every custom NPC's rows and texts back out of it.</summary>

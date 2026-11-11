@@ -17,6 +17,7 @@ public static class CliApp
                         [--rows 3] [--id <rowId>]... [--find <text>]... --out <file.json>
           custom-npcs   Build the custom NPC patch pak from exported definitions.
                         --definitions <custom-npcs.json> --out <folder> [--pak-name <name>]
+                        [--rename-npc <NpcData id>=<text>]...  also rename an official NPC (tests that the pak loads)
 
         Client options (all commands):
           --paks <Content/Paks folder>   default: the launcher's private copy
