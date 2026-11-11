@@ -57,8 +57,14 @@ public sealed class FieldBossTimerTests
         Assert.Equal(85, timers.Definitions.Count);
         Assert.Equal(("boss", 1010, 2101120), (timers.ByCode[Dartan].Kind, timers.ByCode[Dartan].MapId, timers.ByCode[Dartan].NpcId));
         Assert.Equal("named", timers.ByCode[Neikel].Kind);
-        Assert.Equal((FieldBossTimers.BossMinMinutes, FieldBossTimers.BossMaxMinutes), timers.Range(Dartan));
-        Assert.Equal((FieldBossTimers.NamedMinMinutes, FieldBossTimers.NamedMaxMinutes), timers.Range(Neikel));
+        // Fixed waits fitted to the official captures (CANDIDATE), Altgard mirrored by index; the level-80 regions keep a range.
+        Assert.Equal((360, 360), timers.Range(Dartan));
+        Assert.Equal((180, 180), timers.Range(Neikel));
+        Assert.Equal((180, 180), timers.Range(101008));
+        Assert.Equal((180, 180), timers.Range(111008));
+        Assert.Equal((120, 120), timers.Range(101017));
+        var region = timers.Definitions.First(d => d.MapId == 1011);
+        Assert.Equal((FieldBossTimers.BossMinMinutes, FieldBossTimers.BossMaxMinutes), timers.Range(region.Code));
         var map = new SharedWorld(GameData.Embedded) { Clock = () => Now }.Map(1010);
         Assert.Equal(24, timers.Definitions.Count(d => d.MapId == 1010 && map.FieldBossTarget(d.Code) is not null));
     }
@@ -70,7 +76,7 @@ public sealed class FieldBossTimerTests
         var world = World(store, Now);
         var boss = Kill(world.Map(1010), Dartan, Now);
         var respawn = world.Map(1010).RespawnAt[boss.Key];
-        Assert.InRange(respawn, Now + FieldBossTimers.BossMinMinutes * Minute, Now + FieldBossTimers.BossMaxMinutes * Minute);
+        Assert.Equal(Now + 360 * Minute, respawn);
         await world.FieldBosses.FlushAsync();
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(Now), store.Rows[Dartan].KilledAt);
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(respawn), store.Rows[Dartan].RespawnAt);
@@ -160,7 +166,7 @@ public sealed class FieldBossTimerTests
         var respawn = restarted.FieldBosses.Killed(Neikel, Now + 2 * Minute);
         Assert.InRange(respawn, Now + 32 * Minute, Now + 47 * Minute);
         Assert.True(restarted.FieldBosses.SetRange(Neikel, null, null));
-        Assert.Equal((FieldBossTimers.NamedMinMinutes, FieldBossTimers.NamedMaxMinutes), restarted.FieldBosses.Range(Neikel));
+        Assert.Equal((180, 180), restarted.FieldBosses.Range(Neikel));
         await restarted.FieldBosses.FlushAsync();
         Assert.Null(store.Rows[Neikel].MinMinutes);
     }

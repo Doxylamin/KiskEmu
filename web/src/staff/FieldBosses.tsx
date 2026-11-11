@@ -110,7 +110,7 @@ export function FieldBosses({ call, active, canRespawn, canEditTimers }: { call:
           </table>
         </div>
       </section>
-      <p className="faint small">The Abyss bosses follow their official schedule (server time). The other default timers are estimates (official servers draw a different wait after each kill); set your own per boss.</p>
+      <p className="faint small">The Abyss bosses follow their official schedule (server time). Verteron's waits are fitted to official captures, Altgard's mirror them, and the level-80 regions' ranges are estimates; set your own per boss.</p>
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
       <PromptDialog request={prompt} onClose={() => setPrompt(null)} />
     </main>

@@ -113,7 +113,7 @@ public sealed class StaffFieldBossTests : IAsyncDisposable
         Assert.Equal(1010, dartan.GetProperty("mapId").GetInt32());
         Assert.Equal(Now, dartan.GetProperty("killedAt").GetInt64());
         Assert.Equal(map.RespawnAt[boss.Key], dartan.GetProperty("respawnAt").GetInt64());
-        Assert.Equal(FieldBossTimers.BossMinMinutes, dartan.GetProperty("minMinutes").GetInt32());
+        Assert.Equal((360, 360), (dartan.GetProperty("minMinutes").GetInt32(), dartan.GetProperty("maxMinutes").GetInt32()));
         Assert.False(dartan.GetProperty("customTimer").GetBoolean());
         Assert.Equal("alive", Boss(list, 101001).GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, dartan.GetProperty("schedule").ValueKind);
@@ -160,7 +160,7 @@ public sealed class StaffFieldBossTests : IAsyncDisposable
 
         var reset = await client.SendAsync(Request(HttpMethod.Delete, path, "admin"));
         Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
-        Assert.Equal((FieldBossTimers.BossMinMinutes, FieldBossTimers.BossMaxMinutes), world.FieldBosses.Range(Dartan));
+        Assert.Equal((360, 360), world.FieldBosses.Range(Dartan));
         Assert.Equal(["staff_field_boss_timer", "staff_field_boss_timer"], audit.Select(a => a.Action));
         Assert.Contains("\"reset\":true", audit[1].Details);
     }

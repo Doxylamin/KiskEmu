@@ -40,6 +40,13 @@ class FieldBossTests(unittest.TestCase):
         self.assertEqual(len(data['bosses']), 85)
         self.assertIn([101022, 1010, 2101120], data['bosses'])
         self.assertEqual(len(data['schedules']), 13)
+        self.assertEqual(data['waits'], field_bosses.waits(data['bosses']))
+        self.assertEqual(len(data['waits']), 48)
+        self.assertEqual((data['waits']['101008'], data['waits']['111008']), (180, 180))
+
+    def test_waits_mirror_verteron_onto_altgard_by_index(self):
+        self.assertEqual(field_bosses.waits([[101006, 1010, 1], [111006, 1110, 2], [101017, 1010, 3]]),
+                         {'101006': 90, '101017': 120, '111006': 90})
 
 
 if __name__ == '__main__':

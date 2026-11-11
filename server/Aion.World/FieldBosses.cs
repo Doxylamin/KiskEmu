@@ -7,11 +7,11 @@ namespace Aion.World;
 // Field bosses (docs/FIELD_BOSSES.md): the client's WorldMapFieldNamed bosses (tools/data/field-bosses.json) respawn on their own
 // timer instead of GameSession.RespawnMs, and the kill and the respawn time are stored in the world database
 // (game.field_bosses, migration 104), so a restart keeps a dead boss dead until its time. OBSERVED (official field boss tables
-// 0x9101 in our captures of 2026-11-02 to 11-05): the respawn time is fixed at the kill and kept to the millisecond; the
-// periods vary from kill to kill (101008 and 101009 ~3.0 h, 101006 at most 1.8 h, others at least 5.9 h; the big bosses
-// 101021 and 101024 at least 10.8 h). The 13 Abyss bosses have a fixed schedule in the client's PeriodSpawn table: they come
-// back at the schedule's next time after the kill. The other bosses have no period in the client data, so their default
-// ranges are CANDIDATE. Staff can set a range per boss, which replaces the schedule too.
+// 0x9101 in our Verteron captures of 2026-11-02 to 11-05): the respawn time is fixed at the kill and kept to the millisecond,
+// and every kill fits one fixed wait per boss (101008 2.99-3.01 h, 101017 1.86-2.07 h, ...). Those waits (CANDIDATE: fitted
+// to the bounds, mirrored onto Altgard by index) are in field-bosses.json. The 13 Abyss bosses have a fixed schedule in the
+// client's PeriodSpawn table: they come back at the schedule's next time after the kill. The level-80 regions have neither,
+// so their default ranges are CANDIDATE. Staff can set a range per boss, which replaces the wait or schedule.
 
 /// <summary>A fixed spawn schedule (client PeriodSpawn): <paramref name="TimeMinutes"/> after midnight server local time, then
 /// every <paramref name="CycleMinutes"/> that day (0: once), on <paramref name="Days"/> (0 = Sunday).</summary>
@@ -63,8 +63,8 @@ public sealed record FieldBossView(int Code, int MapId, int NpcId, string Name, 
 /// <summary>The host's field boss timers: definitions, the last kill and respawn of each, staff ranges; thread-safe.</summary>
 public sealed class FieldBossTimers
 {
-    /// <summary>CANDIDATE default ranges in minutes. Named monsters (grade 1-5 on the starter field maps): 1.5-6 h, covering the
-    /// observed ~1.8 h to 5.9 h. Field bosses (grade 6+, the Abyss and the level-80 regions): 6-12 h (observed at least 10.8 h).</summary>
+    /// <summary>CANDIDATE default ranges in minutes for a boss with no fixed wait and no schedule (the level-80 regions today).
+    /// Named monsters (grade 1-5): 1.5-6 h. Field bosses (grade 6+ or level 65+): 6-12 h.</summary>
     public const int NamedMinMinutes = 90, NamedMaxMinutes = 360, BossMinMinutes = 360, BossMaxMinutes = 720;
     /// <summary>The longest range staff may set (7 days).</summary>
     public const int MaxMinutes = 7 * 24 * 60;
@@ -89,8 +89,9 @@ public sealed class FieldBossTimers
         {
             var spawn = data.NpcPlaced(npcId, mapId);
             var boss = spawn is null || spawn.Grade >= 6 || spawn.Level >= 65;
-            list.Add(new FieldBossDefinition(code, mapId, npcId, boss ? "boss" : "named",
-                boss ? BossMinMinutes : NamedMinMinutes, boss ? BossMaxMinutes : NamedMaxMinutes, data.FieldBossSchedules.GetValueOrDefault(code)));
+            var (min, max) = data.FieldBossWaits.TryGetValue(code, out var wait) ? (wait, wait)
+                : boss ? (BossMinMinutes, BossMaxMinutes) : (NamedMinMinutes, NamedMaxMinutes);
+            list.Add(new FieldBossDefinition(code, mapId, npcId, boss ? "boss" : "named", min, max, data.FieldBossSchedules.GetValueOrDefault(code)));
         }
         Definitions = list;
         ByCode = list.ToDictionary(d => d.Code);

@@ -237,7 +237,8 @@ public sealed class GameData
     sealed record FieldBossScheduleRow([property: JsonPropertyName("time")] int Time, [property: JsonPropertyName("cycle")] int Cycle,
         [property: JsonPropertyName("days")] int[] Days);
     sealed record FieldBossFile([property: JsonPropertyName("bosses")] int[][] Bosses,
-        [property: JsonPropertyName("schedules")] Dictionary<string, FieldBossScheduleRow>? Schedules = null);
+        [property: JsonPropertyName("schedules")] Dictionary<string, FieldBossScheduleRow>? Schedules = null,
+        [property: JsonPropertyName("waits")] Dictionary<string, int>? Waits = null);
 
     static readonly Lazy<FieldBossFile> fieldBossFile = new(() => Load<FieldBossFile>("field-bosses.json"));
     static readonly Lazy<IReadOnlyList<(int Code, int MapId, int NpcId)>> fieldBosses = new(() =>
@@ -247,6 +248,12 @@ public sealed class GameData
 
     /// <summary>The client's WorldMapFieldNamed field bosses the server spawns: code, map, NpcData id (tools/field_bosses.py).</summary>
     public IReadOnlyList<(int Code, int MapId, int NpcId)> FieldBosses => fieldBosses.Value;
+
+    static readonly Lazy<IReadOnlyDictionary<int, int>> fieldBossWaits = new(() =>
+        (fieldBossFile.Value.Waits ?? []).ToDictionary(kv => int.Parse(kv.Key), kv => kv.Value));
+
+    /// <summary>CANDIDATE fixed respawn waits in minutes by code (Verteron, fitted to captures; Altgard mirrored).</summary>
+    public IReadOnlyDictionary<int, int> FieldBossWaits => fieldBossWaits.Value;
 
     /// <summary>The field bosses with a fixed spawn schedule (the client's PeriodSpawn rows; the 13 Abyss bosses), by code.</summary>
     public IReadOnlyDictionary<int, FieldBossSchedule> FieldBossSchedules => fieldBossSchedules.Value;
