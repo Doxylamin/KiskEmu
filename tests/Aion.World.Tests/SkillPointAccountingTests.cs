@@ -36,19 +36,20 @@ public sealed class SkillPointAccountingTests
         var left = session.SkillPointsLeft;
         var up = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(11010000).ToArray(), Now);
         // The refusal resyncs the list (0x5100) and ends with the points (live client 2026-10-31).
-        Assert.Equal(GamePackets.SkillPointUpdate(left), up[^1]);
+        Assert.Equal(GamePackets.SkillPointUpdate(GameSessionTestHelpers.LiveGameData.SkillPoints(8) - left), up[^1]);   // 0x5105 carries the points spent
         Assert.Equal(GameSession.SkillAcquireNotEnoughCharLevel, BitConverter.ToUInt16(up[0], 2));
         Assert.Equal(4, session.SkillLevel(11010000));
         Assert.Equal(left, session.SkillPointsLeft);
     }
 
     [Fact]
-    public void SkillPointUpdate_matches_official_mask_and_varint_wire()
+    public void SkillPointUpdate_matches_the_official_count_type_u16_wire()
     {
-        Assert.Equal(Convert.FromHexString("055101010102"), GamePackets.SkillPointUpdate(2));
-        Assert.Equal(Convert.FromHexString("055101010101"), GamePackets.SkillPointUpdate(1));
-        Assert.Equal(Convert.FromHexString("055101010100"), GamePackets.SkillPointUpdate(0));
-        Assert.Equal(Convert.FromHexString("05510101010f"), GamePackets.SkillPointUpdate(15));
+        // Official captures (2026-10-13, 11-04, 11-05): {count u8 1, type u8 1, spent u16}, e.g. 0101a500 = 165 spent.
+        Assert.Equal(Convert.FromHexString("05510101a500"), GamePackets.SkillPointUpdate(165));
+        Assert.Equal(Convert.FromHexString("055101018e00"), GamePackets.SkillPointUpdate(142));
+        Assert.Equal(Convert.FromHexString("055101010100"), GamePackets.SkillPointUpdate(1));
+        Assert.Equal(Convert.FromHexString("055101010000"), GamePackets.SkillPointUpdate(0));
     }
 
     [Fact]
@@ -115,7 +116,7 @@ public sealed class SkillPointAccountingTests
         var update = first.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillLevelUpdateNt);
         Assert.Equal(2, update[12]);   // level
         Assert.Equal(2, update[13]);  // original = the new bought level (official 2026-10-31)
-        Assert.Equal(GamePackets.SkillPointUpdate(0), first.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt));
+        Assert.Equal(GamePackets.SkillPointUpdate(1), first.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt));
 
         var session2 = new GameSession(data, new GameSessionOptions { CharacterLevel = 4, WorldId = store.WorldId }, new Random(3)) { Store = store };
         await session2.HandleAsync(GameSessionTestHelpers.Login(), Now);
@@ -126,7 +127,7 @@ public sealed class SkillPointAccountingTests
         Assert.Equal(2, session2.SkillLevel(11010000));
         Assert.Equal(0, session2.SkillPointsLeft);
         var pointsPkt = entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);
-        Assert.Equal(GamePackets.SkillPointUpdate(0), pointsPkt);
+        Assert.Equal(GamePackets.SkillPointUpdate(1), pointsPkt);
         Assert.DoesNotContain(await session2.TickAsync(Now + 60_000), p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);
         var refused = await session2.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(11010000).ToArray(), Now);
         Assert.Equal(GameSession.SkillAcquireNotEnoughSkillPoint, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(refused), 2));
@@ -152,7 +153,7 @@ public sealed class SkillPointAccountingTests
         var entry = await session2.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
 
         var pointsPkt = entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);
-        Assert.Equal(GamePackets.SkillPointUpdate(15), pointsPkt);
+        Assert.Equal(GamePackets.SkillPointUpdate(1), pointsPkt);   // 1 of 16 spent
         Assert.Equal(15, session2.SkillPointsLeft);
         Assert.DoesNotContain(await session2.TickAsync(Now + 60_000), p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);
         var skillList = entry.Single(p => GameSessionTestHelpers.Op(p) == 0x5100);

@@ -17,14 +17,19 @@ public sealed class SkillPointClientModelTests
 
     static bool IsPoints(byte[] p) => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt;
 
-    static int PointValue(byte[] packet)
+    /// <summary>0x5105 {count u8 1, type u8 1, spent u16} (OBSERVED official layout): the points spent.</summary>
+    static int SpentValue(byte[] packet)
     {
         Assert.Equal(GameSession.SkillPointUpdateNt, GameSessionTestHelpers.Op(packet));
+        Assert.Equal(6, packet.Length);
         Assert.Equal(1, packet[2]);
         Assert.Equal(1, packet[3]);
-        Assert.Equal(1, packet[4]);
-        return (int)new PacketReader(packet) { Offset = 5 }.Varint();
+        return BitConverter.ToUInt16(packet, 4);
     }
+
+    /// <summary>What the client shows: its own total for the level (Exp table) minus the spent points from 0x5105.</summary>
+    static int PointValue(GameSession session, byte[] packet) =>
+        GameSessionTestHelpers.LiveGameData.SkillPoints(session.Level) - SpentValue(packet);
 
     [Fact]
     public void Totals_for_levels_1_to_45_are_the_cumulative_Exp_dat_BonusSkillPoint_rows()
@@ -54,7 +59,7 @@ public sealed class SkillPointClientModelTests
         {
             var up = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(skillId).ToArray(), Now);
             Assert.Equal(0, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(up), 2));
-            Assert.Equal(session.SkillPointsLeft, PointValue(up.Single(IsPoints)));
+            Assert.Equal(session.SkillPointsLeft, PointValue(session, up.Single(IsPoints)));
         }
         Assert.Equal(3, session.SkillPointsLeft);
     }
@@ -76,7 +81,7 @@ public sealed class SkillPointClientModelTests
         {
             var up = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(skillId).ToArray(), Now);
             results.Add(BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(up), 2));
-            Assert.Equal(session.SkillPointsLeft, PointValue(up.Single(IsPoints)));
+            Assert.Equal(session.SkillPointsLeft, PointValue(session, up.Single(IsPoints)));
         }
         Assert.Equal([0, 0, 0, GameSession.SkillAcquireNotEnoughSkillPoint, GameSession.SkillAcquireNotEnoughSkillPoint], results);
         Assert.Equal(0, session.SkillPointsLeft);
@@ -97,22 +102,22 @@ public sealed class SkillPointClientModelTests
         Assert.Equal(6, session.Level);
         var expected = 2 + data.SkillPoints(6) - data.SkillPoints(5);
         Assert.Equal(expected, session.SkillPointsLeft);
-        Assert.Equal(expected, PointValue(replies.Single(IsPoints)));
+        Assert.Equal(expected, PointValue(session, replies.Single(IsPoints)));
     }
 
-    /// <summary>The client window tracks the last 0x5105 remaining-points value (official body 0101010f = 15 left).</summary>
-    sealed class ClientWindow
+    /// <summary>The client window: its own total for the level minus the last 0x5105 spent value.</summary>
+    sealed class ClientWindow(int total)
     {
-        int shown;
+        int spent;
 
-        public int Shown => shown;
+        public int Shown => total - spent;
 
         public void Feed(IEnumerable<byte[]> packets)
         {
             foreach (var p in packets)
             {
                 if (GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt)
-                    shown = (int)new PacketReader(p) { Offset = 5 }.Varint();
+                    spent = SpentValue(p);
             }
         }
     }
@@ -138,7 +143,7 @@ public sealed class SkillPointClientModelTests
         var store = new FakeCharacterStore { Progress = (12, 0) };
         foreach (var (skillId, lvl) in data.LearnedSkills("Gladiator", 12)) store.Skills.Add(new SkillState(skillId, lvl, null));
         var (session, entry) = await EnterAsync(store, data, 12);
-        var window = new ClientWindow();
+        var window = new ClientWindow(data.SkillPoints(12));
         window.Feed(entry);
         Assert.Equal(24, session.SkillPointsLeft);
         var skills = UpgradableLevel2(data, "Gladiator", 12).Take(4).ToList();
@@ -165,6 +170,20 @@ public sealed class SkillPointClientModelTests
         var reset = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelResetRq).U8(1).I32(0).ToArray(), Now);
         window.Feed(reset);
         Assert.Equal(24, window.Shown);
+
+        // 0x3844 as recorded (official 0000 01 c0b51501 01 c0b51501 01 01 01 1500): result u16, type u8, skill i32, the
+        // modify list {skill i32 → level u8}, then the points {type u8 1, refunded u16}.
+        var reply = reset.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillLevelResetRs);
+        Assert.Equal(0, BitConverter.ToUInt16(reply, 2));
+        Assert.Equal(1, reply[4]);
+        Assert.Equal(0, BitConverter.ToInt32(reply, 5));
+        var count = reply[9];
+        Assert.Equal(3, count);   // the three skills still above level 1
+        for (var i = 0; i < count; i++) Assert.Equal(1, reply[10 + i * 5 + 4]);
+        var tail = 10 + count * 5;
+        Assert.Equal([1, 1], reply[tail..(tail + 2)]);
+        Assert.Equal(3, BitConverter.ToUInt16(reply, tail + 2));   // 3 points refunded
+        Assert.Equal(tail + 4, reply.Length);
     }
 
     /// <summary>
@@ -188,7 +207,7 @@ public sealed class SkillPointClientModelTests
         }
 
         var (session2, entry) = await EnterAsync(store, data, 12);
-        var window = new ClientWindow();
+        var window = new ClientWindow(data.SkillPoints(12));
         window.Feed(entry);
         Assert.Equal(21, session2.SkillPointsLeft);
         Assert.Equal(21, window.Shown);
@@ -276,7 +295,7 @@ public sealed class SkillPointClientModelTests
         Assert.Equal(41, data.SkillPoints(level));
         Assert.Equal(0, session.SkillPointsLeft);
         Assert.Equal(41, serverSpent);
-        Assert.Equal(GamePackets.SkillPointUpdate(0), entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt));
+        Assert.Equal(GamePackets.SkillPointUpdate(41), entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt));
         var list = entry.Single(p => GameSessionTestHelpers.Op(p) == 0x5100);
         for (var i = 0; i < spendTargets.Count; i++)
         {

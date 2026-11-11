@@ -696,15 +696,18 @@ public static class GamePackets
 
     /// <summary>
     /// 0x5105 SkillPointUpdate_NT (usmap DevPacketData_GameServer_SkillPointUpdate_NT, wire opcode +0x157 from 0x3746):
-    /// varint count | CommonSkillPointInfo { mask u8 0x01, ESkillPointType u8, _point varint } per entry.
-    /// OBSERVED after official SkillLevelUp (#18470-18472 and 2026-10-31 captures): 15 points left → body 0101010f.
+    /// count u8 | CommonSkillPointInfo { ESkillPointType u8, _point u16 } per entry; no presence mask.
+    /// OBSERVED (official captures 2026-10-13, 11-04, 11-05; 22 of 22 parse this way): the point is the points SPENT, not the
+    /// points left: it rises by the cost on every SkillLevelUp (0101a500 → 0101a900 → 0101ad00 for two level-ups costing 4)
+    /// and falls by the refund on a SkillLevelReset. The client shows its own total (Exp table) minus this value, so the old
+    /// layout (mask 01, type 01, varint left) read as 0x01 + 256 × left spent and showed -256 with 1 point left.
     /// </summary>
-    public static byte[] SkillPointUpdate(int pointsLeft, byte pointType = 1) =>
-        PacketWriter.Opcode(0x5105).Varint(1).AppendSkillPointInfo(pointsLeft, pointType).ToArray();
+    public static byte[] SkillPointUpdate(int pointsSpent, byte pointType = 1) =>
+        PacketWriter.Opcode(0x5105).U8(1).AppendSkillPointInfo(pointsSpent, pointType).ToArray();
 
-    /// <summary>One CommonSkillPointInfo entry (mask 0x01, type, point varint) inside 0x5105, 0x3844._modify_points, etc.</summary>
+    /// <summary>One CommonSkillPointInfo entry (type u8, point u16) inside 0x5105 and 0x3844._modify_points.</summary>
     public static PacketWriter AppendSkillPointInfo(this PacketWriter w, int point, byte pointType = 1) =>
-        w.U8(1).U8(pointType).Varint(point);
+        w.U8(pointType).U16(Math.Clamp(point, 0, ushort.MaxValue));
 
     /// <summary>0x5100 skill list: count + ready entries (flag 1, i32 id, level, original level, additional level, cooltime zeros).</summary>
     public static byte[] SkillList(IReadOnlyList<(int SkillId, int Level)> skills, IReadOnlyDictionary<int, int>? originalLevels = null,

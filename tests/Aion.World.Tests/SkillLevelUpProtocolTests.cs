@@ -23,7 +23,7 @@ public sealed class SkillLevelUpProtocolTests
         Assert.Equal(GamePackets.CharCombatPowerUpdate(cpBefore + 1, cpBefore + 1), up[0]);
         Assert.Equal(Convert.FromHexString("4038" + "0000" + "D0FFA700"), up[1]);
         Assert.Equal(Convert.FromHexString("1338" + "01" + "D0FFA700" + "01" + "D0FFA700" + "0202" + "0000000000" + "03"), up[2]);
-        Assert.Equal(GamePackets.SkillPointUpdate(15), up[3]);
+        Assert.Equal(GamePackets.SkillPointUpdate(1), up[3]);   // 1 point spent
         Assert.Equal(0, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(up), 2));
         Assert.Equal(2, session.SkillLevel(RendingBlow));
     }
