@@ -52,10 +52,14 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await Scalar(c,t,"SELECT array_agg(r.role ORDER BY r.role) FROM auth.accounts a JOIN auth.account_roles r USING(account_id) WHERE a.account_id=$1 AND a.disabled_at IS NULL AND r.role IN ("+StaffAccess.RoleSqlList+")",ct,actor) as string[] ?? [];
     private static async Task RequireStaff(NpgsqlConnection c, NpgsqlTransaction t, Guid actor, CancellationToken ct, StaffPermission permission=StaffPermission.ViewDashboard)
     { if(!StaffAccess.Can(await StaffRoles(c,t,actor,ct),permission)) throw new GameplayException("forbidden"); }
-    private static async Task<List<ItemState>> Items(NpgsqlConnection c, NpgsqlTransaction t, Guid character, CancellationToken ct)
+    private static async Task<List<ItemState>> Items(NpgsqlConnection c, NpgsqlTransaction t, Guid character, CancellationToken ct, Guid? account=null)
     {
         var items=new List<ItemState>();
-        await using var q=Query(c,t,"SELECT instance_id,build_id,template_id,quantity,location,slot,revision,rolled_stats::text,upgrades::text,wire_id FROM game.item_instances WHERE character_id=$1 ORDER BY instance_id",character);
+        // Account storage is shared across the account's characters, so it is read by its owner, not only by character.
+        const string cols="SELECT instance_id,build_id,template_id,quantity,location,slot,revision,rolled_stats::text,upgrades::text,wire_id FROM game.item_instances WHERE ";
+        await using var q=account is null
+            ? Query(c,t,cols+"character_id=$1 ORDER BY instance_id",character)
+            : Query(c,t,cols+"(character_id=$1 OR (location='account_storage' AND account_storage_owner=$2)) ORDER BY instance_id",character,account.Value);
         await using var r=await q.ExecuteReaderAsync(ct);
         while(await r.ReadAsync(ct)) items.Add(new(r.GetGuid(0),r.GetString(1),r.GetInt32(2),r.GetInt64(3),r.GetString(4),r.IsDBNull(5)?null:r.GetInt32(5),r.GetInt64(6),JsonSerializer.Deserialize<JsonElement>(r.GetString(7)),JsonSerializer.Deserialize<JsonElement>(r.GetString(8)),r.GetInt64(9)));
         return items;
@@ -178,7 +182,7 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await using var c=await source.OpenConnectionAsync(ct);
         await using var t=await c.BeginTransactionAsync(ct);
         if(!await Own(c,t,account.AccountId,character,ct)) return null;
-        var items=await Items(c,t,character,ct); var skills=await Skills(c,t,character,ct); var wings=await Wings(c,t,character,ct); var extras=await Extras(c,t,character,ct);
+        var items=await Items(c,t,character,ct,account.AccountId); var skills=await Skills(c,t,character,ct); var wings=await Wings(c,t,character,ct); var extras=await Extras(c,t,character,ct);
         await t.CommitAsync(ct); return new(items,skills,wings,extras);
     }
 
@@ -1754,20 +1758,98 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
     // Count units of a bag stack are used up: the row shrinks, or goes when it reaches zero.
     public async Task<bool> MoveItemToContainerAsync(VerifiedAccount account, Guid character, Guid item, long revision, string location, int slot, CancellationToken ct=default)
     {
-        if(slot is <0 or >999 || location is not ("bag" or "storage")) throw new GameplayException("invalid_slot");
+        if(slot is <0 or >999 || location is not ("bag" or "storage" or "account_storage")) throw new GameplayException("invalid_slot");
         await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
         if(!await Own(c,t,account.AccountId,character,ct)) return false;
-        await using(var q=Query(c,t,"SELECT location,slot FROM game.item_instances WHERE instance_id=$1 AND character_id=$2 AND revision=$3 AND location IN ('bag','storage') FOR UPDATE",item,character,revision))
+        // The moved item is this character's own bag/warehouse item, or an account-storage item shared across the account.
+        await using(var q=Query(c,t,"SELECT location,slot FROM game.item_instances WHERE instance_id=$1 AND revision=$2 AND location IN ('bag','storage','account_storage') AND (character_id=$3 OR (location='account_storage' AND account_storage_owner=$4)) FOR UPDATE",item,revision,character,account.AccountId))
         {
             await using var r=await q.ExecuteReaderAsync(ct);
             if(!await r.ReadAsync(ct)) return false;
             var oldLocation=r.GetString(0); object oldSlot=r.IsDBNull(1)?DBNull.Value:r.GetInt32(1);
             await r.CloseAsync();
-            // The item on the target slot (if any) swaps into the moved item's old place.
-            await Execute(c,t,"UPDATE game.item_instances SET location=$5,slot=$3,revision=revision+1 WHERE character_id=$1 AND location=$4 AND slot=$2 AND instance_id<>$6",
-                ct,character,slot,oldSlot,location,oldLocation,item);
+            // Account-storage slots are unique per account, bag and personal warehouse per character. The item already on
+            // the target slot (if any) swaps into the moved item's old place, taking that place's owner and this character.
+            object oldOwner=oldLocation=="account_storage"?account.AccountId:DBNull.Value;
+            if(location=="account_storage")
+                await Execute(c,t,"UPDATE game.item_instances SET location=$1,slot=$2,account_storage_owner=$3,character_id=$4,revision=revision+1 WHERE location='account_storage' AND account_storage_owner=$5 AND slot=$6 AND instance_id<>$7",
+                    ct,oldLocation,oldSlot,oldOwner,character,account.AccountId,slot,item);
+            else
+                await Execute(c,t,"UPDATE game.item_instances SET location=$1,slot=$2,account_storage_owner=$3,character_id=$4,revision=revision+1 WHERE character_id=$4 AND location=$5 AND slot=$6 AND instance_id<>$7",
+                    ct,oldLocation,oldSlot,oldOwner,character,location,slot,item);
         }
-        await Execute(c,t,"UPDATE game.item_instances SET location=$3,slot=$2,revision=revision+1 WHERE instance_id=$1",ct,item,slot,location);
+        object newOwner=location=="account_storage"?account.AccountId:DBNull.Value;
+        await Execute(c,t,"UPDATE game.item_instances SET location=$2,slot=$3,account_storage_owner=$4,character_id=$5,revision=revision+1 WHERE instance_id=$1",ct,item,location,slot,newOwner,character);
+        await t.CommitAsync(ct); return true;
+    }
+
+    // Free slots of a container, scoped as the schema's unique indexes are: account storage per account, the rest per character.
+    static async Task<HashSet<int>> ContainerSlotsUsed(NpgsqlConnection c, NpgsqlTransaction t, Guid character, string location, Guid account, CancellationToken ct)
+    {
+        var used=new HashSet<int>();
+        await using var q=location=="account_storage"
+            ? Query(c,t,"SELECT slot FROM game.item_instances WHERE location='account_storage' AND account_storage_owner=$1 AND slot IS NOT NULL",account)
+            : Query(c,t,"SELECT slot FROM game.item_instances WHERE character_id=$1 AND location=$2 AND slot IS NOT NULL",character,location);
+        await using var r=await q.ExecuteReaderAsync(ct);
+        while(await r.ReadAsync(ct)) used.Add(r.GetInt32(0));
+        return used;
+    }
+    static int NextFreeSlot(HashSet<int> used){ var s=0; while(used.Contains(s)) s++; used.Add(s); return s; }
+
+    /// <summary>0x5642 ItemStore: bag stacks move into the personal warehouse ('storage') or the account warehouse
+    /// ('account_storage'), onto the lowest free slots. A partial count splits the stack, leaving the rest in the bag.</summary>
+    public async Task<bool> StoreItemsInContainerAsync(VerifiedAccount account, Guid character, string location, IReadOnlyList<(Guid Item,long Revision,int Count)> items, CancellationToken ct=default)
+    {
+        if(location is not ("storage" or "account_storage")) throw new GameplayException("invalid_slot");
+        if(items.Count==0) return false;
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        if(!await Own(c,t,account.AccountId,character,ct)) return false;
+        var used=await ContainerSlotsUsed(c,t,character,location,account.AccountId,ct);
+        object owner=location=="account_storage"?account.AccountId:DBNull.Value;
+        foreach(var (item,revision,count) in items)
+        {
+            if(count<1) return false;
+            if(await Scalar(c,t,"SELECT quantity FROM game.item_instances WHERE instance_id=$1 AND character_id=$2 AND revision=$3 AND location='bag' FOR UPDATE",ct,item,character,revision) is not long quantity || count>quantity) return false;
+            var free=NextFreeSlot(used);
+            if(count==quantity)
+                await Execute(c,t,"UPDATE game.item_instances SET location=$2,slot=$3,account_storage_owner=$4,revision=revision+1 WHERE instance_id=$1",ct,item,location,free,owner);
+            else
+            {
+                await Execute(c,t,"UPDATE game.item_instances SET quantity=quantity-$2,revision=revision+1 WHERE instance_id=$1",ct,item,(long)count);
+                await Execute(c,t,"INSERT INTO game.item_instances(character_id,build_id,template_id,quantity,location,slot,account_storage_owner,rolled_stats,upgrades) "
+                    +"SELECT character_id,build_id,template_id,$2,$3,$4,$5,rolled_stats,upgrades FROM game.item_instances WHERE instance_id=$1",ct,item,(long)count,location,free,owner);
+            }
+        }
+        await t.CommitAsync(ct); return true;
+    }
+
+    /// <summary>0x5644 ItemTakeOut: warehouse or account-storage stacks (by wire key) move back into this character's bag,
+    /// onto the lowest free bag slots, clearing the account owner. A partial count splits the stack.</summary>
+    public async Task<bool> TakeItemsFromContainerAsync(VerifiedAccount account, Guid character, string location, IReadOnlyList<(long Key,int Count)> items, CancellationToken ct=default)
+    {
+        if(location is not ("storage" or "account_storage")) throw new GameplayException("invalid_slot");
+        if(items.Count==0) return false;
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        if(!await Own(c,t,account.AccountId,character,ct)) return false;
+        var used=await ContainerSlotsUsed(c,t,character,"bag",account.AccountId,ct);
+        foreach(var (key,count) in items)
+        {
+            if(count<1) return false;
+            var row=location=="account_storage"
+                ? await Scalar(c,t,"SELECT instance_id,quantity FROM game.item_instances WHERE wire_id=$1 AND location='account_storage' AND account_storage_owner=$2 FOR UPDATE",ct,key,account.AccountId)
+                : await Scalar(c,t,"SELECT instance_id,quantity FROM game.item_instances WHERE wire_id=$1 AND location='storage' AND character_id=$2 FOR UPDATE",ct,key,character);
+            if(row is not object[] r || (long)r[1]<count) return false;
+            var instance=(Guid)r[0]; var quantity=(long)r[1];
+            var free=NextFreeSlot(used);
+            if(count==quantity)
+                await Execute(c,t,"UPDATE game.item_instances SET location='bag',slot=$2,account_storage_owner=NULL,character_id=$3,revision=revision+1 WHERE instance_id=$1",ct,instance,free,character);
+            else
+            {
+                await Execute(c,t,"UPDATE game.item_instances SET quantity=quantity-$2,revision=revision+1 WHERE instance_id=$1",ct,instance,(long)count);
+                await Execute(c,t,"INSERT INTO game.item_instances(character_id,build_id,template_id,quantity,location,slot,rolled_stats,upgrades) "
+                    +"SELECT $3,build_id,template_id,$2,'bag',$4,rolled_stats,upgrades FROM game.item_instances WHERE instance_id=$1",ct,instance,(long)count,character,free);
+            }
+        }
         await t.CommitAsync(ct); return true;
     }
 

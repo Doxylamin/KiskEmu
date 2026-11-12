@@ -1877,6 +1877,20 @@ Check(BitConverter.ToUInt16(toDepot[0], 2) == 0 && staffStore.Items.First(i => i
       && toDepot.Any(b => Op(b) == 0x561b), "a bag item moves into the warehouse (container 2, slot 3) and the change is sent (0x561b)");
 var fromDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemMoveRq).I32(0).U8(InventoryItem.Bag).I64(parkedKey).I32(7).ToArray(), Now + 7510);
 Check(BitConverter.ToUInt16(fromDepot[0], 2) == 0 && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag", Slot: 7 }, "and back into the bag");
+
+// ItemStore 0x5642 / ItemTakeOut 0x5644: the real client deposit path (npc key, item map uid->count, container byte); 4-byte result.
+var parkedQty = staffStore.Items.First(i => i.WireId == parkedKey).Quantity;
+var storeDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.Storage).ToArray(), Now + 7520);
+// Reply shape (official round 1): flag u8 (0x00 store), npc i32, result u8 (ok 0) at offset 7, echoed map, container last.
+Check(Op(storeDepot[0]) == GameSession.ItemStoreRs && storeDepot[0][2] == 0x00 && storeDepot[0][7] == 0 && storeDepot[0][^1] == InventoryItem.Storage
+      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "storage" } && storeDepot.Any(b => Op(b) == 0x561b),
+      "0x5642 ItemStore deposits a bag stack into the warehouse (flag 0x00, result ok) and sends the change (0x561b)");
+var takeDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemTakeOutRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.Storage).ToArray(), Now + 7530);
+Check(Op(takeDepot[0]) == GameSession.ItemTakeOutRs && takeDepot[0][2] == 0x10 && takeDepot[0][7] == 0 && takeDepot[0][^1] == InventoryItem.Storage
+      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag" }, "0x5644 ItemTakeOut returns the stack to the bag (flag 0x10)");
+var storeAccount = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.AccountStorage).ToArray(), Now + 7540);
+Check(storeAccount[0][7] == 0 && storeAccount[0][^1] == InventoryItem.AccountStorage && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "account_storage" },
+      "0x5642 ItemStore deposits into account storage (container 0x0f)");
 // Mail: staff mail (the builder's Mail command) stores a post for a character by name; LoadPost lists it, TakePost grants
 // the attachment once, DeletePost removes it afterwards.
 var mailed = await staffSession.SendMailAsync(staffSession.CharacterName!, "Welcome aboard", "Welcome aboard", [(530126003, 2)], CancellationToken.None);
@@ -3059,12 +3073,52 @@ sealed class FakeStore : INativeCharacterStore
     public List<PostRecord> Posts { get; } = [];
     public Task<bool> MoveItemToContainerAsync(Guid character, Guid item, long revision, string location, int slot, CancellationToken ct)
     {
-        var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location is "bag" or "storage");
+        var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location is "bag" or "storage" or "account_storage");
         if (index < 0) return Task.FromResult(false);
         var (oldLocation, oldSlot) = (Items[index].Location, Items[index].Slot);
         for (var i = 0; i < Items.Count; i++)
             if (i != index && Items[i].Location == location && Items[i].Slot == slot) Items[i] = Items[i] with { Location = oldLocation, Slot = oldSlot, Revision = Items[i].Revision + 1 };
         Items[index] = Items[index] with { Location = location, Slot = slot, Revision = revision + 1 };
+        return Task.FromResult(true);
+    }
+    public Task<bool> StoreItemsInContainerAsync(Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct)
+    {
+        if (location is not ("storage" or "account_storage") || items.Count == 0) return Task.FromResult(false);
+        var used = Items.Where(i => i.Location == location && i.Slot is not null).Select(i => i.Slot!.Value).ToHashSet();
+        int Free() { var s = 0; while (used.Contains(s)) s++; used.Add(s); return s; }
+        foreach (var (item, revision, count) in items)
+        {
+            var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location == "bag");
+            if (index < 0 || count < 1 || count > Items[index].Quantity) return Task.FromResult(false);
+            var source = Items[index];
+            var slot = Free();
+            if (count == source.Quantity) Items[index] = source with { Location = location, Slot = slot, Revision = source.Revision + 1 };
+            else
+            {
+                Items[index] = source with { Quantity = source.Quantity - count, Revision = source.Revision + 1 };
+                Items.Add(source with { InstanceId = Guid.NewGuid(), WireId = Items.Max(i => i.WireId) + 1, Quantity = count, Location = location, Slot = slot, Revision = 0 });
+            }
+        }
+        return Task.FromResult(true);
+    }
+    public Task<bool> TakeItemsFromContainerAsync(Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct)
+    {
+        if (location is not ("storage" or "account_storage") || items.Count == 0) return Task.FromResult(false);
+        var used = Items.Where(i => i.Location == "bag" && i.Slot is not null).Select(i => i.Slot!.Value).ToHashSet();
+        int Free() { var s = 0; while (used.Contains(s)) s++; used.Add(s); return s; }
+        foreach (var (key, count) in items)
+        {
+            var index = Items.FindIndex(i => i.WireId == key && i.Location == location);
+            if (index < 0 || count < 1 || count > Items[index].Quantity) return Task.FromResult(false);
+            var source = Items[index];
+            var slot = Free();
+            if (count == source.Quantity) Items[index] = source with { Location = "bag", Slot = slot, Revision = source.Revision + 1 };
+            else
+            {
+                Items[index] = source with { Quantity = source.Quantity - count, Revision = source.Revision + 1 };
+                Items.Add(source with { InstanceId = Guid.NewGuid(), WireId = Items.Max(i => i.WireId) + 1, Quantity = count, Location = "bag", Slot = slot, Revision = 0 });
+            }
+        }
         return Task.FromResult(true);
     }
     public Task<IReadOnlyList<PostRecord>> PostsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<PostRecord>>(Posts.OrderByDescending(p => p.Id).ToList());

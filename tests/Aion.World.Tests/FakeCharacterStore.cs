@@ -1083,6 +1083,48 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
+    public Task<bool> StoreItemsInContainerAsync(Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct)
+    {
+        if (location is not ("storage" or "account_storage") || items.Count == 0) return Task.FromResult(false);
+        var used = Items.Where(i => i.Location == location && i.Slot is not null).Select(i => i.Slot!.Value).ToHashSet();
+        int Free() { var s = 0; while (used.Contains(s)) s++; used.Add(s); return s; }
+        foreach (var (item, revision, count) in items)
+        {
+            var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location == "bag");
+            if (index < 0 || count < 1 || count > Items[index].Quantity) return Task.FromResult(false);
+            var source = Items[index];
+            var slot = Free();
+            if (count == source.Quantity) Items[index] = source with { Location = location, Slot = slot, Revision = source.Revision + 1 };
+            else
+            {
+                Items[index] = source with { Quantity = source.Quantity - count, Revision = source.Revision + 1 };
+                Items.Add(source with { InstanceId = Guid.NewGuid(), WireId = Items.Max(i => i.WireId) + 1, Quantity = count, Location = location, Slot = slot, Revision = 0 });
+            }
+        }
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> TakeItemsFromContainerAsync(Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct)
+    {
+        if (location is not ("storage" or "account_storage") || items.Count == 0) return Task.FromResult(false);
+        var used = Items.Where(i => i.Location == "bag" && i.Slot is not null).Select(i => i.Slot!.Value).ToHashSet();
+        int Free() { var s = 0; while (used.Contains(s)) s++; used.Add(s); return s; }
+        foreach (var (key, count) in items)
+        {
+            var index = Items.FindIndex(i => i.WireId == key && i.Location == location);
+            if (index < 0 || count < 1 || count > Items[index].Quantity) return Task.FromResult(false);
+            var source = Items[index];
+            var slot = Free();
+            if (count == source.Quantity) Items[index] = source with { Location = "bag", Slot = slot, Revision = source.Revision + 1 };
+            else
+            {
+                Items[index] = source with { Quantity = source.Quantity - count, Revision = source.Revision + 1 };
+                Items.Add(source with { InstanceId = Guid.NewGuid(), WireId = Items.Max(i => i.WireId) + 1, Quantity = count, Location = "bag", Slot = slot, Revision = 0 });
+            }
+        }
+        return Task.FromResult(true);
+    }
+
     public Task<IReadOnlyList<PostRecord>> PostsAsync(Guid character, CancellationToken ct)
     {
         var inbox = Inboxes.GetValueOrDefault(character) ?? [];
