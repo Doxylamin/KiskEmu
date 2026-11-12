@@ -469,6 +469,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case 0x562d when plain.Length == 10: return [GamePackets.SoulBindCancel(BitConverter.ToInt64(plain, 2))];
             case LootPackets.LootRq when plain.Length >= 4: return await LootAsync(plain, now, ct);
             case ItemMoveRq when plain.Length == 19: return await MoveItemInBagAsync(plain, ct);
+            case ItemStoreRq when plain.Length >= 8: return await StoreItemsAsync(plain, ct);
+            case ItemTakeOutRq when plain.Length >= 8: return await TakeItemsAsync(plain, ct);
             case ShopOpenRq when plain.Length >= 3: return await OpenShopAsync(plain, now, ct);
             case CoinShopOpenRq when plain.Length >= 6: return await OpenCoinShopAsync(plain, now, ct);
             case CoinShopBuyRq when plain.Length >= 6: return await BuyCoinShopAsync(plain, now, ct);
@@ -954,7 +956,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     {
         var result = new List<InventoryItem>();
         // Free slots are laid out per container: the bag (1) and the warehouse (2, location 'storage').
-        var used = new Dictionary<string, HashSet<int>> { ["bag"] = [], ["storage"] = [] };
+        var used = new Dictionary<string, HashSet<int>> { ["bag"] = [], ["storage"] = [], ["account_storage"] = [] };
         foreach (var i in items.Where(i => i.Location is "bag" or "storage" && i.Slot is not null)) used[i.Location].Add(i.Slot!.Value);
         var kept = new Dictionary<long, int>();
         foreach (var i in items.Where(i => i.Location is "bag" or "storage" && i.Slot is null))
@@ -966,8 +968,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         foreach (var i in items.Where(i => i.Location is "bag" or "storage" && i.Slot is null && !kept.ContainsKey(WireKey(i))))
             if (hints?.GetValueOrDefault(WireKey(i), -1) is >= 0 and var hint && used[i.Location].Add(hint))
                 kept[WireKey(i)] = hint;
-        var next = new Dictionary<string, int> { ["bag"] = 0, ["storage"] = 0 };
-        foreach (var item in items.Where(i => i.Location is "bag" or "equipment" or "storage")
+        var next = new Dictionary<string, int> { ["bag"] = 0, ["storage"] = 0, ["account_storage"] = 0 };
+        foreach (var item in items.Where(i => i.Location is "bag" or "equipment" or "storage" or "account_storage")
                      .OrderBy(i => i.Location == "equipment" ? 0 : 1).ThenBy(i => i.Slot ?? int.MaxValue).ThenBy(i => i.WireId))
         {
             var equipped = item.Location == "equipment";
@@ -982,7 +984,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             }
             var key = item.WireId > 0 ? item.WireId : BitConverter.ToInt64(item.InstanceId.ToByteArray(), 0) & long.MaxValue;
             var equipment = equipped || data?.Item(item.TemplateId) is not null;
-            var container = equipped ? InventoryItem.Equipped : item.Location == "storage" ? InventoryItem.Storage : InventoryItem.Bag;
+            var container = equipped ? InventoryItem.Equipped : item.Location == "storage" ? InventoryItem.Storage
+                : item.Location == "account_storage" ? InventoryItem.AccountStorage : InventoryItem.Bag;
             result.Add(new InventoryItem(key, item.TemplateId, item.Quantity, container, slot,
                 equipment ? new EquipDetail((data?.ItemLevel(item.TemplateId) ?? 1) + Enchants.Effect(item.TemplateId, EnchantOf(item)).ItemLevel, equipped ? (byte)slot : (byte)0,
                     (byte)EnchantOf(item), SoulBindCount(item) > 0 ? owner : 0, SoulBindCount(item),

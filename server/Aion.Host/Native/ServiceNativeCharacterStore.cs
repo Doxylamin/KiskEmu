@@ -637,6 +637,18 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.MoveItemToContainerAsync(identity.Account, character, item, revision, location, slot, ct);
     }
 
+    public async Task<bool> StoreItemsInContainerAsync(Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.StoreItemsInContainerAsync(identity.Account, character, location, items, ct);
+    }
+
+    public async Task<bool> TakeItemsFromContainerAsync(Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.TakeItemsFromContainerAsync(identity.Account, character, location, items, ct);
+    }
+
     public async Task<IReadOnlyList<PostRecord>> PostsAsync(Guid character, CancellationToken ct)
     {
         await ValidateAsync(ct);

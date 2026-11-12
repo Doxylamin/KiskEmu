@@ -10,6 +10,7 @@ namespace Aion.World;
 public sealed partial class GameSession
 {
     public const ushort ItemMoveRq = 0x563a, ItemMoveRs = 0x563b, ItemRemoveRq = 0x563c, ItemRemoveRs = 0x563d, ItemSortRq = 0x563e, ItemSortRs = 0x563f,
+        ItemStoreRq = 0x5642, ItemStoreRs = 0x5643, ItemTakeOutRq = 0x5644, ItemTakeOutRs = 0x5645,
         QuickSlotSetRq = 0x5601, QuickSlotSetRs = 0x5602, QuickSlotResetRq = 0x5603, QuickSlotResetRs = 0x5604,
         QuickSlotContextSkillResetRq = 0x5609, QuickSlotContextSkillResetRs = 0x560a;
     const byte DecreaseItemRemove = 13;   // EDecreaseReason kItemRemove
@@ -87,6 +88,74 @@ public sealed partial class GameSession
             : await store.MoveItemToContainerAsync(character, row.InstanceId, row.Revision, target, slot, ct)) ? [[]] : []);
         if (moved.Count == 0) return [Reply(1)];
         return [Reply(0), .. await InventoryChangesAsync(ct, 0, 0), .. target == "storage" && row.Location == "bag" ? Achieve("StorageStore") : []];
+    }
+
+    static string? StoreLocation(byte container) => container switch { InventoryItem.Storage => "storage", InventoryItem.AccountStorage => "account_storage", _ => null };
+
+    /// <summary>0x5642/0x5644 {npc key i32, item map (uid i64 -> count i64), EItemContainerType u8}: the store/take-out request.</summary>
+    static (int Npc, List<(long Key, long Count)>? Map, byte Container) ReadItemStoreRequest(byte[] plain)
+    {
+        try
+        {
+            var r = new PacketReader(plain) { Offset = 2 };
+            var npc = (int)r.U32();
+            var count = r.Varint();
+            var map = new List<(long, long)>();
+            for (var i = 0; i < count && i < 128; i++) map.Add(((long)r.U64(), (long)r.U64()));
+            return (npc, map, r.U8());
+        }
+        catch (ProtocolException) { return (0, null, 0); }
+    }
+
+    // CANDIDATE reply, byte-for-byte reproducing the official round 1 (2026-11-12) store/take-out samples: a flag u8
+    // (0x00 store, 0x10 take-out), the npc key i32, a result u8 (0 = ok in every observed sample), then the item map and
+    // the container echoed. The usmap names the head result i32 + npc i32, but the observed 7-byte prefix only fits this.
+    static byte[] ItemStoreReply(ushort opcode, byte flag, int npc, int result, List<(long Key, long Count)>? map, byte container)
+    {
+        var w = PacketWriter.Opcode(opcode).U8(flag).I32(npc).U8((byte)result).Varint(map?.Count ?? 0);
+        foreach (var (key, count) in map ?? []) w.I64(key).I64(count);
+        return w.U8(container).ToArray();
+    }
+
+    /// <summary>
+    /// 0x5642 ItemStore_RQ: bag stacks (item uid -> count) are deposited into the personal warehouse (container 2) or the
+    /// account warehouse (container 0x0f, shared across the account). Answered 0x5643, after the item changes (0x561b).
+    /// </summary>
+    async Task<List<byte[]>> StoreItemsAsync(byte[] plain, CancellationToken ct)
+    {
+        var (npc, map, container) = ReadItemStoreRequest(plain);
+        byte[] Reply(int result) => ItemStoreReply(ItemStoreRs, 0x00, npc, result, map, container);
+        var location = StoreLocation(container);
+        if (location is null || map is not { Count: > 0 } || Store is not { } store || CharacterId is not { } character) return [Reply(1)];
+        var costs = new List<(Guid, long, int)>();
+        foreach (var (key, count) in map)
+            if (storedItems.TryGetValue(key, out var row) && row.Location == "bag" && count > 0 && count <= row.Quantity)
+                costs.Add((row.InstanceId, row.Revision, (int)count));
+        if (costs.Count != map.Count) return [Reply(1)];
+        var stored = await Stored(async () => await store.StoreItemsInContainerAsync(character, location, costs, ct) ? [[]] : []);
+        if (stored.Count == 0) return [Reply(1)];
+        return [Reply(0), .. await InventoryChangesAsync(ct, 0, 0), .. location == "storage" ? Achieve("StorageStore") : []];
+    }
+
+    /// <summary>
+    /// 0x5644 ItemTakeOut_RQ: warehouse or account-storage stacks (item uid -> count) move back into this character's bag.
+    /// Answered 0x5645, then the item changes (0x561b).
+    /// </summary>
+    async Task<List<byte[]>> TakeItemsAsync(byte[] plain, CancellationToken ct)
+    {
+        var (npc, map, container) = ReadItemStoreRequest(plain);
+        byte[] Reply(int result) => ItemStoreReply(ItemTakeOutRs, 0x10, npc, result, map, container);
+        var location = StoreLocation(container);
+        if (location is null || map is not { Count: > 0 } || Store is not { } store || CharacterId is not { } character) return [Reply(1)];
+        var take = new List<(long, int)>();
+        foreach (var (key, count) in map)
+        {
+            if (!storedItems.TryGetValue(key, out var row) || row.Location != location || count < 1 || count > row.Quantity) return [Reply(1)];
+            take.Add((key, (int)count));
+        }
+        var taken = await Stored(async () => await store.TakeItemsFromContainerAsync(character, location, take, ct) ? [[]] : []);
+        if (taken.Count == 0) return [Reply(1)];
+        return [Reply(0), .. await InventoryChangesAsync(ct, 0, 0)];
     }
 
     /// <summary>0x563c ItemRemove_RQ {map item key -> count (bag), map (temporary bag)}: discarded, answered with the same maps.</summary>

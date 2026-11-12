@@ -271,8 +271,12 @@ public interface IGameplayStore
     Task<int> ExtendedCharacterSlotsAsync(VerifiedAccount account, CancellationToken ct = default) => Task.FromResult(0);
     /// <summary>Moves a bag item to a bag slot; an item already there takes the moved item's old slot.</summary>
     Task<bool> MoveBagItemAsync(VerifiedAccount account, Guid character, Guid item, long revision, int slot, CancellationToken ct = default);
-    /// <summary>Moves a bag or warehouse item to a slot of 'bag' or 'storage' (the item on that slot takes the old one).</summary>
+    /// <summary>Moves a bag or warehouse item to a slot of 'bag', 'storage' or 'account_storage' (the item on that slot takes the old one).</summary>
     Task<bool> MoveItemToContainerAsync(VerifiedAccount account, Guid character, Guid item, long revision, string location, int slot, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>0x5642 ItemStore: bag stacks move into the personal ('storage') or account ('account_storage') warehouse, lowest free slots.</summary>
+    Task<bool> StoreItemsInContainerAsync(VerifiedAccount account, Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>0x5644 ItemTakeOut: warehouse or account-storage stacks (by wire key) move back into this character's bag.</summary>
+    Task<bool> TakeItemsFromContainerAsync(VerifiedAccount account, Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>The character's mail, newest first (deleted ones left out).</summary>
     Task<IReadOnlyList<PostRecord>> PostsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<PostRecord>>([]);
     /// <summary>Trusted server call (staff): a mail to any character; returns the stored post.</summary>

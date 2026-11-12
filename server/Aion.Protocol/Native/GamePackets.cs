@@ -52,7 +52,10 @@ public enum CharPoint : byte { Hp, Mp, Ap, Sp, Dp, Op, Fp, MaxHp, MaxMp, MaxAp, 
 public sealed record InventoryItem(long Key, int ItemId, long Count, byte Container, int Slot, EquipDetail? Detail = null,
     bool Locked = false, string Maker = "", long ExpireTime = 0, bool ExpireFixed = false)
 {
-    public const byte Bag = 1, Storage = 2, AccountStorage = 3, Equipped = 11;
+    // EItemContainerType. Official round 1 (2026-11-12) stored into containers 0x02 and 0x0f; which is the personal
+    // warehouse and which the account warehouse is INFERRED (2 = personal, as our login inventory already uses, so
+    // 0x0f = account storage), not shown by the trace. An official warehouse-deposit capture will settle it (CAPTURE-TODO).
+    public const byte Bag = 1, Storage = 2, AccountStorage = 0x0f, Equipped = 11;
 
     /// <summary>Whether two wire snapshots are the same for 0x561b diffing (ignores reference identity on Detail lists).</summary>
     public bool WireSameAs(InventoryItem other) =>

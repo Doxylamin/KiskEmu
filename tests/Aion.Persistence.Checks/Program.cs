@@ -214,8 +214,8 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     Check(await game.SortContainerAsync(first,id,"bag"),"bag sort succeeds when slots must be renumbered");
     var bagSorted=(await game.InventoryAsync(first,id))!.Items.Where(x=>x.Location=="bag").OrderBy(x=>x.Slot!.Value).Select(x=>x.TemplateId).ToList();
     Check(bagSorted.SequenceEqual(bagSorted.Order().ToList()),"bag sort orders by template_id");
-    // Warehouse and account storage: a bag item moves into each container and back out again. The target
-    // location is a column value, not a share, so account storage is per character like the personal depot.
+    // Warehouse and account storage. The personal warehouse is per character; account storage is shared across the
+    // account (its own account_storage_owner slot space), so another character on the account sees what was deposited.
     var depotItem=(await game.InventoryAsync(first,id))!.Items.First(x=>x.Location=="bag");
     Check(await game.MoveItemToContainerAsync(first,id,depotItem.InstanceId,depotItem.Revision,"storage",2),"a bag item moves into the personal warehouse");
     var inStorage=(await game.InventoryAsync(first,id))!.Items.Single(x=>x.InstanceId==depotItem.InstanceId);
@@ -223,9 +223,19 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     Check(await game.MoveItemToContainerAsync(first,id,inStorage.InstanceId,inStorage.Revision,"account_storage",0),"a warehouse item moves into account storage");
     var inAccount=(await game.InventoryAsync(first,id))!.Items.Single(x=>x.InstanceId==depotItem.InstanceId);
     Check(inAccount is {Location:"account_storage",Slot:0},"the item is stored in account storage");
+    Check((await game.InventoryAsync(first,slotB))!.Items.Any(x=>x.InstanceId==depotItem.InstanceId && x.Location=="account_storage"),"another character on the account sees the account-storage item");
     Check(await game.MoveItemToContainerAsync(first,id,inAccount.InstanceId,inAccount.Revision,"bag",20),"an account-storage item moves back into the bag");
     Check((await game.InventoryAsync(first,id))!.Items.Single(x=>x.InstanceId==depotItem.InstanceId) is {Location:"bag",Slot:20},"the item returns to the bag");
     await Reject(()=>game.MoveItemToContainerAsync(first,id,depotItem.InstanceId,0,"equipment",0),"invalid_slot");
+    // 0x5642 ItemStore / 0x5644 ItemTakeOut: a whole bag stack is deposited onto a free account-storage slot, then another
+    // character on the account takes it out into their own bag (by wire key, cleared of the account owner).
+    var bulk=(await game.InventoryAsync(first,id))!.Items.First(x=>x.Location=="bag");
+    Check(await game.StoreItemsInContainerAsync(first,id,"account_storage",[(bulk.InstanceId,bulk.Revision,(int)bulk.Quantity)]),"ItemStore deposits a bag stack into account storage");
+    var bulkStored=(await game.InventoryAsync(first,id))!.Items.Single(x=>x.InstanceId==bulk.InstanceId);
+    Check(bulkStored.Location=="account_storage","the bulk-stored item is in account storage");
+    Check(await game.TakeItemsFromContainerAsync(first,slotB,"account_storage",[(bulkStored.WireId,(int)bulk.Quantity)]),"ItemTakeOut pulls the account-storage item out for another character on the account");
+    Check((await game.InventoryAsync(first,slotB))!.Items.Any(x=>x.WireId==bulkStored.WireId && x.Location=="bag"),"the taken item is now in the other character's bag");
+    await Reject(()=>game.StoreItemsInContainerAsync(first,id,"equipment",[(bulk.InstanceId,0,1)]),"invalid_slot");
     // Ascension grade: staff-set, 1..6, loaded with the character for the spawn.
     Check((await game.AdminCharacterAsync(second,id))!.Ascension==1,"new characters start at ascension grade 1");
     await Reject(()=>game.AdminAsync(second,new(Guid.NewGuid(),id,"ascension",Ascension:7)),"invalid_ascension");
