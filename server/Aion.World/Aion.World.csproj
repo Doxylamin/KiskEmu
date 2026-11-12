@@ -62,6 +62,7 @@
     <EmbeddedResource Include="../../tools/data/world-objects.json" LogicalName="world-objects.json" />
     <EmbeddedResource Include="../../tools/data/monolith-table.json" LogicalName="monolith-table.json" />
     <EmbeddedResource Include="../../tools/data/map-events.json" LogicalName="map-events.json" />
+    <EmbeddedResource Include="../../tools/data/npc-talks.json" LogicalName="npc-talks.json" />
     <EmbeddedResource Include="../../tools/data/expedition.json" LogicalName="expedition.json" />
     <EmbeddedResource Include="../../tools/data/resets.json" LogicalName="resets.json" />
     <EmbeddedResource Include="../../tools/data/titles.json" LogicalName="titles.json" />

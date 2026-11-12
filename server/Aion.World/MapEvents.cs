@@ -13,7 +13,8 @@ namespace Aion.World;
 // OBSERVED in the official HQ001 run (capture 20261013-144836 #9605-14304): MapEventJoin_NT 0x922e at entry, one
 // MapEventUpdateProgress_NT 0x922d per objective change and per step, MapEventLeave_NT 0x922f after the exit move;
 // the step's objectives count from the step start while its pre-directives still play; looped directives (a hurry
-// caption every 15 s) do not block the ones after them; Delay does.
+// caption every 15 s) do not block the ones after them; Delay does, and so does a PlayNpcTalk for its NpcTalk PlayTime and an
+// NpcMoveToWayPoint while its NPC still fights (the NPCs walked off before their speech or fight was over).
 
 public sealed record MapEventCondition([property: JsonPropertyName("t")] string Type, [property: JsonPropertyName("v")] string[] Values)
 {
@@ -297,6 +298,22 @@ public sealed class MapEventTables
     public IReadOnlySet<string> Deferred(int mapId) => (file.Deferred.GetValueOrDefault(K(mapId)) ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
 }
 
+/// <summary>The client's NpcTalk play times of the talks the map events name (tools/npc_talks.py -> tools/data/npc-talks.json).</summary>
+public static class NpcTalks
+{
+    sealed record File([property: JsonPropertyName("talks")] Dictionary<string, int> Talks);
+
+    static readonly Lazy<Dictionary<string, int>> talks = new(() =>
+    {
+        using var stream = typeof(NpcTalks).Assembly.GetManifestResourceStream("npc-talks.json") ?? throw new InvalidOperationException("npc-talks.json is not embedded");
+        var file = JsonSerializer.Deserialize<File>(stream) ?? throw new InvalidDataException("npc-talks.json");
+        return new Dictionary<string, int>(file.Talks, StringComparer.OrdinalIgnoreCase);
+    });
+
+    /// <summary>The sum of the talk's lines' PlayTime (ms), 0 when the table has no such talk.</summary>
+    public static int DurationMs(string talk) => talks.Value.GetValueOrDefault(talk);
+}
+
 /// <summary>What a running event asks of the world (the session implements it for its private instance copy).</summary>
 public interface IMapEventHost
 {
@@ -307,6 +324,8 @@ public interface IMapEventHost
     void Despawn(string spawner, int delayMs, bool kill);
     void SummonAround(string target, string spawner, int count, double radius);
     void MoveNpc(string spawner, string route);
+    /// <summary>How long a talk plays (the sum of its NpcTalk lines' PlayTime, ms); 0 when unknown.</summary>
+    int TalkDurationMs(string talk) => NpcTalks.DurationMs(talk);
     void FollowPc(string spawner, bool follow);
     void RotateNpc(string spawner, string target);
     void Talk(string talk);
@@ -380,7 +399,47 @@ public sealed class MapEventRun
         public int Step { get; } = step;
         public int Index { get; set; }
         public long WaitUntil { get; set; }
+        /// <summary>When the last PlayNpcTalk of this sequence is over (its NpcTalk PlayTime after it started).</summary>
+        public long TalkUntil { get; set; }
+        /// <summary>When the directive at Index started waiting for its NPC's fight to end (null: not waiting).</summary>
+        public long? FightSince { get; set; }
+        /// <summary>Spawners this sequence changed the relationship of: the script itself takes them out of their fight.</summary>
+        public HashSet<string> Released { get; } = new(StringComparer.OrdinalIgnoreCase);
         public bool Done => Index >= List.Count;
+    }
+
+    /// <summary>
+    /// The longest a scripted walk waits for its NPC's fight to end (CANDIDATE: no table names one; the client-side
+    /// objectives' fallback, so a fight the NPC cannot finish never stalls the story).
+    /// </summary>
+    public const int FightWaitMs = FallbackMs;
+
+    /// <summary>A talk with no NpcTalk row: 3000 ms (CANDIDATE: the PlayTime of most caption lines).</summary>
+    public const int DefaultTalkMs = 3000;
+
+    /// <summary>How long a PlayNpcTalk plays: the sum of the talk's NpcTalk PlayTime (tools/data/npc-talks.json).</summary>
+    int TalkMs(string talk) => Host.TalkDurationMs(talk) is var ms and > 0 ? ms : DefaultTalkMs;
+
+    /// <summary>
+    /// Whether the directive at the sequence's Index must wait. The user's report against the official server: scripted
+    /// NPCs finish their speech and their fight before they walk on; ours ran to the next point mid-sentence (121 talk ->
+    /// walk pairs in the data have no Delay between them) and mid-fight.
+    /// - A walk (NpcMoveToWayPoint) or the next talk waits until this sequence's last PlayNpcTalk is over. Other
+    ///   directives (FollowPc, spawns, aggro) do not wait (CANDIDATE: kept as before, e.g. a wagon's caption and its
+    ///   Cherubim group in HQ001 still come together); a Delay after a talk runs alongside it, so "talk, Delay, walk" walks after the later of the two.
+    /// - An NpcMoveToWayPoint waits while its NPC is still fighting. Not when this sequence changed the NPC's
+    ///   relationship before the move (the script ends that fight itself: Mard turns NPC_Dark and leaves Elvida at 70 %
+    ///   HP in HQ001), and no longer than <see cref="FightWaitMs"/>.
+    /// </summary>
+    bool Holds(Sequence sequence, MapEventDirective d, long now)
+    {
+        if (d.Repeats) return false;
+        if (d.Type is "NpcMoveToWayPoint" or "PlayNpcTalk" && now < sequence.TalkUntil) return true;
+        if (d.Type != "NpcMoveToWayPoint") return false;
+        var spawner = d.Value(0);
+        if (sequence.Released.Contains(spawner) || !Host.NpcInCombat(spawner)) return false;
+        sequence.FightSince ??= now;
+        return now - sequence.FightSince.Value < FightWaitMs;
     }
 
     sealed class Repeater(MapEventDirective directive, long nextMs)
@@ -736,10 +795,18 @@ public sealed class MapEventRun
             {
                 while (!sequence.Done && now >= sequence.WaitUntil)
                 {
-                    var d = sequence.List[sequence.Index++];
+                    var d = sequence.List[sequence.Index];
+                    if (Holds(sequence, d, now)) break;
+                    sequence.Index++;
+                    sequence.FightSince = null;
                     if (d.Repeats) { repeaters.Add(new Repeater(d, d.PreDelay ? now + d.Interval : now)); continue; }
                     if (d.Type == "Delay") { sequence.WaitUntil = now + d.Int(0); progressed = true; break; }
-                    if (Holds(d.Conditions, now)) Execute(d, now);
+                    if (d.Type == "ChangeRelationshipEntity") sequence.Released.UnionWith(Split(d.Value(0)));
+                    if (Holds(d.Conditions, now))
+                    {
+                        Execute(d, now);
+                        if (d.Type == "PlayNpcTalk") sequence.TalkUntil = now + TalkMs(d.Value(0));
+                    }
                     progressed = true;
                 }
                 if (sequence.Done) sequences.Remove(sequence);
