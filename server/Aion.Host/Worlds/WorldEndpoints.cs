@@ -234,6 +234,39 @@ public static class WorldEndpoints
         // The realm's wallet changed (server/DATABASES.md, Quna): the account's sessions here show the new balance.
         control.MapPost("/quna/balance", (QunaBalancePush input, IServiceProvider services) =>
             Results.Ok(new { value = QunaPushed(services.GetService<WorldPresence>(), input) }));
+        // A staff move of a character to another world (CharacterWorldMoves on the realm, which checked the staff member's
+        // permission). The actor and the target account are mirrored from the realm first: audit and ownership name them.
+        control.MapPost("/characters/export", (MoveExport input, IGameplayStore game, IServiceProvider services, CancellationToken ct) => Move(async () =>
+        {
+            if (services.GetService<WorldPresence>()?.FindCharacter(input.CharacterId) is not null) return Results.Conflict(new { error = "character_online" });
+            await Mirror(services, ct, input.Actor);
+            return Results.Ok(await game.ExportCharacterAsync(input.RequestId, input.Actor, input.CharacterId, input.TargetWorld, input.Reason, ct));
+        }));
+        control.MapPost("/characters/import", (CharacterMoveImport input, IGameplayStore game, IServiceProvider services, CancellationToken ct) => Move(async () =>
+        {
+            await Mirror(services, ct, input.Actor, input.TargetAccount);
+            return Results.Ok(await game.ImportCharacterAsync(input, worldId, ct));
+        }));
+        control.MapPost("/characters/finish", (MoveFinish input, IGameplayStore game, IServiceProvider services, CancellationToken ct) => Move(async () =>
+        {
+            await game.FinishCharacterMoveAsync(input.RequestId, input.Actor, input.CharacterId, input.MovedTo, ct);
+            return Results.Ok(new { done = true });
+        }));
+    }
+
+    sealed record MoveExport(Guid RequestId, Guid Actor, Guid CharacterId, int TargetWorld, string? Reason);
+    sealed record MoveFinish(Guid RequestId, Guid Actor, Guid CharacterId, Guid? MovedTo);
+
+    static async Task<IResult> Move(Func<Task<IResult>> step)
+    {
+        try { return await step(); }
+        catch (GameplayException error) { return Results.BadRequest(new { error = error.Code }); }
+    }
+
+    static async Task Mirror(IServiceProvider services, CancellationToken ct, params Guid[] accounts)
+    {
+        if (services.GetService<Realm.AccountMirrorService>() is not { } mirror) return;
+        foreach (var account in accounts.Where(a => a != Guid.Empty).Distinct()) await mirror.RefreshAsync(account, ct);
     }
 
     /// <summary>Hands a pushed Quna balance to every session of the account in this world (on its game loop); the number reached.</summary>

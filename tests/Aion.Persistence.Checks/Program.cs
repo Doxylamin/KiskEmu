@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Aion.Application.Characters;
 using Aion.Application.Gameplay;
 using Aion.Core;
@@ -483,6 +484,105 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
         audit.Parameters.AddWithValue(movable);
         Check(((string[])(await audit.ExecuteScalarAsync())!).SequenceEqual(["staff_character_block","staff_character_unblock","staff_character_cancel_delete",
             "staff_character_transfer","staff_character_delete"]),"each staff character action is audited once");
+    }
+    // Moving a character to another world (migration 108, docs/STAFF_CHARACTERS.md). This database stands in for both worlds:
+    // the export reads world 1204's "Starter" (legion member, mail, quests, hotbar, sold market listing), the import makes a
+    // new character in world 1205, the finish deletes the source0. Ids are new, so a move back could not collide.
+    {
+        var mover=new PostgresGameplayStore(source,progression);
+        var wires=new PostgresCharacterRepository(source);
+        var actor=second.AccountId;
+        var admin=new VerifiedAccount(Guid.Parse(Environment.GetEnvironmentVariable("AION_TEST_ADMIN")!));
+        var graveyard=Guid.Parse("00000000-0000-0000-0000-00000000dead");
+        async Task<long> Rows(string sql,params object[] args)
+        {
+            await using var q=source.CreateCommand(sql);
+            foreach(var arg in args) q.Parameters.AddWithValue(arg);
+            return Convert.ToInt64(await q.ExecuteScalarAsync());
+        }
+        var before=(await mover.InventoryAsync(first,id))!;
+        var equippedBefore=before.Items.First(x=>x.Location=="equipment");
+        Check(await mover.SaveQuickSlotAsync(first,id,4,new QuickSlotRecord(4,1,equippedBefore.WireId,equippedBefore.TemplateId,0)),"an item on the hotbar before the move");
+        // One item in the account warehouse: the account's, in this world; it stays.
+        var stored=before.Items.First(x=>x.Location=="bag" && x.InstanceId!=equippedBefore.InstanceId);
+        await using(var warehouse=source.CreateCommand("UPDATE game.item_instances SET location='account_storage',slot=NULL,account_storage_owner=$2 WHERE instance_id=$1"))
+        { warehouse.Parameters.AddWithValue(stored.InstanceId); warehouse.Parameters.AddWithValue(first.AccountId); await warehouse.ExecuteNonQueryAsync(); }
+        var questsBefore=(await mover.QuestsAsync(first,id))!;
+        Check(await Rows("SELECT count(*) FROM game.guild_members WHERE character_id=$1",id)==1 && await Rows("SELECT count(*) FROM game.character_posts WHERE character_id=$1",id)>0,
+            "the character to move is in a legion and has mail");
+
+        var request=Guid.NewGuid();
+        await Reject(()=>mover.ExportCharacterAsync(request,actor,id,1204,null),"same_world");
+        await Reject(()=>mover.ExportCharacterAsync(request,actor,Guid.NewGuid(),1205,null),"character_unavailable");
+        var package=await mover.ExportCharacterAsync(request,actor,id,1205,"world merge");
+        Check(package.CharacterId==id && package.SourceWorld==1204 && package.Name=="Starter" && package.Character.GetProperty("character_id").GetGuid()==id,"the export carries the character row");
+        Check(package.Tables.ContainsKey("game.item_instances") && package.Tables.ContainsKey("game.character_skills") && package.Tables.ContainsKey("game.quick_slots")
+              && package.Tables.ContainsKey("game.character_quests") && !package.Tables.ContainsKey("game.guild_members") && !package.Tables.ContainsKey("game.character_posts")
+              && !package.Tables.ContainsKey("audit.events") && !package.Tables.ContainsKey("game.shop_orders"),"the export takes the character's tables, not legion, mail, ledger or audit");
+        var exportedItems=package.Tables["game.item_instances"].EnumerateArray().Select(x => x.GetProperty("instance_id").GetGuid()).ToList();
+        Check(exportedItems.Count==before.Items.Count-1 && !exportedItems.Contains(stored.InstanceId),"account warehouse items stay in the world");
+        Check(await wires.LoadWireAsync(first.AccountId,1204,package.Character.GetProperty("wire_id").GetInt32(),default) is null,"an exported character cannot enter the world");
+        Check((await mover.ExportCharacterAsync(request,actor,id,1205,"world merge")).Tables.Count==package.Tables.Count,"a repeated export answers the same package");
+        await Reject(()=>mover.ExportCharacterAsync(Guid.NewGuid(),actor,id,1205,null),"move_in_progress");
+
+        // Import refusals: the source world, a name taken on the target, a table the target does not know, a full account.
+        var import=new CharacterMoveImport(request,actor,first.AccountId,null,"world merge",package);
+        await Reject(()=>mover.ImportCharacterAsync(import,1204),"same_world");
+        await Reject(()=>mover.ImportCharacterAsync(import with {NewName="O'Brien"},1205),"name_unavailable");
+        await Reject(()=>mover.ImportCharacterAsync(import with {NewName="Bad#Name"},1205),"invalid_name");
+        await Reject(()=>mover.ImportCharacterAsync(import with {NewName="[GM]Moved"},1205),"reserved_name");
+        await Reject(()=>mover.ImportCharacterAsync(import with {TargetAccount=Guid.NewGuid()},1205),"unknown_account");
+        var unknownTable=new Dictionary<string,JsonElement>(package.Tables) { ["game.no_such_table"]=JsonSerializer.SerializeToElement(Array.Empty<object>()) };
+        await Reject(()=>mover.ImportCharacterAsync(import with {Package=package with {Tables=unknownTable}},1205),"schema_mismatch");
+        var extraColumn=JsonNode.Parse(package.Character.GetRawText())!.AsObject(); extraColumn["no_such_column"]=1;
+        await Reject(()=>mover.ImportCharacterAsync(import with {Package=package with {Character=JsonSerializer.SerializeToElement(extraColumn)}},1205),"schema_mismatch");
+
+        var moved=await mover.ImportCharacterAsync(import,1205);
+        Check(moved.CharacterId!=id && moved.Name=="Starter" && moved.AccountId==first.AccountId && moved.WorldId==1205 && moved.LobbySlot==0,"the import makes a new character in the target world's first free slot");
+        Check((await mover.ImportCharacterAsync(import,1205)).CharacterId==moved.CharacterId,"a repeated import answers the same character");
+        var arrived=(await wires.LoadOwnedAsync(first.AccountId,moved.CharacterId,default))!;
+        var source0=(await wires.LoadOwnedAsync(first.AccountId,id,default))!;
+        Check(arrived.Progress.Level==source0.Progress.Level && arrived.Progress.Experience==source0.Progress.Experience && arrived.CreationId==source0.CreationId
+              && arrived.Appearance.SequenceEqual(source0.Appearance) && arrived.Ascension==source0.Ascension && !arrived.Blocked,"level, class, appearance and ascension move, unblocked");
+        Check(arrived.WireId!=source0.WireId,"the moved character gets a new wire id");
+        var after=(await mover.InventoryAsync(first,moved.CharacterId))!;
+        var keep=before.Items.Where(x => x.InstanceId!=stored.InstanceId).ToList();
+        Check(after.Items.Count==keep.Count && after.Items.All(x => keep.All(k => k.InstanceId!=x.InstanceId && k.WireId!=x.WireId)),"items move with new instance and wire ids");
+        Check(after.Items.Select(x => (x.TemplateId,x.Quantity,x.Location,x.Slot)).OrderBy(x => x).SequenceEqual(keep.Select(x => (x.TemplateId,x.Quantity,x.Location,x.Slot)).OrderBy(x => x)),
+            "every moved item keeps its template, count and place");
+        Check(after.Skills.Select(s => (s.SkillId,s.Level,s.Slot)).OrderBy(s => s).SequenceEqual(before.Skills.Select(s => (s.SkillId,s.Level,s.Slot)).OrderBy(s => s)),
+            "skills and the skill bar move as they were (not the new character's trigger defaults)");
+        var equippedAfter=after.Items.Single(x => x.Location=="equipment" && x.Slot==equippedBefore.Slot && x.TemplateId==equippedBefore.TemplateId);
+        var hotbar=(await mover.QuickSlotsAsync(first,moved.CharacterId))!;
+        Check(hotbar.Single(s => s.Slot==4).ItemUid==equippedAfter.WireId,"the hotbar follows the items' new wire ids");
+        var questsAfter=(await mover.QuestsAsync(first,moved.CharacterId))!;
+        Check(questsAfter.Select(q => (q.Code,q.Status,q.Step)).OrderBy(q => q).SequenceEqual(questsBefore.Select(q => (q.Code,q.Status,q.Step)).OrderBy(q => q))
+              && questsAfter.All(q => questsBefore.All(b => b.Uid!=q.Uid)),"quests move with new quest uids");
+        Check(await Rows("SELECT count(*) FROM game.guild_members WHERE character_id=$1",moved.CharacterId)==0
+              && await Rows("SELECT count(*) FROM game.character_posts WHERE character_id=$1",moved.CharacterId)==0,"legion membership and mail stay behind");
+
+        // Finish: the original is deleted as the lobby does; its rows stay for the record.
+        await Reject(()=>mover.FinishCharacterMoveAsync(Guid.NewGuid(),actor,id,moved.CharacterId),"unknown_move");
+        await mover.FinishCharacterMoveAsync(request,actor,id,moved.CharacterId);
+        await mover.FinishCharacterMoveAsync(request,actor,id,moved.CharacterId);
+        await Reject(()=>mover.FinishCharacterMoveAsync(request,actor,id,null),"request_conflict");
+        var left=(await mover.AdminFindCharactersAsync(second,id.ToString())).Single();
+        Check(left.AccountId==graveyard && left.Name==$"Starter#deleted{source0.WireId}" && !left.Blocked,"the original is deleted after the move");
+        await Reject(()=>mover.ExportCharacterAsync(request,actor,id,1205,null),"move_finished");
+        Check(await Rows("SELECT count(*) FROM audit.events WHERE character_id=$1 AND action IN ('staff_character_world_move_out','staff_character_world_move_finish')",id)==2
+              && await Rows("SELECT count(*) FROM audit.events WHERE character_id=$1 AND action='staff_character_world_move_in'",moved.CharacterId)==1,"both sides of the move are audited once");
+
+        // A cancelled move (the target refused it) unblocks the character where it is.
+        var stayer=(await mover.AdminFindCharactersAsync(second,"movable")).Single(x => x.WorldId==1204 && x.AccountId==first.AccountId);
+        var cancel=Guid.NewGuid();
+        await mover.ExportCharacterAsync(cancel,actor,stayer.CharacterId,1205,null);
+        Check((await mover.AdminFindCharactersAsync(second,stayer.CharacterId.ToString())).Single().Blocked,"exported: blocked");
+        await mover.FinishCharacterMoveAsync(cancel,actor,stayer.CharacterId,null);
+        Check(!(await mover.AdminFindCharactersAsync(second,stayer.CharacterId.ToString())).Single().Blocked,"a cancelled move unblocks the character");
+        await Reject(()=>mover.ExportCharacterAsync(cancel,actor,stayer.CharacterId,1205,null),"move_cancelled");
+        // A character staff deactivated is not moved.
+        await mover.AdminCharacterActionAsync(admin,new AdminCharacterAction(Guid.NewGuid(),stayer.CharacterId,"block"));
+        await Reject(()=>mover.ExportCharacterAsync(Guid.NewGuid(),actor,stayer.CharacterId,1205,null),"character_blocked");
     }
 }
 Console.WriteLine($"{checks} isolated PostgreSQL repository checks passed.");

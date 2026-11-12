@@ -17,3 +17,17 @@ export function useWorldNames(): (worldId: number | undefined) => string | null 
   }, []);
   return worldId => (worldId === undefined ? null : names.get(worldId) ?? `World ${worldId}`);
 }
+
+/** Every world (id and name), e.g. to pick the target of a move; empty until the list arrives. */
+export function useWorlds(): { worldId: number; name: string }[] {
+  const [names, setNames] = useState<Map<number, string>>(new Map());
+  useEffect(() => {
+    let live = true;
+    loading ??= api<{ worldId: number; name: string }[]>('/api/worlds')
+      .then(list => new Map(list.map(w => [w.worldId, w.name])))
+      .catch(() => { loading = null; return new Map(); });
+    loading.then(map => { if (live) setNames(map); });
+    return () => { live = false; };
+  }, []);
+  return [...names].map(([worldId, name]) => ({ worldId, name }));
+}

@@ -115,6 +115,14 @@ public sealed record AdminCharacter(Guid CharacterId, string Name, Guid AccountI
 /// <paramref name="TargetAccount"/> in the same world, into its first free lobby slot). Repeatable by the request id.
 /// </summary>
 public sealed record AdminCharacterAction(Guid RequestId, Guid CharacterId, string Action, Guid? TargetAccount = null, string? Reason = null);
+/// <summary>
+/// A character exported for another world: its <c>game.characters</c> row and the rows of every table that hangs off it by
+/// <c>character_id</c> (except what stays in the world: legion, mail, purchase ledger, audit), each as <c>to_jsonb</c>.
+/// </summary>
+public sealed record CharacterMovePackage(Guid RequestId, int SourceWorld, Guid CharacterId, string Name, int Race,
+    JsonElement Character, IReadOnlyDictionary<string, JsonElement> Tables);
+public sealed record CharacterMoveImport(Guid RequestId, Guid Actor, Guid TargetAccount, string? NewName, string? Reason, CharacterMovePackage Package);
+public sealed record CharacterMoveResult(Guid CharacterId, string Name, Guid AccountId, int WorldId, int LobbySlot);
 /// <summary>A catalogue item for the staff dashboard (latest build): grade and level from the item facts.</summary>
 public sealed record AdminCatalogItem(int TemplateId, string Name, string? Category, string? Grade, int? Level);
 public sealed record AdminCatalogPage(IReadOnlyList<AdminCatalogItem> Items, int Total, IReadOnlyList<string> Categories);
@@ -447,6 +455,17 @@ public interface IGameplayStore
     /// refuses a character that is in the world.
     /// </summary>
     Task<JsonElement> AdminCharacterActionAsync(VerifiedAccount actor, AdminCharacterAction action, CancellationToken ct = default) =>
+        throw new GameplayException("unsupported");
+    // Moving a character to another world (docs/STAFF_CHARACTERS.md). The realm runs the three steps over the worlds' control
+    // ports and has checked the staff permission; each step is repeatable by the request id.
+    /// <summary>Source world: blocks the character (reason <c>transfer:&lt;request id&gt;</c>) and returns it with its rows.</summary>
+    Task<CharacterMovePackage> ExportCharacterAsync(Guid requestId, Guid actor, Guid character, int targetWorld, string? reason, CancellationToken ct = default) =>
+        throw new GameplayException("unsupported");
+    /// <summary>Target world (<paramref name="world"/>): a new character from the package on the target account, with new ids.</summary>
+    Task<CharacterMoveResult> ImportCharacterAsync(CharacterMoveImport input, int world, CancellationToken ct = default) =>
+        throw new GameplayException("unsupported");
+    /// <summary>Source world: <paramref name="movedTo"/> set deletes the original as the lobby does; null cancels the move (unblocks it).</summary>
+    Task FinishCharacterMoveAsync(Guid requestId, Guid actor, Guid character, Guid? movedTo, CancellationToken ct = default) =>
         throw new GameplayException("unsupported");
     Task<AdminCharacterDetail?> AdminCharacterAsync(VerifiedAccount actor, Guid character, CancellationToken ct = default);
     // Latest catalogue build: exact template ID or name substring, at most five rows (GM chat command).
