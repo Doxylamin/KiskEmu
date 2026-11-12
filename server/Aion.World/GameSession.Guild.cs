@@ -13,6 +13,7 @@ public sealed partial class GameSession
         GuildMemberConnectedNt = 0x8a39;
     public const long GuildCreateKina = 100_000;
     const byte DecreaseGuildCreate = 0;
+    const byte DecreaseGuildAgitContractExtend = 30;   // EDecreaseReason kGuildAgitContractExtend (OBSERVED hall rent 2026-11-12)
     internal static readonly (byte Grade, int Bits)[] GuildAuthority = [(0, 8190), (1, 1688), (2, 512)];
     static readonly GuildTables Legion = GuildTables.Embedded;
 
@@ -270,16 +271,18 @@ public sealed partial class GameSession
                     var endHint = r.I64();
                     _ = endHint;
                     if (AgitRentCosts() is not { } costs)
-                        return [PacketWriter.Opcode(GuildOpcodes.AgitContractRs).U16(3).I32(agitId).I64(0).I32(0).ToArray()];
+                        return [PacketWriter.Opcode(GuildOpcodes.AgitContractRs).U16(3).I32(agitId).I64(0).U8(0).ToArray()];
                     var outcome = ("none", 0, 0L);
                     await Stored(async () => { outcome = await store.ContractGuildAgitAsync(character, agitId, costs, lastNow, ct); return []; });
                     if (outcome.Item1 != "ok")
-                        return [PacketWriter.Opcode(GuildOpcodes.AgitContractRs).U16(outcome.Item1 switch { "authority" => 2, "agit" => 4, "kina" => 3, _ => 1 }).I32(agitId).I64(0).I32(0).ToArray()];
+                        return [PacketWriter.Opcode(GuildOpcodes.AgitContractRs).U16(outcome.Item1 switch { "authority" => 2, "agit" => 4, "kina" => 3, _ => 1 }).I32(agitId).I64(0).U8(0).ToArray()];
                     await ReloadGuildAsync(ct);
                     var infoNt = PacketWriter.Opcode(GuildOpcodes.AgitInfoNt).I32(outcome.Item2).I64(outcome.Item3).ToArray();
                     TellGuild(guild, infoNt);
-                    return [PacketWriter.Opcode(GuildOpcodes.AgitContractRs).U16(0).I32(outcome.Item2).I64(outcome.Item3).I32(1).ToArray(), infoNt, GuildInfo(0),
-                        .. await InventoryChangesAsync(ct, 0, DecreaseGuildCreate)];
+                    // OBSERVED 2026-11-12: 0x561b (Kina, decrease 30 kGuildAgitContractExtend), then AgitContract_RS
+                    // {result u16, agit i32, end i64, bool 0} (17 B), then AgitInfo_NT; no GuildInfo.
+                    return [.. await InventoryChangesAsync(ct, 0, DecreaseGuildAgitContractExtend),
+                        PacketWriter.Opcode(GuildOpcodes.AgitContractRs).U16(0).I32(outcome.Item2).I64(outcome.Item3).U8(0).ToArray(), infoNt];
                 }
                 case GuildOpcodes.AgitDecoEquipRq:
                 {

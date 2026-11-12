@@ -71,8 +71,9 @@ public sealed class ConversionStartTests
         var (session, store) = await SessionWithStonesAsync(50);
         session.ConversionRoll = () => 0;
         var replies = await session.HandleAsync(LiveShape(), Now);
+        // The RS is the pending entry (OBSERVED 2026-11-12: 1361, made 0); the outcome comes in ConversionCompleted_NT.
         var rs = Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == GameSession.ConversionStartRs);
-        Assert.Equal((0, 1, GameSession.ConversionSuccess, ShardRecipe, 1, 1), ReadResult(rs));
+        Assert.Equal((0, 1, GameSession.ConversionFail, ShardRecipe, 1, 0), ReadResult(rs));
         Assert.Equal(40, Held(store, Stone));
         Assert.Equal(10, Held(store, SuperiorShard));
         Assert.True(GameSessionTestHelpers.HasOpcode(replies, 0x561b));
@@ -86,7 +87,8 @@ public sealed class ConversionStartTests
         var (session, store) = await SessionWithStonesAsync(50);
         session.ConversionRoll = () => 0;
         var replies = await session.HandleAsync(LiveShape(tries: 3), Now);
-        Assert.Equal((0, 1, GameSession.ConversionSuccess, ShardRecipe, 3, 3), ReadResult(Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == GameSession.ConversionStartRs)));
+        Assert.Equal((0, 1, GameSession.ConversionFail, ShardRecipe, 3, 0), ReadResult(Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == GameSession.ConversionStartRs)));
+        Assert.Equal((0, 1, GameSession.ConversionSuccess, ShardRecipe, 3, 3), ReadResult(Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == GameSession.ConversionCompletedNt)));
         Assert.Equal(20, Held(store, Stone));
         Assert.Equal(30, Held(store, SuperiorShard));
     }

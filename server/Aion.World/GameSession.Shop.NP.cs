@@ -18,13 +18,14 @@ public sealed partial class GameSession
     public const ushort TrustLimitInfoRq = 0xe260, TrustLimitInfoRs = 0xe261, TrustLimitInfoNt = 0xe262;
 
     /// <summary>
-    /// 0xe260 TrustLimitInfo_RQ: TrustLimitInfo_NT {trust_daily_limit_use bool, limit_info map (empty: count 0),
-    /// bmshop_purchase_enable bool = 1, update_time i64, trust_step i32} then TrustLimitInfo_RS result 0. Field order and
-    /// widths from the usmap; the empty map as a zero count is CANDIDATE (arrays use a varint count).
+    /// 0xe260 TrustLimitInfo_RQ: TrustLimitInfo_NT then TrustLimitInfo_RS result 0. OBSERVED official (2026-11-12, 120 B): the two
+    /// bools trust_daily_limit_use / bmshop_purchase_enable packed into one leading byte (`07` official), limit_info map
+    /// varint n × {type u8, usage i64, limit i64, reset time i64} (types 2..5; -1 = no limit), update_time i64, trust_step i32.
+    /// We send no limits: bmshop_purchase_enable set, an empty map. The entry layout is CANDIDATE (not sent).
     /// </summary>
     static List<byte[]> TrustLimitInfo(long now) =>
     [
-        PacketWriter.Opcode(TrustLimitInfoNt).U8(0).Varint(0).U8(1).I64(now).I32(0).ToArray(),
+        PacketWriter.Opcode(TrustLimitInfoNt).Bool(false).Bool(true).Varint(0).I64(now).I32(0).ToArray(),
         PacketWriter.Opcode(TrustLimitInfoRs).U16(0).ToArray(),
     ];
 

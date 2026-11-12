@@ -23,7 +23,9 @@ public sealed class EquipBagSlotTests
 
         // Bag slots 0..11 in wire order; equip the one in slot 3 into equip slot 5.
         var replies = await session.HandleAsync(new PacketWriter().U16(0xe247).I64(103).U8(5).ToArray(), Now + 100);
-        Assert.Equal(0, BitConverter.ToUInt16(replies[0], 2));
+        // Official order (2026-11-12): the item changes first, ItemEquip_RS last with 1072 kItem_Equip_Success.
+        Assert.Equal(0xe248, GameSessionTestHelpers.Op(replies[^1]));
+        Assert.Equal(1072, BitConverter.ToUInt16(replies[^1], 2));
         var changes = Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == 0x561b);
         Assert.Equal(2, changes[2]);
         Assert.True(changes.AsSpan().IndexOf(ItemHead(103, Ring, InventoryItem.Equipped, 5)) > 0);

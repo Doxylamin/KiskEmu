@@ -71,7 +71,7 @@ public sealed class AbnormalCombatTests
         await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 5000);
         await GameSessionTestHelpers.LoadInventoryAsync(session, Now + 5000);
         var use = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(82).ToArray(), Now + 5100);
-        Assert.Equal(0, use[0][2]);
+        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(use[0], 2));
         Assert.Contains(45005001, session.ActiveBuffs);
         Assert.Equal(10_000, session.ActiveReflectPermille);
         session.SetResource('H', session.Resource!.HpMax);

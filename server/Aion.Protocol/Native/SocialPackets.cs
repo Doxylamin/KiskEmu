@@ -385,6 +385,16 @@ public static class SocialPackets
     public static byte[] PartyInviteReply(int result, int serverId, string targetName) =>
         Op(SocialOpcodes.PartyInviteRs).Result(result).ServerId(serverId).String(targetName).ToArray();
 
+    /// <summary>
+    /// PartyInviteStart_NT (0x9208): to the inviter after PartyInvite_RS, describing the invitee (OBSERVED official 2026-11-12, 80 B):
+    /// server id u16 | game account id string | char db id i64 | key varint (unlike the i32 key of PartyMember) | pc id i32 | level i32 | equip item level i32 |
+    /// nickname | invite expire time i64.
+    /// </summary>
+    public static byte[] PartyInviteStart(int serverId, string gameAccountId, long dbId, int key, int pcId, int level, int equipItemLevel,
+        string nickname, long expireTime) =>
+        Op(SocialOpcodes.PartyInviteStartNt).ServerId(serverId).String(gameAccountId).I64(dbId).Varint(key).I32(pcId).I32(level).I32(equipItemLevel)
+            .String(nickname).I64(expireTime).ToArray();
+
     /// <summary>PartyInvite_NT (0x9209): to the invitee; answered with PartyInviteResponse_RQ naming the party key.</summary>
     public static byte[] PartyInviteNotice(long partyKey, long inviterDbId, InvitationInfo inviter, long expireTime)
     {

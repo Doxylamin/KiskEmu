@@ -1298,9 +1298,9 @@ Check((await staffSession.HandleAsync(new PacketWriter().U16(0x562b).I64(999).I6
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5a0a).I64(13).U8(5).ToArray(), Now)).Count == 0
       && staffStore.Items.Single(i => i.WireId == 13).Location == "bag", "an 11-byte request on another opcode is not an equip");
 var equipReply = await staffSession.HandleAsync(new PacketWriter().U16(0xe247).I64(13).U8(5).ToArray(), Now);
-Check(equipReply[0].SequenceEqual(new PacketWriter().U16(0xe248).U16(0).I64(13).U8(5).ToArray()) && staffSession.EquipOpcode == 0xe247
+Check(equipReply[^1].SequenceEqual(new PacketWriter().U16(0xe248).U16(1072).I64(13).U8(5).ToArray()) && staffSession.EquipOpcode == 0xe247
       && equipReply.Any(b => b[0] == 0x1b && b[1] == 0x56) && staffStore.Items.Single(i => i.WireId == 13).Location == "equipment",
-      "equip request: stored in slot 5, answered on the next opcode, item update sent");
+      "equip request: stored in slot 5, item update sent, answered last on the next opcode with 1072 (official 2026-11-12)");
 // A non-starter weapon becomes the combat weapon at once; armour adds its Item.dat HPMax and the stats are resent.
 var hpUnarmoured = staffSession.Resource.HpMax;
 staffStore.Items.AddRange([Stored(110120003, 1, "bag", null, 14), Stored(210130001, 1, "bag", null, 15)]);
@@ -1356,9 +1356,9 @@ staffSession.SetResource('H', 10);
 var serum = await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now);
 Check(serum[0].SequenceEqual(RidePackets.ItemUseReply(0, 17, 530116001)) && staffSession.Resource.Hp >= 10 + 15 + staffSession.Resource.HpMax * 5 / 100 - 1
       && staffStore.Items.Single(i => i.WireId == 17).Quantity == 2 && serum.Any(b => b[0] == 0x02 && b[1] == 0x38) && serum.Any(b => b[0] == 0x16 && b[1] == 0x56),
-      "Life Serum: ItemUse_RS 0, skill start on the player, HP healed (15 + 5% max), one used (0x5616)");
+      "Life Serum: ItemUse_RS 772, skill start on the player, HP healed (15 + 5% max), one used (0x5616)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 1000)).Single()[2] == 1, "the potion cooldown group refuses a second use");
-Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 31_000))[0][2] == 0, "usable again after its 30 s cooldown");
+Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 31_000))[0].AsSpan(2, 2).SequenceEqual(new byte[] { 0x04, 0x03 }), "usable again after its 30 s cooldown");
 // Souls: a soul item adds soul points to a ride not acquired yet; NeedSoul (5) of them acquire it (0x9007), and
 // soul points level an acquired ride (VehicleLevel: 25 for level 2).
 var soulRide = new[] { 1002, 1003, 1004 }.First(r => r != pet);
@@ -1612,9 +1612,10 @@ staffStore.Items.AddRange([Stored(110260001, 1, "bag", null, 60), Stored(9301000
 await staffSession.InventoryChangesAsync(default);
 var enchantKina = KinaTotal();
 var enchanted = await staffSession.HandleAsync(new PacketWriter().U16(0x5622).I64(60).Varint(0).ToArray(), Now);
-Check(enchanted[0].SequenceEqual(new PacketWriter().U16(0x5623).U16(0).I64(60).U8(1).I32(110260001).ToArray())
-      && KinaTotal() == enchantKina - 125 && staffStore.Items.Single(i => i.WireId == 61).Quantity == 95
-      && enchanted.Any(b => b[0] == 0x1b && b[1] == 0x56), "enchant +0 -> +1: 125 Kina, 5 coins, 0x5623 then the item update (0x561b)");
+Check(enchanted[0][0] == 0x1b && enchanted[0][1] == 0x56
+      && enchanted[1].SequenceEqual(new PacketWriter().U16(0x5623).U16(GameSession.EnchantSuccess).I64(60).U8(1).I32(110260001).ToArray())
+      && KinaTotal() == enchantKina - 125 && staffStore.Items.Single(i => i.WireId == 61).Quantity == 95,
+      "enchant +0 -> +1: 125 Kina, 5 coins, the item update (0x561b) then 0x5623 with 828 (official order 2026-11-12)");
 foreach (var _ in Enumerable.Range(0, 4)) await staffSession.HandleAsync(new PacketWriter().U16(0x5622).I64(60).Varint(0).ToArray(), Now);
 Check(staffStore.Items.Single(i => i.WireId == 60).Upgrades.GetProperty("enchant").GetInt32() == 5, "four more attempts reach +5 (always succeed below +10)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5622).I64(60).Varint(0).ToArray(), Now))[0][2] == 2, "beyond the Common maximum (+5): result 2");
@@ -1945,7 +1946,7 @@ var wornWeapon = staffStore.Items.First(i => i.Location == "equipment" && i.Slot
 staffStore.Items.Add(Stored(930100023, 600, "bag", null, 62));
 await staffSession.InventoryChangesAsync(default);
 var wornEnchant = await staffSession.HandleAsync(new PacketWriter().U16(0x5622).I64(wornWeapon.WireId).Varint(0).ToArray(), Now);
-Check(wornEnchant[0][2] == 0 && wornEnchant.Any(b => b[0] == 0x26 && b[1] == 0x56) && wornEnchant.Any(b => b[0] == 0x1c && b[1] == 0x56),
+Check(wornEnchant.Any(b => b[0] == 0x23 && b[1] == 0x56 && BitConverter.ToUInt16(b, 2) == GameSession.EnchantSuccess) && wornEnchant.Any(b => b[0] == 0x26 && b[1] == 0x56) && wornEnchant.Any(b => b[0] == 0x1c && b[1] == 0x56),
       $"the equipped weapon ({wornWeapon.TemplateId}) enchants and is shown (0x561c, 0x5626)");
 // Kibelisk: binding the Poeta Kibelisk (key 900000) stores it, sends the official order and 0x9233 once.
 var bind = await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(Kibelisks.FirstKey).I64(0).I32(1200081).ToArray(), Now);
@@ -2320,15 +2321,16 @@ var carol = await WorldSession("Carol");
 var dave = await WorldSession("Dave");
 await carol.TickAsync(Now + 200); await dave.TickAsync(Now + 200);
 var invite = await carol.HandleAsync(SocialRequests.EncodeServerAndName(SocialOpcodes.PartyInviteRq, 1204, dave.CharacterName!), Now + 210);
-Check(invite[0][0] == (SocialOpcodes.PartyInviteRs & 0xff) && invite.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInfoNt), "inviting creates the party (PartyInfo_NT Create) and replies");
+Check(invite.Select(b => b[0] | b[1] << 8).SequenceEqual([SocialOpcodes.PartyInfoNt, SocialOpcodes.PartyInviteRs, SocialOpcodes.PartyInviteStartNt]),
+      "inviting creates the party: PartyInfo_NT Create, PartyInvite_RS, PartyInviteStart_NT (official order 2026-11-12)");
 var davesInvite = await dave.TickAsync(Now + 220);
 var inviteNotice = davesInvite.Single(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInviteNt);
 var partyKey = BitConverter.ToInt64(inviteNotice, 2);
 var joined = await dave.HandleAsync(SocialRequests.EncodePartyInviteResponse([new PartyInviteReply(partyKey, PartyInviteAnswer.Accept)]), Now + 230);
 Check(joined.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInfoNt) && shared.Social.Parties[partyKey].Members.Count == 2, "accepting joins the party (PartyInfo_NT Join)");
 var carolHears = await carol.TickAsync(Now + 240);
-Check(carolHears.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyAddMemberNt) && carolHears.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInviteResponseNt),
-      "the leader hears the answer and the new member");
+Check(carolHears.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyAddMemberNt) && !carolHears.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInviteResponseNt),
+      "on an accept the leader hears only the new member (PartyAddMember_NT, official 2026-11-12)");
 // Party exp: a member's share of a kill is applied on that member's own loop at its next tick (0x8d07 reason 1).
 var daveExpBefore = dave.Experience;
 dave.ShareExperience(50);
@@ -2375,7 +2377,11 @@ dave.Teleport(1000, GamePackets.SpawnPosition, Now + 252);
 await dave.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 252);
 Check(carol.InstanceKey == 0 && dave.InstanceKey == 0 && dave.MapEventRuns.Count == 0, "back on the shared map");
 var left = await dave.HandleAsync(new PacketWriter().U16(SocialOpcodes.PartyLeaveRq).ToArray(), Now + 250);
-Check(left.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyDisbandNt) && !shared.Social.Parties.ContainsKey(partyKey), "leaving a party of two ends it");
+Check(left.Select(b => b[0] | b[1] << 8).SequenceEqual([SocialOpcodes.PartyDisbandNt, SocialOpcodes.PartyLeaveRs])
+      && shared.Social.Parties.TryGetValue(partyKey, out var leftParty) && leftParty.Members.Count == 1,
+      "leaving a party of two: PartyDisband_NT then PartyLeave_RS to the leaver; the leader keeps a party of one (official 2026-11-12)");
+var leaderLeft = await carol.HandleAsync(new PacketWriter().U16(SocialOpcodes.PartyLeaveRq).ToArray(), Now + 255);
+Check(leaderLeft.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyDisbandNt) && !shared.Social.Parties.ContainsKey(partyKey), "the last member leaving ends the party");
 var challenge = await carol.HandleAsync(SocialRequests.EncodeKey(SocialOpcodes.DuelCallOutRq, dave.PlayerKey), Now + 260);
 var roomKey = shared.Social.Duels.Single().Key;
 Check(challenge.Single()[0] == (SocialOpcodes.DuelCallOutRs & 0xff) && (await dave.TickAsync(Now + 270)).Any(b => (b[0] | b[1] << 8) == SocialOpcodes.DuelCallOutNt), "a duel challenge reaches the other player");

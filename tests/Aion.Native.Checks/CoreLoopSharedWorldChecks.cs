@@ -44,7 +44,7 @@ public static class CoreLoopSharedWorldChecks
         store.Items.Add(new ItemState(Guid.NewGuid(), "b", 210130001, 1, "bag", null, 1, empty, empty, 50));
         await session.InventoryChangesAsync(default);
         var eq = await session.HandleAsync(new PacketWriter().U16(0xe247).I64(50).U8(5).ToArray(), now + 120);
-        Check(eq[0][2] == 0 && store.Items.Single(i => i.WireId == 50).Location == "equipment", "equip torso");
+        Check(BitConverter.ToUInt16(eq[^1], 2) == 1072 && store.Items.Single(i => i.WireId == 50).Location == "equipment", "equip torso");
         session.ShareExperience(40_000);
         await session.TickAsync(now + 130);
         Check(session.Level > 1 && session.Level <= cap, "experience respects level cap");

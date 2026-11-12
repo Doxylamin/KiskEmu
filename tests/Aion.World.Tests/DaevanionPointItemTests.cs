@@ -34,7 +34,7 @@ public sealed class DaevanionPointItemTests
 
         var before = session.DaevanionAvailableForTests(1);
         var replies = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(901).ToArray(), Now + 3);
-        Assert.Equal(0, replies[0][2]);
+        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(replies[0], 2));
         Assert.DoesNotContain(store.Items, i => i.TemplateId == crystal && i.Quantity > 0);
         Assert.Equal(before + 3, session.DaevanionAvailableForTests(1));
         Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == GameSession.UpdateItemDaevanionPointNt);

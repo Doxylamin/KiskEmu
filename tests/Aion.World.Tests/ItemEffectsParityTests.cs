@@ -31,7 +31,7 @@ public sealed class ItemEffectsParityTests
         await GameSessionTestHelpers.LoadInventoryAsync(session, now);
         var use = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(71).ToArray(), now);
         Assert.True(GameSessionTestHelpers.HasOpcode(use, RidePackets.ItemUseRs));
-        Assert.Equal(0, use[0][2]);
+        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(use[0], 2));
         Assert.DoesNotContain(store.Items, i => i.TemplateId == 530146001 && i.Quantity > 0);
     }
 
@@ -69,7 +69,7 @@ public sealed class ItemEffectsParityTests
         var session = await GameSessionTestHelpers.EnterWorldAsync(store, now);
         await GameSessionTestHelpers.LoadInventoryAsync(session, now);
         var use = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(73).ToArray(), now);
-        Assert.Equal(0, use[0][2]);
+        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(use[0], 2));
         Assert.DoesNotContain(store.Items, i => i.TemplateId == 534950001);
     }
 }
