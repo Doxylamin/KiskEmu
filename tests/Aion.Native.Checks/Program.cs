@@ -204,6 +204,20 @@ var inner = Lz4Block.Decode(envelope.AsSpan(6), BitConverter.ToInt32(envelope, 2
 Check(NativeFraming.Split(inner, out _).Single().AsSpan(0, 2).SequenceEqual(new byte[] { 0x15, 0x36 }), "0xffff envelope holds a framed 0x3615");
 var rc4a = new Rc4(key); var whole = new Rc4(key).Crypt(new byte[64]);
 Check(rc4a.Crypt(new byte[20]).Concat(rc4a.Crypt(new byte[44])).SequenceEqual(whole), "RC4 keystream continues across bodies");
+// 100 two-byte frames in one read: 64 this tick, 36 the next, all deciphered in order (live 2026-11-12 the extra ones were
+// dropped undeciphered and every later request read as a random opcode). Past the capacity frames drop, still deciphered.
+var sender = new Rc4(key);
+var sent = Enumerable.Range(0, 100).Select(n => new byte[] { (byte)n, 0x37 }).ToList();
+var backlog = new ClientFrameBacklog(new Rc4(key));
+backlog.Add(sent.Select(f => sender.Crypt(f)).ToList());
+var tick1 = backlog.Take(64); var tick2 = backlog.Take(64);
+Check(tick1.Count == 64 && tick2.Count == 36 && backlog.Count == 0
+      && tick1.Concat(tick2).Select((f, n) => f.SequenceEqual(sent[n])).All(x => x), "client frames past 64 wait a tick, deciphered in order");
+var small = new ClientFrameBacklog(new Rc4(key), capacity: 4); var smallSender = new Rc4(key);
+var smallDropped = small.Add(sent.Take(6).Select(f => smallSender.Crypt(f)).ToList());
+small.Take(4);
+small.Add([smallSender.Crypt(sent[6])]);
+Check(smallDropped == 2 && small.Take(4).Single().SequenceEqual(sent[6]), "frames past the backlog drop but keep the keystream in step");
 var greeting = Greeting(0x3610, modulus, 3);
 Check(NativeHandshake.ReadGreeting(greeting, NativeHandshake.GameGreeting) == rsa, "greeting DER public key");
 Rejects(() => NativeHandshake.ReadGreeting(greeting, NativeHandshake.LoginGreeting), "greeting tag must match the port");

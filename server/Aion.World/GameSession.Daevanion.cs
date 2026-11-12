@@ -19,6 +19,13 @@ public sealed partial class GameSession
         DaevanionOpenRouteNodeRq = 0xe2f0, DaevanionOpenRouteNodeRs = 0xe2f1;
     /// <summary>Live client (2026-10-31): node learn moved +0x2db from 0xe227; body is OpenRouteNode wire (board i32, node path).</summary>
     public const ushort DaevanionOpenNodeRqLive = 0xe502, DaevanionOpenNodeRsLive = 0xe503;
+    /// <summary>
+    /// Live client: "acquire all nodes" on a board. 0xe502 carries the OpenRouteNode_RQ body, so the live run puts the usmap's
+    /// OpenRouteNode_RQ at 0xe502 and OpenAllNode_RQ/RS (two structs before it) at 0xe500/0xe501. Live 2026-11-12 the button
+    /// sent 0xe500 with 6 bytes (opcode + board id i32), as OpenAllNode_RQ. CANDIDATE: the reply is OpenAllNode_RS per the
+    /// usmap (result i32, board i32, opened node ids); no official sample (the capture's client direction is not decrypted).
+    /// </summary>
+    public const ushort DaevanionOpenAllNodeRqLive = 0xe500, DaevanionOpenAllNodeRsLive = 0xe501;
 
     /// <summary>EContentsUnlockType::Daevanion (20): the client keeps board tabs locked until this is in 0xe257/0xe258.</summary>
     public const byte DaevanionContentsUnlock = 20;
@@ -342,11 +349,14 @@ public sealed partial class GameSession
         ];
     }
 
-    async Task<List<byte[]>> DaevanionOpenAllNodeAsync(byte[] plain, CancellationToken ct)
+    async Task<List<byte[]>> DaevanionOpenAllNodeAsync(byte[] plain, CancellationToken ct) =>
+        await DaevanionOpenAllNodeAsync(plain, DaevanionOpenAllNodeRs, ct);
+
+    async Task<List<byte[]>> DaevanionOpenAllNodeAsync(byte[] plain, ushort rsOpcode, CancellationToken ct)
     {
         if (plain.Length < 6) return [];
         var boardId = BitConverter.ToInt32(plain, 2);
-        byte[] Reply(int result, IReadOnlyList<int> ids) => DaevanionBatchOpenReply(DaevanionOpenAllNodeRs, result, boardId, ids);
+        byte[] Reply(int result, IReadOnlyList<int> ids) => DaevanionBatchOpenReply(rsOpcode, result, boardId, ids);
         if (!BoardAllowed(boardId)) return [Reply(1, [])];
         var opened = CollectOpenAll(boardId);
         if (opened.Count == 0)
