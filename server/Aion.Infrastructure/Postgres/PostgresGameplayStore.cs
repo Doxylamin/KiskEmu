@@ -1754,10 +1754,10 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
     // Count units of a bag stack are used up: the row shrinks, or goes when it reaches zero.
     public async Task<bool> MoveItemToContainerAsync(VerifiedAccount account, Guid character, Guid item, long revision, string location, int slot, CancellationToken ct=default)
     {
-        if(slot is <0 or >999 || location is not ("bag" or "storage")) throw new GameplayException("invalid_slot");
+        if(slot is <0 or >999 || location is not ("bag" or "storage" or "account_storage")) throw new GameplayException("invalid_slot");
         await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
         if(!await Own(c,t,account.AccountId,character,ct)) return false;
-        await using(var q=Query(c,t,"SELECT location,slot FROM game.item_instances WHERE instance_id=$1 AND character_id=$2 AND revision=$3 AND location IN ('bag','storage') FOR UPDATE",item,character,revision))
+        await using(var q=Query(c,t,"SELECT location,slot FROM game.item_instances WHERE instance_id=$1 AND character_id=$2 AND revision=$3 AND location IN ('bag','storage','account_storage') FOR UPDATE",item,character,revision))
         {
             await using var r=await q.ExecuteReaderAsync(ct);
             if(!await r.ReadAsync(ct)) return false;

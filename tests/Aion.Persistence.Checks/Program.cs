@@ -214,6 +214,18 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     Check(await game.SortContainerAsync(first,id,"bag"),"bag sort succeeds when slots must be renumbered");
     var bagSorted=(await game.InventoryAsync(first,id))!.Items.Where(x=>x.Location=="bag").OrderBy(x=>x.Slot!.Value).Select(x=>x.TemplateId).ToList();
     Check(bagSorted.SequenceEqual(bagSorted.Order().ToList()),"bag sort orders by template_id");
+    // Warehouse and account storage: a bag item moves into each container and back out again. The target
+    // location is a column value, not a share, so account storage is per character like the personal depot.
+    var depotItem=(await game.InventoryAsync(first,id))!.Items.First(x=>x.Location=="bag");
+    Check(await game.MoveItemToContainerAsync(first,id,depotItem.InstanceId,depotItem.Revision,"storage",2),"a bag item moves into the personal warehouse");
+    var inStorage=(await game.InventoryAsync(first,id))!.Items.Single(x=>x.InstanceId==depotItem.InstanceId);
+    Check(inStorage is {Location:"storage",Slot:2},"the item is stored in the warehouse at the chosen slot");
+    Check(await game.MoveItemToContainerAsync(first,id,inStorage.InstanceId,inStorage.Revision,"account_storage",0),"a warehouse item moves into account storage");
+    var inAccount=(await game.InventoryAsync(first,id))!.Items.Single(x=>x.InstanceId==depotItem.InstanceId);
+    Check(inAccount is {Location:"account_storage",Slot:0},"the item is stored in account storage");
+    Check(await game.MoveItemToContainerAsync(first,id,inAccount.InstanceId,inAccount.Revision,"bag",20),"an account-storage item moves back into the bag");
+    Check((await game.InventoryAsync(first,id))!.Items.Single(x=>x.InstanceId==depotItem.InstanceId) is {Location:"bag",Slot:20},"the item returns to the bag");
+    await Reject(()=>game.MoveItemToContainerAsync(first,id,depotItem.InstanceId,0,"equipment",0),"invalid_slot");
     // Ascension grade: staff-set, 1..6, loaded with the character for the spawn.
     Check((await game.AdminCharacterAsync(second,id))!.Ascension==1,"new characters start at ascension grade 1");
     await Reject(()=>game.AdminAsync(second,new(Guid.NewGuid(),id,"ascension",Ascension:7)),"invalid_ascension");
