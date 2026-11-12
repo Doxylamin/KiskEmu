@@ -58,6 +58,8 @@ public sealed partial class GameSession
     /// <summary>Display / combat mastery: kit baseline, persisted DB level, and in-session upgrades.</summary>
     int MasteryLevel(int skillId)
     {
+        // A bought stigma (or its part) has its own level; a stigma id the kit grants keeps the kit rules.
+        if (StigmaLevel(skillId) is > 0 and var stigmaLevel && IsStigmaFamily(skillId)) return stigmaLevel;
         var baseline = KitSkillLevel(skillId);
         var total = baseline;
         if (persistedSkillLevels.TryGetValue(skillId, out var stored)) total = Math.Max(total, stored);
@@ -77,9 +79,10 @@ public sealed partial class GameSession
     {
         skillLevels.Clear();
         persistedSkillLevels.Clear();
+        LoadStigmaLevels(stored);
         // Only the level bought through SkillLevelUp counts: s.Level also holds the kit level the server grants by itself.
         foreach (var s in stored)
-            if (s.Purchased > KitSkillLevel(s.SkillId)) persistedSkillLevels[s.SkillId] = s.Purchased;
+            if (!IsStigmaFamily(s.SkillId) && s.Purchased > KitSkillLevel(s.SkillId)) persistedSkillLevels[s.SkillId] = s.Purchased;
         ReconcilePurchasedSkillLevels();
     }
 
@@ -97,7 +100,7 @@ public sealed partial class GameSession
         return ids.Sum(id => SpentOnSkill(id, MasteryLevel(id)));
     }
 
-    public int SkillPointsLeft => Math.Max(0, data.SkillPoints(level) - SpentSkillPoints());
+    public int SkillPointsLeft => Math.Max(0, EarnedSkillPoints() - SpentSkillPoints());
 
     /// <summary>
     /// 0x5105 after a purchase / level down / reset / level-up / refusal and at world entry: the skill points spent
@@ -105,8 +108,12 @@ public sealed partial class GameSession
     /// </summary>
     byte[] SkillPointUpdate() => GamePackets.SkillPointUpdate(SpentSkillPoints(), SkillPointTypePoint);
 
-    void RefreshWireClientSkillList(IReadOnlyList<(int SkillId, int Level)> kitAfterChainOverlay) =>
-        wireClientSkillList = kitAfterChainOverlay.ToList();
+    /// <summary>The kit plus the learned stigmas and their unlocked parts (both in 0x5100, OBSERVED official 2026-11-12).</summary>
+    void RefreshWireClientSkillList(IReadOnlyList<(int SkillId, int Level)> kitAfterChainOverlay)
+    {
+        var kitIds = kitAfterChainOverlay.Select(k => k.SkillId).ToHashSet();
+        wireClientSkillList = [.. kitAfterChainOverlay, .. StigmaSkillEntries().Where(s => !kitIds.Contains(s.SkillId))];
+    }
 
     void RebuildWireClientSkillList()
     {
@@ -165,7 +172,7 @@ public sealed partial class GameSession
 
     void LogSkillPointsAtEntry()
     {
-        var earned = data.SkillPoints(level);
+        var earned = EarnedSkillPoints();
         var spent = SpentSkillPoints();
         LogSkillPoints(0, level, $"entry earned={earned} spent={spent} left={SkillPointsLeft} sent5105={SkillPointsLeft} persisted={persistedSkillLevels.Count}");
     }
@@ -176,6 +183,7 @@ public sealed partial class GameSession
         if (plain.Length < 6)
             return [PacketWriter.Opcode(SkillLevelUpRs).U16(1).I32(0).ToArray(), ..SkillPointClientSync()];
         var skillId = BitConverter.ToInt32(plain, 2);
+        if (IsBuyableStigma(skillId)) return await StigmaLevelUpAsync(skillId, ct);
         byte[] Reply(int result) => PacketWriter.Opcode(SkillLevelUpRs).U16(result).I32(skillId).ToArray();
         var next = BoughtSkillLevel(skillId) + 1;
         if (!learned.Contains(skillId) || data.SkillLevelCost(skillId, next) is not { } cost)
@@ -257,7 +265,7 @@ public sealed partial class GameSession
     /// <summary>The level to record as bought: the level when above the kit baseline, else 0 (nothing bought, no points spent).</summary>
     int PurchasedLevel(int skillId, int level) => level > KitSkillLevel(skillId) ? level : 0;
 
-    bool HasPurchasedMastery(int skillId) => MasteryLevel(skillId) > KitSkillLevel(skillId);
+    bool HasPurchasedMastery(int skillId) => !IsStigmaFamily(skillId) && MasteryLevel(skillId) > KitSkillLevel(skillId);
 
     /// <summary>
     /// 0x3841 SkillLevelDown_RQ {skill i32}: one bought level back, its points refunded (free, OURS: the official cost
@@ -268,6 +276,7 @@ public sealed partial class GameSession
         if (plain.Length < 6)
             return [PacketWriter.Opcode(SkillLevelDownRs).U16(1).I32(0).ToArray(), ..SkillPointClientSync()];
         var skillId = BitConverter.ToInt32(plain, 2);
+        if (IsBuyableStigma(skillId)) return await StigmaLevelDownAsync(skillId, ct);
         byte[] Reply(int result) => PacketWriter.Opcode(SkillLevelDownRs).U16(result).I32(skillId).ToArray();
         var baseline = KitSkillLevel(skillId);
         var current = BoughtSkillLevel(skillId);
@@ -284,7 +293,7 @@ public sealed partial class GameSession
     /// {skill i32 → level u8}, modify points count + {type u8 Point, refunded u16}}, then the level updates (SkillLevelModify).
     /// OBSERVED official (2026-10-13 and 11-04 captures): 0000 01 c0b51501 01 c0b51501 01 01 01 1500 (skill 18200000 back to
     /// level 1, 21 points refunded); the next 0x5105 is the spent points less the refund. usmap: _modify_list is a map int → byte.
-    /// Type 2 is the stigma reset, which never touches skill-point levels (see <see cref="StigmaResetReply"/>).
+    /// Type 2 is the stigma reset, which never touches skill-point levels (see <see cref="StigmaResetAsync"/>).
     /// </summary>
     async Task<List<byte[]>> SkillLevelResetAsync(byte[] plain, CancellationToken ct)
     {
@@ -292,7 +301,7 @@ public sealed partial class GameSession
             return [PacketWriter.Opcode(SkillLevelResetRs).U16(1).U8(0).I32(0).Varint(0).Varint(0).ToArray(), ..SkillPointClientSync()];
         var acquireType = plain[2];
         var skillId = BitConverter.ToInt32(plain, 3);
-        if (acquireType == SkillAcquireTypeStigma) return [StigmaResetReply(skillId)];
+        if (acquireType == SkillAcquireTypeStigma) return await StigmaResetAsync(skillId, ct);
         var targets = (skillId == 0
             ? persistedSkillLevels.Keys.Union(skillLevels.Keys).Where(HasPurchasedMastery).ToList()
             : HasPurchasedMastery(skillId) ? [skillId] : []).ToList();
@@ -316,17 +325,6 @@ public sealed partial class GameSession
         RecomputeCombatPower();
         return [CharCombatPowerUpdate(), Reply(0, targets), .. updates, ..SkillPointListResync(), SkillPointUpdate()];
     }
-
-    /// <summary>
-    /// 0x3844 for a stigma reset (_reset_acquire_type 2). OBSERVED official 2026-11-12 (capture VM, a full reset of a
-    /// Cleric's four stigmas, free): 0000 02 00000000 04 {c0800901 00, d0a70901 00, f0f50901 00, 001d0a01 00} 01 02 1e00:
-    /// the stigma skills to level 0 and the refund as point type 2 (stigma points, 30). Stigma levels are not bought on this
-    /// server (no stigma rows in class-skills.json), so there is nothing to reset: the same shape with an empty list and a
-    /// zero type-2 refund. The skill-point levels stay as they are (before, a type-2 reset wiped them all).
-    /// </summary>
-    static byte[] StigmaResetReply(int skillId) =>
-        PacketWriter.Opcode(SkillLevelResetRs).U16(0).U8(SkillAcquireTypeStigma).I32(skillId).Varint(0)
-            .Varint(1).AppendSkillPointInfo(0, SkillPointTypeStigma).ToArray();
 
     async Task<bool> SaveSkillLevelAsync(int skillId, int newLevel, CancellationToken ct)
     {

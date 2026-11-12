@@ -1405,6 +1405,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 await LoadQuickSlotsAsync(store, state.Summary.CharacterId, ct);
                 var settings = await store.CharacterSettingsAsync(state.Summary.CharacterId, ct);
                 LoadSettings(settings);
+                LoadSkillItemPoints(settings);
                 LoadCustomNpcFlags(settings);
                 LoadBuffSettings(settings, now);
                 LoadSkillCustomizing(settings);
@@ -1486,6 +1487,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         if (profile is not null)
             kit = data.WithChainVariantsOnHotbar(WithLevels(kit), profile, MasteryLevel);
         learned = kit.Select(k => k.SkillId).ToHashSet();
+        AddStigmaSkillsToLearned();
         var (mapId, at) = spawn ?? (GamePackets.SpawnMapId, GamePackets.SpawnPosition);
         if (!IsInstanceMap(mapId) && instanceKey != 0) instanceKey = 0;
         EnsureAbyssLoaded(now);
@@ -1674,9 +1676,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 replies.Add(skillList);
                 LogSkillPointsAtEntry();
                 replies.AddRange(SkillPointSpendBaselineSeeds());
-                replies.Add(SkillPointUpdate());
-                var actives = learned.Where(id => id >= 11_000_000 && !IsDodgeId(id) && data.Skill(id)?.Type == "Active").Order().ToList();
-                replies.Add(GamePackets.SkillOptionSlots(actives, SkillOptionMap()));
+                replies.AddRange(SkillPointsAtEntry());
+                var actives = learned.Where(id => id >= 11_000_000 && !IsDodgeId(id) && data.StigmaPartParent(id) is null && data.Skill(id)?.Type == "Active").Order().ToList();
+                replies.Add(GamePackets.SkillOptionSlots(actives, SkillOptionMap(), StigmaSlotMap()));
                 replies.Add([0x58, 0x8d, 0x00]);
                 replies.Add(AgitDecoListAtEntry());
                 replies.AddRange(SettingsAtEntry(now));

@@ -629,7 +629,53 @@ public sealed class GameData
     List<int> DirectChainNext(int skillId) =>
         Skill(skillId)?.ChainNext is { Length: > 0 } next ? [.. next] : [];
 
-    public SkillDefinition? Skill(int skillId) => classes.Skills.GetValueOrDefault(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    public SkillDefinition? Skill(int skillId)
+    {
+        var key = skillId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return classes.Skills.GetValueOrDefault(key) ?? stigma.Value.Skills?.GetValueOrDefault(key);
+    }
+
+    /// <summary>tools/data/stigma-skills.json (tools/stigma_data.py): SkillAcquireData Stigma rows, Exp.dat BonusStigmaPoint, SpecializedSkillParts.</summary>
+    sealed record StigmaFile(
+        [property: JsonPropertyName("classes")] Dictionary<string, int[]> Classes,
+        [property: JsonPropertyName("levels")] Dictionary<string, int[][]> Levels,
+        [property: JsonPropertyName("points")] Dictionary<string, int> Points,
+        [property: JsonPropertyName("parts")] Dictionary<string, int[][]> Parts,
+        [property: JsonPropertyName("skills")] Dictionary<string, SkillDefinition>? Skills = null);
+
+    static readonly Lazy<StigmaFile> stigma = new(() => Load<StigmaFile>("stigma-skills.json"));
+
+    static readonly Lazy<Dictionary<int, int>> stigmaPartParents = new(() =>
+        stigma.Value.Parts.SelectMany(p => p.Value.Select(row => (Child: row[0], Parent: int.Parse(p.Key, System.Globalization.CultureInfo.InvariantCulture))))
+            .ToDictionary(x => x.Child, x => x.Parent));
+
+    /// <summary>A stigma skill (SkillAcquireData AcquireType Stigma): its levels are bought with stigma points.</summary>
+    public bool IsStigmaSkill(int skillId) => stigma.Value.Levels.ContainsKey(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>The class's stigma skills (empty for an unknown class).</summary>
+    public IReadOnlyList<int> StigmaSkills(string className) => stigma.Value.Classes.GetValueOrDefault(className) ?? [];
+
+    /// <summary>A stigma level: its stigma point cost, character level and ascension grade (0 = none); null when not buyable.</summary>
+    public (int Cost, int NeedLevel, int NeedAscension)? StigmaLevelCost(int skillId, int level) =>
+        stigma.Value.Levels.GetValueOrDefault(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture))?.FirstOrDefault(r => r.Length >= 4 && r[0] == level) is { } row
+            ? (row[1], row[2], row[3]) : null;
+
+    /// <summary>The stigma points a character of the level has from levelling (Exp.dat BonusStigmaPoint, cumulative; CANDIDATE like the skill points).</summary>
+    public int StigmaPoints(int level)
+    {
+        var table = stigma.Value.Points;
+        if (level < 1 || table.Count == 0) return 0;
+        var top = table.Keys.Max(k => int.Parse(k, System.Globalization.CultureInfo.InvariantCulture));
+        return table.GetValueOrDefault(Math.Min(level, top).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>A stigma skill's specialized parts: (child skill, parent level that unlocks it, ESpecializedSkillSlotType slot).</summary>
+    public IReadOnlyList<(int Child, int ParentLevel, int Slot)> StigmaParts(int skillId) =>
+        stigma.Value.Parts.GetValueOrDefault(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture)) is { } rows
+            ? rows.Select(r => (r[0], r[1], r[2])).ToList() : [];
+
+    /// <summary>The stigma skill a specialized part belongs to (17400010 → 17400000), or null.</summary>
+    public int? StigmaPartParent(int skillId) => stigmaPartParents.Value.TryGetValue(skillId, out var parent) ? parent : null;
 
     sealed record CastRangeFile([property: JsonPropertyName("skills")] Dictionary<string, double>? Skills);
     static readonly Lazy<Dictionary<string, double>> skillCastRanges = new(() => Load<CastRangeFile>("skill-cast-ranges.json").Skills ?? []);

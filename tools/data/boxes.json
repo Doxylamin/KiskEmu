@@ -20774,6 +20774,21 @@
     "513850018": [
       "GetGodstone",
       0
+    ],
+    "531900001": [
+      "GetSkillPoint",
+      0,
+      "1"
+    ],
+    "531900002": [
+      "GetSkillPoint",
+      0,
+      "10"
+    ],
+    "531900010": [
+      "GetStigmaShard",
+      1,
+      "1"
     ]
   },
   "cool": {
@@ -40803,6 +40818,21 @@
       0
     ],
     "513850018": [
+      0,
+      "None",
+      0
+    ],
+    "531900001": [
+      0,
+      "None",
+      0
+    ],
+    "531900002": [
+      0,
+      "None",
+      0
+    ],
+    "531900010": [
       0,
       "None",
       0
@@ -83146,9 +83176,11 @@
     "GetKina",
     "GetNonBindingKina",
     "GetQuest",
+    "GetSkillPoint",
     "GetSkin",
     "GetSkinSet",
     "GetSocialAction",
+    "GetStigmaShard",
     "GetTitle",
     "GetVehicle",
     "GetVehicleSoul",
