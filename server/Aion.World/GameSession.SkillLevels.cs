@@ -18,7 +18,8 @@ public sealed partial class GameSession
     public const ushort SkillLevelUpRq = 0x383f, SkillLevelUpRs = 0x3840, SkillLevelUpdateNt = 0x3813, SkillPointUpdateNt = 0x5105;
     public const ushort SkillLevelDownRq = 0x3841, SkillLevelDownRs = 0x3842, SkillLevelResetRq = 0x3843, SkillLevelResetRs = 0x3844;
     const byte SkillPointLevelUp = 3, SkillPointLevelDown = 4, SkillLevelModify = 5, SkillLevelEntryResync = 0x0a;   // ESkillAcquireReason
-    const byte SkillPointTypePoint = 1;   // ESkillPointType
+    const byte SkillPointTypePoint = 1, SkillPointTypeStigma = 2;   // ESkillPointType
+    const byte SkillAcquireTypeStigma = 2;   // _reset_acquire_type (1 skill points, 2 stigma)
     // EResult (usmap): the client shows the matching system message for a refused SkillLevelUp_RQ; 1/2 are not skill results.
     public const int SkillAcquireNotFoundData = 6185, SkillAcquireNotEnoughCharLevel = 6188, SkillAcquireNotEnoughSkillPoint = 6191;
 
@@ -283,6 +284,7 @@ public sealed partial class GameSession
     /// {skill i32 → level u8}, modify points count + {type u8 Point, refunded u16}}, then the level updates (SkillLevelModify).
     /// OBSERVED official (2026-10-13 and 11-04 captures): 0000 01 c0b51501 01 c0b51501 01 01 01 1500 (skill 18200000 back to
     /// level 1, 21 points refunded); the next 0x5105 is the spent points less the refund. usmap: _modify_list is a map int → byte.
+    /// Type 2 is the stigma reset, which never touches skill-point levels (see <see cref="StigmaResetReply"/>).
     /// </summary>
     async Task<List<byte[]>> SkillLevelResetAsync(byte[] plain, CancellationToken ct)
     {
@@ -290,6 +292,7 @@ public sealed partial class GameSession
             return [PacketWriter.Opcode(SkillLevelResetRs).U16(1).U8(0).I32(0).Varint(0).Varint(0).ToArray(), ..SkillPointClientSync()];
         var acquireType = plain[2];
         var skillId = BitConverter.ToInt32(plain, 3);
+        if (acquireType == SkillAcquireTypeStigma) return [StigmaResetReply(skillId)];
         var targets = (skillId == 0
             ? persistedSkillLevels.Keys.Union(skillLevels.Keys).Where(HasPurchasedMastery).ToList()
             : HasPurchasedMastery(skillId) ? [skillId] : []).ToList();
@@ -313,6 +316,17 @@ public sealed partial class GameSession
         RecomputeCombatPower();
         return [CharCombatPowerUpdate(), Reply(0, targets), .. updates, ..SkillPointListResync(), SkillPointUpdate()];
     }
+
+    /// <summary>
+    /// 0x3844 for a stigma reset (_reset_acquire_type 2). OBSERVED official 2026-11-12 (capture VM, a full reset of a
+    /// Cleric's four stigmas, free): 0000 02 00000000 04 {c0800901 00, d0a70901 00, f0f50901 00, 001d0a01 00} 01 02 1e00:
+    /// the stigma skills to level 0 and the refund as point type 2 (stigma points, 30). Stigma levels are not bought on this
+    /// server (no stigma rows in class-skills.json), so there is nothing to reset: the same shape with an empty list and a
+    /// zero type-2 refund. The skill-point levels stay as they are (before, a type-2 reset wiped them all).
+    /// </summary>
+    static byte[] StigmaResetReply(int skillId) =>
+        PacketWriter.Opcode(SkillLevelResetRs).U16(0).U8(SkillAcquireTypeStigma).I32(skillId).Varint(0)
+            .Varint(1).AppendSkillPointInfo(0, SkillPointTypeStigma).ToArray();
 
     async Task<bool> SaveSkillLevelAsync(int skillId, int newLevel, CancellationToken ct)
     {

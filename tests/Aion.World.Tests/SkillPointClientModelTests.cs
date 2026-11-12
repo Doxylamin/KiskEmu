@@ -187,6 +187,30 @@ public sealed class SkillPointClientModelTests
     }
 
     /// <summary>
+    /// Official 2026-11-12: a full stigma reset is 0x3843 {type 2, skill 0}, answered 0x3844 with type 2 and the refund as
+    /// point type 2 (0000 02 00000000 04 … 01 02 1e00). It must leave the skill-point levels alone.
+    /// </summary>
+    [Fact]
+    public async Task Stigma_reset_keeps_the_skill_point_levels_and_answers_in_the_official_shape()
+    {
+        var data = GameSessionTestHelpers.LiveGameData;
+        var store = new FakeCharacterStore { Progress = (12, 0) };
+        foreach (var (skillId, lvl) in data.LearnedSkills("Gladiator", 12)) store.Skills.Add(new SkillState(skillId, lvl, null));
+        var (session, _) = await EnterAsync(store, data, 12);
+        foreach (var skillId in UpgradableLevel2(data, "Gladiator", 12).Take(2))
+            await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(skillId).ToArray(), Now);
+        var left = session.SkillPointsLeft;
+        Assert.True(left < data.SkillPoints(12));
+
+        var reset = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelResetRq).U8(2).I32(0).ToArray(), Now);
+
+        Assert.Equal(left, session.SkillPointsLeft);
+        Assert.DoesNotContain(reset, p => GameSessionTestHelpers.Op(p) == GameSession.SkillLevelUpdateNt);
+        var reply = Assert.Single(reset, p => GameSessionTestHelpers.Op(p) == GameSession.SkillLevelResetRs);
+        Assert.Equal(Convert.FromHexString("4438" + "0000" + "02" + "00000000" + "00" + "01" + "02" + "0000"), reply);
+    }
+
+    /// <summary>
     /// Official 2026-10-31: _original_skill_level is the bought mastery level (without Daevanion bonuses), not the class-kit
     /// baseline, so the client cannot derive spent points from the list; the remaining total rides in 0x5105 (sent last).
     /// </summary>
