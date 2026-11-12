@@ -188,6 +188,8 @@ Check(HostsFile.Without(withBlock) == original && !HostsFile.HasBlock(HostsFile.
 var legacy = original + "# >>> AION2 private server (added by AionLauncher; removed when the game closes)\r\n203.0.113.5 bladnoch.ncsoft.com\r\n# <<< AION2 private server\r\n";
 Check(HostsFile.HasBlock(legacy) && HostsFile.Without(legacy) == original, "hosts block from an older launcher removed");
 Check(!withBlock.Contains("AION", StringComparison.OrdinalIgnoreCase), "hosts block does not name the game");
+Check(!HostsFile.Hostnames.Any(host => host.EndsWith(".g.nc.com", StringComparison.OrdinalIgnoreCase)),
+    "hosts block leaves NC's account and config hosts (*.g.nc.com) alone");
 
 // ---------- Firewall ----------
 var ranges = FirewallRules.BlockedRanges(server);

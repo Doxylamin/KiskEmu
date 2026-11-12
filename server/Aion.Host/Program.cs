@@ -380,8 +380,9 @@ var platform = worldProcess is null ? builder.Configuration.GetSection(AionConfi
 var platformResponses = platform.Port is not { } bootstrapPort ? null : PlatformResponses.Load(platform, network, bootstrapPort, native.LoginPort, chatPort);
 // Launchers that sign in on this host and start clients without a launch code in the bootstrap URL.
 if (platform.Port is not null && accountsReady) builder.Services.AddSingleton<LaunchPairing>();
-var ncGuard = (worldProcess is null ? builder.Configuration.GetSection(AionConfiguration.NcGuard).Get<NcGuardOptions>() ?? new NcGuardOptions() : new NcGuardOptions())
-    with { BindAddress = network.BindAddress };
+var ncGuard = ((worldProcess is null ? builder.Configuration.GetSection(AionConfiguration.NcGuard).Get<NcGuardOptions>() ?? new NcGuardOptions() : new NcGuardOptions())
+    with { BindAddress = network.BindAddress })
+    .ForBind(network.LoopbackOnly, builder.Configuration[$"{AionConfiguration.NcGuard}:Capture"] is not null);
 if (ncGuard.Port is not null)
 {
     builder.Services.AddSingleton(ncGuard);
