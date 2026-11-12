@@ -76,9 +76,28 @@ public sealed class GmCommands(WorldPresence presence, BuilderCommands builder) 
     /// </summary>
     public Func<ChatIdentity, string, string, CancellationToken, Task<string>>? Report { get; init; }
 
+    /// <summary>"/bug &lt;text&gt;" (or "//bug") for every player in the world: a bug report with their context. Null: not available here.</summary>
+    public BugReporter? Bugs { get; init; }
+
+    public const string PlayerHelp = "Commands: /bug <text> reports a bug (your position, quests and nearby NPCs are added); //report <text> sends a report to the staff.";
+
+    /// <summary>The text after "/bug" or "//bug", else null.</summary>
+    static string? BugText(string text)
+    {
+        var line = text.StartsWith("//", StringComparison.Ordinal) ? text[2..] : text[1..];
+        return line.StartsWith("bug", StringComparison.OrdinalIgnoreCase) && (line.Length == 3 || char.IsWhiteSpace(line[3])) ? line[3..].Trim() : null;
+    }
+
     public async Task<string> HandleAsync(ChatIdentity sender, string userName, string content, CancellationToken ct)
     {
         var text = content.Trim();
+        if (BugText(text) is { } bug)
+        {
+            if (Bugs is null) return "Bug reports are not available on this server.";
+            var reporter = presence.Find(userName) ?? presence.Find(Aion.Core.Characters.CharacterNames.Stored(userName));
+            if (reporter is null || !reporter.Session.InWorld) return "Enter the world first.";
+            return await Bugs.ReportAsync(reporter.Session, sender.AccountId ?? reporter.AccountId, bug, ct);
+        }
         if (!text.StartsWith("//", StringComparison.Ordinal)) return "Unknown command. Use //help.";
         var line = text[2..].Trim();
         if (line.StartsWith("report", StringComparison.OrdinalIgnoreCase) && (line.Length == 6 || char.IsWhiteSpace(line[6])))
@@ -104,7 +123,7 @@ public sealed class GmCommands(WorldPresence presence, BuilderCommands builder) 
             if (line.Length == 0 || line.Equals("help", StringComparison.OrdinalIgnoreCase))
                 return await builder.AllowedAsync(actor.Session, ct)
                     ? "Builder commands (in chat: //<command>; console: s <command>): " + string.Join(", ", BuilderCommands.Supported)
-                    : "Commands: //report <text> sends a report to the staff.";
+                    : PlayerHelp;
             return await actor.Session.InvokeAsync(async now =>
             {
                 var outcome = await builder.RunAsync(actor.Session, line, now, ct);

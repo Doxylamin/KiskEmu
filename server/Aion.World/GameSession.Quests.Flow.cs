@@ -142,6 +142,7 @@ public sealed partial class GameSession
                 replies.AddRange(Ascend(2));
             var rewarded = record with { Status = QuestLog.Rewarded };
             questLog.Set(rewarded);
+            NoteQuestEvent("quest_reward", rewarded.Code, rewarded.Step, rewarded.Status, rewarded.Goals);
             replies.Add(GamePackets.QuestTakeRewardReply(uid));
             // HUD episode bar (AionWidget_HUD_IndicatorQuest) counts cleared quests in the active Quest.dat Part from
             // journal EQuestStatus; without a post-reward sync the client can stay at Complete (3) and show 0% part progress.

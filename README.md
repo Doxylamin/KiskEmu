@@ -62,7 +62,7 @@ Not included: the client archive key. You only need it to extract new or updated
 | `data/` | Put the server data bundle from Releases here (`data/aion-server-data.tar.gz`); `install.sh --data` takes it. |
 | `third_party/CUE4Parse/` | CUE4Parse (Apache-2.0, upstream commit cdef687 plus three CriWare export classes), which the extraction tools build against. |
 | `research/local/tooling/` | The opcode ledger (`opcodes.json`) and the client type mappings (`mappings/*.usmap`). |
-| `docs/` | [`CAPTURE.md`](docs/CAPTURE.md) (recording the official server) and the tool guides. |
+| `docs/` | [`CAPTURE.md`](docs/CAPTURE.md) (recording the official server), [`BUG_REPORTS.md`](docs/BUG_REPORTS.md) (`/bug` in game) and the tool guides. |
 
 ## Run a server (Ubuntu 26.04, public IPv4)
 

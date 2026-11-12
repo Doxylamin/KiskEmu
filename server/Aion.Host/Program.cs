@@ -123,6 +123,8 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddHostedService<AuthenticationCleanup>();
     // Staff tools: maintenance, sanctions, chat log, tickets, events, population, economy (migration 028).
     builder.Services.AddSingleton<IStaffTools, PostgresStaffTools>();
+    // "/bug" reports from every world (migration 106): the staff dashboard's Bug reports.
+    builder.Services.AddSingleton<IBugReports, PostgresBugReports>();
     // Custom shop goods (migration 094): edited on the dashboard, listed in the shop catalogue, read by the worlds.
     builder.Services.AddSingleton<PostgresCustomShop>();
     builder.Services.AddSingleton<ICustomShopAdmin>(provider => provider.GetRequiredService<PostgresCustomShop>());
@@ -160,6 +162,7 @@ else if (accountsReady)
     builder.Services.AddSingleton<IWorldSessions, Aion.Host.Realm.LinkedWorldSessions>();
     builder.Services.AddSingleton<IStaffTools>(provider => new Aion.Host.Realm.LinkedStaffTools(
         new PostgresStaffTools(provider.GetRequiredService<NpgsqlDataSource>()), provider.GetRequiredService<Aion.Host.Realm.RealmLinkClient>()));
+    builder.Services.AddSingleton<IBugReports, Aion.Host.Realm.LinkedBugReports>();
     builder.Services.AddSingleton<Aion.Host.Authentication.ServerControl>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Authentication.ServerControl>());
     builder.Services.AddSingleton<Aion.Host.Realm.RealmLinkService>();
@@ -272,6 +275,10 @@ if (native.LoginPort is not null || native.GamePort is not null)
                 try { return $"Thanks, report #{await staffTools.CreateTicketAsync(account, name, "other", text, ct)} was sent to the staff."; }
                 catch (GameplayException error) { return error.Code == "too_many_tickets" ? "You already have 10 open reports. Please wait for the staff." : "That report could not be sent."; }
             } : null,
+            // "/bug <text>": a bug report with the player's context (accounts only; docs/BUG_REPORTS.md).
+            Bugs = provider.GetService<IBugReports>() is { } bugs
+                ? new Aion.World.BugReporter(bugs, Aion.Host.Debug.BuildInfo.Commit(builder.Configuration), Aion.Host.Debug.BuildInfo.OpcodeName)
+                : null,
         });
     // Staff rights for builder commands and the Login_RS admin flag (one check, from account roles).
     builder.Services.AddSingleton(provider =>
@@ -587,6 +594,7 @@ if (accountsReady)
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapTicketEndpoints(app);
+    Aion.Host.Authentication.StaffToolsEndpoints.MapBugReportEndpoints(app);
     Aion.Host.Diagnostics.DiagnosticsEndpoints.Map(app, "realm").RequireRateLimiting("admin");
     Aion.Host.Worlds.WorldEndpoints.MapWorldEndpoints(app);
     Aion.Host.Realm.RealmLinkEndpoints.Map(app);
