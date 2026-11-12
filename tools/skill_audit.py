@@ -222,6 +222,13 @@ def skill_categories(skill_id, skill, area, summons, traps, abnormal_types, impr
             if category == 'abnormal_unclassified' and skill['target'] == 'Self' and not area.get('shape'):
                 category = 'self_buff'
             found[category].append(f'{abnormal} {low}-{high} ms' + (' held' if held else '') + note)
+    # Rows on the caster (self buffs, a heal over time on oneself): the server applies them through SelfAbnormalPath.
+    for abnormal, low, high, held in area.get('caster_debuffs', []):
+        note = ' [improvised]' if str(abnormal) in improvised_abnormals else ''
+        for category in abnormal_categories(abnormal, held, abnormal_types):
+            if category == 'abnormal_unclassified':
+                category = 'self_buff'
+            found[category].append(f'{abnormal} {low}-{high} ms on the caster' + (' held' if held else '') + note)
     note = ' [improvised]' if area.get('effects_source') == 'override' else ''
     for row in area.get('effects', []):
         category = EFFECT_CATEGORY.get(row[0], 'other_effect')
