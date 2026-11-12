@@ -96,6 +96,8 @@ export interface ServerHealth {
 export interface AuditEntry { id: number; at: string; action: string; characterId: string | null; characterName: string | null; actorName: string | null; details: string }
 
 ERRORS.invalid_timer = 'Give the shortest and longest wait in hours (the longest at least the shortest, at most 7 days).';
+ERRORS.invalid_bug_report = 'Pick a status; the note can have up to 2000 characters.';
+ERRORS.realm_only = 'Bug reports are kept by the auth host.';
 ERRORS.world_only = 'Pick a world: this is answered by a world server.';
 ERRORS.not_online = 'That player is no longer in the world.';
 ERRORS.not_possible = 'The game could not do that right now.';
@@ -119,6 +121,30 @@ export interface NpcChoice { npcId: number; name: string; level: number; hostile
 export interface Sanction { id: number; accountId: string; accountName: string; kind: 'ban' | 'mute'; reason: string; createdAt: string; expiresAt: string | null; createdBy: string | null; revokedAt: string | null; revokedBy: string | null }
 export interface ChatLine { id: number; at: string; channel: string; sender: string; receiver: string | null; content: string; accountId: string | null }
 export interface Ticket { id: number; createdAt: string; accountId: string | null; accountName: string | null; characterName: string | null; category: string; content: string; status: 'open' | 'closed'; staffNote: string; handledBy: string | null; handledAt: string | null }
+export type BugStatus = 'open' | 'in_progress' | 'fixed' | 'wont_fix';
+/** A "/bug" report as listed (migration 106). */
+export interface BugReportSummary {
+  id: number; createdAt: string; accountId: string | null; accountName: string | null; characterId: string | null; characterName: string | null;
+  worldId: number; mapId: number | null; mapName: string | null; quests: string[]; text: string; status: BugStatus; staffNote: string;
+  handledBy: string | null; handledAt: string | null; commit: string | null; screenshotType: string | null;
+}
+export interface BugSource { kind: string; file?: string; map?: number; index?: number; uniqueKey?: number; home?: number[]; homeYaw?: number; ownerKey?: number }
+export interface BugSpawn { key: number; npcId: number; name: string; level: number; x: number; y: number; z: number; heading: number; distance: number; dead: boolean; hostile: boolean; relationship: number; function: string; seen: boolean; source: BugSource }
+export interface BugObject { key: number; env: number; name: string; envName?: string; x: number; y: number; z: number; yaw: number; distance: number; shown: boolean; file: string; map: number; index: number; uniqueKey: number }
+export interface BugQuest { code: string; id: number; title?: string; type?: string; status: number; statusName: string; step: number; goals: number[]; questMap?: number; startNpc?: number; finishNpc?: number; stepNpc?: number; stepObjectives: { type: string; npc?: number; npcs?: number[]; item?: number; target?: string; count: number }[] }
+export interface BugPacket { agoMs: number; dir: 'C' | 'S'; op: string; name?: string; length: number; hex?: string }
+/** What the world server captured at the moment of the report (GameSession.BugReport.cs). */
+export interface BugContext {
+  reportedAt: string; serverMs: number;
+  server: { commit?: string; worldId: number; sharedWorld: boolean };
+  character: { accountId?: string; id?: string; name?: string; race: number; raceName: string; className?: string; level: number; staffRole?: string; hp: number; hpMax: number; dead: boolean; inCombat: boolean };
+  location?: { mapId: number; mapName: string; instance?: number; x: number; y: number; z: number; heading: number; subzoneId: number; subzone?: string; area?: string };
+  quests: { active: BugQuest[]; recentEvents: { agoMs: number; kind: string; code: string; step: number; status: number; goals?: number[] }[]; lastRewarded: BugQuest[] };
+  mapEvents: { id: number; name: string; status: number; stage: number; step: number; goals: number[]; ageMs: number }[];
+  nearbyRadius: number; nearby: BugSpawn[]; nearbyObjects: BugObject[];
+  packets: { capacity: number; previewBytes: number; recent: BugPacket[] };
+}
+export interface BugReportDetail { report: BugReportSummary; context: BugContext }
 export interface Maintenance { enabled: boolean; message: string; since: string | null; by: string | null }
 export interface ScheduledEvent { id: number; kind: 'announce' | 'exp' | 'drop'; startsAt: string; endsAt: string | null; repeatMinutes: number | null; text: string; multiplier: number | null; createdBy: string | null; cancelledAt: string | null; lastRunAt: string | null }
 export interface PopulationPoint { at: string; players: number; connections: number }

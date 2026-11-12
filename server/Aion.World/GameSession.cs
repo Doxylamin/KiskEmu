@@ -2700,6 +2700,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             default:
                 return [];
         }
+        if (double.IsFinite(heading)) lastHeading = heading;
         if (worldPlayer is not null && double.IsFinite(heading)) worldPlayer.Heading = heading;
         return relay is null ? [] : [relay];
     }

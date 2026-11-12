@@ -97,3 +97,5 @@
 .diagnostics-table .hex-full { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; word-break: break-all; }
 .diagnostics-body td { background: var(--panel-2); }
 .diagnostics-log li { flex-wrap: wrap; }
+.data-table tr.clickable { cursor: pointer; }
+.data-table tr.clickable:hover td { background: var(--hover, rgba(127, 127, 127, 0.08)); }

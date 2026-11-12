@@ -7,7 +7,7 @@ own PostgreSQL, and no world can read another world's characters or the accounts
 
 | Database | Name | Holds | Used by |
 | --- | --- | --- | --- |
-| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`), the account Quna wallets and their ledger (`game.quna_wallets`, `game.quna_ledger`); the catalogue (dashboard) | auth host |
+| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, bug reports (`game.bug_reports`, migration 106), chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`), the account Quna wallets and their ledger (`game.quna_wallets`, `game.quna_ledger`); the catalogue (dashboard) | auth host |
 | World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests, shop purchases and limits, the purchase ledger `game.shop_orders`, memberships, field boss timers `game.field_bosses`), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
 
 ## Migrations
@@ -79,6 +79,7 @@ Every request carries `X-World-Id: <id>` and `Authorization: Bearer <token>`:
 | `POST authenticate`, `GET accounts/{id}` | staff sign-ins on the world's control port (staff sessions only, migration 098); account snapshots for the mirror |
 | `GET state`, `POST maintenance` | maintenance and active sanctions (cached 2 s) |
 | `POST tickets`, `POST chat` | `//report` tickets; announcements and staff chat |
+| `POST bug-reports` | `/bug` reports with their context (docs/BUG_REPORTS.md); the realm sets the world |
 | `POST characters` | the character index sync |
 | `GET shop/goods` | the custom shop goods the world sells (cached 30 s by the world) |
 | `GET quna/{account}`, `POST quna/spend`, `quna/refund` | the account Quna wallet (below); every call repeatable by its request id; no grant (only the realm adds Quna) |
