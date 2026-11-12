@@ -95,3 +95,39 @@ public sealed class FrameBuffer
         return frames;
     }
 }
+
+/// <summary>
+/// Client frames waiting for the game loop. Every frame is deciphered as it arrives, in order, so the RC4 keystream stays in step
+/// with the client; the loop then takes at most <c>perTick</c> of them per tick and the rest wait for the next one. Live 2026-11-12
+/// (21:29:54) one TCP read held more than 64 frames: the loop dropped the extra ones without deciphering them, the keystream fell
+/// behind, and every later request read as a random opcode (about 800 "unanswered opcodes", 10-byte movement among them) until the
+/// client gave up a minute later. Only frames past <see cref="Capacity"/> are dropped, still deciphered.
+/// </summary>
+public sealed class ClientFrameBacklog(Rc4 cipher, int capacity = 1024)
+{
+    readonly Queue<byte[]> frames = new();
+
+    public int Capacity { get; } = capacity;
+    public int Count => frames.Count;
+
+    /// <summary>Deciphers and queues the frames; returns how many were dropped because the backlog was full.</summary>
+    public int Add(IEnumerable<byte[]> bodies)
+    {
+        var dropped = 0;
+        foreach (var body in bodies)
+        {
+            var plain = cipher.Crypt(body);
+            if (frames.Count >= Capacity) dropped++;
+            else frames.Enqueue(plain);
+        }
+        return dropped;
+    }
+
+    /// <summary>The next deciphered frames, at most <paramref name="max"/>.</summary>
+    public List<byte[]> Take(int max)
+    {
+        var taken = new List<byte[]>(Math.Min(max, frames.Count));
+        while (taken.Count < max && frames.TryDequeue(out var plain)) taken.Add(plain);
+        return taken;
+    }
+}
