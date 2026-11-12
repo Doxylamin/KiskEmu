@@ -19,12 +19,13 @@ public sealed partial class PostgresCharacterRepository : IWireCharacterReposito
         while(await r.ReadAsync(ct)) states.Add(ReadState(r));
         return states;
     }
+    // A character staff deactivated (migration 107) stays in the lobby list but cannot be selected.
     public async Task<CharacterState?> LoadWireAsync(Guid accountId,int worldId,int wireId,CancellationToken ct)
     {
         if(wireId<=0) return null;
         await using var q=dataSource.CreateCommand($"""
             SELECT {StateColumns} FROM game.characters c JOIN auth.accounts a USING(account_id)
-            WHERE c.account_id=$1 AND c.world_id=$2 AND c.wire_id=$3 AND a.disabled_at IS NULL
+            WHERE c.account_id=$1 AND c.world_id=$2 AND c.wire_id=$3 AND a.disabled_at IS NULL AND c.blocked_at IS NULL
             """);
         q.Parameters.AddWithValue(accountId); q.Parameters.AddWithValue(worldId); q.Parameters.AddWithValue(wireId);
         await using var r=await q.ExecuteReaderAsync(ct);

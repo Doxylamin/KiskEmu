@@ -6,8 +6,11 @@
   background: none; border: 1px solid transparent; border-radius: var(--radius); color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .result:hover { background: var(--panel-2); }
 .result[aria-current="true"] { background: var(--accent-tint); border-color: var(--accent-line); }
-.result-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 550; min-width: 0; }
-.result-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+/* A long name truncates and its badges keep their size; the meta wraps under the name when the row is narrow. */
+.result { flex-wrap: wrap; row-gap: 2px; }
+.result-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 550; min-width: 0; max-width: 100%; flex: 1 1 auto; }
+.result-name > :not(.truncate) { flex-shrink: 0; }
+.result-meta { color: var(--muted); font-size: 12px; white-space: nowrap; margin-left: auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .detail { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .detail-head { padding: 12px 14px 8px; display: flex; flex-direction: column; gap: 4px; }
 .detail .tabs { padding: 0 8px; }

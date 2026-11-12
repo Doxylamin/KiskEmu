@@ -10,6 +10,7 @@ public static class GameplayEndpoints
     private sealed record MoveItem(long Revision, int? EquipmentSlot);
     private sealed record ChangePassword(string CurrentPassword, string NewPassword);
     private sealed record StaffRoleChange(string Role, bool Granted);
+    private sealed record CharacterActionInput(Guid RequestId, string? Action, Guid? TargetAccount, string? Reason);
     /// <param name="Amount">Quna to add (positive) or take (negative).</param>
     private sealed record QunaStaffChange(Guid RequestId, long Amount, string? Note);
     /// <param name="accounts">The account store's routes (password, sessions, TOTP reset, disable, roles): the auth host
@@ -64,10 +65,24 @@ public static class GameplayEndpoints
             return Results.Ok(new {profile.Roles,profile.BuildId,rank=StaffAccess.RoleOf(rank),rankLabel=StaffAccess.Label(rank),
                 permissions=StaffAccess.PermissionNames(rank)});
         });
-        admin.MapGet("/characters",async(string? q,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,CancellationToken ct) =>
+        // deleted=true: characters on the graveyard account too (the dashboard's "Show deleted characters").
+        admin.MapGet("/characters",async(string? q,bool? deleted,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,CancellationToken ct) =>
         {
             var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
-            return Results.Ok(await game.AdminFindCharactersAsync(account,q??"",ct));
+            return Results.Ok(await game.AdminFindCharactersAsync(account,q??"",ct,deleted??false));
+        });
+        // Delete, cancel a pending deletion, deactivate/reactivate, move to another account (AdminCharacterAction). Answered
+        // by the character's world server (?world=…): never while the character is in the world here.
+        admin.MapPost("/characters/{id:guid}/actions",async(Guid id,CharacterActionInput input,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,
+            IServiceProvider services,CancellationToken ct) =>
+        {
+            var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
+            await game.AdminProfileAsync(account,ct);   // staff only; the store checks the action's permission
+            if(services.GetService<Aion.World.WorldPresence>()?.FindCharacter(id) is not null) return Results.Conflict(new {error="character_online"});
+            // The target account plays here perhaps for the first time: its mirror row comes from the realm.
+            if(input.Action=="transfer" && input.TargetAccount is { } target && services.GetService<Aion.Host.Realm.AccountMirrorService>() is { } mirror)
+                await mirror.RefreshAsync(target,ct);
+            return Results.Ok(await game.AdminCharacterActionAsync(account,new AdminCharacterAction(input.RequestId,id,input.Action??"",input.TargetAccount,input.Reason),ct));
         });
         admin.MapGet("/characters/{id:guid}",async(Guid id,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,CancellationToken ct) =>
         {

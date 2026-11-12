@@ -1217,6 +1217,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         }
     }
 
+    /// <summary>2100-01-01: a staff block has no end of its own (lifted on the dashboard).</summary>
+    const long BlockedUntilMs = 4102444800000;
+
     async Task<List<LobbyCharacter>> LobbyCharactersAsync(CancellationToken ct)
     {
         var records = new List<LobbyCharacter>();
@@ -1252,6 +1255,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 LogoutTime = state.LobbyLogoutWireMs, RegTime = state.RegisteredUnixMs,
                 PendingDeleteTime = deletions.TryGetValue(state.Summary.CharacterId, out var deleteAt) ? deleteAt.ToUnixTimeMilliseconds() : 0,
                 LastNicknameChangeTime = renames.TryGetValue(state.Summary.CharacterId, out var renamedAt) ? renamedAt.ToUnixTimeMilliseconds() : 0,
+                // Deactivated by staff (migration 107; selection is refused by the store). CANDIDATE: reason 1 and an end
+                // time far ahead; how the client shows a blocked character is not observed.
+                BlockReasonNo = state.Blocked ? 1 : 0, BlockEndTime = state.Blocked ? BlockedUntilMs : 0,
             });
         }
         // Stable list order (creation / wire id): slot moves update _slot_no only. Re-sorting by slot cleared pedestal
