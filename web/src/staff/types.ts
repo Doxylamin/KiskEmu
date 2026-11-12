@@ -75,6 +75,22 @@ export const ERRORS: Record<string, string> = {
   same_account: 'The character is already on that account.',
   other_race: 'That account plays the other race on this world.',
   no_free_slot: 'That account has no free character slot on this world.',
+  same_world: 'The character is already on that world.',
+  invalid_move: 'The move is missing a character, world or account.',
+  invalid_name: 'Names are 1 to 64 characters, without # or control characters.',
+  reserved_name: 'GM-style names are for staff accounts.',
+  name_unavailable: 'That name is taken on the target world. Give the character a new name.',
+  character_blocked: 'The character is deactivated. Reactivate it before moving it.',
+  move_in_progress: 'Another move of this character has not finished.',
+  market_pending: 'The character has market listings or unclaimed sales. They must end first.',
+  move_finished: 'This move has already completed.',
+  move_cancelled: 'This move was cancelled. Start it again.',
+  move_incomplete: 'The move did not finish: a world stopped answering. The character stays blocked; press Move again to finish it.',
+  world_unreachable: 'A world server did not answer. Nothing was moved.',
+  world_offline: 'That world is not running.',
+  schema_mismatch: 'The two worlds are on different database versions. Update both first.',
+  unsupported_schema: 'This world has a character table the move cannot copy safely.',
+  no_worlds: 'This server runs no separate worlds.',
 };
 
 /** GET /api/admin/live: players in the world now (in-memory on the host). */

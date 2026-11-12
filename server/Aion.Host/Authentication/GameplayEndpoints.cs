@@ -2,6 +2,7 @@ using Aion.Core.Security;
 using Aion.Application.Authentication;
 using System.Text.Json;
 using Aion.Application.Gameplay;
+using Aion.Host.Worlds;
 
 namespace Aion.Host.Authentication;
 
@@ -123,6 +124,16 @@ public static class GameplayEndpoints
             return Results.Ok(new { MapId=id, Areas=areas });
         });
         if (!accounts) return;
+        // A character to another world (docs/STAFF_CHARACTERS.md): administrators; the realm runs the steps on both world
+        // servers. Not under /characters, so the dashboard does not send it to one world (?world=…).
+        admin.MapPost("/world-moves",async(WorldMoveRequest input,HttpContext ctx,IAccountAuthentication auth,IGameplayStore game,IServiceProvider services,CancellationToken ct) =>
+        {
+            var account=await auth.AuthenticateAsync(Bearer(ctx),ct); if(account is null) return Results.Unauthorized();
+            if(!StaffAccess.Can((await game.AdminProfileAsync(account,ct)).Roles,StaffPermission.ManageAccounts)) return Results.StatusCode(403);
+            if(services.GetService<Aion.Host.Worlds.WorldLinks>() is not { } links) return Results.BadRequest(new {error="no_worlds"});
+            var (status,body)=await CharacterWorldMoves.RunAsync(links,input,account.AccountId,ct);
+            return Results.Json(body,statusCode:status);
+        });
         // Both reach the world servers' account mirrors at once over their realm sockets (server/REALM_LINK.md).
         api.MapPost("/admin/accounts/{id:guid}/disable",async(Guid id,HttpContext ctx,IAccountManagement management,IServiceProvider services,CancellationToken ct) =>
         {

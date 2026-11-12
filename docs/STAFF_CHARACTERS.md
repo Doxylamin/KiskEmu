@@ -24,40 +24,41 @@ The search (`GET /api/admin/characters?deleted=true|false`) leaves out character
 "Show deleted characters" is ticked. Rows show `deleted`, `disabled`, `deactivated` and `deleting` badges. The realm's
 `game.character_index` picks up the new account and name at the next character sync (every 15 s).
 
-## Moving a character to another world (not built)
+## Moving a character to another world
 
 Each world has its own database (`<realm>_world_<id>`, server/DATABASES.md). A remote world may run on another machine
-with its own PostgreSQL, so no world server can read another world's database. A move between worlds therefore goes
-through the realm.
+with its own PostgreSQL, so no world server reads another world's database: the realm moves the character. An
+administrator (ManageAccounts) picks the target world, the target account (the same one by default) and optionally a
+new name; the dashboard sends `POST /api/admin/world-moves` to the auth host (`CharacterWorldMoves`), which runs three
+steps over the worlds' control ports (`/internal/world/characters/{export,import,finish}`, `WorldLinks.MoveStepAsync`).
+Each world keeps one `game.character_world_moves` row per request and side (migration 108), so every step can be repeated
+with the same request id.
 
-1. **Export (source world).** A control-port call `POST /internal/world/characters/{id}/export` locks the character.
-   It refuses if the character is online or already blocked by an export. It sets `blocked_at` with reason
-   `transfer:<request id>` and returns a JSON package: the `game.characters` row and the rows of every table with a
-   `character_id` foreign key to it (about 30 tables in `database/migrations`, all `ON DELETE CASCADE`). The export
-   builds this table list from `information_schema` rather than a hand-kept list, and refuses unless every table is
-   known to it, so a new character table cannot be skipped by mistake.
-2. **Import (target world).** `POST /internal/world/characters/import` with the package and the target account, in one
-   transaction:
-   - Name: unique per world, case-insensitive. On a clash the import fails with `name_unavailable`, unless the
-     dashboard sent a new name (the same rules as the lobby rename).
-   - Identities are regenerated. `characters.wire_id`, `item_instances.wire_id` and `character_quests.uid` are
-     `GENERATED ALWAYS` and are inserted without these columns, so the target assigns new ones. The import keeps an
-     old→new map of item wire ids and rewrites `quick_slots.item_uid` with it. Any other column that stores an item's
-     wire id must be listed next to `quick_slots.item_uid` in the import.
-   - `character_id` and `instance_id` (UUIDs) can stay as they are: they are unique across worlds.
-   - Not moved: legion membership (`guild_members`, plus a legion it leads), friends and friend requests, blocks, mail
-     in either direction, market listings, and per-world shop limits keyed by the character. The dashboard says so
-     before the staff member confirms.
-   - The target account gets a lobby slot and its mirror row, as in `transfer`.
-3. **Finish (source world).** After the import commits, the realm tells the source to soft-delete the character, as
-   `delete` does. It keeps the original row, renamed, on the graveyard account. If the import fails, the realm tells
-   the source to unblock it. If the realm loses track of the move part-way, the `transfer:<request id>` block reason
-   lets staff see the stuck character and finish or roll back the move by hand.
-4. **Index and audit.** Both worlds record `staff_character_world_transfer` with the request id. The next index sync
-   moves the character's row in `game.character_index` to the new world under its new character id, if the import had
-   to change it.
+1. **Export (source world).** It is refused while the character is in the world (`character_online`), deactivated
+   (`character_blocked`), in another move (`move_in_progress`), or has open market listings or unpaid sales
+   (`market_pending`). Otherwise the character is blocked with reason `transfer:<request id>` and exported: its
+   `game.characters` row and the rows of every table with a single-column `character_id` foreign key to it, found in the
+   catalogue (`pg_constraint`) rather than listed by hand, each as `to_jsonb`. A table added later moves without a code
+   change. These stay in the world: legion membership, join requests and storage history, mail, the purchase ledger
+   (`shop_orders`), creation retries and audit. Account-warehouse items stay too, since they belong to the account.
+   Tables keyed by other columns stay as well: friends, blocks, friend requests, market history and per-character shop
+   limits.
+2. **Import (target world).** The target account is mirrored from the realm first. The import is refused if the name is
+   taken on that world, case-insensitively (`name_unavailable`; give a new name), the account is unknown or disabled,
+   plays the other race there, or has no free lobby slot. It is also refused if the package has a table or column this
+   world does not know (`schema_mismatch`; both worlds need the same migrations). Otherwise it makes a new character in
+   one transaction:
+   - a new `character_id`, so a character can move back to a world that still holds its deleted original;
+   - new identity values (`wire_id` on characters and items, `uid` on quests), assigned by the target;
+   - a new `instance_id` per item, remapped in every moving table that references items;
+   - `quick_slots.item_uid` rewritten to the items' new wire ids;
+   - rows the new character got from insert triggers (class skills for its level) replaced by the moved ones;
+   - the staff flag dropped unless the target account is staff.
+3. **Finish (source world).** After the import, the original is deleted as `delete` does: graveyard account, no slot,
+   renamed `#deleted<wire id>`, its rows kept. If the target refused the import, the move is cancelled and the character
+   is unblocked.
 
-The open question is whether to keep `character_id` across worlds. Keeping it makes audit history easy to follow, but
-the realm index's primary key is `character_id`. For a short time the source's soft-deleted row and the target's row
-would both claim it, so the index needs a `(world_id, character_id)` key first. The alternative is to give the copy a
-new `character_id`.
+If a world stops answering after the export, the realm answers `move_incomplete`. The character stays blocked
+(`transfer:<request id>`) and the dashboard keeps the request id, so pressing Move again finishes the same move. The
+import answers the character it already made. Both worlds audit the move: `staff_character_world_move_out`, `_in`, and
+`_finish` or `_cancel`. The realm's character index shows the new character in the target world at the next sync.

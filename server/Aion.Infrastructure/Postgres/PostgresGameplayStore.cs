@@ -9,7 +9,7 @@ using NpgsqlTypes;
 
 namespace Aion.Infrastructure.Postgres;
 
-public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOptions progression, IItemStatRoller? itemRoller = null) : IGameplayStore
+public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOptions progression, IItemStatRoller? itemRoller = null) : IGameplayStore
 {
     /// <summary>Configured live character cap (Exp.dat tables still define levels through <see cref="ProgressionOptions.TableMaxLevel"/>).</summary>
     int MaxLevel => progression.LevelCap;
@@ -2957,6 +2957,29 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
     /// <summary>Lobby slots an account can fill: GameSession.Lobby.cs DefaultLobbySlots plus its purchased extensions (at most MaxExtendedLobbySlots).</summary>
     private const int DefaultLobbySlots = 4, MaxExtendedLobbySlots = 4;
 
+    /// <summary>
+    /// The lowest lobby slot <paramref name="account"/> can show a character of <paramref name="race"/> in on <paramref name="world"/>:
+    /// unknown_account (missing from the mirror or disabled), other_race (one race per account and world, GameSession.OtherRace),
+    /// no_free_slot. Two callers for one account wait for each other here, so they never pick the same slot.
+    /// </summary>
+    private static async Task<int> FreeLobbySlot(NpgsqlConnection c, NpgsqlTransaction t, Guid account, int world, int race, CancellationToken ct)
+    {
+        await Execute(c,t,"SELECT pg_advisory_xact_lock(hashtextextended('lobby:'||$1::text,0))",ct,account);
+        var extended=await Scalar(c,t,"SELECT extended_character_slots FROM auth.accounts WHERE account_id=$1 AND disabled_at IS NULL",ct,account);
+        if(extended is null) throw new GameplayException("unknown_account");
+        var capacity=DefaultLobbySlots+Math.Clamp(Convert.ToInt32(extended),0,MaxExtendedLobbySlots);
+        var used=new HashSet<int>(); var count=0; var races=new HashSet<int>();
+        await using(var q=Query(c,t,"SELECT race,lobby_slot FROM game.characters WHERE account_id=$1 AND world_id=$2 FOR UPDATE",account,world))
+        {
+            await using var r=await q.ExecuteReaderAsync(ct);
+            while(await r.ReadAsync(ct)) { count++; races.Add(r.GetInt32(0)); if(!r.IsDBNull(1)) used.Add(r.GetInt32(1)); }
+        }
+        if(races.Count>0 && !races.Contains(race)) throw new GameplayException("other_race");
+        var slot=Enumerable.Range(0,capacity).Where(s => !used.Contains(s)).Cast<int?>().FirstOrDefault();
+        if(count>=capacity || slot is null) throw new GameplayException("no_free_slot");
+        return slot.Value;
+    }
+
     public async Task<JsonElement> AdminCharacterActionAsync(VerifiedAccount actor, AdminCharacterAction action, CancellationToken ct=default)
     {
         if(action.RequestId==Guid.Empty || action.Action is not ("delete" or "cancel_delete" or "block" or "unblock" or "transfer")) throw new GameplayException("invalid_action");
@@ -3012,22 +3035,8 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
             {
                 var target=action.TargetAccount!.Value;
                 if(target==owner) throw new GameplayException("same_account");
-                // The target must be in this world's account mirror (the caller refreshes it from the realm first). Two
-                // transfers to one account wait for each other here, so they never pick the same free slot.
-                await Execute(c,t,"SELECT pg_advisory_xact_lock(hashtextextended('lobby:'||$1::text,0))",ct,target);
-                var extended=await Scalar(c,t,"SELECT extended_character_slots FROM auth.accounts WHERE account_id=$1 AND disabled_at IS NULL",ct,target);
-                if(extended is null) throw new GameplayException("unknown_account");
-                var capacity=DefaultLobbySlots+Math.Clamp(Convert.ToInt32(extended),0,MaxExtendedLobbySlots);
-                var used=new HashSet<int>(); var count=0; var races=new HashSet<int>();
-                await using(var q=Query(c,t,"SELECT race,lobby_slot FROM game.characters WHERE account_id=$1 AND world_id=$2 FOR UPDATE",target,world))
-                {
-                    await using var r=await q.ExecuteReaderAsync(ct);
-                    while(await r.ReadAsync(ct)) { count++; races.Add(r.GetInt32(0)); if(!r.IsDBNull(1)) used.Add(r.GetInt32(1)); }
-                }
-                // One race per account and world (GameSession.OtherRace), and a lobby slot it can show.
-                if(races.Count>0 && !races.Contains(race)) throw new GameplayException("other_race");
-                var slot=Enumerable.Range(0,capacity).Where(s => !used.Contains(s)).Cast<int?>().FirstOrDefault();
-                if(count>=capacity || slot is null) throw new GameplayException("no_free_slot");
+                // The target must be in this world's account mirror (the caller refreshes it from the realm first).
+                int? slot=await FreeLobbySlot(c,t,target,world,race,ct);
                 await Execute(c,t,"UPDATE game.characters SET account_id=$2,lobby_slot=$3,pending_delete_at=NULL WHERE character_id=$1",ct,action.CharacterId,target,slot.Value);
                 details=new {name,from=owner,to=target,slot=slot.Value,reason};
                 break;
