@@ -44,6 +44,7 @@
     <EmbeddedResource Include="../../tools/data/enchant.json" LogicalName="enchant.json" />
     <EmbeddedResource Include="../../tools/data/exceed_enchant.json" LogicalName="exceed_enchant.json" />
     <EmbeddedResource Include="../../tools/data/godstones.json" LogicalName="godstones.json" />
+    <EmbeddedResource Include="../../tools/data/item_enhance.json" LogicalName="item_enhance.json" />
     <EmbeddedResource Include="../../tools/data/daevanion.json" LogicalName="daevanion.json" />
     <EmbeddedResource Include="../../tools/data/godstone_combine.json" LogicalName="godstone_combine.json" />
     <EmbeddedResource Include="../../tools/data/item-sets.json" LogicalName="item-sets.json" />

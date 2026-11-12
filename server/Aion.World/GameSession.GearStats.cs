@@ -68,7 +68,7 @@ public sealed partial class GameSession
                 continue;
             total += ItemStats.SumInstance(row.RolledStats, row.Upgrades, stat);
         }
-        return total;
+        return total + MagicStoneStat(stat);
     }
 
     /// <summary>All equipped-item contributions for one combat stat (template + instance rolls).</summary>

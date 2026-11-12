@@ -64,19 +64,35 @@ public sealed record InventoryItem(long Key, int ItemId, long Count, byte Contai
 /// <summary>Equipment detail of an item: item level and equip slot (1 weapon, 3 helm, 4 shoulder, 5 torso, 6 pants, 7 gloves, 8 boots, 19 cape; 0 in the bag).</summary>
 // Soul bind: the binding character's db id (the DbId of the character list) and the bind count;
 // the client soul-binds an unbound item again on every equip attempt.
+/// <summary>One mana stone slot: the stone item, the EStat it rolled and its grade (1 Low, 2 Mid, 3 High; 0 empty).</summary>
+public readonly record struct MagicStoneSlot(int ItemId, ushort Stat, byte Grade);
+
 public sealed record EquipDetail(
     int ItemLevel, byte EquipSlot, byte EnchantLevel = 0, long SoulBindOwner = 0, byte SoulBindCount = 0,
     byte SurpassEnchantLevel = 0, int EnchantBonusProb = 0, int SurpassEnchantBonusProb = 0, int[]? Godstones = null,
     IReadOnlyList<(int Wire, int Value)>? RolledStats = null,
-    byte SkinExtractionCount = 0)
+    byte SkinExtractionCount = 0, IReadOnlyList<MagicStoneSlot>? MagicStones = null)
 {
+    /// <summary>
+    /// _magicstone_slots: one {i32 mana stone item id, u16 EStat, u8 EItemMagicStoneGrade} per slot (official 0x5611 and
+    /// 0x562a, 2026-11-12: every slot of the item is sent, empty ones as zeros). Null keeps the single empty slot.
+    /// </summary>
+    internal static PacketWriter WriteMagicStones(PacketWriter w, EquipDetail d)
+    {
+        if (d.MagicStones is not { Count: > 0 } stones) return w.Varint(1).Zeros(7);
+        w.Varint(stones.Count);
+        foreach (var stone in stones) w.I32(stone.ItemId).U16(stone.Stat).U8(stone.Grade);
+        return w;
+    }
+
     public static bool WireSameAs(EquipDetail? a, EquipDetail? b)
     {
         if (a is null || b is null) return a is null && b is null;
         if (a.ItemLevel != b.ItemLevel || a.EquipSlot != b.EquipSlot || a.EnchantLevel != b.EnchantLevel
             || a.SoulBindOwner != b.SoulBindOwner || a.SoulBindCount != b.SoulBindCount
             || a.SurpassEnchantLevel != b.SurpassEnchantLevel || a.EnchantBonusProb != b.EnchantBonusProb
-            || a.SurpassEnchantBonusProb != b.SurpassEnchantBonusProb || a.SkinExtractionCount != b.SkinExtractionCount)
+            || a.SurpassEnchantBonusProb != b.SurpassEnchantBonusProb || a.SkinExtractionCount != b.SkinExtractionCount
+            || !(a.MagicStones ?? []).SequenceEqual(b.MagicStones ?? []))
             return false;
         if (a.Godstones is null || b.Godstones is null)
         {
@@ -857,9 +873,24 @@ public static class GamePackets
         PacketWriter.Opcode(0x562c).U16(result).I64(uid).I64(costUid).I32(costId).ToArray();
     /// <summary>0x562e ItemSoulBindCancel_RS: result, item uid.</summary>
     public static byte[] SoulBindCancel(long uid, int result = 0) => PacketWriter.Opcode(0x562e).U16(result).I64(uid).ToArray();
-    /// <summary>0x5630 ItemSoulBindComplete_RS: result, item uid, bind count, no bound stats or skills.</summary>
-    public static byte[] SoulBindComplete(long uid, byte count = 1, int result = 0) =>
-        PacketWriter.Opcode(0x5630).U16(result).I64(uid).U8(count).Varint(0).Varint(0).ToArray();
+    /// <summary>0x5630 ItemSoulBindComplete_RS: result, item uid, bind count, the bound stats {i32 EStat, i32 value}, no skills.</summary>
+    public static byte[] SoulBindComplete(long uid, byte count = 1, int result = 0, IReadOnlyList<(int Wire, int Value)>? stats = null)
+    {
+        var w = PacketWriter.Opcode(0x5630).U16(result).I64(uid).U8(count).Varint((stats ?? []).Count);
+        foreach (var (wire, value) in stats ?? []) w.I32(wire).I32(value);
+        return w.Varint(0).ToArray();
+    }
+
+    /// <summary>
+    /// 0x562a ItemImprint_RS (OBSERVED 2026-11-12): result u16 (0 success, 843..848 failures), equip uid, mana stone item
+    /// id, mana stone uid, then every slot {i32 stone id, u16 EStat, u8 grade}.
+    /// </summary>
+    public static byte[] ItemImprint(int result, long equipUid, int stoneId, long stoneUid, IReadOnlyList<MagicStoneSlot> slots)
+    {
+        var w = PacketWriter.Opcode(0x562a).U16(result).I64(equipUid).I32(stoneId).I64(stoneUid).Varint(slots.Count);
+        foreach (var slot in slots) w.I32(slot.ItemId).U16(slot.Stat).U8(slot.Grade);
+        return w.ToArray();
+    }
 
     /// <summary>0x561d ItemEquipLevelChange_NT: equipped item level total and the highest reached.</summary>
     public static byte[] ItemEquipLevelChange(int level, int highest) => PacketWriter.Opcode(0x561d).I32(level).I32(highest).ToArray();
@@ -879,10 +910,10 @@ public static class GamePackets
             .Bool(item.Locked).String(item.Maker).I64(item.ExpireTime).Bool(item.ExpireFixed);
         if (item.Detail is { } d)
         {
-            w.U8(d.EnchantLevel).I32(0).I32(d.EnchantBonusProb).U8(d.SurpassEnchantLevel).I32(d.SurpassEnchantBonusProb).I32(d.ItemLevel).Bool(false).U8(d.EquipSlot)
-                // One magicstone slot (7 zero bytes observed; usmap id, stat, grade), then
-                // _soul_bind_char_dbid i64 and _soul_bind_count u8 (usmap order; CANDIDATE placement).
-                .Varint(1).Zeros(7).I64(d.SoulBindOwner).U8(d.SoulBindCount);
+            w.U8(d.EnchantLevel).I32(0).I32(d.EnchantBonusProb).U8(d.SurpassEnchantLevel).I32(d.SurpassEnchantBonusProb).I32(d.ItemLevel).Bool(false).U8(d.EquipSlot);
+            // Mana stone slots, then _soul_bind_char_dbid i64 and _soul_bind_count u8 (usmap order; the official
+            // 0x5611 of 2026-11-12 parses with this layout).
+            EquipDetail.WriteMagicStones(w, d).I64(d.SoulBindOwner).U8(d.SoulBindCount);
             var gs = d.Godstones ?? [0, 0, 0];
             w.Varint(3);
             for (var i = 0; i < 3; i++) w.I32(i < gs.Length ? gs[i] : 0);
