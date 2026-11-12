@@ -599,6 +599,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case RegisterPeriodCollectionRq when plain.Length >= 11: return await RegisterCollectionAsync(plain, now, ct);
             case DaevanionOpenNodeRq when plain.Length >= 6: return await DaevanionOpenNodeAsync(plain, ct);
             case DaevanionOpenNodeRqLive when plain.Length >= 7: return await DaevanionOpenNodeLiveAsync(plain, ct);
+            case DaevanionOpenAllNodeRqLive when plain.Length >= 6: return await DaevanionOpenAllNodeAsync(plain, DaevanionOpenAllNodeRsLive, ct);
             case DaevanionCloseNodeRq when plain.Length >= 6: return await DaevanionCloseNodeAsync(plain, ct);
             case DaevanionResetBoardRq when plain.Length >= 6: return await DaevanionResetBoardAsync(plain, ct);
             case DaevanionOpenAllNodeRq when plain.Length >= 6: return await DaevanionOpenAllNodeAsync(plain, ct);
