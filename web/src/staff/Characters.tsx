@@ -4,13 +4,15 @@ import { Badge, Button, Tabs } from '../shared/components';
 import { hashOf } from '../shared/router';
 import type { Tools } from './Dashboard';
 import { ROLE_LABEL, STAFF_ROLES, can, type AdminCharacter, type CharacterDetail } from './types';
+import type { AccountSummary } from './Accounts';
 import { iconUrl, type Wardrobe } from './useWardrobe';
 import { useWorldNames } from '../shared/worlds';
 
 const GENDER_NAME: Record<number, string> = { 1: 'Male', 2: 'Female' };
 
-export function CharacterPanel({ tools, results, query, onQuery, onSearch, detail, onOpen, onRefresh, wardrobe }: {
+export function CharacterPanel({ tools, results, query, onQuery, onSearch, showDeleted, onShowDeleted, detail, onOpen, onRefresh, wardrobe }: {
   tools: Tools; results: AdminCharacter[]; query: string; onQuery: (q: string) => void; onSearch: (q: string) => void;
+  showDeleted: boolean; onShowDeleted: (value: boolean) => void;
   detail: CharacterDetail | null; onOpen: (id: string) => void; onRefresh: () => Promise<void>; wardrobe: Wardrobe | null;
 }) {
   const worldName = useWorldNames();
@@ -23,14 +25,18 @@ export function CharacterPanel({ tools, results, query, onQuery, onSearch, detai
             value={query} onChange={e => onQuery(e.target.value)} />
           <Button type="submit">Search</Button>
         </form>
+        <label className="check"><input type="checkbox" checked={showDeleted} onChange={e => onShowDeleted(e.target.checked)} /><span>Show deleted characters</span></label>
       </div>
       <ul className="results" aria-label="Search results">
         {results.map(row => (
           <li key={row.characterId}>
             <button type="button" className="result" aria-current={row.characterId === detail?.character.characterId}
               onClick={() => onOpen(row.characterId)}>
-              <span className="result-name">{row.name}{row.accountDisabled && <Badge tone="danger">disabled</Badge>}</span>
-              <span className="result-meta">Lv {row.level} · {worldName(row.worldId)} · {row.accountName}</span>
+              <span className="result-name">
+                <span className="truncate">{row.name}</span>
+                <CharacterBadges row={row} />
+              </span>
+              <span className="result-meta">Lv {row.level} · {worldName(row.worldId)} · {row.deleted ? 'deleted' : row.accountName}</span>
             </button>
           </li>
         ))}
@@ -39,6 +45,16 @@ export function CharacterPanel({ tools, results, query, onQuery, onSearch, detai
       {detail && <CharacterDetailView key={detail.character.characterId} tools={tools} detail={detail} onRefresh={onRefresh} wardrobe={wardrobe} />}
     </section>
   );
+}
+
+// The graveyard account is disabled too: a deleted character shows "deleted", not "disabled".
+function CharacterBadges({ row }: { row: AdminCharacter }) {
+  if (row.deleted) return <Badge tone="danger">deleted</Badge>;
+  return <>
+    {row.accountDisabled && <Badge tone="danger">disabled</Badge>}
+    {row.blocked && <Badge tone="danger">deactivated</Badge>}
+    {row.pendingDeleteAt && <Badge>deleting</Badge>}
+  </>;
 }
 
 type Tab = 'overview' | 'inventory' | 'skills';
@@ -183,6 +199,119 @@ function Overview({ tools, detail, onRefresh }: { tools: Tools; detail: Characte
           <Button type="submit" size="sm" busy={busy === 'ascension'} disabled={!canEdit || Number(ascension) === detail.ascension}>Set</Button>
         </form>
       </div>
+      <ManageCharacter tools={tools} character={c} onRefresh={onRefresh} />
+    </div>
+  );
+}
+
+// Delete, cancel a pending deletion, deactivate and move to another account (POST /api/admin/characters/{id}/actions, answered
+// by the character's world server). Each is confirmed, audited, and refused while the character is in the world.
+function ManageCharacter({ tools, character: c, onRefresh }: { tools: Tools; character: AdminCharacter; onRefresh: () => Promise<void> }) {
+  const canEdit = can(tools.session.profile, 'editCharacters');
+  const canManage = can(tools.session.profile, 'manageAccounts');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
+  const [moving, setMoving] = useState(false);
+
+  function act(action: string, title: string, body: string, done: string, extra: Record<string, unknown> = {}, danger = false) {
+    tools.confirm({
+      title, body, danger, confirmLabel: title,
+      note: 'Refused while the character is in the world. This is recorded in the audit log under your account.',
+      onConfirm: async () => {
+        setBusy(action);
+        try {
+          await tools.call(`/api/admin/characters/${c.characterId}/actions`, { method: 'POST',
+            body: { requestId: requestId(), action, reason: reason.trim() || null, ...extra } });
+          tools.notify(done, 'ok'); tools.log(`${title} → ${c.name}`);
+          setReason(''); setMoving(false);
+          await onRefresh();
+        } catch (error) { tools.fail(error); }
+        finally { setBusy(null); }
+      },
+    });
+  }
+
+  if (c.deleted) return (
+    <div className="stack-sm">
+      <h4>Manage character</h4>
+      <p className="muted small">This character was deleted: it is on the deleted-characters account and in no lobby.</p>
+    </div>
+  );
+  if (!canEdit && !canManage) return null;
+  const pending = c.pendingDeleteAt ? new Date(c.pendingDeleteAt) : null;
+  return (
+    <div className="stack-sm">
+      <h4>Manage character</h4>
+      <div className="row wrap">
+        {c.blocked ? <Badge tone="danger">Deactivated{c.blockReason ? `: ${c.blockReason}` : ''}</Badge> : <Badge tone="ok">Active</Badge>}
+        {pending && <Badge>Deletion pending · {pending.toLocaleString()}</Badge>}
+      </div>
+      <div className="inline-field">
+        <label htmlFor="action-reason">Reason</label>
+        <input id="action-reason" className="input input-sm" maxLength={200} value={reason} onChange={e => setReason(e.target.value)}
+          placeholder="Optional, kept in the audit log" />
+      </div>
+      <div className="row wrap">
+        {canEdit && (c.blocked
+          ? <Button size="sm" variant="secondary" busy={busy === 'unblock'}
+              onClick={() => act('unblock', 'Reactivate', `Let ${c.name} enter the world again?`, `${c.name} is active again.`)}>Reactivate</Button>
+          : <Button size="sm" variant="secondary" busy={busy === 'block'}
+              onClick={() => act('block', 'Deactivate', `Deactivate ${c.name}? The character stays on its account and in the lobby, but cannot enter the world until it is reactivated.`,
+                `${c.name} is deactivated.`)}>Deactivate</Button>)}
+        {canEdit && pending && (
+          <Button size="sm" variant="secondary" busy={busy === 'cancel_delete'}
+            onClick={() => act('cancel_delete', 'Cancel deletion', `Cancel the deletion of ${c.name} that its owner asked for (due ${pending.toLocaleString()})?`,
+              `${c.name} will not be deleted.`)}>Cancel deletion</Button>
+        )}
+        {canManage && (
+          <Button size="sm" variant="secondary" busy={busy === 'transfer'} onClick={() => setMoving(m => !m)}>Move to another account…</Button>
+        )}
+        {canManage && (
+          <Button size="sm" variant="danger" busy={busy === 'delete'}
+            onClick={() => act('delete', 'Delete character', `Delete ${c.name} now? It moves to the deleted-characters account and is renamed ${c.name}#deleted…, which frees the name. Its items and history are kept, but the owner cannot get it back from the lobby.`,
+              `${c.name} is deleted.`, {}, true)}>Delete</Button>
+        )}
+      </div>
+      {moving && canManage && <MoveCharacter tools={tools} character={c}
+        onPick={account => act('transfer', 'Move character',
+          `Move ${c.name} from ${c.accountName} to ${account.username}? It takes the first free character slot of that account on this world. Its legion membership, friends and mail stay with the character; a pending deletion is cancelled.`,
+          `${c.name} is now on ${account.username}.`, { targetAccount: account.accountId })} />}
+      <p className="muted small">Moving a character to another world is not available yet.</p>
+    </div>
+  );
+}
+
+// Picks the target account from the realm's account search (GET /api/admin/accounts, not world-scoped).
+function MoveCharacter({ tools, character, onPick }: { tools: Tools; character: AdminCharacter; onPick: (account: AccountSummary) => void }) {
+  const [query, setQuery] = useState('');
+  const [found, setFound] = useState<AccountSummary[] | null>(null);
+  async function search(event: FormEvent) {
+    event.preventDefault();
+    if (!query.trim()) return;
+    try {
+      const page = await tools.call<{ accounts: AccountSummary[] }>('/api/admin/accounts?' + new URLSearchParams({ q: query.trim(), filter: 'all', page: '0' }));
+      setFound(page.accounts.filter(a => a.accountId !== character.accountId));
+    } catch (error) { tools.fail(error); }
+  }
+  return (
+    <div className="stack-sm">
+      <form className="row" onSubmit={search}>
+        <input className="input input-sm" type="search" placeholder="Target account or character name" aria-label="Search target account" maxLength={64}
+          value={query} onChange={e => setQuery(e.target.value)} />
+        <Button type="submit" size="sm">Find</Button>
+      </form>
+      {found && (found.length
+        ? <ul className="results" aria-label="Target accounts">
+            {found.map(a => (
+              <li key={a.accountId}>
+                <button type="button" className="result" disabled={!!a.disabledAt} onClick={() => onPick(a)}>
+                  <span className="result-name"><span className="truncate">{a.username}</span>{a.disabledAt && <Badge tone="danger">disabled</Badge>}</span>
+                  <span className="result-meta">{a.rankLabel ?? 'Player'}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        : <p className="empty">No other account matches.</p>)}
     </div>
   );
 }

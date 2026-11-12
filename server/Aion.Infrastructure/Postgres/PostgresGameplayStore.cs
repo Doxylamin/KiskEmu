@@ -2894,10 +2894,13 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
         return classes;
     }
     private const string StaffCharacterColumns="c.character_id,c.name,c.account_id,a.subject,c.world_id,c.level,c.race,c.gender,c.creation_id,a.disabled_at IS NOT NULL,"
-        +"ARRAY(SELECT r.role FROM auth.account_roles r WHERE r.account_id=c.account_id ORDER BY r.role),c.staff";
+        +"ARRAY(SELECT r.role FROM auth.account_roles r WHERE r.account_id=c.account_id ORDER BY r.role),c.staff,"
+        +"c.account_id='00000000-0000-0000-0000-00000000dead',c.pending_delete_at,c.blocked_at IS NOT NULL,c.block_reason";
     private static AdminCharacter ReadStaffCharacter(NpgsqlDataReader r) =>
         new(r.GetGuid(0),r.GetString(1),r.GetGuid(2),r.GetString(3),r.GetInt32(4),r.GetInt32(5),r.GetInt32(6),r.GetInt32(7),r.GetInt32(8),r.GetBoolean(9),
-            r.GetFieldValue<string[]>(10),r.GetBoolean(11));
+            r.GetFieldValue<string[]>(10),r.GetBoolean(11),r.GetBoolean(12),
+            r.IsDBNull(13) ? null : new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(13),DateTimeKind.Utc)),r.GetBoolean(14),
+            r.GetString(15) is { Length: > 0 } reason ? reason : null);
 
     public async Task<AdminProfile> AdminProfileAsync(VerifiedAccount actor, CancellationToken ct=default)
     {
@@ -2909,7 +2912,7 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
         await t.CommitAsync(ct); return new(roles,build);
     }
 
-    public async Task<IReadOnlyList<AdminCharacter>> AdminFindCharactersAsync(VerifiedAccount actor, string query, CancellationToken ct=default)
+    public async Task<IReadOnlyList<AdminCharacter>> AdminFindCharactersAsync(VerifiedAccount actor, string query, CancellationToken ct=default, bool includeDeleted=true)
     {
         query=(query??"").Trim();
         if(query.Length>64 || query.Any(char.IsControl)) throw new GameplayException("invalid_query");
@@ -2920,9 +2923,10 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
         var found=new List<AdminCharacter>();
         await using(var q=Query(c,t,$"""
             SELECT {StaffCharacterColumns} FROM game.characters c JOIN auth.accounts a USING(account_id)
-            WHERE $1='' OR c.name ILIKE $2 OR a.subject ILIKE $2 OR c.character_id::text=lower($1) OR c.account_id::text=lower($1)
+            WHERE ($1='' OR c.name ILIKE $2 OR a.subject ILIKE $2 OR c.character_id::text=lower($1) OR c.account_id::text=lower($1))
+              AND ($3 OR c.account_id<>$4)
             ORDER BY lower(c.name),c.character_id LIMIT 50
-            """,query,pattern))
+            """,query,pattern,includeDeleted,Graveyard))
         {
             await using var r=await q.ExecuteReaderAsync(ct);
             while(await r.ReadAsync(ct)) found.Add(ReadStaffCharacter(r));
@@ -2949,6 +2953,94 @@ public sealed class PostgresGameplayStore(NpgsqlDataSource source, ProgressionOp
             classes.FirstOrDefault(x=>x.CreationId==found.CreationId)?.Name, classes, ascension);
         await t.CommitAsync(ct); return detail;
     }
+
+    /// <summary>Lobby slots an account can fill: GameSession.Lobby.cs DefaultLobbySlots plus its purchased extensions (at most MaxExtendedLobbySlots).</summary>
+    private const int DefaultLobbySlots = 4, MaxExtendedLobbySlots = 4;
+
+    public async Task<JsonElement> AdminCharacterActionAsync(VerifiedAccount actor, AdminCharacterAction action, CancellationToken ct=default)
+    {
+        if(action.RequestId==Guid.Empty || action.Action is not ("delete" or "cancel_delete" or "block" or "unblock" or "transfer")) throw new GameplayException("invalid_action");
+        var reason=(action.Reason??"").Trim();
+        if(reason.Length>200 || reason.Any(char.IsControl)) throw new GameplayException("invalid_reason");
+        if(action.Action=="transfer" && (action.TargetAccount is not { } named || named==Guid.Empty || named==Graveyard)) throw new GameplayException("unknown_account");
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        var roles=await StaffRoles(c,t,actor.AccountId,ct);
+        if(!StaffAccess.Can(roles,action.Action is "delete" or "transfer" ? StaffPermission.ManageAccounts : StaffPermission.EditCharacters)) throw new GameplayException("forbidden");
+        await Execute(c,t,"SELECT pg_advisory_xact_lock(hashtextextended($1,0))",ct,action.RequestId.ToString());
+        var args=Json(action with { Reason=reason });
+        await using(var q=Query(c,t,"SELECT result::text,(arguments=$2 AND actor_id=$3) FROM game.admin_requests WHERE request_id=$1",action.RequestId,args,actor.AccountId))
+        { await using var r=await q.ExecuteReaderAsync(ct); if(await r.ReadAsync(ct)) { if(!r.GetBoolean(1)) throw new GameplayException("request_conflict"); return JsonSerializer.Deserialize<JsonElement>(r.GetString(0)); } }
+        Guid owner; string name; int world, race; bool pending, blocked, staffOwner;
+        await using(var q=Query(c,t,"SELECT c.account_id,c.name,c.world_id,c.race,c.pending_delete_at IS NOT NULL,c.blocked_at IS NOT NULL,"
+            +"EXISTS(SELECT FROM auth.account_roles r WHERE r.account_id=c.account_id AND r.role IN ("+StaffAccess.RoleSqlList+")) "
+            +"FROM game.characters c WHERE c.character_id=$1 FOR UPDATE",action.CharacterId))
+        {
+            await using var r=await q.ExecuteReaderAsync(ct);
+            if(!await r.ReadAsync(ct)) throw new GameplayException("character_unavailable");
+            owner=r.GetGuid(0); name=r.GetString(1); world=r.GetInt32(2); race=r.GetInt32(3); pending=r.GetBoolean(4); blocked=r.GetBoolean(5); staffOwner=r.GetBoolean(6);
+        }
+        if(owner==Graveyard) throw new GameplayException("character_deleted");
+        // As with sanctions: a staff account's characters are the administrators'.
+        if(staffOwner && !StaffAccess.Can(roles,StaffPermission.ManageStaff)) throw new GameplayException("forbidden");
+        object details;
+        switch(action.Action)
+        {
+            case "delete":
+            {
+                // As a due lobby deletion (CompleteDeletions): to the graveyard, no slot, a free name.
+                var deleted=(string)(await Scalar(c,t,"UPDATE game.characters SET account_id=$2,lobby_slot=NULL,pending_delete_at=NULL,name=left(name,40)||'#deleted'||wire_id "
+                    +"WHERE character_id=$1 RETURNING name",ct,action.CharacterId,Graveyard))!;
+                details=new {name,deletedName=deleted,account=owner,reason};
+                break;
+            }
+            case "cancel_delete":
+                if(!pending) throw new GameplayException("not_pending");
+                await Execute(c,t,"UPDATE game.characters SET pending_delete_at=NULL WHERE character_id=$1",ct,action.CharacterId);
+                details=new {name,account=owner};
+                break;
+            case "block":
+                if(blocked) throw new GameplayException("already_blocked");
+                await Execute(c,t,"UPDATE game.characters SET blocked_at=now(),block_reason=$2 WHERE character_id=$1",ct,action.CharacterId,reason);
+                details=new {name,account=owner,reason};
+                break;
+            case "unblock":
+                if(!blocked) throw new GameplayException("not_blocked");
+                await Execute(c,t,"UPDATE game.characters SET blocked_at=NULL,block_reason='' WHERE character_id=$1",ct,action.CharacterId);
+                details=new {name,account=owner,reason};
+                break;
+            default:
+            {
+                var target=action.TargetAccount!.Value;
+                if(target==owner) throw new GameplayException("same_account");
+                // The target must be in this world's account mirror (the caller refreshes it from the realm first). Two
+                // transfers to one account wait for each other here, so they never pick the same free slot.
+                await Execute(c,t,"SELECT pg_advisory_xact_lock(hashtextextended('lobby:'||$1::text,0))",ct,target);
+                var extended=await Scalar(c,t,"SELECT extended_character_slots FROM auth.accounts WHERE account_id=$1 AND disabled_at IS NULL",ct,target);
+                if(extended is null) throw new GameplayException("unknown_account");
+                var capacity=DefaultLobbySlots+Math.Clamp(Convert.ToInt32(extended),0,MaxExtendedLobbySlots);
+                var used=new HashSet<int>(); var count=0; var races=new HashSet<int>();
+                await using(var q=Query(c,t,"SELECT race,lobby_slot FROM game.characters WHERE account_id=$1 AND world_id=$2 FOR UPDATE",target,world))
+                {
+                    await using var r=await q.ExecuteReaderAsync(ct);
+                    while(await r.ReadAsync(ct)) { count++; races.Add(r.GetInt32(0)); if(!r.IsDBNull(1)) used.Add(r.GetInt32(1)); }
+                }
+                // One race per account and world (GameSession.OtherRace), and a lobby slot it can show.
+                if(races.Count>0 && !races.Contains(race)) throw new GameplayException("other_race");
+                var slot=Enumerable.Range(0,capacity).Where(s => !used.Contains(s)).Cast<int?>().FirstOrDefault();
+                if(count>=capacity || slot is null) throw new GameplayException("no_free_slot");
+                await Execute(c,t,"UPDATE game.characters SET account_id=$2,lobby_slot=$3,pending_delete_at=NULL WHERE character_id=$1",ct,action.CharacterId,target,slot.Value);
+                details=new {name,from=owner,to=target,slot=slot.Value,reason};
+                break;
+            }
+        }
+        var result=Json(new {action=action.Action,characterId=action.CharacterId,
+            name=(string)(await Scalar(c,t,"SELECT name FROM game.characters WHERE character_id=$1",ct,action.CharacterId))!,
+            accountId=(Guid)(await Scalar(c,t,"SELECT account_id FROM game.characters WHERE character_id=$1",ct,action.CharacterId))!});
+        await Execute(c,t,"INSERT INTO game.admin_requests VALUES($1,$2,$3,$4)",ct,action.RequestId,actor.AccountId,args,result);
+        await Execute(c,t,"INSERT INTO audit.events(action,character_id,actor_id,details) VALUES($1,$2,$3,$4)",ct,"staff_character_"+action.Action,action.CharacterId,actor.AccountId,Json(details));
+        await t.CommitAsync(ct); return result;
+    }
+
     public async Task<IReadOnlyList<AdminAuditEntry>> AdminAuditAsync(VerifiedAccount actor, string? action, Guid? character, long? before, int limit, CancellationToken ct=default)
     {
         action=(action??"").Trim();

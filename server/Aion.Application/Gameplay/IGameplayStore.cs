@@ -103,8 +103,18 @@ public sealed record AdminClass(int CreationId, string Name);
 public sealed record AdminProfile(IReadOnlyList<string> Roles, string? BuildId);
 /// <summary>An audit event for the staff activity log: who did what to which character, with the event's details (JSON).</summary>
 public sealed record AdminAuditEntry(long Id, DateTimeOffset At, string Action, Guid? CharacterId, string? CharacterName, string? ActorName, string Details);
+/// <param name="Deleted">On the graveyard account (a completed deletion, migration 024).</param>
+/// <param name="PendingDeleteAt">A deletion the owner asked for that is not due yet.</param>
+/// <param name="Blocked">Deactivated by staff (migration 107): cannot enter the world.</param>
 public sealed record AdminCharacter(Guid CharacterId, string Name, Guid AccountId, string AccountName,
-    int WorldId, int Level, int Race, int Gender, int CreationId, bool AccountDisabled, IReadOnlyList<string>? AccountRoles = null, bool Staff = false);
+    int WorldId, int Level, int Race, int Gender, int CreationId, bool AccountDisabled, IReadOnlyList<string>? AccountRoles = null, bool Staff = false,
+    bool Deleted = false, DateTimeOffset? PendingDeleteAt = null, bool Blocked = false, string? BlockReason = null);
+/// <summary>
+/// A staff action on a stored character (dashboard Characters): <c>delete</c> (now, as a due lobby deletion),
+/// <c>cancel_delete</c> (a pending one), <c>block</c> / <c>unblock</c> (deactivate: no world entry), <c>transfer</c> (to
+/// <paramref name="TargetAccount"/> in the same world, into its first free lobby slot). Repeatable by the request id.
+/// </summary>
+public sealed record AdminCharacterAction(Guid RequestId, Guid CharacterId, string Action, Guid? TargetAccount = null, string? Reason = null);
 /// <summary>A catalogue item for the staff dashboard (latest build): grade and level from the item facts.</summary>
 public sealed record AdminCatalogItem(int TemplateId, string Name, string? Category, string? Grade, int? Level);
 public sealed record AdminCatalogPage(IReadOnlyList<AdminCatalogItem> Items, int Total, IReadOnlyList<string> Categories);
@@ -429,7 +439,15 @@ public interface IGameplayStore
     Task<bool> AscendAsync(VerifiedAccount account, Guid character, int grade, CancellationToken ct = default) => Task.FromResult(false);
     // Throw GameplayException("forbidden") unless the actor holds gamemaster or admin.
     Task<AdminProfile> AdminProfileAsync(VerifiedAccount actor, CancellationToken ct = default);
-    Task<IReadOnlyList<AdminCharacter>> AdminFindCharactersAsync(VerifiedAccount actor, string query, CancellationToken ct = default);
+    /// <param name="includeDeleted">false: characters on the graveyard account are left out (the dashboard's default).</param>
+    Task<IReadOnlyList<AdminCharacter>> AdminFindCharactersAsync(VerifiedAccount actor, string query, CancellationToken ct = default, bool includeDeleted = true);
+    /// <summary>
+    /// Runs one <see cref="AdminCharacterAction"/>; delete and transfer need ManageAccounts, the others EditCharacters, and a
+    /// staff account's character ManageStaff. Recorded in audit.events (<c>staff_character_&lt;action&gt;</c>). The caller
+    /// refuses a character that is in the world.
+    /// </summary>
+    Task<JsonElement> AdminCharacterActionAsync(VerifiedAccount actor, AdminCharacterAction action, CancellationToken ct = default) =>
+        throw new GameplayException("unsupported");
     Task<AdminCharacterDetail?> AdminCharacterAsync(VerifiedAccount actor, Guid character, CancellationToken ct = default);
     // Latest catalogue build: exact template ID or name substring, at most five rows (GM chat command).
     Task<IReadOnlyList<(int TemplateId, string Name)>> AdminSearchItemsAsync(VerifiedAccount actor, string query, CancellationToken ct = default);

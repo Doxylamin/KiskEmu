@@ -405,6 +405,85 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     immutableItem.Parameters.AddWithValue(bagSword.InstanceId);
     try { await immutableItem.ExecuteNonQueryAsync(); throw new Exception("Item wire ID changed"); }
     catch(PostgresException e) when(e.SqlState=="P0001") { Check(true,"item wire ID immutable"); }
+    // Staff character actions (dashboard Characters, migration 107): delete, cancel a pending deletion, deactivate, move to
+    // another account. Ranks: block and cancel need EditCharacters (moderator), delete and move ManageAccounts (admin),
+    // a staff account's characters ManageStaff. Every action is repeatable by its request id and audited.
+    {
+        var admin=new VerifiedAccount(Guid.Parse(Environment.GetEnvironmentVariable("AION_TEST_ADMIN")!));
+        var moderator=new VerifiedAccount(Guid.Parse(Environment.GetEnvironmentVariable("AION_TEST_MODERATOR")!));
+        var third=new VerifiedAccount(Guid.Parse(Environment.GetEnvironmentVariable("AION_TEST_THIRD")!));
+        var graveyard=Guid.Parse("00000000-0000-0000-0000-00000000dead");
+        var actions=new PostgresGameplayStore(source,progression);
+        var wires=new PostgresCharacterRepository(source);
+        var movable=await actions.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),Name="Movable",LobbySlot=0});
+        var movableWire=(await wires.LoadOwnedAsync(first.AccountId,movable,default))!.WireId;
+        AdminCharacterAction Act(string action,Guid? target=null,string? reason=null,Guid? character=null) =>
+            new(Guid.NewGuid(),character ?? movable,action,target,reason);
+        async Task<AdminCharacter> Row(Guid character) =>
+            (await actions.AdminFindCharactersAsync(admin,character.ToString(),default,includeDeleted:true)).Single();
+
+        await Reject(()=>actions.AdminCharacterActionAsync(second,Act("block")),"forbidden");
+        await Reject(()=>actions.AdminCharacterActionAsync(moderator,Act("delete")),"forbidden");
+        await Reject(()=>actions.AdminCharacterActionAsync(moderator,Act("transfer",third.AccountId)),"forbidden");
+        await Reject(()=>actions.AdminCharacterActionAsync(moderator,Act("block",character:gmChar)),"forbidden");
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("rename")),"invalid_action");
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("block",reason:new string('x',201))),"invalid_reason");
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("block",character:Guid.NewGuid())),"character_unavailable");
+
+        // Deactivate: still listed in the lobby (flagged), but the world cannot select it.
+        var block=Act("block",reason:"chargeback");
+        var blocked=await actions.AdminCharacterActionAsync(moderator,block);
+        Check((await actions.AdminCharacterActionAsync(moderator,block)).GetRawText()==blocked.GetRawText(),"a repeated character action answers the first result");
+        await Reject(()=>actions.AdminCharacterActionAsync(moderator,block with {Reason="other"}),"request_conflict");
+        await Reject(()=>actions.AdminCharacterActionAsync(moderator,Act("block")),"already_blocked");
+        Check(await Row(movable) is { Blocked: true, BlockReason: "chargeback" },"staff search shows the block and its reason");
+        Check(await wires.LoadWireAsync(first.AccountId,1204,movableWire,default) is null,"a deactivated character cannot be selected");
+        Check((await wires.ListWorldAsync(first.AccountId,1204,default)).Single(x=>x.WireId==movableWire).Blocked,"a deactivated character stays in the lobby, flagged");
+        await actions.AdminCharacterActionAsync(moderator,Act("unblock"));
+        await Reject(()=>actions.AdminCharacterActionAsync(moderator,Act("unblock")),"not_blocked");
+        Check(await wires.LoadWireAsync(first.AccountId,1204,movableWire,default) is not null && !(await Row(movable)).Blocked,"a reactivated character can be selected again");
+
+        // Cancel a deletion the owner asked for.
+        await Reject(()=>actions.AdminCharacterActionAsync(moderator,Act("cancel_delete")),"not_pending");
+        Check(await actions.RequestCharacterDeleteAsync(first,movable,DateTimeOffset.UtcNow.AddDays(1)) && (await Row(movable)).PendingDeleteAt is not null,"a pending deletion shows on the staff row");
+        await actions.AdminCharacterActionAsync(moderator,Act("cancel_delete"));
+        Check((await Row(movable)).PendingDeleteAt is null && !(await actions.CharacterDeletionsAsync(first)).ContainsKey(movable),"staff cancel a pending deletion");
+
+        // Move to another account: the target's first free lobby slot; refused for an unknown, the same, a disabled account,
+        // one playing the other race here, and one without a free slot.
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("transfer")),"unknown_account");
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("transfer",Guid.NewGuid())),"unknown_account");
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("transfer",disabled.AccountId)),"unknown_account");
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("transfer",graveyard)),"unknown_account");
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("transfer",first.AccountId)),"same_account");
+        await actions.CreateAsync(admin,draft with {RequestId=Guid.NewGuid(),ProfileId="other-race",Name="OtherRace",LobbySlot=0});
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("transfer",admin.AccountId)),"other_race");
+        await actions.CreateAsync(third,draft with {RequestId=Guid.NewGuid(),Name="ThirdOwn",LobbySlot=0});
+        Check(await actions.RequestCharacterDeleteAsync(first,movable,DateTimeOffset.UtcNow.AddDays(1)),"a deletion is pending before the move");
+        var moved=await actions.AdminCharacterActionAsync(admin,Act("transfer",third.AccountId,"merge accounts"));
+        Check(moved.GetProperty("accountId").GetGuid()==third.AccountId,"the move answers the new account");
+        var movedState=(await wires.LoadOwnedAsync(third.AccountId,movable,default))!;
+        Check(movedState.LobbySlot==1 && movedState.WireId==movableWire,"the moved character takes the target's first free slot and keeps its identity");
+        Check(await wires.LoadOwnedAsync(first.AccountId,movable,default) is null && (await actions.CharacterDeletionsAsync(third)).Count==0,"the old account loses it; the pending deletion is cancelled");
+        foreach(var (name,slot) in new[]{("FillA",2),("FillB",3)})
+            await actions.CreateAsync(third,draft with {RequestId=Guid.NewGuid(),Name=name,LobbySlot=slot});
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("transfer",third.AccountId,character:slotB)),"no_free_slot");
+
+        // Delete now: to the graveyard as a due lobby deletion; hidden from the default staff search.
+        var deleted=await actions.AdminCharacterActionAsync(admin,Act("delete",reason:"requested"));
+        var deletedName=deleted.GetProperty("name").GetString();
+        Check(deletedName==$"Movable#deleted{movableWire}" && deleted.GetProperty("accountId").GetGuid()==graveyard,"a deleted character is renamed on the graveyard account");
+        Check((await Row(movable)) is { Deleted: true, AccountDisabled: true } && (await wires.ListWorldAsync(third.AccountId,1204,default)).All(x=>x.WireId!=movableWire),"a deleted character leaves the lobby and is flagged for staff");
+        Check((await actions.AdminFindCharactersAsync(admin,"Movable",default,includeDeleted:false)).Count==0
+              && (await actions.AdminFindCharactersAsync(admin,"Movable",default,includeDeleted:true)).Count==1,"the staff search hides deleted characters unless asked");
+        await Reject(()=>actions.AdminCharacterActionAsync(admin,Act("unblock")),"character_deleted");
+        Check(await actions.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),Name="movable",LobbySlot=0})!=Guid.Empty,"a deleted character's name is free again");
+
+        await using var audit=source.CreateCommand("SELECT array_agg(action ORDER BY event_id) FROM audit.events WHERE character_id=$1 AND action LIKE 'staff_character_%'");
+        audit.Parameters.AddWithValue(movable);
+        Check(((string[])(await audit.ExecuteScalarAsync())!).SequenceEqual(["staff_character_block","staff_character_unblock","staff_character_cancel_delete",
+            "staff_character_transfer","staff_character_delete"]),"each staff character action is audited once");
+    }
 }
 Console.WriteLine($"{checks} isolated PostgreSQL repository checks passed.");
 

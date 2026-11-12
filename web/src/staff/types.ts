@@ -12,6 +12,8 @@ export const STAFF_ROLES = ['gamemaster', 'moderator', 'admin'] as const;
 export interface AdminCharacter {
   characterId: string; name: string; accountId: string; accountName: string; worldId: number;
   level: number; race: number; gender: number; creationId: number; accountDisabled: boolean; accountRoles?: string[] | null; staff?: boolean;
+  /** On the graveyard account (deleted); pendingDeleteAt: a deletion the owner asked for; blocked: deactivated by staff. */
+  deleted?: boolean; pendingDeleteAt?: string | null; blocked?: boolean; blockReason?: string | null;
 }
 
 export interface InventoryItem { instanceId?: string; templateId: number; quantity: number; location: string; slot: number | null }
@@ -62,6 +64,17 @@ export const ERRORS: Record<string, string> = {
   invalid_ascension: 'Ascension grade must be between 1 and 6.',
   unknown_class: "That class is not available for this character's race and gender.",
   no_catalogue: 'No catalogue build is imported on the server.',
+  character_online: 'The character is in the world. Ask the player to log out (or kick them) and try again.',
+  character_deleted: 'That character is already deleted.',
+  invalid_action: 'That character action is not known.',
+  invalid_reason: 'The reason is limited to 200 characters.',
+  not_pending: 'The character has no pending deletion.',
+  already_blocked: 'The character is already deactivated.',
+  not_blocked: 'The character is not deactivated.',
+  unknown_account: 'That account was not found or is disabled.',
+  same_account: 'The character is already on that account.',
+  other_race: 'That account plays the other race on this world.',
+  no_free_slot: 'That account has no free character slot on this world.',
 };
 
 /** GET /api/admin/live: players in the world now (in-memory on the host). */
