@@ -1644,6 +1644,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.Add(SeasonSchedule(now));
             replies.Add(AchievementList(now));
             replies.Add(BattlePassInfoList(now));
+            replies.Add(TrustLimitInfoNotice(now));   // official: 0xe262 in the entry burst (the account's trust step)
             replies.AddRange(InventoryDepotSyncPackets());
             replies.Add(PeriodCollectionList(now));
             replies.Add(BossChallengeList());
