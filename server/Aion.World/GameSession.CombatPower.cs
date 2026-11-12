@@ -25,6 +25,11 @@ public sealed partial class GameSession
         var cp = CombatPowerBaseline + Math.Max(0, level - 1) * CombatPowerPerLevel + EquipItemLevel();
         foreach (var id in learned)
         {
+            if (IsStigmaFamily(id))
+            {
+                if (data.IsStigmaSkill(id)) cp += StigmaLevel(id);   // 0x3656 rose with every stigma level (OBSERVED 2026-11-12)
+                continue;
+            }
             var bought = Math.Max(0, MasteryLevel(id) - KitSkillLevel(id));
             if (bought > 0) cp += bought;
         }

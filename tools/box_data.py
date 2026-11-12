@@ -51,7 +51,14 @@ MAP_EVENTS = ROOT / 'tools/data/map-events.json'
 HANDLED_USE_EFFECTS = {
     'RewardBox', 'GetVehicle', 'GetVehicleSoul', 'GetVehicleSoulCrystal', 'Fix_VehicleCreatureLevel', 'Skill',
     'Telpo_Home', 'GetKina', 'GetNonBindingKina', 'GetTitle', 'GetSkin', 'GetSkinSet', 'GetSocialAction',
-    'GetDaevanionPoint', 'GetQuest', 'GetWing', 'AscensionGrade',
+    'GetDaevanionPoint', 'GetQuest', 'GetWing', 'AscensionGrade', 'GetSkillPoint', 'GetStigmaShard',
+}
+# Skill-point items missing from the committed Item.dat export (game catalogue rows, 2026-11-12): Wisdom Stones add skill
+# points (ESkillPointType Point), Stigma Shards add stigma points (StigmaShard) and are used on acquire.
+POINT_ITEMS = {
+    '531900001': ['GetSkillPoint', 0, '1'],      # Wisdom Stone (Bound)
+    '531900002': ['GetSkillPoint', 0, '10'],     # Splendent Wisdom Stone (Bound)
+    '531900010': ['GetStigmaShard', 1, '1'],     # Stigma Shard (Bound)
 }
 GODSTONES = ROOT / 'tools/data/godstones.json'
 CRYSTALS = {'SoulCrystalFeral': 1, 'SoulCrystalIntellect': 2, 'SoulCrystalNature': 3, 'SoulCrystalTrans': 4, 'SoulCrystalSpecial': 5,
@@ -117,6 +124,10 @@ def _finalize_uses(uses, cool):
     except ImportError:
         from daevanion_data import apply_daevanion_uses
     apply_daevanion_uses(uses)
+    for key, row in POINT_ITEMS.items():
+        if key not in uses:
+            uses[key] = list(row)
+            cool.setdefault(key, [0, 'None', 0])
     if GODSTONES.exists():
         for item_id in json.loads(GODSTONES.read_text(encoding='utf-8')).get('stones', {}):
             key = str(item_id)

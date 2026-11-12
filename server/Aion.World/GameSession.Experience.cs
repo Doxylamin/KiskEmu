@@ -79,6 +79,7 @@ public sealed partial class GameSession
         {
             var kit = data.SkillListForClient(cls, level, profile);
             learned = kit.Select(k => k.SkillId).ToHashSet();
+            AddStigmaSkillsToLearned();
             var added = kit.Where(k => !skillsBefore.Contains(k.SkillId)).ToList();
             if (added.Count > 0)
             {

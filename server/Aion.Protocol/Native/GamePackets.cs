@@ -647,11 +647,19 @@ public static class GamePackets
     /// 0x3900 (163 B at the official world entry, unnamed in the catalogue): per class active skill i32 id, u8 3, then three
     /// {u8 slot 1..3, i32 0} option slots (OBSERVED 2026-10-13 with 3 skills, 2026-10-20 with 8). CANDIDATE: skill option slots.
     /// </summary>
-    public static byte[] SkillOptionSlots(IReadOnlyList<int> skills, IReadOnlyDictionary<int, IReadOnlyList<int>>? optionSkillIds = null)
+    public static byte[] SkillOptionSlots(IReadOnlyList<int> skills, IReadOnlyDictionary<int, IReadOnlyList<int>>? optionSkillIds = null,
+        IReadOnlyDictionary<int, IReadOnlyList<(int Slot, int SkillId)>>? specialized = null)
     {
         var w = PacketWriter.Opcode(0x3900).Varint(skills.Count);
         foreach (var skill in skills)
         {
+            // A stigma lists its five slots with its parts (OBSERVED official 2026-11-12: 17400000 {1 17400010, ..., 4 17400040, 5 0}).
+            if (specialized?.GetValueOrDefault(skill) is { } slots)
+            {
+                w.I32(skill).U8((byte)slots.Count);
+                foreach (var (slot, id) in slots) w.U8((byte)slot).I32(id);
+                continue;
+            }
             w.I32(skill).U8(3);
             var options = optionSkillIds?.GetValueOrDefault(skill);
             for (var i = 0; i < 3; i++)
@@ -704,6 +712,47 @@ public static class GamePackets
     /// </summary>
     public static byte[] SkillPointUpdate(int pointsSpent, byte pointType = 1) =>
         PacketWriter.Opcode(0x5105).U8(1).AppendSkillPointInfo(pointsSpent, pointType).ToArray();
+
+    /// <summary>
+    /// 0x3811 UpdateItemSkillPoint_NT (usmap 0x36bb + 0x156): one CommonSkillPointInfo, the points of that type gained from
+    /// items so far. OBSERVED official 2026-11-04: 1138 01 0a00 → 0b00 → 0c00 after each Wisdom Stone (531900001) use.
+    /// </summary>
+    public static byte[] UpdateItemSkillPoint(byte pointType, int itemPoints) =>
+        PacketWriter.Opcode(0x3811).AppendSkillPointInfo(itemPoints, pointType).ToArray();
+
+    /// <summary>
+    /// 0x380f SkillAdd_NT (usmap 0x36b9 + 0x156): flag 1, skill i32, level, original level, five additional-level bytes, ESkillAcquireReason.
+    /// OBSERVED official 2026-11-12: a stigma learned (0f38 01 c0800901 01 01 0000000000 02, SkillPointAdd) and its specialized
+    /// part at stigma level 5 (0f38 01 ca800901 05 05 0000000000 06, ChangeSkill).
+    /// </summary>
+    public static byte[] SkillAdd(int skillId, int level, int originalLevel, byte reason) =>
+        PacketWriter.Opcode(0x380f).U8(1).I32(skillId).U8((byte)level).U8((byte)originalLevel).Zeros(5).U8(reason).ToArray();
+
+    /// <summary>0x3810 SkillDelete_NT (usmap 0x36ba + 0x156): skill i32. OBSERVED official 2026-11-12 for each stigma part on a stigma reset.</summary>
+    public static byte[] SkillDelete(int skillId) => PacketWriter.Opcode(0x3810).I32(skillId).ToArray();
+
+    /// <summary>
+    /// 0x3813 SkillLevelUpdate_NT with several skills at one level (count, {skill i32, flag 1, skill i32, level, original,
+    /// five additional-level bytes} each, reason). OBSERVED official 2026-11-12: the four stigmas to level 0 on a full reset (reason 5).
+    /// </summary>
+    public static byte[] SkillLevelUpdates(IReadOnlyList<int> skills, int level, byte reason)
+    {
+        var w = PacketWriter.Opcode(0x3813).Varint(skills.Count);
+        foreach (var id in skills) w.I32(id).U8(1).I32(id).U8((byte)level).U8((byte)level).Zeros(5);
+        return w.U8(reason).ToArray();
+    }
+
+    /// <summary>
+    /// 0x3907 SpecializedSkillUpdate_NT (usmap _parent_skill_id, _update_infos): parent i32, count u8, {ESpecializedSkillSlotType u8,
+    /// skill i32} each. OBSERVED official 2026-11-12 before a stigma's first level: 0739 c0800901 05 01 ca800901 02 d4800901
+    /// 03 de800901 04 e8800901 05 00000000 (its parts in their initial slots, slot 5 empty).
+    /// </summary>
+    public static byte[] SpecializedSkillUpdate(int parentSkillId, IReadOnlyList<(int Slot, int SkillId)> slots)
+    {
+        var w = PacketWriter.Opcode(0x3907).I32(parentSkillId).U8((byte)slots.Count);
+        foreach (var (slot, id) in slots) w.U8((byte)slot).I32(id);
+        return w.ToArray();
+    }
 
     /// <summary>One CommonSkillPointInfo entry (type u8, point u16) inside 0x5105 and 0x3844._modify_points.</summary>
     public static PacketWriter AppendSkillPointInfo(this PacketWriter w, int point, byte pointType = 1) =>

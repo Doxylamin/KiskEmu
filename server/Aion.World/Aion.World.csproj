@@ -17,6 +17,7 @@
          tools/class_skills.py, tools/world_npcs.py, tools/map_geometry.py, tools/map_points.py and tools/dev_menu.py; one copy, shared with the Python tools. -->
     <EmbeddedResource Include="../../tools/data/starter-skills.json" LogicalName="starter-skills.json" />
     <EmbeddedResource Include="../../tools/data/class-skills.json" LogicalName="class-skills.json" />
+    <EmbeddedResource Include="../../tools/data/stigma-skills.json" LogicalName="stigma-skills.json" />
     <EmbeddedResource Include="../../tools/data/pc-summons.json" LogicalName="pc-summons.json" />
     <EmbeddedResource Include="../../tools/data/elemental-summons.json" LogicalName="elemental-summons.json" />
     <EmbeddedResource Include="../../tools/data/pc-traps.json" LogicalName="pc-traps.json" />

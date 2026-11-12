@@ -174,7 +174,7 @@ public sealed partial class GameSession
 
     /// <summary>Item.dat AutoUseWhenAcquire effects the server applies (GetTitle 532560065, GetWing, AscensionGrade 533900001, ...).</summary>
     static bool AutoUsed(ItemUse use) => use is { AutoUse: true, Effect: "GetVehicle" or "GetVehicleSoul" or "GetVehicleSoulCrystal" or "GetWing" or "GetTitle"
-        or "GetSkin" or "GetSkinSet" or "GetSocialAction" or "AscensionGrade" } or { Effect: "GetDaevanionPoint" };
+        or "GetSkin" or "GetSkinSet" or "GetSocialAction" or "AscensionGrade" or "GetStigmaShard" } or { Effect: "GetDaevanionPoint" };
 
     /// <summary>Pet souls and Daevanion crystals apply on acquire (Item.dat AutoUseWhenAcquire; morph crystals drip points).</summary>
     async Task<List<byte[]>> AutoUseAcquiredItemsAsync(IEnumerable<int> templateIds, long now, CancellationToken ct)
@@ -266,6 +266,8 @@ public sealed partial class GameSession
             "GetSkin" or "GetSkinSet" when use.Values is [{ Length: > 0 }, ..] => await UseSkinItemAsync(store, character, row, use, reply, ct),
             "GetSocialAction" when use.Values is [var emoteText, ..] && int.TryParse(emoteText, out var emote) => await UseSocialActionItemAsync(store, character, row, emote, reply, ct),
             "GetDaevanionPoint" => await UseDaevanionPointItemAsync(store, character, row, use, reply, ct),
+            "GetSkillPoint" => await UseSkillPointItemAsync(store, character, row, use, SkillPointTypePoint, reply, ct),
+            "GetStigmaShard" => await UseSkillPointItemAsync(store, character, row, use, SkillPointTypeStigma, reply, ct),
             "GetWing" when use.Values is [var wingText, ..] && int.TryParse(wingText, out var wing) && wing > 0 => await UseWingItemAsync(store, character, row, wing, reply, ct),
             "AscensionGrade" when use.Values is [var gradeText, ..] && int.TryParse(gradeText.Split('_')[^1], out var grade) && grade is >= 2 and <= 6 =>
                 await UseAscensionItemAsync(store, character, row, grade, reply, ct),
