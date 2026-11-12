@@ -39,6 +39,14 @@ public sealed record PlatformOptions
     /// and privacy URLs, ...). Configuration: Aion:Platform:CustomData:&lt;Key&gt;=&lt;value&gt;.
     /// </summary>
     public Dictionary<string, string>? CustomData { get; init; }
+    /// <summary>
+    /// Opt-in (Aion:Platform:TlsApiHost, typically "api.g.nc.com"): the code-less policy's api_gate, login_web and
+    /// login_api become https://{TlsApiHost}/... instead of the plain-HTTP bootstrap port, so a client that ignores
+    /// ConfigurationServerUrl and talks to the official hosts stays on them. Needs the NCGuard TLS port serving that host
+    /// with a certificate the client accepts and the host name resolving to this server; otherwise login breaks, which is
+    /// why it is off by default. Launch-code policies (/c/&lt;code&gt;) keep the http form. Same idea as A2Core-ChanAge 8ea4239.
+    /// </summary>
+    public string? TlsApiHost { get; init; }
 }
 
 /// <summary>The responses, validated once at startup like the Python fixture checks.</summary>
@@ -111,7 +119,7 @@ public sealed class PlatformResponses
             if (keyResponse is null || aesKey is null) throw new InvalidDataException("A plaintext policy needs app-key.json and local-test-key.json");
             template = JsonNode.Parse(File.ReadAllText(plainPath))?.AsObject() ?? throw new InvalidDataException("Policy must be a JSON object");
             // Point the client at this host's own address and ports.
-            PointAtHost(template, network.PublicAddress, platformPort, loginPort, chatPort, null, options.CustomData);
+            PointAtHost(template, network.PublicAddress, platformPort, loginPort, chatPort, null, options.CustomData, options.TlsApiHost);
             policy = PythonJson("value", Convert.ToBase64String(Encrypt(aesKey, Encoding.UTF8.GetBytes(template.ToJsonString(Plain)))));
         }
         else if ((options.PolicyFile ?? Fixture("app-policy.json")) is { } policyPath)
@@ -124,7 +132,7 @@ public sealed class PlatformResponses
             if (aesKey is not null && Decrypt(aesKey, Convert.FromBase64String(cipher)) is { } decrypted)
             {
                 template = decrypted;
-                if (PointAtHost(template, network.PublicAddress, platformPort, loginPort, chatPort, null, options.CustomData))
+                if (PointAtHost(template, network.PublicAddress, platformPort, loginPort, chatPort, null, options.CustomData, options.TlsApiHost))
                     policy = PythonJson("value", Convert.ToBase64String(Encrypt(aesKey, Encoding.UTF8.GetBytes(template.ToJsonString(Plain)))));
             }
             else if (!network.LoopbackOnly)
@@ -214,10 +222,11 @@ public sealed class PlatformResponses
     /// <summary>
     /// Points a policy's addresses at this host: api_gate, login_web and login_api at the bootstrap port
     /// (path kept, launch code prefixed), LoginServerIP at the login port, ChatServerURL at the chat port.
+    /// With <paramref name="tlsHost"/> and no launch code, api_gate/login_web/login_api are https://tlsHost/... instead.
     /// Returns whether anything changed.
     /// </summary>
     public static bool PointAtHost(JsonObject policy, string address, int platformPort, int? loginPort, int? chatPort, string? code,
-        IReadOnlyDictionary<string, string>? customData = null)
+        IReadOnlyDictionary<string, string>? customData = null, string? tlsHost = null)
     {
         var changed = false;
         void Set(JsonObject node, string key, string value)
@@ -228,7 +237,9 @@ public sealed class PlatformResponses
         }
         foreach (var key in new[] { "api_gate", "login_web", "login_api" })
             if (policy[key]?.GetValueKind() == JsonValueKind.String && Uri.TryCreate(policy[key]!.GetValue<string>(), UriKind.Absolute, out var uri))
-                Set(policy, key, $"http://{address}:{platformPort}{(code is null ? "" : "/c/" + code)}{uri.AbsolutePath.TrimEnd('/')}");
+                Set(policy, key, tlsHost is not null && code is null
+                    ? $"https://{tlsHost}{uri.AbsolutePath.TrimEnd('/')}"
+                    : $"http://{address}:{platformPort}{(code is null ? "" : "/c/" + code)}{uri.AbsolutePath.TrimEnd('/')}");
         var custom = policy["custom_data"] as JsonObject;
         if (custom is null && customData is { Count: > 0 })
         {
@@ -369,6 +380,37 @@ public static partial class PlatformBootstrapEndpoints
     static readonly byte[] NotReady = """{"local_probe":true,"ready":false}"""u8.ToArray();
     static readonly string[] Known = ["/MobileAppConfigSdk/app/key", "/MobileAppConfigSdk/app/policy", "/local-api-gate", "/local-login-web", "/local-login-api"];
 
+    /// <summary>
+    /// Official NC platform config and API host names. A TLS request on the NCGuard port whose SNI is one of these is
+    /// answered by the platform bootstrap handler (app/key, app/policy, the api_gate routes: Quna balances, goods,
+    /// mobile_warehouse), not by the NCGuard fixture sink. Serving them needs the host name to resolve to this server
+    /// and a certificate the client accepts; both are set up outside this code.
+    /// </summary>
+    public static readonly string[] ConfigHosts = ["mobileappconfig.g.nc.com", "mobileappconfig-ncus.g.nc.com", "api.g.nc.com"];
+
+    /// <summary>The official API gateway host; its requests carry no /local-api-gate prefix unless our policy sent them there.</summary>
+    public const string ApiGateHost = "api.g.nc.com";
+
+    /// <summary>The TLS server name of a request on the NCGuard port when it is an official config/API host; otherwise null.</summary>
+    public static string? ConfigHostOf(HttpContext context, int? tlsPort)
+    {
+        if (tlsPort is not { } port || context.Connection.LocalPort != port) return null;
+        var sni = context.Features.Get<Microsoft.AspNetCore.Connections.Features.ITlsHandshakeFeature>()?.HostName;
+        return sni is not null && ConfigHosts.Contains(sni, StringComparer.OrdinalIgnoreCase) ? sni : null;
+    }
+
+    /// <summary>
+    /// The handler path for a request to an official host: api.g.nc.com paths outside our own prefixes are api_gate
+    /// routes (official api_gate has no path), so they get the /local-api-gate prefix our routes use. INFERRED: the
+    /// official api_gate value was not seen in clear (the client rejected the round 2 capture CA).
+    /// </summary>
+    public static string ConfigHostPath(string host, string path) =>
+        string.Equals(host, ApiGateHost, StringComparison.OrdinalIgnoreCase)
+        && !path.StartsWith("/MobileAppConfigSdk", StringComparison.Ordinal)
+        && !Known.Skip(2).Any(prefix => path == prefix || path.StartsWith(prefix + "/", StringComparison.Ordinal))
+            ? "/local-api-gate" + (path == "/" ? "" : path)
+            : path;
+
     // Session lookup by a stored ID (a UUID, or the session this server issued) or with none: a fresh
     // saved folder (the launcher's Saved_<server suffix>) asks GET .../sessions/v1.0/ (observed 2026-10-15).
     // The answer is the same placeholder session; identity comes from the launch code at authn_token.
@@ -391,7 +433,7 @@ public static partial class PlatformBootstrapEndpoints
     }
 
     /// <summary>Answers every request on the bootstrap port in its own branch (no static files or other routes there).</summary>
-    public static void UsePlatformBootstrap(this WebApplication app, int port, PlatformResponses responses, string? requestLog, NetworkOptions network, string accountPageBase)
+    public static void UsePlatformBootstrap(this WebApplication app, int port, PlatformResponses responses, string? requestLog, NetworkOptions network, string accountPageBase, int? tlsPort = null)
     {
         var accountBase = accountPageBase.TrimEnd('/');
         var platformLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Aion.Platform");
@@ -418,10 +460,12 @@ public static partial class PlatformBootstrapEndpoints
         var qunaBalance = app.Services.GetService<ShopQunaBalanceService>();
         var customShop = app.Services.GetService<Aion.Application.Gameplay.ICustomShopCatalog>();
         var logLock = new object();
-        app.MapWhen(context => context.Connection.LocalPort == port, branch => branch.Run(async context =>
+        app.MapWhen(context => context.Connection.LocalPort == port || ConfigHostOf(context, tlsPort) is not null, branch => branch.Run(async context =>
         {
             var request = context.Request;
             var path = request.Path.Value ?? "/";
+            var tlsHost = ConfigHostOf(context, tlsPort);
+            if (tlsHost is not null) path = ConfigHostPath(tlsHost, path);
             // /c/<code>/...: a launcher-made bootstrap URL; the code is the launch authorization.
             string? code = null;
             if (CodePrefix().Match(path) is { Success: true } prefixed)
@@ -454,8 +498,8 @@ public static partial class PlatformBootstrapEndpoints
                 context.Response.Headers.Connection = "close";
                 return;
             }
-            if (method == "GET" && path == Known[0] && responses.Key is { } key) reply = (200, key);
-            else if (method == "GET" && path == Known[1] && responses.PolicyFor(code) is { } policy) reply = (200, policy);
+            if (method is "GET" or "HEAD" && path == Known[0] && responses.Key is { } key) reply = (200, key);
+            else if (method is "GET" or "HEAD" && path == Known[1] && responses.PolicyFor(code) is { } policy) reply = (200, policy);
             else if (method == "POST" && path == "/MobileAppConfigSdk/app/policy/maintenance" && responses.Maintenance is { } maintenance) reply = (200, maintenance);
             else if (method == "POST" && path == "/local-api-gate/sessions/v1.0/authn_token")
             {
@@ -559,7 +603,7 @@ public static partial class PlatformBootstrapEndpoints
                     utc = DateTimeOffset.UtcNow, method, path = logPath,
                     query = path.StartsWith("/local-api-gate", StringComparison.Ordinal) || path.StartsWith("/MobileAppConfigSdk", StringComparison.Ordinal)
                         ? request.QueryString.Value : null,
-                    route_family = family, launch_code = code is not null, response_status = reply.Status,
+                    route_family = family, launch_code = code is not null, tls_host = tlsHost, response_status = reply.Status,
                     response_body = responseBody,
                 });
                 lock (logLock) File.AppendAllText(requestLog, entry + "\n");
