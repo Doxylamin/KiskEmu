@@ -117,6 +117,11 @@ public sealed record MyCharacterAppear
     public int CombatLevel { get; init; } = 1;
     /// <summary>EAscensionGrade 1..6 (CANDIDATE: the CharDetail byte after reputation; 1 in the official starter).</summary>
     public int Ascension { get; init; } = 1;
+    /// <summary>Skill and stigma points spent, and those gained from items (Wisdom Stones, Stigma Shards), in the CharDetail point lists.</summary>
+    public int SpentSkillPoints { get; init; }
+    public int SpentStigmaPoints { get; init; }
+    public int ItemSkillPoints { get; init; }
+    public int ItemStigmaPoints { get; init; }
     /// <summary>Equipped wing (Wing.dat id; 0 none). Flight and gliding need one: without it the client shows MSG_WING_EQUIP_NOTHING ("Flight available after Ascension").</summary>
     public int WingId { get; init; }
     /// <summary>Flight points (CharState fp / fp_max).</summary>
@@ -413,17 +418,21 @@ public static class GamePackets
     public static byte[] LoadComplete(int ticket, Vector3d position, int frame = 2, int charKey = 1) =>
         PacketWriter.Opcode(0x3623).U16(0).I32(ticket).Vec3(position).I32(frame).U16(charKey).ToArray();
 
-    static void WriteSpawnDetailTail(PacketWriter w, int ascension = 1)
+    static void WriteSpawnDetailTail(PacketWriter w, int ascension = 1, MyCharacterAppear? a = null)
     {
         // Observed starter layout (official offsets 66..183); semantics partly unknown.
         w.U8(1).I32(1).I64(0).U8(0).U8(0).U8(5);
         for (var category = 1; category <= 5; category++) w.U8(category).I32(1).I64(0);
         // Glide/sprint cooldowns, reputation, then the ascension grade (CANDIDATE).
         w.I32(0).I32(0).I64(0).U8(ascension);
-        for (var n = 0; n < 2; n++)
+        // Two CommonSkillPointInfo lists by ESkillPointType (1 Point, 2 Stigma, 3): the points spent, then the points
+        // gained from items (OBSERVED official 2026-11-12, a level-45 Chanter: spent 382 / 34, items 180 / 5; the stigma
+        // value matches the 0x5105 that followed). With zeros the client counted none spent and went negative on purchase.
+        int[][] groups = [[a?.SpentSkillPoints ?? 0, a?.SpentStigmaPoints ?? 0, 0], [a?.ItemSkillPoints ?? 0, a?.ItemStigmaPoints ?? 0, 0]];
+        foreach (var group in groups)
         {
             w.U8(3);
-            for (var pointType = 1; pointType <= 3; pointType++) w.U8(pointType).U16(0);
+            for (var pointType = 1; pointType <= 3; pointType++) w.U8(pointType).U16(Math.Clamp(group[pointType - 1], 0, ushort.MaxValue));
         }
     }
 
@@ -442,7 +451,7 @@ public static class GamePackets
         var w = PacketWriter.Opcode(0x3633).Varint(a.Key).U32(0x2006u | (a.TeleportEffect != 0 ? 0x1000u : 0)).U8(0x37).String(a.Name).U16(a.ServerId)
             .I32(a.PcId).U8(a.Race).I32(a.CharLevel).I32(a.EquipItemLevel).I32(a.HighestTotalItemLevel).I32(a.LevelMax)
             .I64(a.Experience).I32(a.CombatLevel).I64(a.CombatExperience).U8(a.Gender);
-        WriteSpawnDetailTail(w, a.Ascension);
+        WriteSpawnDetailTail(w, a.Ascension, a);
         // CharState (client decoder 0x8498b80, the one 0x3645 uses): u16 presence mask; bit 9 adds
         // _relationship_entity (u8) and bit 12 _wing_id (i32) after fp_max. Without the relationship the client
         // drew ordinary monsters as non-hostile (green names; live 2026-10-16), the official server draws them

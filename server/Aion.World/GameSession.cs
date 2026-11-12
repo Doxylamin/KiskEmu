@@ -1608,6 +1608,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 Equips = VisualEquips(all: false),
                 CustomizingData = character?.CustomizingData ?? [], VoiceType = character?.VoiceType ?? 0,
                 Ascension = selected?.Ascension ?? 1, DbId = selected?.WireId ?? 0,
+                SpentSkillPoints = SpentSkillPoints(), SpentStigmaPoints = SpentStigmaPoints(),
+                ItemSkillPoints = skillItemPoints.GetValueOrDefault(SkillPointTypePoint), ItemStigmaPoints = skillItemPoints.GetValueOrDefault(SkillPointTypeStigma),
                 WingId = wingId, Fp = resources.Fp, FpMax = resources.FpMax,
                 EquipItemLevel = armed, HighestTotalItemLevel = armed,
                 CombatPower = combatPower,
@@ -1650,6 +1652,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.Add(SeasonSchedule(now));
             replies.Add(AchievementList(now));
             replies.Add(BattlePassInfoList(now));
+            replies.Add(TrustLimitInfoNotice(now));   // official: 0xe262 in the entry burst (the account's trust step)
             replies.AddRange(InventoryDepotSyncPackets());
             replies.Add(PeriodCollectionList(now));
             replies.Add(BossChallengeList());

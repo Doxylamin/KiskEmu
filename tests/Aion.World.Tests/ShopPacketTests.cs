@@ -71,11 +71,27 @@ public sealed class ShopPacketTests
         var rs = await session.HandleAsync([0x60, 0xE2], Now);
         Assert.Equal(2, rs.Count);
         Assert.Equal((ushort)0xe262, GameSessionTestHelpers.Op(rs[0]));
-        // Official (2026-11-12): the two bools share the leading byte (bmshop_purchase_enable = bit 1), then the limit map.
-        Assert.Equal(new byte[] { 0x02, 0 }, rs[0][2..4]);
-        Assert.Equal(Now, BitConverter.ToInt64(rs[0], 4));
+        // Official (2026-11-12, 120 B): packed bools `07`, four limit entries (key, type, usage, limit, reset), update time, trust step 5.
+        Assert.Equal(120, rs[0].Length);
+        Assert.Equal(new byte[] { 0x07, 0x04, 0x02, 0x02 }, rs[0][2..6]);
+        Assert.Equal(-1L, BitConverter.ToInt64(rs[0], 14));
+        Assert.Equal(Now, BitConverter.ToInt64(rs[0], 108));
+        Assert.Equal(GameSession.TrustStep, BitConverter.ToInt32(rs[0], 116));
         Assert.Equal((ushort)0xe261, GameSessionTestHelpers.Op(rs[1]));
         Assert.Equal(0, BitConverter.ToUInt16(rs[1], 2));
+    }
+
+    [Fact]
+    public async Task World_entry_sends_the_trust_limit_info()
+    {
+        var store = new FakeCharacterStore();
+        var session = new GameSession(GameData.Embedded, new GameSessionOptions { CharacterLevel = 55, WorldId = store.WorldId }, new Random(3)) { Store = store };
+        await session.HandleAsync(GameSessionTestHelpers.Login(), Now);
+        await session.HandleAsync(GameSessionTestHelpers.LightCreate(), Now);
+        var entry = await session.HandleAsync(new PacketWriter().U16(0x361f).Varint((uint)store.States[0].WireId << 16).I32(0).Vec3(Vector3d.Zero).ToArray(), Now);
+        entry.AddRange(await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now));
+        var trust = Assert.Single(entry, p => GameSessionTestHelpers.Op(p) == 0xe262);
+        Assert.Equal(GameSession.TrustStep, BitConverter.ToInt32(trust, trust.Length - 4));
     }
 
     [Fact]
