@@ -58,6 +58,20 @@ public static class ClientVersions
         return steam?.FindApp() is { } app ? Path.GetFullPath(app.Folder) : null;
     }
 
+    /// <summary>
+    /// Whether a "steam" version's game is there to start: its folder (<see cref="SteamFolder"/>) holds the executable.
+    /// The Steam copy is used whatever its build, so this is its "installed".
+    /// </summary>
+    public static bool SteamReady(ClientVersion version, LauncherConfig config, SteamInstall? steam, string executable) =>
+        version.IsSteam && SteamFolder(version, config, steam) is { } folder && File.Exists(Path.Combine(folder, executable));
+
+    /// <summary>
+    /// The server's "steam" version when the player's Steam copy is there to start: the alternative to downloading the
+    /// private build once Steam has moved past it (every official patch). Null when the server offers none or no copy exists.
+    /// </summary>
+    public static ClientVersion? SteamAlternative(LauncherConfig config, SteamInstall? steam, string executable) =>
+        All(config).FirstOrDefault(v => SteamReady(v, config, steam, executable));
+
     /// <summary>Steam's launch arguments for the game plus the version's extra ones (duplicates dropped).</summary>
     public static string[] Arguments(IEnumerable<string> steamArguments, ClientVersion version)
     {
