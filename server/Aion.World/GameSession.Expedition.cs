@@ -86,7 +86,7 @@ public sealed class ExpeditionTables
 public sealed partial class GameSession
 {
     public const ushort PartyDungeonClearNt = 0x3A69, PartyDungeonMiddleBossKillNt = 0x572e /* OBSERVED (AVION2: 10 mid-boss kills, npc u32) */,
-        ContentsTicketsNt = 0x3854, ContentsTicketUpdateNt = 0x3855;
+        ContentsTicketsNt = 0x610b, ContentsTicketUpdateNt = 0x610c; // OBSERVED live (round 2, 2026-11-12)
 
     static ExpeditionTables Expeditions => ExpeditionTables.Embedded;
 
@@ -132,21 +132,28 @@ public sealed partial class GameSession
         worldPlayer?.Send([ContentsTicketUpdate(ticket.Id, remaining, ticket.MaxCount)]);
     }
 
-    /// <summary>ContentsTickets_NT at world entry (OBSERVED non-empty on live accounts; CANDIDATE field widths).</summary>
-    byte[] ContentsTicketsList(long now)
+    /// <summary>ContentsTickets_NT 0x610b at world entry: varint n | n × ContentsTicketInfo (OBSERVED, official 2026-11-12).</summary>
+    internal byte[] ContentsTicketsList(long now)
     {
         var tickets = Expeditions.AllTickets.ToList();
         var w = PacketWriter.Opcode(ContentsTicketsNt).Varint((uint)tickets.Count);
-        foreach (var ticket in tickets)
-        {
-            var (remaining, max, _) = TicketState(ticket, now);
-            w.I32(ticket.Id).I32(0).I32(0).I32(remaining).I32(max);
-        }
+        foreach (var ticket in tickets) WriteTicketInfo(w, ticket.Id, TicketState(ticket, now).Remaining);
         return w.ToArray();
     }
 
-    static byte[] ContentsTicketUpdate(int ticketId, int remaining, int max) =>
-        PacketWriter.Opcode(ContentsTicketUpdateNt).I32(ticketId).I32(0).I32(0).I32(remaining).I32(max).U8(0).I32(0).ToArray();
+    /// <summary>ContentsTicketInfo: u8 presence mask | i32 id | [bit0 remain_time i64] [bit1 remain_charge_time i64]
+    /// [bit2 remain_count varint] [bit3 remain_charge_count varint] (OBSERVED). We only track the remaining count.</summary>
+    static void WriteTicketInfo(PacketWriter w, int ticketId, int remaining) =>
+        w.U8(0x04).I32(ticketId).Varint((uint)Math.Max(0, remaining));
+
+    /// <summary>ContentsTicketUpdate_NT 0x610c: u8 mask (bit0 = charge_value follows) | ContentsTicketInfo | u8 ETicketReason
+    /// (1 Charge, 2 Recharge, 3 Use) | [i32 charge_value] (OBSERVED: `0c61 00 0c 65000000 0d 06 03` on a dungeon entry).</summary>
+    static byte[] ContentsTicketUpdate(int ticketId, int remaining, int max)
+    {
+        var w = PacketWriter.Opcode(ContentsTicketUpdateNt).U8(0);
+        WriteTicketInfo(w, ticketId, remaining);
+        return w.U8(3).ToArray();
+    }
 
     /// <summary>PartyDungeonClear_NT after a party dungeon script clear (CANDIDATE score breakdown).</summary>
     static byte[] PartyDungeonClear(long elapsedMs, DungeonInfo room)

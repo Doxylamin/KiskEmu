@@ -283,9 +283,10 @@ public sealed class GatherCraftScenarioTests
         session.CraftRoll = () => 0;
         var crafted = await session.HandleAsync(CraftPacket(worktable.Key), Now);
         Assert.Equal(GameSession.CraftStartRs, GameSessionTestHelpers.Op(crafted[0]));
-        Assert.Equal(0, BitConverter.ToUInt16(crafted[0], 2));
+        Assert.Equal(1280, BitConverter.ToUInt16(crafted[0], 2));
         Assert.True(crafted[0][4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
-        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && b[2] == 0 && b[^1] == 1);
+        // 0x8d71 (OBSERVED 2026-11-12): u16 1280 kCraft_Success, worktable varint, is_direct_completed 0.
+        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1280 && b[^1] == 0);
         Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftExpUpdateNt);
         Assert.Contains(store.Items, i => i.TemplateId == Ingot);
         Assert.Equal(2, store.Items.Single(i => i.WireId == 70).Quantity);
@@ -304,9 +305,9 @@ public sealed class GatherCraftScenarioTests
         session.CraftRoll = () => 99_999_999;
         var ingotsBefore = store.Items.Where(i => i.TemplateId == Ingot).Sum(i => i.Quantity);
         var crafted = await session.HandleAsync(CraftPacket(worktable.Key), Now);
-        Assert.Equal(0, BitConverter.ToUInt16(crafted[0], 2));
+        Assert.Equal(1282, BitConverter.ToUInt16(crafted[0], 2));
         Assert.False(crafted[0][4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
-        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && b[^1] == 0);
+        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1282);
         Assert.Equal(ingotsBefore, store.Items.Where(i => i.TemplateId == Ingot).Sum(i => i.Quantity));
         Assert.DoesNotContain(store.Items, i => i.WireId == 80);
     }

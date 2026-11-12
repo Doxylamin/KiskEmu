@@ -119,6 +119,13 @@ public sealed partial class GameSession
         return w.ToArray();
     }
 
+    /// <summary>
+    /// ConversionStart_RS entries before the outcome (OBSERVED 2026-11-12: RS {1361, recipe, try 1, made 0, all counts 0}, then the
+    /// item changes and ConversionCompleted_NT {1360, made 1, character limit made 1}; official waits ~3 s, we answer at once).
+    /// </summary>
+    static List<(int Key, ConversionOutcome Outcome)> Pending(IEnumerable<(int Key, ConversionOutcome Outcome)> outcomes) =>
+        outcomes.Select(o => (o.Key, new ConversionOutcome(ConversionFail, o.Outcome.RecipeId, o.Outcome.Tries, 0, 0, 0, 0, 0, 0))).ToList();
+
     /// <summary>A refused request: the result alone, no entries.</summary>
     static List<byte[]> ConversionRefusal(int result) => [ConversionResultPacket(ConversionStartRs, result, [])];
 
@@ -131,7 +138,7 @@ public sealed partial class GameSession
         static bool Done(ConversionOutcome o) => o.Result is ConversionSuccess or ConversionFail;
         if (!outcomes.Any(o => Done(o.Outcome)))
             return ConversionRefusal(outcomes[0].Outcome.Result);
-        var replies = new List<byte[]> { ConversionResultPacket(ConversionStartRs, 0, outcomes) };
+        var replies = new List<byte[]> { ConversionResultPacket(ConversionStartRs, 0, Pending(outcomes)) };
         replies.AddRange(await InventoryChangesAsync(ct, IncreaseConversion, DecreaseConversion));
         replies.Add(ConversionResultPacket(ConversionCompletedNt, 0, outcomes));
         foreach (var o in outcomes.Select(o => o.Outcome).Where(o => o.Counted && Done(o)))
@@ -142,11 +149,12 @@ public sealed partial class GameSession
     /// <summary>Try morph once; used by packets and parity tests. The wire ids are the stacks offered for alternate materials.</summary>
     public async Task<List<byte[]>> MorphConversionAsync(int recipeId, IReadOnlyList<long> componentWireIds, CancellationToken ct)
     {
-        var request = new ConversionRequest(0, recipeId, 1, [new ConversionPick(0, 0, componentWireIds.Select(w => (w, 1L)).ToList())], []);
+        var request = new ConversionRequest(recipeId, recipeId, 1, [new ConversionPick(0, 0, componentWireIds.Select(w => (w, 1L)).ToList())], []);
         var outcome = await ConvertAsync(request, ct);
         if (outcome.Result is not (ConversionSuccess or ConversionFail)) return ConversionRefusal(outcome.Result);
-        return [ConversionResultPacket(ConversionStartRs, 0, [(0, outcome)]), .. await InventoryChangesAsync(ct, IncreaseConversion, DecreaseConversion),
-            ConversionResultPacket(ConversionCompletedNt, 0, [(0, outcome)])];
+        // The map key is the recipe id (OBSERVED 2026-11-12).
+        return [ConversionResultPacket(ConversionStartRs, 0, Pending([(recipeId, outcome)])), .. await InventoryChangesAsync(ct, IncreaseConversion, DecreaseConversion),
+            ConversionResultPacket(ConversionCompletedNt, 0, [(recipeId, outcome)])];
     }
 
     async Task<ConversionOutcome> ConvertAsync(ConversionRequest request, CancellationToken ct)

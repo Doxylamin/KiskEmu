@@ -89,7 +89,10 @@ public static class SocialSharedWorldChecks
         await bob.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), now + 84);
         Check((await aly.TickAsync(now + 85)).Any(b => Op(b) == SocialOpcodes.PartyReconnectMemberNt), "reconnect notifies party");
         await aly.HandleAsync(new PacketWriter().U16(SocialOpcodes.PartyLeaveRq).ToArray(), now + 86);
-        Check(!shared.Social.Parties.ContainsKey(partyKey), "explicit leave disbands party of two");
+        Check(shared.Social.Parties.TryGetValue(partyKey, out var kept) && kept.Members.Count == 1,
+            "explicit leave keeps a party of one for the other member (official 2026-11-12)");
+        await bob.HandleAsync(new PacketWriter().U16(SocialOpcodes.PartyLeaveRq).ToArray(), now + 87);
+        Check(!shared.Social.Parties.ContainsKey(partyKey), "the last member leaving ends the party");
 
         var search = await aly.HandleAsync(new PacketWriter().U16(SocialOpcodes.PartyRecommendRq).I32(0).ToArray(), now + 90);
         Check(search.Any(b => Op(b) == SocialOpcodes.PartyRecommendRs) && search.First(b => Op(b) == SocialOpcodes.PartyRecommendRs).Length > 8,

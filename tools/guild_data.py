@@ -45,8 +45,12 @@ def build() -> dict:
         'agit_rent_kina': 1_000_000,
         'agit_rent_ms': 30 * 24 * 60 * 60 * 1000,
         'agits': [
-            {'id': 1, 'map_id': 904, 'race': 0, 'name': 'Legion_Agit_L'},
-            {'id': 2, 'map_id': 901, 'race': 1, 'name': 'Legion_Agit_D'},
+            # GuildAgit.dat (WorldProbe export 2026-11-12); race as the server's profile race (1 Light, 2 Dark).
+            # Official 2026-11-12: a Light legion renting agit 1 entered map 902 (L1_Agit_1, Verteron).
+            {'id': 1, 'map_id': 902, 'race': 1, 'name': 'guild_agit_light_common'},
+            {'id': 2, 'map_id': 901, 'race': 2, 'name': 'guild_agit_dark_common'},
+            {'id': 3, 'map_id': 904, 'race': 1, 'name': 'guild_agit_light_common_Eltnen'},
+            {'id': 4, 'map_id': 905, 'race': 2, 'name': 'guild_agit_dark_common_Morheim'},
         ],
         'donations': DONATIONS,
         'levels': levels,

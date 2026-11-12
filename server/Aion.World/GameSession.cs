@@ -1050,6 +1050,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     /// key, slot (and slot_pos), then the item changes (0x561b) and the equip level (0x561d).
     /// </summary>
     const int EquipOpcodeLive = 0xe247, UnequipOpcodeLive = 0xe249;   // live 2026-10-15
+    /// <summary>EResult kItem_Equip_Success / kItem_UnEquip_Success and EUpdateReason kItemEquip (OBSERVED 2026-11-12).</summary>
+    const int EquipSuccess = 1072, UnequipSuccess = 1087;
+    const byte UpdateItemEquip = 7;
 
     async Task<List<byte[]>?> EquipRequestAsync(byte[] plain, CancellationToken ct)
     {
@@ -1062,9 +1065,10 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         EquipOpcode = opcode;
         var equip = plain.Length == 11;
         var moved = await Stored(async () => await store.MoveItemAsync(character, row.InstanceId, row.Revision, equip ? slot : null, ct) ? [Array.Empty<byte>()] : []);
-        var reply = PacketWriter.Opcode((ushort)(opcode + 1)).U16(moved.Count == 1 ? 0 : 1).I64(key).U8(slot);
+        var reply = PacketWriter.Opcode((ushort)(opcode + 1)).U16(moved.Count == 1 ? equip ? EquipSuccess : UnequipSuccess : 1).I64(key).U8(slot);
         if (!equip) reply.I32(BitConverter.ToInt32(plain, 11));
-        var replies = new List<byte[]> { reply.ToArray() };
+        // Official order (2026-11-12): the item changes, 0x561d and 0x3656 first, the RS last.
+        var replies = new List<byte[]>();
         if (moved.Count == 1)
         {
             var before = VisualItems();
@@ -1073,7 +1077,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (equip && inventory.GetValueOrDefault(key) is { Container: InventoryItem.Bag } from
                 && inventory.Values.FirstOrDefault(i => i.Container == InventoryItem.Equipped && i.Slot == slot && i.Key != key) is { } old)
                 hints = new() { [old.Key] = from.Slot };
-            replies.AddRange(await InventoryChangesAsync(ct, IncreaseQuestReward, 0, hints));
+            replies.AddRange(await InventoryChangesAsync(ct, IncreaseQuestReward, 0, hints, UpdateItemEquip));
             // The new weapon decides weapon skills and damage; gear changes the stats.
             equippedWeapon = WeaponFromInventory();
             replies.AddRange(RefreshStats());
@@ -1086,6 +1090,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 worldPlayer?.Map?.Broadcast(worldPlayer, [change]);
             }
         }
+        replies.Add(reply.ToArray());
         return replies;
     }
 
@@ -1124,7 +1129,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     /// The stored items against what the client has: adds, updates and removals (EItemModificationType
     /// 0/1/2) with the given EIncreaseReason / EDecreaseReason.
     /// </summary>
-    async Task<List<byte[]>> InventoryChangesAsync(CancellationToken ct, byte increase, byte decrease, IReadOnlyDictionary<long, int>? hints = null)
+    async Task<List<byte[]>> InventoryChangesAsync(CancellationToken ct, byte increase, byte decrease, IReadOnlyDictionary<long, int>? hints = null, byte update = 0)
     {
         if (Store is not { } store || CharacterId is not { } character) return [];
         var items = await LoadInventoryAsync(store, character, ct, hints);
@@ -1135,7 +1140,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (!inventory.TryGetValue(item.Key, out var before)) { changes.Add(new ItemModification(0, item, Increase: increase)); gained.Add((item.ItemId, item.Count)); }
             else if (!before.WireSameAs(item))
             {
-                changes.Add(new ItemModification(1, item, Increase: (byte)(item.Count > before.Count ? increase : 0), Decrease: (byte)(item.Count < before.Count ? decrease : 0)));
+                changes.Add(new ItemModification(1, item, Increase: (byte)(item.Count > before.Count ? increase : 0), Decrease: (byte)(item.Count < before.Count ? decrease : 0),
+                    Update: item.Count == before.Count ? update : (byte)0));
                 if (item.Count > before.Count) gained.Add((item.ItemId, item.Count - before.Count));
             }
         }
@@ -1678,7 +1684,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 replies.AddRange(SkillPointSpendBaselineSeeds());
                 replies.AddRange(SkillPointsAtEntry());
                 var actives = learned.Where(id => id >= 11_000_000 && !IsDodgeId(id) && data.StigmaPartParent(id) is null && data.Skill(id)?.Type == "Active").Order().ToList();
-                replies.Add(GamePackets.SkillOptionSlots(actives, SkillOptionMap(), StigmaSlotMap()));
+                // The normal-skill slots hold equipped specialty parts (none yet), not the customizing ids (official 2026-11-12).
+                replies.Add(GamePackets.SkillOptionSlots(actives, null, StigmaSlotMap()));
                 replies.Add([0x58, 0x8d, 0x00]);
                 replies.Add(AgitDecoListAtEntry());
                 replies.AddRange(SettingsAtEntry(now));

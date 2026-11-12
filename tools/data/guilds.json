@@ -12,15 +12,27 @@
   "agits": [
     {
       "id": 1,
-      "map_id": 904,
-      "race": 0,
-      "name": "Legion_Agit_L"
+      "map_id": 902,
+      "race": 1,
+      "name": "guild_agit_light_common"
     },
     {
       "id": 2,
       "map_id": 901,
+      "race": 2,
+      "name": "guild_agit_dark_common"
+    },
+    {
+      "id": 3,
+      "map_id": 904,
       "race": 1,
-      "name": "Legion_Agit_D"
+      "name": "guild_agit_light_common_Eltnen"
+    },
+    {
+      "id": 4,
+      "map_id": 905,
+      "race": 2,
+      "name": "guild_agit_dark_common_Morheim"
     }
   ],
   "donations": [

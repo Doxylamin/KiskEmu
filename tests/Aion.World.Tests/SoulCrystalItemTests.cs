@@ -21,7 +21,7 @@ public sealed class SoulCrystalItemTests
 
         var replies = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(0x8d).ToArray(), Now + 100);
 
-        Assert.Equal(Convert.FromHexString("135600008D000000000000006926B41F"), replies[0]);
+        Assert.Equal(Convert.FromHexString("135604038D000000000000006926B41F"), replies[0]);
         Assert.Contains(replies, p => p.AsSpan().SequenceEqual(Convert.FromHexString("11900106010000000" + "2")));
         Assert.Equal(1, store.Crystals[GameSession.AllCrystals]);
         Assert.Equal(1, session.Crystals[GameSession.AllCrystals]);

@@ -126,8 +126,7 @@ public sealed class CraftTables
 // rates, about 73% at gap 0 rising towards 88%, have this shape), a failed craft uses up the components (OURS).
 // Each craft pays mastery exp (OURS: an eighth of the level's CraftMastery need, so about eight crafts a level):
 // CraftExpUpdate_NT 0x8d7c {category u8, exp i64, gained i64}; a level-up CraftLevelUpdate_NT 0x8d7d {category u8,
-// level i32, exp i64, skill points i32} and the recipe list again (new recipes). Both layouts are the usmap fields
-// (CANDIDATE); at world entry the levels above 1 are announced with 0x8d7d (CANDIDATE: the official entry of a fresh
+// level u16, exp i64, skill points u16} and the recipe list again (new recipes). Both layouts OBSERVED 2026-11-12; at world entry the levels above 1 are announced with 0x8d7d (CANDIDATE: the official entry of a fresh
 // character sent none).
 public sealed partial class GameSession
 {
@@ -166,7 +165,12 @@ public sealed partial class GameSession
         return recipes.ToArray();
     }
 
-    static byte[] CraftLevelUpdate(int category, int level, long exp) => PacketWriter.Opcode(CraftLevelUpdateNt).U8((byte)category).I32(level).I64(exp).I32(0).ToArray();
+    /// <summary>EResult kCraft_Success / kCraft_ComboSuccess / kCraft_Fail (OBSERVED 1280 in 0x8d6f and 0x8d71, 2026-11-12).</summary>
+    const int CraftSuccess = 1280, CraftComboSuccess = 1281, CraftFail = 1282;
+
+    /// <summary>0x8d7d CraftLevelUpdate_NT: category u8 | level u16 | exp i64 | skill points u16 (OBSERVED `7d8d 05 0b00 16..00 0100`).</summary>
+    static byte[] CraftLevelUpdate(int category, int level, long exp) =>
+        PacketWriter.Opcode(CraftLevelUpdateNt).U8((byte)category).U16(level).I64(exp).U16(0).ToArray();
 
     /// <summary>World entry: gather skills (none), the known recipes, the default conversions, then the masteries above level 1.</summary>
     List<byte[]> CraftListsAtEntry()
@@ -189,7 +193,6 @@ public sealed partial class GameSession
         if (need <= 0) return [];
         var gained = Math.Max(1, need / 8);
         exp += gained;
-        var replies = new List<byte[]> { PacketWriter.Opcode(CraftExpUpdateNt).U8((byte)category).I64(exp).I64(gained).ToArray() };
         var leveled = false;
         while (need > 0 && exp >= need && lvl < CraftTables.MaxMastery)
         {
@@ -199,6 +202,8 @@ public sealed partial class GameSession
             need = Crafts.CraftMasteryNeed(lvl);
         }
         craftMastery[category] = (lvl, exp);
+        // 0x8d7c carries the exp left after a level-up (OBSERVED: exp 22, gained 26 with the level-up in the same ms).
+        var replies = new List<byte[]> { PacketWriter.Opcode(CraftExpUpdateNt).U8((byte)category).I64(exp).I64(gained).ToArray() };
         if (Store is { } store && CharacterId is { } character)
             await Stored(async () => { await store.SaveMasteryAsync(character, "craft", category, lvl, exp, ct); return []; });
         if (leveled)
@@ -273,10 +278,11 @@ public sealed partial class GameSession
             achieve.AddRange(AchieveCraft(recipe.Worktable, CraftLevelOf(recipe.Worktable)));
             if (outcome.ComboSuccess) achieve.AddRange(Achieve("CraftComboSuccess", 1, e => e.Values.Length == 0 || e.Has(recipeId.ToString(System.Globalization.CultureInfo.InvariantCulture))));
         }
-        return [Reply(0, outcome.Success, combo: outcome.ComboAttempt, comboSuccess: outcome.ComboSuccess), .. await InventoryChangesAsync(ct, IncreaseCraftItem, DecreaseCraftItem),
-            // 0x8d71 (OBSERVED, 19 official completions 2026-11-02..05, 8 bytes): result u8 (0 success, 1 combo success with two
-            // items, 2 failed; a failed combo yields nothing), worktable key i32, direct-completed bool.
-            PacketWriter.Opcode(CraftCompletedNt).U8(outcome.ComboSuccess ? 1 : outcome.GrantsProduct ? 0 : 2).U32(worktable).Bool(outcome.GrantsProduct).ToArray(),
+        var result = outcome.ComboSuccess ? CraftComboSuccess : outcome.GrantsProduct ? CraftSuccess : CraftFail;
+        return [Reply(result, outcome.Success, combo: outcome.ComboAttempt, comboSuccess: outcome.ComboSuccess), .. await InventoryChangesAsync(ct, IncreaseCraftItem, DecreaseCraftItem),
+            // 0x8d71 (OBSERVED 2026-11-12 `718d 0005 b9b701 00`): result u16 EResult (1280 success, 1281 combo success with
+            // two items, 1282 failed; a failed combo yields nothing), worktable key varint, is_direct_completed bool (0).
+            PacketWriter.Opcode(CraftCompletedNt).U16(result).Varint(worktable).Bool(false).ToArray(),
             .. await CraftMasteryExpAsync(CraftCategories.GetValueOrDefault(recipe.Worktable), ct),
             .. achieve];
     }

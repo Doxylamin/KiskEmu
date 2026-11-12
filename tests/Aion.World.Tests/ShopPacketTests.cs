@@ -71,8 +71,9 @@ public sealed class ShopPacketTests
         var rs = await session.HandleAsync([0x60, 0xE2], Now);
         Assert.Equal(2, rs.Count);
         Assert.Equal((ushort)0xe262, GameSessionTestHelpers.Op(rs[0]));
-        Assert.Equal(new byte[] { 0, 0, 1 }, rs[0][2..5]);
-        Assert.Equal(Now, BitConverter.ToInt64(rs[0], 5));
+        // Official (2026-11-12): the two bools share the leading byte (bmshop_purchase_enable = bit 1), then the limit map.
+        Assert.Equal(new byte[] { 0x02, 0 }, rs[0][2..4]);
+        Assert.Equal(Now, BitConverter.ToInt64(rs[0], 4));
         Assert.Equal((ushort)0xe261, GameSessionTestHelpers.Op(rs[1]));
         Assert.Equal(0, BitConverter.ToUInt16(rs[1], 2));
     }

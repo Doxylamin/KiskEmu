@@ -133,6 +133,9 @@ public sealed partial class GameSession
     public const ushort ItemEnchantRq = 0x5622, ItemEnchantRs = 0x5623, ItemEnchantNt = 0x5626;
     public const ushort ItemExceedEnchantRq = 0x5624, ItemExceedEnchantRs = 0x5625;
     const byte DecreaseItemEnchant = 10, DecreaseItemEnchantFail = 11;   // EDecreaseReason
+    const byte UpdateEnchant = 1;   // EUpdateReason kEnchant
+    /// <summary>EResult: kItem_Enchant_Success 828 (OBSERVED in 0x5623 and 0x5626, 2026-11-12), Fail_ByProb 833, Fail_LevelDown 835.</summary>
+    public const int EnchantSuccess = 828, EnchantFailByProb = 833, EnchantFailLevelDown = 835;
     static EnchantTables Enchants => EnchantTables.Embedded;
     static ExceedEnchantTables Exceeds => ExceedEnchantTables.Embedded;
 
@@ -179,8 +182,10 @@ public sealed partial class GameSession
         var nextBonus = success ? 0 : bonus + step.FailCorrection;
         var done = await Stored(async () => await store.EnchantItemAsync(character, row.InstanceId, row.Revision, costs, after, nextBonus, ct) ? [[]] : []);
         if (done.Count == 0) return [Reply(1, level, row.TemplateId)];
-        var replies = new List<byte[]> { Reply(success ? 0 : 4, after, row.TemplateId) };
-        replies.AddRange(await InventoryChangesAsync(ct, 0, success ? DecreaseItemEnchant : DecreaseItemEnchantFail));
+        var result = success ? EnchantSuccess : after < level ? EnchantFailLevelDown : EnchantFailByProb;
+        // Official order (2026-11-12): the item changes (0x561b), then 0x5623, then the achievements and 0x5626.
+        var replies = await InventoryChangesAsync(ct, 0, success ? DecreaseItemEnchant : DecreaseItemEnchantFail, update: UpdateEnchant);
+        replies.Add(Reply(result, after, row.TemplateId));
         if (success) replies.AddRange(AchieveEnchant(after));
         if (row.Location == "equipment" && after != level)
         {
@@ -191,7 +196,7 @@ public sealed partial class GameSession
                 var notices = new List<byte[]>
                 {
                     PlayerPackets.ItemEquipChange(playerKey, EquipItemLevel(), [((byte)visual, Broad(level), Broad(after))]),
-                    PacketWriter.Opcode(ItemEnchantNt).Varint(playerKey).U8(0x3c).U8(0x03).U8(level).U8(after).ToArray(),
+                    PacketWriter.Opcode(ItemEnchantNt).Varint(playerKey).U16(result).U8(level).U8(after).ToArray(),
                 };
                 worldPlayer?.Map?.Broadcast(worldPlayer, notices);
                 replies.AddRange(notices);

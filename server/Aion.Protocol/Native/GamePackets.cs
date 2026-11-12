@@ -625,11 +625,11 @@ public static class GamePackets
         w.U8(daevanion).U8(0).U8(0).U8(0).U8(0);
 
     /// <summary>
-    /// 0x3822 SkillAutoLoadUpdate_NT (dev 0x36CB + 0x157, usmap order): skill i32 | charge count u8 | time i32 (ms until the
-    /// next charge, 0 when full). CANDIDATE: the live opcode (same +0x157 as the 0x383f/0x3840 neighbours) and the time's unit.
+    /// 0x3822 SkillAutoLoadUpdate_NT: varint n | n × {skill i32, charge count u8} (OBSERVED 2026-11-12 `2238 01 c27d1401 02`, 8 B,
+    /// with a specialty equip; no time field). The leading count as a list count is CANDIDATE (only 1 seen).
     /// </summary>
-    public static byte[] SkillAutoLoadUpdate(int skillId, int count, int timeMs) =>
-        PacketWriter.Opcode(0x3822).I32(skillId).U8(count).I32(timeMs).ToArray();
+    public static byte[] SkillAutoLoadUpdate(int skillId, int count) =>
+        PacketWriter.Opcode(0x3822).Varint(1).I32(skillId).U8(count).ToArray();
 
     /// <summary>
     /// 0x9501 PcSocialActionInfo_NT (dev 0x3682): the owned emote ids, varint count + i32 each. OBSERVED identical at the
@@ -644,8 +644,8 @@ public static class GamePackets
     }
 
     /// <summary>
-    /// 0x3900 (163 B at the official world entry, unnamed in the catalogue): per class active skill i32 id, u8 3, then three
-    /// {u8 slot 1..3, i32 0} option slots (OBSERVED 2026-10-13 with 3 skills, 2026-10-20 with 8). CANDIDATE: skill option slots.
+    /// 0x3900 SpecializedSkillLoad_NT: per class active skill i32 id, u8 3, then three {u8 slot 1..3, i32 equipped part id}
+    /// (OBSERVED 2026-10-13 / 2026-10-20 and both world entries of 2026-11-12: 0 unless a specialty part is equipped).
     /// </summary>
     public static byte[] SkillOptionSlots(IReadOnlyList<int> skills, IReadOnlyDictionary<int, IReadOnlyList<int>>? optionSkillIds = null,
         IReadOnlyDictionary<int, IReadOnlyList<(int Slot, int SkillId)>>? specialized = null)
