@@ -20,10 +20,18 @@ public sealed record NcGuardOptions
     public bool RewriteHosts { get; init; }
     public int? DurationSeconds { get; init; }
     public string? StopFile { get; init; }
-    /// <summary>Record each request (headers and body) under DataDirectory. Research hosts only; a public host turns it off.</summary>
+    /// <summary>Record each request (headers and body) under DataDirectory. Research hosts only: a host that
+    /// listens beyond loopback records nothing unless Capture is set to true on purpose (<see cref="ForBind"/>).</summary>
     public bool Capture { get; init; } = true;
     /// <summary>Listen address (Aion:Network:BindAddress; loopback by default).</summary>
     public string BindAddress { get; init; } = "127.0.0.1";
+
+    /// <summary>
+    /// Players' anti-cheat requests are answered, not recorded: capture stays on by default only on a
+    /// loopback research host. Elsewhere it needs an explicit Aion:NcGuard:Capture=true.
+    /// </summary>
+    public NcGuardOptions ForBind(bool loopbackOnly, bool captureConfigured) =>
+        loopbackOnly || captureConfigured ? this : this with { Capture = false };
 }
 
 /// <summary>Fixture server: no upstream traffic and no trust-store installation (clients accept its own certificates).</summary>
