@@ -1602,6 +1602,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 Equips = VisualEquips(all: false),
                 CustomizingData = character?.CustomizingData ?? [], VoiceType = character?.VoiceType ?? 0,
                 Ascension = selected?.Ascension ?? 1, DbId = selected?.WireId ?? 0,
+                SpentSkillPoints = SpentSkillPoints(), SpentStigmaPoints = SpentStigmaPoints(),
+                ItemSkillPoints = skillItemPoints.GetValueOrDefault(SkillPointTypePoint), ItemStigmaPoints = skillItemPoints.GetValueOrDefault(SkillPointTypeStigma),
                 WingId = wingId, Fp = resources.Fp, FpMax = resources.FpMax,
                 EquipItemLevel = armed, HighestTotalItemLevel = armed,
                 CombatPower = combatPower,
