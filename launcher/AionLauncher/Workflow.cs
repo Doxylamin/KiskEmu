@@ -38,7 +38,16 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
     /// <summary>Every private copy this PC has, for the uninstall.</summary>
     public IEnumerable<string> AllCopies => settings.Copies.Values.Select(c => c.Folder).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase);
 
-    public bool Installed => InstallFolder is { } folder && File.Exists(Path.Combine(folder, Build.Executable));
+    /// <summary>
+    /// The chosen client is there to start: the private copy of <see cref="Build"/>, or for the Steam version the
+    /// player's Steam copy (any build; it is never checked against the reference or copied).
+    /// </summary>
+    public bool Installed => Version.IsSteam
+        ? ClientVersions.SteamReady(Version, config, FindSteam(), Build.Executable)
+        : InstallFolder is { } folder && File.Exists(Path.Combine(folder, Build.Executable));
+
+    /// <summary>The server's Steam version, when it offers one and the player's Steam copy is there.</summary>
+    public ClientVersion? SteamAlternative => ClientVersions.SteamAlternative(config, FindSteam(), Build.Executable);
 
     /// <summary>
     /// Asks the server for its current settings (address, port, versions; kept for the next start) and resolves the
@@ -212,7 +221,9 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
     /// <summary>The firewall rules for this copy and this server (another server's address replaces the rules).</summary>
     public async Task<bool> RepairFirewallAsync()
     {
-        if (!await Elevated.RunAsync("--setup-firewall", InstallFolder!, config.ServerAddress)) return false;
+        // The Steam copy has no rules (they would block the official game too), and with it alone there is no private copy.
+        if (InstallFolder is not { } folder) throw new LauncherException("There is no private game copy to set firewall rules for; the Steam copy runs without them.");
+        if (!await Elevated.RunAsync("--setup-firewall", folder, config.ServerAddress)) return false;
         Copy.FirewallAddress = config.ServerAddress;
         settings.Save();
         return true;
@@ -292,8 +303,10 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
 
     public async Task<BuildCheck> VerifyAllAsync(IProgress<(long, long)> progress, CancellationToken ct)
     {
-        var result = await ClientFiles.CheckAsync(InstallFolder!, Build, CheckLevel.Full, progress, ct);
-        if (result.Ok) { Copy.VerifiedStamp = QuickStamp(InstallFolder!); settings.Save(); }
+        // The Steam copy is newer than the reference by design; only a private copy is checked.
+        if (Version.IsSteam || InstallFolder is not { } folder) return BuildCheck.Fail("the Steam copy is used as it is and not checked against the server's version", 0);
+        var result = await ClientFiles.CheckAsync(folder, Build, CheckLevel.Full, progress, ct);
+        if (result.Ok) { Copy.VerifiedStamp = QuickStamp(folder); settings.Save(); }
         return result;
     }
 

@@ -123,6 +123,9 @@ The Play page has a **Client version** dropdown (dark theme, like the rest). The
   private `Saved_<suffix>\...\GamePlatform.ini` (via `-saveddirsuffix=<suffix>`) plus the per-session hosts
   lines. The folder is `clientPath` of the version, else `steamClientPath` (from the `launcher.json` the server was
   added with), else the AION2 folder found through Steam's `libraryfolders.vdf`.
+  The Steam copy counts as installed for this version whatever its build, and when the private build is not on the
+  PC yet and Steam has moved past it (every official patch, e.g. 2026-11-11), the download page offers
+  "Use my Steam copy" next to the 88 GB download, so the version picker on the Play page is not the only way to it.
 
 The server still runs 2.0.6.0 data and opcodes and has no client-version check, so a newer client may
 start but fail or misbehave in-game. The server's settings `Aion:Launcher:ClientVersion` and `Aion:Launcher:AllowSteam`

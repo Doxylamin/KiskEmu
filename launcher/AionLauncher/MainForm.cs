@@ -658,6 +658,16 @@ sealed class MainForm : Form
         if (folder is null) AddButton("Check again", primary: false, () => { ShowDownload(); return Task.CompletedTask; });
         AddLabel("You sign in by scanning a QR code with the Steam app on your phone. KiskLauncher never sees your Steam password.", muted: true);
         AddLink("I already have this version in another folder", ChooseExistingCopy);
+        // Steam moves past the server's build with every official patch; the server may also allow the Steam copy as-is.
+        if (workflow.SteamAlternative is { } steamVersion)
+        {
+            AddLabel($"Or play with your Steam copy as it is ({steamVersion.Name}): nothing to download and its files are not changed, "
+                + "but it is newer than the version this server runs, so it may not connect or may misbehave in game.", muted: true);
+            AddButton($"Use my Steam copy ({steamVersion.Name})", primary: false, async () =>
+            {
+                if (await RunAsync(ct => workflow.ChooseVersionAsync(steamVersion, ct))) await NextAsync();
+            }, wide: true);
+        }
         if (message is not null) SetStatus(message, error: true);
         start.Click += async (_, _) => await DownloadAsync();
         // An interrupted download with a saved Steam sign-in continues by itself.

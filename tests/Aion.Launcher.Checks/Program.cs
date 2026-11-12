@@ -45,6 +45,17 @@ try { (config with { ClientVersions = [new("x", "x", "other")] }).Validate(); Ch
     Check(ClientVersions.Selected(config, "steam-latest").IsSteam, "the player's saved choice selects a version");
     Check(ClientVersions.Selected(config with { SelectedClientVersion = "steam-latest" }, "2.0.6.0").Id == ClientVersion.DefaultId, "the player's choice beats launcher.json");
     Check(ClientVersions.Selected(config with { SelectedClientVersion = "steam-latest" }, "gone").IsSteam, "an unknown saved choice falls back to launcher.json");
+    // A Steam copy at any build (here: no file list, a newer buildid) is offered instead of downloading the private build.
+    var cvSteam = new SteamInstall(cvSteamRoot);
+    var exe = SupportedBuild.Embedded.Executable;
+    Check(!ClientVersions.SteamReady(steamVersion, config, cvSteam, exe) && ClientVersions.SteamAlternative(config, cvSteam, exe) is null, "no Steam alternative without the game executable");
+    var steamExe = Path.Combine(library, "steamapps", "common", "AION2", exe.Replace('/', Path.DirectorySeparatorChar));
+    Directory.CreateDirectory(Path.GetDirectoryName(steamExe)!); File.WriteAllText(steamExe, "");
+    Check(ClientVersions.SteamReady(steamVersion, config, cvSteam, exe), "a Steam copy of another build counts as installed for the Steam version");
+    Check(!ClientVersions.SteamReady(ClientVersion.Defaults[0], config, cvSteam, exe), "the private version never counts the Steam copy as installed");
+    Check(ClientVersions.SteamAlternative(config, cvSteam, exe)?.Id == ClientVersion.SteamLatestId, "Steam copy offered as the alternative to the download");
+    Check(ClientVersions.SteamAlternative(config with { ClientVersions = [ClientVersion.Defaults[0]] }, cvSteam, exe) is null, "no Steam alternative when the server does not offer it");
+    Check(ClientVersions.SteamAlternative(config, null, exe) is null, "no Steam alternative without Steam");
     Directory.Delete(temp, true);
 }
 // ---------- Account API: kept session, launcher manifest and self-update ----------
