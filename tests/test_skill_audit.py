@@ -55,6 +55,14 @@ class SkillAuditTests(unittest.TestCase):
         result = self.audit({'15330040': skill(damage=(), chain_prev=15320000, target='MainTarget')}, {'15330040': {}})
         self.assertIn('damage_missing', result['skills']['15330040']['categories'])
 
+    def test_caster_rows_are_self_buffs_not_unknown(self):
+        areas = {'17090000': {'caster_debuffs': [[170900001, 30000, 30000, 0]]},
+                 '13010000': {'caster_debuffs': [[4, 1000, 1000, 0]]}}
+        result = self.audit({'17090000': skill(target='Self', damage=()), '13010000': skill(target='Self', damage=())}, areas,
+                            types={'4': ['Hot_Ratio']})
+        self.assertEqual(set(result['skills']['17090000']['categories']), {'self_buff'})
+        self.assertEqual(set(result['skills']['13010000']['categories']), {'hot'})
+
     def test_improvised_damage_is_marked_and_counted(self):
         result = self.audit({'15330040': skill(damage_source='override')}, {'15330040': {}})
         self.assertEqual(result['improvised_damage'], 1)
