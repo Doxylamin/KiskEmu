@@ -489,7 +489,10 @@ if (ncGuard.Port is { } ncGuardPort)
     var sink = app.Services.GetRequiredService<NcGuardSink>();
     app.Use(async (context, next) =>
     {
-        if (context.Connection.LocalPort == ncGuardPort) await sink.HandleAsync(context);
+        // Official config/API host names (api.g.nc.com, mobileappconfig...) go to the platform bootstrap below instead.
+        if (context.Connection.LocalPort == ncGuardPort
+            && !(platform.Port is not null && PlatformBootstrapEndpoints.ConfigHostOf(context, ncGuardPort) is not null))
+            await sink.HandleAsync(context);
         else await next();
     });
 }
@@ -510,7 +513,7 @@ if (platform.Port is { } platformPort)
     var accountPageBase = accountTls
         ? $"https://{network.PublicAddress}" + (https.Proxy ? "" : $":{port}")
         : $"http://{network.PublicAddress}:{port}";
-    app.UsePlatformBootstrap(platformPort, platformResponses!, platform.RequestLog, network, accountPageBase);
+    app.UsePlatformBootstrap(platformPort, platformResponses!, platform.RequestLog, network, accountPageBase, ncGuard.Port);
 }
 app.UseRateLimiter();
 // Auth host: every /api/admin request needs a staff session (before the world proxy below).
