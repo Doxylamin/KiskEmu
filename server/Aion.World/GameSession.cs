@@ -462,11 +462,13 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 }
                 return changed;
             }
-            // Soul binding before equipping: start (0x562b uid, cost uid, cost id), cancel and
+            // Soul binding (GameSession.Upgrade.cs): start (0x562b uid, cost uid, cost id), cancel and
             // complete (0x562d / 0x562f uid). Only items the client was sent can be bound.
-            case 0x562b when plain.Length == 22 && inventory.ContainsKey(BitConverter.ToInt64(plain, 2)):
-                return [GamePackets.SoulBindStart(BitConverter.ToInt64(plain, 2), BitConverter.ToInt64(plain, 10), BitConverter.ToInt32(plain, 18))];
-            case 0x562d when plain.Length == 10: return [GamePackets.SoulBindCancel(BitConverter.ToInt64(plain, 2))];
+            case SoulBindStartRq when plain.Length == 22 && inventory.ContainsKey(BitConverter.ToInt64(plain, 2)): return SoulBindStart(plain);
+            case 0x562d when plain.Length == 10:
+                soulBindStarts.Remove(BitConverter.ToInt64(plain, 2));
+                return [GamePackets.SoulBindCancel(BitConverter.ToInt64(plain, 2))];
+            case ItemImprintRq when plain.Length >= 22: return await ImprintAsync(plain, ct);
             case LootPackets.LootRq when plain.Length >= 4: return await LootAsync(plain, now, ct);
             case ItemMoveRq when plain.Length == 19: return await MoveItemInBagAsync(plain, ct);
             case ShopOpenRq when plain.Length >= 3: return await OpenShopAsync(plain, now, ct);
@@ -521,7 +523,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case RidePackets.GetOnRq when plain.Length == 6: return GetOnRide(BitConverter.ToInt32(plain, 2));
             case RidePackets.GetOffRq when plain.Length == 3: return GetOffRide(plain[2] != 0);
             case RidePackets.DefaultSetRq when plain.Length == 6: return await SetDefaultRideAsync(BitConverter.ToInt32(plain, 2), ct);
-            case 0x562f when plain.Length == 10 && inventory.ContainsKey(BitConverter.ToInt64(plain, 2)):
+            case SoulBindCompleteRq when plain.Length == 10 && inventory.ContainsKey(BitConverter.ToInt64(plain, 2)):
                 return await SoulBindCompleteAsync(BitConverter.ToInt64(plain, 2), ct);
             case 0x3704 when plain.Length == 10: return SprintOn(now);
             // Glide (0x3706) and flight (0x370a) starts, sent once a wing is equipped (live 2026-10-15).
@@ -988,7 +990,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                     (byte)EnchantOf(item), SoulBindCount(item) > 0 ? owner : 0, SoulBindCount(item),
                     (byte)EnchantOf(item, "surpass_enchant"), EnchantOf(item, "enchant_bonus"), EnchantOf(item, "surpass_enchant_bonus"), GodstonesOf(item),
                     RolledWireStats(item.RolledStats),
-                    (byte)Math.Clamp(SkinExtractionUsed(item), 0, 255)) : null));
+                    (byte)Math.Clamp(SkinExtractionUsed(item), 0, 255), WireMagicStones(item)) : null));
         }
         return result;
     }
@@ -997,20 +999,6 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     static byte SoulBindCount(ItemState item) =>
         item.Upgrades.ValueKind == System.Text.Json.JsonValueKind.Object && item.Upgrades.TryGetProperty("soul_bind", out var count)
         && count.TryGetByte(out var value) ? value : (byte)0;
-
-    /// <summary>
-    /// 0x562f ItemSoulBindComplete_RQ: the item is bound to this character (stored), answered
-    /// 0x5630 with the new bind count and the item update (0x561b) carrying the bind.
-    /// </summary>
-    async Task<List<byte[]>> SoulBindCompleteAsync(long key, CancellationToken ct)
-    {
-        if (Store is not { } store || CharacterId is not { } character || !storedItems.TryGetValue(key, out var row))
-            return [GamePackets.SoulBindComplete(key)];
-        var count = (byte)Math.Min(255, SoulBindCount(row) + 1);
-        var bound = await Stored(async () => await store.SoulBindItemAsync(character, row.InstanceId, count, ct) ? [Array.Empty<byte>()] : []);
-        if (bound.Count != 1) return [GamePackets.SoulBindComplete(key, 0, 1)];
-        return [GamePackets.SoulBindComplete(key, count), .. await InventoryChangesAsync(ct), .. Achieve("SoulbindTry")];
-    }
 
     void Remember(IEnumerable<InventoryItem> items)
     {

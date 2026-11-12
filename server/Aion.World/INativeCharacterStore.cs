@@ -243,6 +243,9 @@ public interface INativeCharacterStore : IAsyncDisposable
         CancellationToken ct) => Task.FromResult(false);
     Task<bool> SocketGodstoneAsync(Guid character, Guid equip, long equipRevision, Guid material, long materialRevision, IReadOnlyList<int> godstones,
         CancellationToken ct) => Task.FromResult(false);
+    /// <summary>All or nothing: the costs (bag or warehouse stacks) are consumed and <paramref name="patch"/> is merged into the item's upgrades.</summary>
+    Task<bool> UpgradeItemAsync(Guid character, Guid item, long revision, IReadOnlyList<(Guid Item, long Revision, int Count)> costs,
+        System.Text.Json.JsonElement patch, CancellationToken ct) => Task.FromResult(false);
     Task<IReadOnlyDictionary<int, int>> GodstoneCollectionAsync(Guid character, CancellationToken ct) =>
         Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>());
     Task<bool> UpsertGodstoneCollectionAsync(Guid character, IReadOnlyList<(int GodstoneId, int Delta)> updates, CancellationToken ct) =>

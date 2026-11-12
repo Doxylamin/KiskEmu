@@ -282,8 +282,41 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
-    public Task<bool> SoulBindItemAsync(Guid character, Guid item, byte count, CancellationToken ct) =>
-        Task.FromResult(false);
+    public Task<bool> SoulBindItemAsync(Guid character, Guid item, byte count, CancellationToken ct)
+    {
+        var index = Items.FindIndex(i => i.InstanceId == item);
+        if (index < 0) return Task.FromResult(false);
+        Items[index] = Items[index] with { Upgrades = MergeUpgrades(Items[index].Upgrades, JsonSerializer.SerializeToElement(new { soul_bind = (int)count })),
+            Revision = Items[index].Revision + 1 };
+        return Task.FromResult(true);
+    }
+
+    /// <summary>Like the Postgres store: costs from bag or warehouse stacks, then upgrades = upgrades || patch.</summary>
+    public Task<bool> UpgradeItemAsync(Guid character, Guid item, long revision, IReadOnlyList<(Guid Item, long Revision, int Count)> costs,
+        JsonElement patch, CancellationToken ct)
+    {
+        var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision);
+        if (index < 0 || costs.Any(c => !Items.Any(i => i.InstanceId == c.Item && i.Revision == c.Revision && i.Location is "bag" or "storage" && i.Quantity >= c.Count)))
+            return Task.FromResult(false);
+        foreach (var (cost, costRevision, count) in costs)
+        {
+            var at = Items.FindIndex(i => i.InstanceId == cost && i.Revision == costRevision);
+            if (Items[at].Quantity == count) Items.RemoveAt(at);
+            else Items[at] = Items[at] with { Quantity = Items[at].Quantity - count, Revision = costRevision + 1 };
+        }
+        index = Items.FindIndex(i => i.InstanceId == item);
+        Items[index] = Items[index] with { Upgrades = MergeUpgrades(Items[index].Upgrades, patch), Revision = revision + 1 };
+        return Task.FromResult(true);
+    }
+
+    static JsonElement MergeUpgrades(JsonElement upgrades, JsonElement patch)
+    {
+        var merged = new Dictionary<string, JsonElement>();
+        if (upgrades.ValueKind == JsonValueKind.Object)
+            foreach (var property in upgrades.EnumerateObject()) merged[property.Name] = property.Value.Clone();
+        foreach (var property in patch.EnumerateObject()) merged[property.Name] = property.Value.Clone();
+        return JsonSerializer.SerializeToElement(merged);
+    }
 
     readonly InMemorySocialGraph socialGraph = new();
     CharacterState? StateByName(string name) =>

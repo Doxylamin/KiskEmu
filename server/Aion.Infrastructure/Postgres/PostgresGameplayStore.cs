@@ -2315,10 +2315,13 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await t.CommitAsync(ct); return true;
     }
 
-    private static async Task<bool> Consume(NpgsqlConnection c, NpgsqlTransaction t, Guid character, Guid item, long revision, int count, CancellationToken ct)
+    private static async Task<bool> Consume(NpgsqlConnection c, NpgsqlTransaction t, Guid character, Guid item, long revision, int count, CancellationToken ct,
+        bool warehouse = false)
     {
         // quantity>0 is a table check: the last units delete the row instead of reaching 0 (live 2026-10-16).
-        if(await Scalar(c,t,"SELECT quantity FROM game.item_instances WHERE instance_id=$1 AND character_id=$2 AND revision=$3 AND location='bag' FOR UPDATE",
+        // Enhancement materials may also come from the character warehouse (the client lists storage stacks, 2026-11-12).
+        if(await Scalar(c,t,"SELECT quantity FROM game.item_instances WHERE instance_id=$1 AND character_id=$2 AND revision=$3 AND "
+            +(warehouse?"location IN ('bag','storage')":"location='bag'")+" FOR UPDATE",
             ct,item,character,revision) is not long quantity || quantity<count) return false;
         if(quantity==count) await Execute(c,t,"DELETE FROM game.item_instances WHERE instance_id=$1",ct,item);
         else await Execute(c,t,"UPDATE game.item_instances SET quantity=quantity-$2,revision=revision+1 WHERE instance_id=$1",ct,item,(long)count);
@@ -2669,11 +2672,27 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
         if(!await Own(c,t,account.AccountId,character,ct)) return false;
         foreach(var (cost,costRevision,count) in costs)
-            if(!await Consume(c,t,character,cost,costRevision,count,ct)) return false;
+            if(!await Consume(c,t,character,cost,costRevision,count,ct,warehouse:true)) return false;
         var done=await Scalar(c,t,"UPDATE game.item_instances SET upgrades=upgrades||jsonb_build_object('enchant',$3::int,'enchant_bonus',$4::int),revision=revision+1 "
             +"WHERE instance_id=$1 AND character_id=$2 AND revision=$5 RETURNING instance_id",ct,item,character,level,bonus,revision) is Guid;
         if(!done) return false;
         await Execute(c,t,"INSERT INTO audit.events(action,character_id,actor_id,details) VALUES('item_enchanted',$1,$2,$3)",ct,character,account.AccountId,Json(new {item,level,bonus}));
+        await t.CommitAsync(ct); return true;
+    }
+
+    public async Task<bool> UpgradeItemAsync(VerifiedAccount account, Guid character, Guid item, long revision,
+        IReadOnlyList<(Guid Item, long Revision, int Count)> costs, JsonElement patch, CancellationToken ct=default)
+    {
+        if(revision<0 || patch.ValueKind!=JsonValueKind.Object || costs.Any(x=>x.Count<1 || x.Item==item)) throw new GameplayException("invalid_upgrade");
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        if(!await Own(c,t,account.AccountId,character,ct)) return false;
+        foreach(var (cost,costRevision,count) in costs)
+            if(!await Consume(c,t,character,cost,costRevision,count,ct,warehouse:true)) return false;
+        var done=await Scalar(c,t,"UPDATE game.item_instances SET upgrades=upgrades||$3::jsonb,revision=revision+1 "
+            +"WHERE instance_id=$1 AND character_id=$2 AND revision=$4 RETURNING instance_id",ct,item,character,patch.GetRawText(),revision) is Guid;
+        if(!done) return false;
+        await Execute(c,t,"INSERT INTO audit.events(action,character_id,actor_id,details) VALUES('item_upgraded',$1,$2,$3)",ct,character,account.AccountId,
+            Json(new {item,patch}));
         await t.CommitAsync(ct); return true;
     }
 

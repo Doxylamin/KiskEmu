@@ -286,6 +286,13 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.ExceedEnchantItemAsync(identity.Account, character, item, revision, costs, surpassLevel, surpassBonus, ct);
     }
 
+    public async Task<bool> UpgradeItemAsync(Guid character, Guid item, long revision, IReadOnlyList<(Guid Item, long Revision, int Count)> costs,
+        System.Text.Json.JsonElement patch, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.UpgradeItemAsync(identity.Account, character, item, revision, costs, patch, ct);
+    }
+
     public async Task<bool> SocketGodstoneAsync(Guid character, Guid equip, long equipRevision, Guid material, long materialRevision,
         IReadOnlyList<int> godstones, CancellationToken ct)
     {

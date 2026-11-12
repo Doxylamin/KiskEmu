@@ -434,6 +434,12 @@ public interface IGameplayStore
     Task<bool> ExceedEnchantItemAsync(VerifiedAccount account, Guid character, Guid item, long revision,
         IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int surpassLevel, int surpassBonus, CancellationToken ct = default);
     Task<bool> SetRolledStatsAsync(VerifiedAccount account, Guid character, Guid item, long revision, JsonElement rolled, CancellationToken ct = default);
+    /// <summary>
+    /// Mana stone imprint and soul bind steps, all or nothing: the costs (bag or warehouse stacks, at their revisions) are
+    /// consumed and the object <paramref name="patch"/> is merged into the item's upgrades (item at its revision).
+    /// </summary>
+    Task<bool> UpgradeItemAsync(VerifiedAccount account, Guid character, Guid item, long revision,
+        IReadOnlyList<(Guid Item, long Revision, int Count)> costs, JsonElement patch, CancellationToken ct = default);
     /// <summary>Socket a godstone item into equipment: consumes material, sets upgrades.godstones.</summary>
     Task<bool> SocketGodstoneAsync(VerifiedAccount account, Guid character, Guid equip, long equipRevision, Guid material, long materialRevision,
         IReadOnlyList<int> godstones, CancellationToken ct = default);
