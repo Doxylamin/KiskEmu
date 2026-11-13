@@ -1,5 +1,7 @@
 # CI on forge.msit.systems (Forgejo Actions, Linux runner).
 # - checks: the checks CONTRIBUTING.md asks for before a change (Aion.Native.Checks, the Python tests).
+# - world: the Host and World xUnit suites.
+# - persistence: tools/check_persistence.py against a throwaway PostgreSQL 18 cluster.
 # - launcher: the launcher checks, then KiskLauncher.exe, cross-built for win-x64 on Linux, as a workflow artifact.
 # Releases stay on GitHub (.github/workflows/kisklauncher.yml, tag launcher-v<version>). Forgejo reads this folder
 # instead of .github/workflows, so the GitHub workflow does not run here.
@@ -43,6 +45,66 @@ jobs:
 
       - name: Python tests
         run: python3 -m unittest discover -s tests -q
+
+  # The xUnit suites. World is the long one (the campaign playthroughs alone take ~30 minutes); a hang fails the run
+  # with a dump after 20 minutes instead of holding it until the job timeout.
+  world:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Host tests
+        run: dotnet test tests/Aion.Host.Tests --logger "console;verbosity=minimal"
+
+      - name: World tests
+        run: dotnet test tests/Aion.World.Tests --blame-hang-timeout 20m --logger "console;verbosity=minimal"
+
+  # tools/check_persistence.py: the repository checks against a disposable PostgreSQL 18 database (the version the
+  # servers run). initdb refuses root, so the cluster belongs to an unprivileged user; it lives only in this job.
+  persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AION_PG_HOME: /var/tmp/aion-pg
+      AION_PG_BIN: /usr/lib/postgresql/18/bin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: PostgreSQL 18
+        run: |
+          set -e
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl
+          install -d /usr/share/postgresql-common/pgdg /etc/postgresql-common
+          curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            > /etc/apt/sources.list.d/pgdg.list
+          # No distribution cluster: tools/postgres_dev.py makes its own.
+          echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.conf
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends postgresql-18
+          useradd --system --create-home aionci
+          install -d -o aionci -m 700 "$AION_PG_HOME"
+
+      - name: Build the checks
+        run: dotnet build tests/Aion.Persistence.Checks
+
+      - name: Persistence checks
+        run: |
+          chmod -R a+rX "$GITHUB_WORKSPACE"
+          runuser -u aionci -- env AION_PG_HOME="$AION_PG_HOME" AION_PG_BIN="$AION_PG_BIN" PATH="$PATH" DOTNET_ROOT="${DOTNET_ROOT:-}" \
+            DOTNET_CLI_HOME=/var/tmp/aionci-dotnet DOTNET_NOLOGO=1 PYTHONDONTWRITEBYTECODE=1 \
+            sh -c 'python3 tools/postgres_dev.py setup && python3 tools/check_persistence.py'
 
   launcher:
     runs-on: ubuntu-latest
