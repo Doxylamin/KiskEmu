@@ -824,12 +824,14 @@ public sealed class MapEventRun
         if (Finished) return;
         // Client-side and untracked objectives time out as done.
         if (Step is { } step)
-            for (var i = 0; i < step.Objectives.Length && i < fallbackAt.Length; i++)
+            for (var i = 0; i < step.Objectives.Length && i < fallbackAt.Length && i < Goals.Length; i++)
                 if (fallbackAt[i] != 0 && now >= fallbackAt[i] && Goals[i] < step.Objectives[i].Count)
                 {
                     fallbackAt[i] = 0;
                     Host.Unsupported(this, $"objective {step.Objectives[i].Type} {step.Objectives[i].Value(0)} finished by timeout");
                     Apply(o => ReferenceEquals(o, step.Objectives[i]), now, whole: true);
+                    // Completing the objective can finish the step: Goals and fallbackAt are then the next step's arrays.
+                    if (!ReferenceEquals(Step, step) || Finished) break;
                 }
         if (Definition.Rules is { } rules)
             for (var i = 0; i < rules.Length; i++)
