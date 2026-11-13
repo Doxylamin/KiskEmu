@@ -7,7 +7,7 @@ using Aion.World;
 namespace Aion.World.Tests;
 
 /// <summary>In-memory store for GameSession integration tests (subset of Native.Checks FakeStore).</summary>
-public sealed class FakeCharacterStore : INativeCharacterStore
+public sealed partial class FakeCharacterStore : INativeCharacterStore
 {
     public Guid AccountId { get; }
 

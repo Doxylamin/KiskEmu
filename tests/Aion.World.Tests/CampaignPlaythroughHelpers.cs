@@ -224,11 +224,8 @@ static class CampaignPlaythroughHelpers
         return notes;
     }
 
-    public static async Task<PlaythroughReport> RunHeroCampaignAsync(int race, long now)
-    {
-        var (report, _, _) = await RunHeroCampaignWithSessionAsync(race, now);
-        return report;
-    }
+    public static async Task<PlaythroughReport> RunHeroCampaignAsync(int race, long now) =>
+        ShareHeroCampaign ? (await SharedHeroCampaignAsync(race)).Report : (await RunHeroCampaignWithSessionAsync(race, now)).Report;
 
     /// <summary>Starter-zone playthrough (strict packet path, no parity dev shortcuts).</summary>
     public static async Task<(bool Ok, string? Reason, long Time)> PlayQuestToRewardForStarterAsync(
@@ -252,8 +249,18 @@ static class CampaignPlaythroughHelpers
 
     public static async Task<MainStoryCampaignReport> RunMainStoryCampaignAsync(int race, long now, int minLevel = 10, int maxLevel = CapLevel, bool allowDevShortcuts = true)
     {
-        var segmentSteps = new List<CampaignQuestStep>();
-        var (report, session, store) = await RunHeroCampaignWithSessionAsync(race, now, segmentSteps, minLevel, maxLevel, allowDevShortcuts);
+        List<CampaignQuestStep> segmentSteps;
+        PlaythroughReport report;
+        if (ShareHeroCampaign && minLevel == 10 && maxLevel == CapLevel && allowDevShortcuts)
+        {
+            var shared = await SharedHeroCampaignAsync(race);
+            (report, segmentSteps) = (shared.Report, shared.Segment.ToList());
+        }
+        else
+        {
+            segmentSteps = [];
+            (report, _, _) = await RunHeroCampaignWithSessionAsync(race, now, segmentSteps, minLevel, maxLevel, allowDevShortcuts);
+        }
         var segmentCodes = new HashSet<string>(segmentSteps.Select(s => s.Code), StringComparer.Ordinal);
         var segmentGaps = report.DataGaps.Where(g => segmentCodes.Any(c => g.StartsWith(c, StringComparison.Ordinal))).ToList();
         var segmentFallbacks = report.PacketFallbacks.Where(f => segmentCodes.Any(c => f.StartsWith(c, StringComparison.Ordinal))).ToList();
@@ -275,6 +282,53 @@ static class CampaignPlaythroughHelpers
 
     public static async Task<(PlaythroughReport Report, GameSession Session, FakeCharacterStore Store)> RunHeroCampaignWithSessionAsync(
         int race, long now, List<CampaignQuestStep>? segmentLog = null, int segmentMin = 10, int segmentMax = CapLevel, bool allowDevShortcuts = true)
+    {
+        var (report, session, store, _) = await PlayHeroCampaignAsync(race, now, segmentLog, segmentMin, segmentMax, allowDevShortcuts);
+        return (report, session, store);
+    }
+
+    /// <summary>One hero campaign per race, played once per test run and saved; see <see cref="SharedHeroCampaignAsync"/>.</summary>
+    sealed record HeroCampaignSnapshot(PlaythroughReport Report, IReadOnlyList<CampaignQuestStep> Segment, FakeCharacterStore Store, long EndTime);
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Lazy<Task<HeroCampaignSnapshot>>> HeroCampaigns = new();
+
+    /// <summary>
+    /// Set AION_TEST_FRESH_HERO_CAMPAIGN=1 to replay the hero campaign in every test instead of sharing one per race
+    /// (to check that a test's result does not depend on the shared copy).
+    /// </summary>
+    static bool ShareHeroCampaign => Environment.GetEnvironmentVariable("AION_TEST_FRESH_HERO_CAMPAIGN") != "1";
+
+    const long SharedHeroCampaignNow = 1_760_004_000_000;
+
+    /// <summary>
+    /// The default hero campaign (dev shortcuts on, segment log 10..cap) for a race, played once per test run.
+    /// The session is logged out at the end, so the saved store holds everything a later login reads.
+    /// </summary>
+    static Task<HeroCampaignSnapshot> SharedHeroCampaignAsync(int race) =>
+        HeroCampaigns.GetOrAdd(race, r => new Lazy<Task<HeroCampaignSnapshot>>(async () =>
+        {
+            var segment = new List<CampaignQuestStep>();
+            var (report, session, store, end) = await PlayHeroCampaignAsync(r, SharedHeroCampaignNow + r * 10_000, segment, 10, CapLevel, allowDevShortcuts: true);
+            end = MapEventScenarioHelpers.HarnessNow(session, end);
+            await session.CheckpointAsync(end, force: true);
+            await session.FlushDeferredPersistenceAsync(end, CancellationToken.None);
+            return new HeroCampaignSnapshot(report, segment, store.Snapshot(), end);
+        })).Value;
+
+    /// <summary>The shared hero campaign's report and a fresh login on a private copy of its character.</summary>
+    static async Task<(PlaythroughReport Report, GameSession Session, FakeCharacterStore Store)> HeroCampaignSessionAsync(int race, long now)
+    {
+        if (!ShareHeroCampaign) return await RunHeroCampaignWithSessionAsync(race, now);
+        var shared = await SharedHeroCampaignAsync(race);
+        var store = shared.Store.Snapshot();
+        var session = await GameSessionTestHelpers.ReenterFreshSharedWorldAsync(store, shared.EndTime, race);
+        await GameSessionTestHelpers.LoadInventoryAsync(session, shared.EndTime + 2);
+        MapEventScenarioHelpers.HarnessNow(session, shared.EndTime + 2);
+        return (shared.Report, session, store);
+    }
+
+    static async Task<(PlaythroughReport Report, GameSession Session, FakeCharacterStore Store, long End)> PlayHeroCampaignAsync(
+        int race, long now, List<CampaignQuestStep>? segmentLog, int segmentMin, int segmentMax, bool allowDevShortcuts)
     {
         var chain = LoadHeroChains();
         var codes = (race == 2 ? chain.Dark : chain.Light).ToArray();
@@ -332,7 +386,7 @@ static class CampaignPlaythroughHelpers
 
         var report = new PlaythroughReport(race, session.Level, rewarded, last, blocked, blockReason, dataGaps, fallbacks,
             levelBeforeSide, levelAfterSide, sideAttempts);
-        return (report, session, store);
+        return (report, session, store, t);
     }
 
     static async Task<List<string>> TrySideQuestsBeforeLevelGateAsync(
@@ -1403,7 +1457,7 @@ static class CampaignPlaythroughHelpers
 
     public static async Task<CapQuestParitySummary> RunCapQuestParityAsync(int race, long now)
     {
-        var (hero, session, store) = await RunHeroCampaignWithSessionAsync(race, now);
+        var (hero, session, store) = await HeroCampaignSessionAsync(race, now);
         var dataGaps = hero.DataGaps.ToList();
         var fallbacks = hero.PacketFallbacks.ToList();
         var t = now + 3600_000;
@@ -1554,7 +1608,7 @@ static class CampaignPlaythroughHelpers
     /// <summary>Hero to cap once, then packet playthrough for each listed category (side / region / ascension).</summary>
     public static async Task<MultiCategoryPlaythroughSummary> RunCapCategoriesPlaythroughAsync(int race, IReadOnlyList<string> categories, long now)
     {
-        var (hero, session, store) = await RunHeroCampaignWithSessionAsync(race, now);
+        var (hero, session, store) = await HeroCampaignSessionAsync(race, now);
         var dataGaps = hero.DataGaps.ToList();
         var fallbacks = hero.PacketFallbacks.ToList();
         var t = now + 3600_000;
@@ -1610,7 +1664,7 @@ static class CampaignPlaythroughHelpers
     public static async Task<(int Rewarded, IReadOnlyList<string> Failures)> RunQuestCodesPlaythroughAsync(
         int race, IReadOnlyList<string> codes, long now)
     {
-        var (_, session, store) = await RunHeroCampaignWithSessionAsync(race, now);
+        var (_, session, store) = await HeroCampaignSessionAsync(race, now);
         var dataGaps = new List<string>();
         var fallbacks = new List<string>();
         var t = now + 3600_000;
