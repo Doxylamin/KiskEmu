@@ -1,6 +1,6 @@
 # CI on forge.msit.systems (Forgejo Actions, Linux runner).
 # - checks: the checks CONTRIBUTING.md asks for before a change (Aion.Native.Checks, the Python tests).
-# - world: the Host and World xUnit suites.
+# - world: the Host and World xUnit suites (Elyos quests, Asmodian quests, everything else).
 # - persistence: tools/check_persistence.py against a throwaway PostgreSQL 18 cluster.
 # - launcher: the launcher checks, then KiskLauncher.exe, cross-built for win-x64 on Linux, as a workflow artifact.
 # Releases stay on GitHub (.github/workflows/kisklauncher.yml, tag launcher-v<version>). Forgejo reads this folder
@@ -46,11 +46,29 @@ jobs:
       - name: Python tests
         run: python3 -m unittest discover -s tests -q
 
-  # The xUnit suites. World is the long one (the campaign playthroughs alone take ~30 minutes); a hang fails the run
-  # with a dump after 20 minutes instead of holding it until the job timeout.
+  # The xUnit suites, in three jobs that run side by side (the runner stops a job after an hour): the Elyos and the
+  # Asmodian quest playthroughs (each plays its race's hero campaign once and runs the campaign tests on copies of it),
+  # and everything else with the Host suite. A hang fails the run with a dump after 20 minutes. Category=LongPlaythrough
+  # (every side, region and ascension quest at cap) stays out: xunit.runner.json's trait filter needs xUnit v3, so the
+  # filters here exclude it.
   world:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: elyos
+            filter: >-
+              (FullyQualifiedName~.CampaignPlaythroughScenarioTests.|FullyQualifiedName~.PlaythroughCampaignTests.|FullyQualifiedName~.CampaignPlaythroughParityTests.|FullyQualifiedName~.PlaythroughSideQuestTests.)&DisplayName~race: 1&Category!=LongPlaythrough
+          - part: asmodian
+            filter: >-
+              (((FullyQualifiedName~.CampaignPlaythroughScenarioTests.|FullyQualifiedName~.PlaythroughCampaignTests.|FullyQualifiedName~.CampaignPlaythroughParityTests.|FullyQualifiedName~.PlaythroughSideQuestTests.)&DisplayName~race: 2)|FullyQualifiedName~.PlaythroughAsmodianCampaignTests.)&Category!=LongPlaythrough
+          - part: other
+            host: true
+            filter: >-
+              FullyQualifiedName!~.CampaignPlaythroughScenarioTests.&FullyQualifiedName!~.PlaythroughCampaignTests.&FullyQualifiedName!~.CampaignPlaythroughParityTests.&FullyQualifiedName!~.PlaythroughSideQuestTests.&FullyQualifiedName!~.PlaythroughAsmodianCampaignTests.&Category!=LongPlaythrough
+    name: world (${{ matrix.part }})
     steps:
       - uses: actions/checkout@v4
 
@@ -59,10 +77,11 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Host tests
+        if: ${{ matrix.host }}
         run: dotnet test tests/Aion.Host.Tests --logger "console;verbosity=minimal"
 
       - name: World tests
-        run: dotnet test tests/Aion.World.Tests --blame-hang-timeout 20m --logger "console;verbosity=minimal"
+        run: dotnet test tests/Aion.World.Tests --filter "${{ matrix.filter }}" --blame-hang-timeout 20m --logger "console;verbosity=minimal"
 
   # tools/check_persistence.py: the repository checks against a disposable PostgreSQL 18 database (the version the
   # servers run). initdb refuses root, so the cluster belongs to an unprivileged user; it lives only in this job.

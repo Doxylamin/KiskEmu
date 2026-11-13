@@ -112,12 +112,13 @@ static partial class MapEventScenarioHelpers
         return GameSessionTestHelpers.MapStartOrDefault(mapId);
     }
 
-    public static async Task SyncPositionAsync(GameSession session, Vector3d at, long now)
+    public static async Task<List<byte[]>> SyncPositionAsync(GameSession session, Vector3d at, long now)
     {
         session.Teleport(session.MapId ?? GamePackets.SpawnMapId, at, now);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), now + 10);
-        await session.HandleAsync(MoveUpdate(at), now + 20);
-        await session.TickAsync(now + 30);
+        var replies = await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), now + 10);
+        replies.AddRange(await session.HandleAsync(MoveUpdate(at), now + 20));
+        replies.AddRange(await session.TickAsync(now + 30));
+        return replies;
     }
 
     public static async Task<List<byte[]>> EnterInstanceLayerAsync(GameSession session, int npcId, long now)
@@ -207,7 +208,7 @@ static partial class MapEventScenarioHelpers
 
     static int CastGapMs(int skillId) => Math.Max(250, SkillCooldown.EffectiveMs(GameData.Embedded.Skill(skillId)) + 50);
 
-    static async Task<long> KillSpawnerTargetsAsync(GameSession session, MapEventRun run, MapEventObjective obj, int skillId, long now)
+    static async Task<long> KillSpawnerTargetsAsync(GameSession session, MapEventRun run, MapEventObjective obj, int skillId, long now, List<byte[]>? capture = null)
     {
         // Each cast waits out the skill's cooldown and ticks until its hits land: a recast on cooldown is refused and a hit
         // that has not landed kills nothing, so casting faster only repeated (and paid the position sync for) the same targets.
@@ -230,13 +231,15 @@ static partial class MapEventScenarioHelpers
             {
                 if (target.Dead) continue;
                 now += castGapMs - 50;
-                await SyncPositionAsync(session, target.Position with { X = target.Position.X + 120 }, now);
+                var synced = await SyncPositionAsync(session, target.Position with { X = target.Position.X + 120 }, now);
+                capture?.AddRange(synced);
                 target.Immune = false;
                 target.Relationship = 6;
                 target.Hp = Math.Min(target.Hp, 1);
                 now += 50;
-                await CastInReachAsync(session, target.Key, CombatCast(skillId, target.Key, target.Position), now);
-                await session.TickAsync(now + landMs);
+                var castReplies = await CastInReachAsync(session, target.Key, CombatCast(skillId, target.Key, target.Position), now);
+                var landReplies = await session.TickAsync(now + landMs);
+                capture?.AddRange(castReplies); capture?.AddRange(landReplies);
             }
         }
         return HarnessNow(session, now + landMs);
@@ -403,7 +406,7 @@ static partial class MapEventScenarioHelpers
                     case "KillNpcRelationshipEntity":
                     case "KillNpcSubtype":
                     case "KillNpcCreatureType":
-                        t = await KillSpawnerTargetsAsync(session, run, objective, skillId, t);
+                        t = await KillSpawnerTargetsAsync(session, run, objective, skillId, t, capture);
                         break;
                     case "UseEnvObj":
                         await UseSpawnerObjectAsync(session, objective, t);
