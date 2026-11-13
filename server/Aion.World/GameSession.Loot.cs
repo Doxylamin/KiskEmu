@@ -7,7 +7,7 @@ namespace Aion.World;
 // the items are granted (stored), answered 0x5621 ItemLooting_RS per drop, removed with 0x561f
 // DropItemRemove_NT, and auto-use items (pet souls) are used at once. Unlooted drops vanish after
 // DropLifetimeMs. Opcodes: catalogue 340-343 + 0x54ca (the 0x56 run, OBSERVED around 0x5610/0x5612/0x5646);
-// layouts are the usmap structs, no official sample (CANDIDATE).
+// layouts OBSERVED from official samples (see LootPackets).
 public sealed partial class GameSession
 {
     internal sealed record GroundDrop(int Key, long Uid, int ItemId, long Count, Vector3d Center, Vector3d At, long ExpiresAt,
