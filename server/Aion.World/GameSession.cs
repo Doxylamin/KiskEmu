@@ -178,7 +178,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     /// <summary>The stored equipped wing (game.characters.equipped_wing_id), restored on map loads; 0 = race default.</summary>
     int storedWingId;
 
-    // TODO(wing enchant): the WingEnchant request opcode is unknown (no capture). Once known: check the WingEnchant.dat
+    // TODO(wing enchant): the WingEnchant request opcode is unknown (no capture, forge issue #23). Once known: check the WingEnchant.dat
     // group/cost/rate, update game.character_wings.enchant_level and wingEnchants, resend WingList and RefreshStats.
     List<(int Id, byte Enchant)> OwnedWings() =>
         registeredWings.Concat(wingId != 0 ? [wingId] : []).Concat(HasDefaultWing ? [GamePackets.DefaultWing(profileRace)] : []).Distinct().Order()
