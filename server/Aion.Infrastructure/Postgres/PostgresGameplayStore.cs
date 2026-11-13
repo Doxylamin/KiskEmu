@@ -43,6 +43,13 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
     }
     private static async Task<object?> Scalar(NpgsqlConnection c, NpgsqlTransaction? t, string sql, CancellationToken ct, params object[] args)
     { await using var q = Query(c,t,sql,args); return await q.ExecuteScalarAsync(ct); }
+    /// <summary>The first row's columns, or null when there is none. Scalar returns only the first column.</summary>
+    private static async Task<object[]?> Row(NpgsqlConnection c, NpgsqlTransaction? t, string sql, CancellationToken ct, params object[] args)
+    {
+        await using var q = Query(c,t,sql,args); await using var r = await q.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return null;
+        var row = new object[r.FieldCount]; r.GetValues(row); return row;
+    }
     private static async Task Execute(NpgsqlConnection c, NpgsqlTransaction? t, string sql, CancellationToken ct, params object[] args)
     { await using var q = Query(c,t,sql,args); await q.ExecuteNonQueryAsync(ct); }
     private static async Task<int> ExecuteCount(NpgsqlConnection c, NpgsqlTransaction? t, string sql, CancellationToken ct, params object[] args)
@@ -1129,7 +1136,7 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         foreach(var (item,revision,count) in items)
         {
             if(count<1) return "failed";
-            var row=await Scalar(c,t,"SELECT template_id,quantity,location FROM game.item_instances WHERE instance_id=$1 AND character_id=$2",ct,item,character);
+            var row=await Row(c,t,"SELECT template_id,quantity,location FROM game.item_instances WHERE instance_id=$1 AND character_id=$2",ct,item,character);
             if(row is not object[] r || (string)r[2]!="bag") return "failed";
             var template=(int)r[0]; var qty=(long)r[1];
             if(qty<count) return "failed";
@@ -1158,7 +1165,7 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         foreach(var (key,count) in items)
         {
             if(count<1) return "failed";
-            var row=await Scalar(c,t,"SELECT template_id,quantity FROM game.guild_storage_items WHERE guild_id=$1 AND item_key=$2",ct,gid,key);
+            var row=await Row(c,t,"SELECT template_id,quantity FROM game.guild_storage_items WHERE guild_id=$1 AND item_key=$2",ct,gid,key);
             if(row is not object[] r) return "missing";
             var template=(int)r[0]; var qty=(long)r[1];
             if(qty<count) return "failed";
@@ -1312,7 +1319,7 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         var guildId=await Scalar(c,t,"SELECT guild_id FROM game.guild_members WHERE character_id=$1 AND grade=0",ct,character);
         if(guildId is not long gid) return ("authority",0);
         if(await Scalar(c,t,"SELECT union_id FROM game.guilds WHERE guild_id=$1",ct,gid) is long) return ("member",0);
-        var rule=await Scalar(c,t,"SELECT join_rule,password FROM game.guild_unions WHERE union_id=$1",ct,unionId);
+        var rule=await Row(c,t,"SELECT join_rule,password FROM game.guild_unions WHERE union_id=$1",ct,unionId);
         if(rule is not object[] r) return ("none",0);
         if((short)r[0]==3&&(string)r[1]!=password) return ("password",0);
         if((short)r[0]==2)
@@ -1835,11 +1842,17 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         foreach(var (key,count) in items)
         {
             if(count<1) return false;
-            var row=location=="account_storage"
-                ? await Scalar(c,t,"SELECT instance_id,quantity FROM game.item_instances WHERE wire_id=$1 AND location='account_storage' AND account_storage_owner=$2 FOR UPDATE",ct,key,account.AccountId)
-                : await Scalar(c,t,"SELECT instance_id,quantity FROM game.item_instances WHERE wire_id=$1 AND location='storage' AND character_id=$2 FOR UPDATE",ct,key,character);
-            if(row is not object[] r || (long)r[1]<count) return false;
-            var instance=(Guid)r[0]; var quantity=(long)r[1];
+            // Two columns: a reader, not Scalar (which returns only the first column, so this never matched).
+            Guid instance; long quantity;
+            await using(var q=location=="account_storage"
+                ? Query(c,t,"SELECT instance_id,quantity FROM game.item_instances WHERE wire_id=$1 AND location='account_storage' AND account_storage_owner=$2 FOR UPDATE",key,account.AccountId)
+                : Query(c,t,"SELECT instance_id,quantity FROM game.item_instances WHERE wire_id=$1 AND location='storage' AND character_id=$2 FOR UPDATE",key,character))
+            {
+                await using var r=await q.ExecuteReaderAsync(ct);
+                if(!await r.ReadAsync(ct)) return false;
+                instance=r.GetGuid(0); quantity=r.GetInt64(1);
+            }
+            if(quantity<count) return false;
             var free=NextFreeSlot(used);
             if(count==quantity)
                 await Execute(c,t,"UPDATE game.item_instances SET location='bag',slot=$2,account_storage_owner=NULL,character_id=$3,revision=revision+1 WHERE instance_id=$1",ct,instance,free,character);

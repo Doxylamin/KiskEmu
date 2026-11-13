@@ -52,10 +52,11 @@ def main():
             characterClass='Gladiator'))
         sql("""
             INSERT INTO catalog.builds VALUES('test','{}',now());
-            INSERT INTO catalog.items VALUES('test',101,'Sword','weapon','{}'),('test',102,'Unknown','unknown','{}'),('test',930100001,'Kinah','currency','{}');
+            INSERT INTO catalog.items VALUES('test',101,'Sword','weapon','{}'),('test',102,'Unknown','unknown','{}'),('test',930100001,'Kinah','currency','{"facts":{"ItemType":"EItemType::Currency"}}'),
+                ('test',530116001,'SortPotionA','consumable','{}'),('test',530126003,'SortPotionB','consumable','{}');
             INSERT INTO catalog.skills VALUES('test',201,'Strike','skill','{}'),('test',202,'Slash','skill','{}'),('test',203,'Whirl','skill','{}'),('test',204,'Shield','skill','{}');
             INSERT INTO game.skill_unlocks VALUES('test',1,201,1,1),('test',1,202,5,1),('test',1,203,12,1),('test',2,201,1,1),('test',2,204,1,1);
-            INSERT INTO game.equipment_rules VALUES('test',101,1,1,ARRAY[1],'synthetic test policy');
+            INSERT INTO game.equipment_rules VALUES('test',101,1,1,ARRAY[1,9],'synthetic test policy');  -- 9: the 'other-race' copy of the profile
             INSERT INTO game.starter_profiles VALUES('test','test',1,1,1,true,
               '{"worldId":1204,"mapId":1000,"position":{"x":1,"y":2,"z":3},"resources":{"hp":1500,"mp":200},"skills":[201],"slots":[[0,201]],"items":[{"templateId":101,"quantity":1,"equipmentSlot":1}],"characterClass":"Gladiator"}');
             INSERT INTO game.starter_profiles SELECT 'broken',build_id,creation_id,race,gender,true,

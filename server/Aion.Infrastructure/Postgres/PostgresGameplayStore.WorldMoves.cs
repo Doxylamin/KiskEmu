@@ -6,8 +6,9 @@ using Npgsql;
 namespace Aion.Infrastructure.Postgres;
 
 // Moving a character to another world (docs/STAFF_CHARACTERS.md, migration 108). The tables that move are found in the
-// catalogue, not listed by hand: every table with a single-column foreign key `character_id` to game.characters, except
-// the ones that stay in the world. A table added later moves with the character without a change here.
+// catalogue, not listed by hand: every table with a foreign key on `character_id` to game.characters, or to such a table
+// by a key that includes `character_id`, except the ones that stay in the world. A table added later moves with the
+// character without a change here.
 public sealed partial class PostgresGameplayStore
 {
     /// <summary>Character tables that stay in the source world: legion, mail, the purchase ledger, creation retries, audit.</summary>
@@ -28,19 +29,29 @@ public sealed partial class PostgresGameplayStore
     {
         const string Name = "n.nspname||'.'||cl.relname";
         var names=new HashSet<string>();
-        await using(var q=Query(c,t,$"""
-            SELECT DISTINCT {Name} FROM pg_constraint con JOIN pg_class cl ON cl.oid=con.conrelid JOIN pg_namespace n ON n.oid=cl.relnamespace
-            JOIN pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=con.conkey[1]
-            WHERE con.contype='f' AND con.confrelid='game.characters'::regclass AND cardinality(con.conkey)=1 AND a.attname='character_id'
-            """))
-        { await using var r=await q.ExecuteReaderAsync(ct); while(await r.ReadAsync(ct)) if(!StaysInWorld.Contains(r.GetString(0))) names.Add(r.GetString(0)); }
+        // A table moves when one of its foreign keys includes character_id and points at game.characters or at a table that
+        // moves: game.skill_slots hangs off game.character_skills by (character_id,skill_id), not off game.characters.
+        for(var grew=true;grew;)
+        {
+            grew=false;
+            await using var q=Query(c,t,$"""
+                SELECT DISTINCT {Name} FROM pg_constraint con JOIN pg_class cl ON cl.oid=con.conrelid JOIN pg_namespace n ON n.oid=cl.relnamespace
+                JOIN pg_class fc ON fc.oid=con.confrelid JOIN pg_namespace fn ON fn.oid=fc.relnamespace
+                WHERE con.contype='f' AND fn.nspname||'.'||fc.relname=ANY($1)
+                  AND EXISTS(SELECT FROM unnest(con.conkey) k JOIN pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=k WHERE a.attname='character_id')
+                """,(object)names.Append(CharactersTable).ToArray());
+            await using var r=await q.ExecuteReaderAsync(ct);
+            while(await r.ReadAsync(ct))
+                if(r.GetString(0)!=CharactersTable && !StaysInWorld.Contains(r.GetString(0)) && names.Add(r.GetString(0))) grew=true;
+        }
         var all=names.Append(CharactersTable).ToArray();
+        // Each array below is ONE argument ($1): cast to object, or C# spreads it into Query's params object[].
         var tables=names.ToDictionary(n => n, n => new MovingTable(n, new(), null, new()));
         var columns=new Dictionary<string,Dictionary<string,bool>>();
         await using(var q=Query(c,t,$"""
             SELECT {Name},a.attname,a.attidentity='' AND a.attgenerated='' FROM pg_attribute a JOIN pg_class cl ON cl.oid=a.attrelid
             JOIN pg_namespace n ON n.oid=cl.relnamespace WHERE a.attnum>0 AND NOT a.attisdropped AND {Name}=ANY($1) ORDER BY a.attnum
-            """,all))
+            """,(object)all))
         {
             await using var r=await q.ExecuteReaderAsync(ct);
             while(await r.ReadAsync(ct))
@@ -55,7 +66,7 @@ public sealed partial class PostgresGameplayStore
             SELECT {Name},a.attname,format_type(a.atttypid,a.atttypmod),a.attidentity<>'' FROM pg_constraint con JOIN pg_class cl ON cl.oid=con.conrelid
             JOIN pg_namespace n ON n.oid=cl.relnamespace JOIN pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=con.conkey[1]
             WHERE con.contype='p' AND cardinality(con.conkey)=1 AND {Name}=ANY($1)
-            """,names.ToArray()))
+            """,(object)names.ToArray()))
         {
             await using var r=await q.ExecuteReaderAsync(ct);
             while(await r.ReadAsync(ct))
@@ -69,12 +80,13 @@ public sealed partial class PostgresGameplayStore
         }
         var after=tables.Keys.ToDictionary(n => n, _ => new HashSet<string>());
         await using(var q=Query(c,t,$"""
-            SELECT {Name},fn.nspname||'.'||fc.relname,a.attname,cardinality(con.conkey) FROM pg_constraint con
+            SELECT {Name},fn.nspname||'.'||fc.relname,a.attname,cardinality(con.conkey),
+                   ARRAY(SELECT fa.attname::text FROM unnest(con.confkey) k JOIN pg_attribute fa ON fa.attrelid=con.confrelid AND fa.attnum=k) FROM pg_constraint con
             JOIN pg_class cl ON cl.oid=con.conrelid JOIN pg_namespace n ON n.oid=cl.relnamespace
             JOIN pg_class fc ON fc.oid=con.confrelid JOIN pg_namespace fn ON fn.oid=fc.relnamespace
             JOIN pg_attribute a ON a.attrelid=con.conrelid AND a.attnum=con.conkey[1]
             WHERE con.contype='f' AND {Name}=ANY($1)
-            """,names.ToArray()))
+            """,(object)names.ToArray()))
         {
             await using var r=await q.ExecuteReaderAsync(ct);
             while(await r.ReadAsync(ct))
@@ -83,6 +95,9 @@ public sealed partial class PostgresGameplayStore
                 if(!tables.ContainsKey(to) || to==from) continue;
                 after[from].Add(to);
                 if(width==1) tables[from].Refs.Add((column,to));
+                // A composite key stays valid only through columns the import keeps (character_id is rewritten everywhere);
+                // one that includes a regenerated uuid key would need remapping: refuse rather than break it.
+                else if(keyed.TryGetValue(to,out var key) && r.GetFieldValue<string[]>(4).Contains(key)) throw new GameplayException("unsupported_schema");
             }
         }
         foreach(var (name,key) in keyed) tables[name]=tables[name] with { UuidKey=key };
@@ -202,9 +217,10 @@ public sealed partial class PostgresGameplayStore
         if(!staffTarget && character.ContainsKey("staff")) character["staff"]=false;
         await Insert(c,t,CharactersTable,characterColumns,new JsonArray(character),null,ct);
 
-        // Rows the new character got from triggers (class skills for its level) give way to the moved ones.
+        // Rows the new character got from triggers (class skills for its level, their skill bar) give way to the moved ones,
+        // also where the moved character had none: the package carries every moving table, empty ones included.
         foreach(var table in Enumerable.Reverse(tables))
-            if(package.Tables.TryGetValue(table.Name,out var moved) && moved.GetArrayLength()>0
+            if(package.Tables.ContainsKey(table.Name)
                && await Scalar(c,t,$"SELECT EXISTS(SELECT FROM {Quoted(table.Name)} WHERE character_id=$1)",ct,id) is true)
                 await Execute(c,t,$"DELETE FROM {Quoted(table.Name)} WHERE character_id=$1",ct,id);
 
