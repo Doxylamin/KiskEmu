@@ -123,7 +123,7 @@ public sealed class ExceedEnchantTables
 }
 
 // Item enchanting. Live opcodes in the 0x56 run (catalogue index + 0x54ca, as 0x561b/0x561c/0x563a): ItemEnchant_RQ
-// 0x5622 -> RS 0x5623 (CANDIDATE), BroadcastItemEnchant_NT 0x5626 (OBSERVED: key | 3c 03 | before | current, after the
+// 0x5622 -> RS 0x5623 (OBSERVED: result 828 on success), BroadcastItemEnchant_NT 0x5626 (OBSERVED: key | 3c 03 | before | current, after the
 // 0x561c of the equipped item). The request (usmap) is _equip_uid i64 then _cost_items: varint n x ComponentItem
 // {_origin_component_id i32, _replaced_component_id i32, _item: varint m x {_item_key i64, _item_count i64}}; live
 // 2026-11-12 it named Enhance Stone 930100023 x960 from the bag and a belt scroll from the warehouse, then 4 zero bytes

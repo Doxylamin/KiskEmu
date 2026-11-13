@@ -54,7 +54,7 @@ public sealed record InventoryItem(long Key, int ItemId, long Count, byte Contai
 {
     // EItemContainerType. Official round 1 (2026-11-12) stored into containers 0x02 and 0x0f; which is the personal
     // warehouse and which the account warehouse is INFERRED (2 = personal, as our login inventory already uses, so
-    // 0x0f = account storage), not shown by the trace. An official warehouse-deposit capture will settle it (CAPTURE-TODO).
+    // 0x0f = account storage), not shown by the trace. An official warehouse-deposit capture will settle it (forge issue #2).
     public const byte Bag = 1, Storage = 2, AccountStorage = 0x0f, Equipped = 11;
 
     /// <summary>Whether two wire snapshots are the same for 0x561b diffing (ignores reference identity on Detail lists).</summary>

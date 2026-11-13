@@ -86,47 +86,6 @@ your inventory, the names and positions of players near you, and chat.
 
 ## What is still wanted
 
-Grouped by priority, with what to do in game. The code marks the current guess as OURS or CANDIDATE at each place.
-
-**High**
-
-1. **Death and revive**: die to a monster, wait on the death screen, revive at the respawn point (also with a
-   Resurrection Spiritstone). Settles the death notice, the revive messages, auto-revive timing and the revive teleport.
-2. **Monsters hitting you**: take hits from a few monsters of known level. Their hit messages use variants not yet
-   decoded, and monster damage is our formula.
-3. **Loot on the ground and gathering**: pick up a monster's drop and gather one node. Neither reply has been seen;
-   also the bonus-material rate and how long a node stays used up.
-4. **Shop**: buy one item, sell one, buy it back. The replies, the buy-back price, when purchase limits reset.
-5. **Quest dungeon relog**: log out in the middle of a solo quest dungeon and log back in.
-6. **Kill experience**: kill monsters of known levels, solo and in a party (no table holds it; ours is invented, as is
-   the party split).
-
-**Flight and movement**
-
-7. Wind streams: do they spend or restore flight points?
-8. Flight rings: how fast the gauge refills.
-9. Swimming and diving near another player: what the other player receives.
-10. Monster respawn time, aggro range, and how far they chase before returning.
-11. HP/MP regeneration while sitting, and the auto-potion threshold.
-
-**Systems that run on guessed message layouts** (a short session of each settles it)
-
-12. Party dungeon entry, the item-level requirement, the hold after a clear, mid-boss rewards.
-13. Enchanting (success and failure) and item restore cost.
-14. Mail: read, take attachments, delete.
-15. Storage: account-wide or per character.
-16. Legion create and join; the arena queue.
-17. Battle pass and daily/weekly missions: which are offered and how rewards are claimed.
-18. Titles, crafting (experience per craft, recipe unlocks), gathering levels.
-19. Rides: level-up, soul crystals, option rolls; polymorph.
-20. Character delete and cancelling a delete.
-21. Skill points per level and skill option slots.
-22. Boss challenge points and season keys.
-23. Killing another player: Abyss Points, and what the killed player sees.
-
-**Cosmetic**
-
-24. Notices and kicks (colour format and size), chat copies of on-screen messages, emotes on NPCs, teleport statue and
-    return scroll effects.
-
-Items 1 to 6 fit in one 20 to 30 minute session with a note between activities.
+The open capture requests are issues on the project's forge, labelled `capture`. Each one says what to do in game,
+what is already known (OBSERVED / CANDIDATE / OURS) and where the code is. When a recording answers one, comment the
+findings on the issue and close it with the commit that fixes ours.
