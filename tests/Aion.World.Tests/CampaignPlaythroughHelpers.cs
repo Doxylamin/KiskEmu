@@ -14,13 +14,25 @@ namespace Aion.World.Tests;
 /// </summary>
 static class CampaignPlaythroughHelpers
 {
-    /// <summary>Map-event scripts use absolute packet times; keep harness slices off the campaign clock.</summary>
+    const long MapEventHarnessSliceMs = 480_000L;
     static long _mapEventHarnessSliceMs = 12_000_000L;
+    static readonly object MapEventHarnessClockLock = new();
 
-    static long NextMapEventHarnessNow()
+    /// <summary>
+    /// Map-event scripts use absolute packet times and run for minutes, so each gets a slice of its own. A slice starts
+    /// after <paramref name="after"/>: the session refuses a cast before its last accepted one (cast gap, cooldowns), and
+    /// slices that sat behind the campaign clock (1.76e12) failed every map-event kill after the first field fight.
+    /// </summary>
+    static long NextMapEventHarnessNow(long after)
     {
-        _mapEventHarnessSliceMs += 480_000L;
-        return _mapEventHarnessSliceMs;
+        lock (MapEventHarnessClockLock)
+            return _mapEventHarnessSliceMs = Math.Max(_mapEventHarnessSliceMs, after) + MapEventHarnessSliceMs;
+    }
+
+    /// <summary>The end of the latest map-event slice: the campaign clock continues after it, for the same reason.</summary>
+    static long MapEventHarnessClockEnd
+    {
+        get { lock (MapEventHarnessClockLock) return _mapEventHarnessSliceMs + MapEventHarnessSliceMs; }
     }
 
     public sealed record PlaythroughReport(
@@ -430,8 +442,12 @@ static class CampaignPlaythroughHelpers
         for (var guard = 0; guard < guardMax && session.Quests!.Get(code) is { Status: QuestLog.Incomplete }; guard++)
         {
             var advanced = false;
+            var sliceEndBefore = MapEventHarnessClockEnd;
             for (var pass = 0; pass < 4; pass++)
                 advanced |= await TryAdvanceQuestPacketsAsync(session, store, code, race, t + pass * 5, dataGaps, mapEventsAttempted);
+            // A map event played on a slice ahead of this clock: carry on after it, or field casts would be refused.
+            if (MapEventHarnessClockEnd != sliceEndBefore) t = Math.Max(t, MapEventHarnessClockEnd);
+            t = MapEventScenarioHelpers.HarnessNow(session, t);
             if (advanced)
             {
                 t += 40;
@@ -1113,7 +1129,7 @@ static class CampaignPlaythroughHelpers
 
     static async Task<bool> TryClearMapEventAsync(GameSession session, string questCode, string eventName, long now, int race)
     {
-        now = NextMapEventHarnessNow();
+        now = NextMapEventHarnessNow(MapEventScenarioHelpers.HarnessNow(session, now));
         if (MapEventTables.Embedded.Event(eventName) is not { Map: var mapId }) return false;
         var questBefore = session.Quests!.Get(questCode);
         var goalsBefore = questBefore?.Goals.ToArray();

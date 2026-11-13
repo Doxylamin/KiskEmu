@@ -192,12 +192,28 @@ static partial class MapEventScenarioHelpers
         }
     }
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GameSession, System.Runtime.CompilerServices.StrongBox<long>> HarnessClocks = new();
+
+    /// <summary>
+    /// The latest packet time the kill helpers used on this session, or <paramref name="now"/> if that is later. The session
+    /// refuses a cast before its last accepted one (cast gap, cooldowns), and wrappers that count their own ticks
+    /// (now + tick * 1000) fell behind the kills, so every later cast was refused and the scripts spun until their tick limit.
+    /// </summary>
+    public static long HarnessNow(GameSession session, long now)
+    {
+        var clock = HarnessClocks.GetOrCreateValue(session);
+        return clock.Value = Math.Max(clock.Value, now);
+    }
+
+    static int CastGapMs(int skillId) => Math.Max(250, SkillCooldown.EffectiveMs(GameData.Embedded.Skill(skillId)) + 50);
+
     static async Task<long> KillSpawnerTargetsAsync(GameSession session, MapEventRun run, MapEventObjective obj, int skillId, long now)
     {
         // Each cast waits out the skill's cooldown and ticks until its hits land: a recast on cooldown is refused and a hit
         // that has not landed kills nothing, so casting faster only repeated (and paid the position sync for) the same targets.
         var landMs = SkillHitsLandMs(skillId);
-        var castGapMs = Math.Max(250, SkillCooldown.EffectiveMs(GameData.Embedded.Skill(skillId)) + 50);
+        var castGapMs = CastGapMs(skillId);
+        now = HarnessNow(session, now);
         for (var guard = 0; guard < 16; guard++)
         {
             var prey = session.Targets!.Values.Where(t => !t.Dead && (
@@ -223,7 +239,7 @@ static partial class MapEventScenarioHelpers
                 await session.TickAsync(now + landMs);
             }
         }
-        return now;
+        return HarnessNow(session, now + landMs);
     }
 
     internal static async Task ReportClientMapObjectiveAsync(GameSession session, MapEventRun run, MapEventObjective obj, long now, List<byte[]>? capture = null)
@@ -245,11 +261,14 @@ static partial class MapEventScenarioHelpers
         capture?.AddRange(replies);
     }
 
-    internal static async Task KillHostilesOnMapAsync(GameSession session, int skillId, long now, List<byte[]>? capture = null, params string[] spawnerPrefixes)
+    internal static async Task<long> KillHostilesOnMapAsync(GameSession session, int skillId, long now, List<byte[]>? capture = null, params string[] spawnerPrefixes)
     {
         IEnumerable<Target> prey = session.Targets!.Values.Where(t => t.Hostile && !t.Dead);
         if (spawnerPrefixes.Length > 0)
             prey = prey.Where(t => spawnerPrefixes.Any(p => NameMatches(p, t.Name)));
+        // Casts in a row wait out the cooldown (see KillSpawnerTargetsAsync), after the session's latest harness time.
+        now = HarnessNow(session, now);
+        var gapMs = Math.Max(0, CastGapMs(skillId) - SkillHitsLandMs(skillId) - 100);
         foreach (var target in prey.Take(24).ToList())
         {
             await SyncPositionAsync(session, target.Position with { X = target.Position.X + 120 }, now);
@@ -259,8 +278,9 @@ static partial class MapEventScenarioHelpers
             var castAt = now + 50;
             var hitReplies = await CombatCastAsync(session, skillId, target.Key, target.Position, castAt);
             capture?.AddRange(hitReplies);
-            now = castAt + SkillHitsLandMs(skillId) + 50;
+            now = castAt + SkillHitsLandMs(skillId) + 50 + gapMs;
         }
+        return HarnessNow(session, now);
     }
 
     static async Task UseEnvObjPrefixAsync(GameSession session, string prefix, long now, List<byte[]>? capture = null)
@@ -361,10 +381,10 @@ static partial class MapEventScenarioHelpers
     public static async Task<bool> PlayMapEventScriptAsync(GameSession session, MapEventRun run, long now, int maxSeconds = 180, List<byte[]>? capture = null, bool liveAskNpc = false, IReadOnlySet<int>? skipAskNpcAtSteps = null)
     {
         var skillId = BasicAttackSkill(session);
-        var t = now;
+        var t = HarnessNow(session, now);
         for (var tick = 0; tick < maxSeconds && !run.Finished; tick++)
         {
-            t += 1000;
+            t = HarnessNow(session, t + 1000);
             var tickReplies = await session.TickAsync(t);
             capture?.AddRange(tickReplies);
             foreach (var (_, objective) in run.Open.ToList())
@@ -376,7 +396,7 @@ static partial class MapEventScenarioHelpers
                         await SyncPositionAsync(session, TriggerOrSubzonePosition(session.MapId!.Value, objective.Value(0)), t);
                         break;
                     case "PCCombatStart":
-                        await KillHostilesOnMapAsync(session, skillId, t, capture);
+                        t = await KillHostilesOnMapAsync(session, skillId, t, capture);
                         break;
                     case "KillNpc":
                     case "KillSpawner":
@@ -420,6 +440,7 @@ static partial class MapEventScenarioHelpers
                 }
             }
         }
+        HarnessNow(session, t);
         return run.Finished;
     }
 
