@@ -119,7 +119,7 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     await Reject(()=>game.CreateAsync(first,draft with {Name="Changed"}),"request_conflict");
     await Reject(()=>game.CreateAsync(disabled,draft),"account_unavailable");
     await Reject(()=>game.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),ProfileId="absent"}),"profile_unavailable");
-    await Reject(()=>game.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),WorldId=1299}),"wrong_world");
+    await Reject(()=>game.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),WorldId=70000}),"wrong_world");
     await Reject(()=>game.CreateAsync(first,draft with {RequestId=Guid.NewGuid(),Name="GM_Impostor",LobbySlot=5}),"reserved_name");
     var gmChar=await game.CreateAsync(second,draft with {RequestId=Guid.NewGuid(),Name="[GM]Staff",LobbySlot=6});
     Check(gmChar!=Guid.Empty,"staff accounts may use GM names");
@@ -173,11 +173,14 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     var saved=(await new PostgresCharacterRepository(source).LoadOwnedAsync(first.AccountId,id,default))!;
     Check(saved.Progress.Level==12 && saved.Progress.Position.GetProperty("x").GetInt32()==4,"GM level and position persisted");
     await Reject(()=>game.AdminAsync(second,new(Guid.NewGuid(),id,"level",Level:0)),"invalid_level");
-    await Reject(()=>game.AdminAsync(second,new(Guid.NewGuid(),id,"staff",Staff:true)),"not_staff_account");
-    Check((await game.AdminAsync(second,new(Guid.NewGuid(),gmChar,"staff",Staff:true))).GetProperty("staff").GetBoolean()
+    // Flagging a character as staff needs ManageStaff (administrators); a gamemaster is refused.
+    var staffAdmin=new VerifiedAccount(Guid.Parse(Environment.GetEnvironmentVariable("AION_TEST_ADMIN")!));
+    await Reject(()=>game.AdminAsync(second,new(Guid.NewGuid(),gmChar,"staff",Staff:true)),"forbidden");
+    await Reject(()=>game.AdminAsync(staffAdmin,new(Guid.NewGuid(),id,"staff",Staff:true)),"not_staff_account");
+    Check((await game.AdminAsync(staffAdmin,new(Guid.NewGuid(),gmChar,"staff",Staff:true))).GetProperty("staff").GetBoolean()
           && (await wireRepository.LoadOwnedAsync(second.AccountId,gmChar,default))!.Staff
           && (await game.AdminFindCharactersAsync(second,gmChar.ToString())).Single().Staff,"the staff flag is set by hand on a staff account's character and read back");
-    await game.AdminAsync(second,new(Guid.NewGuid(),gmChar,"staff",Staff:false));
+    await game.AdminAsync(staffAdmin,new(Guid.NewGuid(),gmChar,"staff",Staff:false));
     Check(!(await wireRepository.LoadOwnedAsync(second.AccountId,gmChar,default))!.Staff,"the staff flag comes off again");
     await Reject(()=>game.AdminAsync(second,new(Guid.NewGuid(),id,"teleport",MapId:1,X:double.NaN)),"invalid_position");
     // Level-managed skills (migration008): the GM level change above unlocked 202 and 203.
@@ -210,8 +213,13 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     var sortGrantB=await game.AdminAsync(second,new AdminCommand(Guid.NewGuid(),id,"grant","test",530126003));
     var sortIdA=sortGrantA.GetProperty("instanceId").GetGuid();
     var sortIdB=sortGrantB.GetProperty("instanceId").GetGuid();
-    await using(var swapSlots=source.CreateCommand("UPDATE game.item_instances SET slot=1 WHERE instance_id=$1; UPDATE game.item_instances SET slot=0 WHERE instance_id=$2"))
-    { swapSlots.Parameters.AddWithValue(sortIdA); swapSlots.Parameters.AddWithValue(sortIdB); await swapSlots.ExecuteNonQueryAsync(); }
+    // Put A after B (out of template order). One statement per command (positional parameters allow only one), and A is
+    // parked in a free slot first so item_slot_idx (unique per character/location) never sees two items in one slot.
+    foreach(var (instance,slot) in new[]{(sortIdA,1000),(sortIdB,0),(sortIdA,1)})
+    {
+        await using var moveSlot=source.CreateCommand("UPDATE game.item_instances SET slot=$2 WHERE instance_id=$1");
+        moveSlot.Parameters.AddWithValue(instance); moveSlot.Parameters.AddWithValue(slot); await moveSlot.ExecuteNonQueryAsync();
+    }
     Check(await game.SortContainerAsync(first,id,"bag"),"bag sort succeeds when slots must be renumbered");
     var bagSorted=(await game.InventoryAsync(first,id))!.Items.Where(x=>x.Location=="bag").OrderBy(x=>x.Slot!.Value).Select(x=>x.TemplateId).ToList();
     Check(bagSorted.SequenceEqual(bagSorted.Order().ToList()),"bag sort orders by template_id");
@@ -309,7 +317,10 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     await Reject(()=>game.AdminFindCharactersAsync(second,new string('a',65)),"invalid_query");
     var staffView=(await game.AdminCharacterAsync(second,id))!;
     Check(staffView.Character.Name=="Starter" && staffView.Character.Level==12 && staffView.Character.Gender==1,"staff detail reports character state");
-    Check(staffView.Inventory.Items.Count==5 && staffView.Inventory.Items.Count(x=>x.Location=="equipment")==1,"staff detail lists another account's inventory (the two swords, the unknown item, the two single rows of the grant of two)");
+    // Exactly what the owner sees (the checks above add and move items, so no fixed count), with the one equipped sword.
+    var ownerItems=(await game.InventoryAsync(first,id))!.Items.Select(x=>x.InstanceId).Order().ToList();
+    Check(staffView.Inventory.Items.Select(x=>x.InstanceId).Order().SequenceEqual(ownerItems) && ownerItems.Count>=5
+          && staffView.Inventory.Items.Count(x=>x.Location=="equipment")==1,"staff detail lists another account's inventory, the same items the owner sees");
     Check(await game.AdminCharacterAsync(second,Guid.NewGuid()) is null,"staff detail of unknown character is absent");
     Check(await new CharacterPersistenceService(new PostgresCharacterRepository(source)).SaveAsync(first,id,saved.Revision-1,saved.Progress) is null,"old world save cannot overwrite GM changes");
     await using var reopened=NpgsqlDataSource.Create(connectionString);
@@ -419,7 +430,8 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     Check(restoredItems.Single(x=>x.InstanceId==bagSword.InstanceId).WireId==bagSword.WireId,"item identity survives equips and pool restart");
     Check(restoredItems.Select(x=>x.WireId).Distinct().Count()==restoredItems.Count,"item wire IDs are unique");
     var restoredNative=(await new PostgresCharacterRepository(reopened).LoadWireAsync(first.AccountId,1204,native.WireId,default))!;
-    Check(restoredNative.VoiceType==7 && restoredNative.LobbySlot==3 && restoredNative.Appearance.SequenceEqual(draft.Appearance),"identity and metadata survive progress saves and restart");
+    // Slot 5: the lobby swap above moved it from 3.
+    Check(restoredNative.VoiceType==7 && restoredNative.LobbySlot==5 && restoredNative.Appearance.SequenceEqual(draft.Appearance),"identity and metadata survive progress saves and restart");
     await using var immutable=source.CreateCommand("UPDATE game.characters SET wire_id=DEFAULT WHERE character_id=$1");
     immutable.Parameters.AddWithValue(id);
     try { await immutable.ExecuteNonQueryAsync(); throw new Exception("Wire ID changed"); }
@@ -456,7 +468,8 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
         // Deactivate: still listed in the lobby (flagged), but the world cannot select it.
         var block=Act("block",reason:"chargeback");
         var blocked=await actions.AdminCharacterActionAsync(moderator,block);
-        Check((await actions.AdminCharacterActionAsync(moderator,block)).GetRawText()==blocked.GetRawText(),"a repeated character action answers the first result");
+        // Same JSON, not the same text: the retry is the stored jsonb copy (Postgres orders keys and adds spaces).
+        Check(System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse((await actions.AdminCharacterActionAsync(moderator,block)).GetRawText()),System.Text.Json.Nodes.JsonNode.Parse(blocked.GetRawText())),"a repeated character action answers the first result");
         await Reject(()=>actions.AdminCharacterActionAsync(moderator,block with {Reason="other"}),"request_conflict");
         await Reject(()=>actions.AdminCharacterActionAsync(moderator,Act("block")),"already_blocked");
         Check(await Row(movable) is { Blocked: true, BlockReason: "chargeback" },"staff search shows the block and its reason");
@@ -568,9 +581,12 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
               && arrived.Appearance.SequenceEqual(source0.Appearance) && arrived.Ascension==source0.Ascension && !arrived.Blocked,"level, class, appearance and ascension move, unblocked");
         Check(arrived.WireId!=source0.WireId,"the moved character gets a new wire id");
         var after=(await mover.InventoryAsync(first,moved.CharacterId))!;
+        // The character's own items: account storage is account-wide, and in this check both worlds share one database,
+        // so the item left in world 1204's account storage is visible here too (separate world databases in production).
+        var afterOwn=after.Items.Where(x => x.Location!="account_storage").ToList();
         var keep=before.Items.Where(x => x.InstanceId!=stored.InstanceId).ToList();
-        Check(after.Items.Count==keep.Count && after.Items.All(x => keep.All(k => k.InstanceId!=x.InstanceId && k.WireId!=x.WireId)),"items move with new instance and wire ids");
-        Check(after.Items.Select(x => (x.TemplateId,x.Quantity,x.Location,x.Slot)).OrderBy(x => x).SequenceEqual(keep.Select(x => (x.TemplateId,x.Quantity,x.Location,x.Slot)).OrderBy(x => x)),
+        Check(afterOwn.Count==keep.Count && afterOwn.All(x => keep.All(k => k.InstanceId!=x.InstanceId && k.WireId!=x.WireId)),"items move with new instance and wire ids");
+        Check(afterOwn.Select(x => (x.TemplateId,x.Quantity,x.Location,x.Slot)).OrderBy(x => x).SequenceEqual(keep.Select(x => (x.TemplateId,x.Quantity,x.Location,x.Slot)).OrderBy(x => x)),
             "every moved item keeps its template, count and place");
         Check(after.Skills.Select(s => (s.SkillId,s.Level,s.Slot)).OrderBy(s => s).SequenceEqual(before.Skills.Select(s => (s.SkillId,s.Level,s.Slot)).OrderBy(s => s)),
             "skills and the skill bar move as they were (not the new character's trigger defaults)");
