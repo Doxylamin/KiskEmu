@@ -194,6 +194,10 @@ static partial class MapEventScenarioHelpers
 
     static async Task<long> KillSpawnerTargetsAsync(GameSession session, MapEventRun run, MapEventObjective obj, int skillId, long now)
     {
+        // Each cast waits out the skill's cooldown and ticks until its hits land: a recast on cooldown is refused and a hit
+        // that has not landed kills nothing, so casting faster only repeated (and paid the position sync for) the same targets.
+        var landMs = SkillHitsLandMs(skillId);
+        var castGapMs = Math.Max(250, SkillCooldown.EffectiveMs(GameData.Embedded.Skill(skillId)) + 50);
         for (var guard = 0; guard < 16; guard++)
         {
             var prey = session.Targets!.Values.Where(t => !t.Dead && (
@@ -208,14 +212,15 @@ static partial class MapEventScenarioHelpers
             if (prey.Count == 0) break;
             foreach (var target in prey.Take(6))
             {
-                now += 200;
+                if (target.Dead) continue;
+                now += castGapMs - 50;
                 await SyncPositionAsync(session, target.Position with { X = target.Position.X + 120 }, now);
                 target.Immune = false;
                 target.Relationship = 6;
                 target.Hp = Math.Min(target.Hp, 1);
                 now += 50;
                 await CastInReachAsync(session, target.Key, CombatCast(skillId, target.Key, target.Position), now);
-                await session.TickAsync(now + 100);
+                await session.TickAsync(now + landMs);
             }
         }
         return now;
