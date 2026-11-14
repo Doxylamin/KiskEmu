@@ -162,6 +162,11 @@ def convert(event, npc_ids):
             if fail:
                 entry['fail'] = fail
                 entry['faildir'] = _directives(step.get('FailDirectives'))
+            # "Collect points" steps (UnifiedObjectives): the UnifiedObjectivesList kills each give their value 1 in points, the step's
+            # AchieveUnifiedObjectivesScore objectives wait for their score of them (zaraza87's fork).
+            if step.get('UnifiedObjectives') and step.get('UnifiedObjectivesList'):
+                entry['uobj'] = [_objective(o, npc_ids) for o in step['UnifiedObjectivesList']]
+                entry['score'] = int(step.get('UnifiedObjectiveScore') or 0)
             record['steps'].append(entry)
         stages.append(record)
     out['stages'] = stages

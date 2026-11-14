@@ -54,12 +54,17 @@ public sealed record MapEventObjective(
     {
         "KillNpc" or "UseEnvObj" or "KillNpcRelationshipEntity" or "KillNpcSubtype" or "KillNpcCreatureType" or "CollectItem" or "UseUsableItemType"
             => int.TryParse(Value(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 0 ? n : 1,
+        // The points the step's UnifiedObjectivesList kills must add up to (the client's UnifiedObjectiveScore, the same number).
+        "AchieveUnifiedObjectivesScore" => int.TryParse(Value(0), NumberStyles.Integer, CultureInfo.InvariantCulture, out var score) && score > 0 ? score : 1,
         _ => 1,
     };
     /// <summary>Objectives only the client can finish (a cutscene, a note, a talk, a guide); it reports them with 0x9230.</summary>
     public bool ClientSide => Type is "CompleteCutscene" or "CloseNote" or "CompleteNpcTalk" or "CloseGuide";
-    /// <summary>Objectives the server does not track yet (waves, puzzles, scores, items): finished after a grace period so the event goes on.</summary>
-    public bool Unsupported => Type is "AchieveUnifiedObjectivesScore" or "ClearWave" or "ClearBoardPuzzle" or "GetAbnormal" or "PCSocial"
+    /// <summary>
+    /// Objectives the server does not track yet (waves, puzzles, items): finished after a grace period so the event goes on. A score
+    /// without its UnifiedObjectivesList also waits for it (MapEventRun.Tracked).
+    /// </summary>
+    public bool Unsupported => Type is "ClearWave" or "ClearBoardPuzzle" or "GetAbnormal" or "PCSocial"
         or "UseUsableItemType" or "CollectItem" or "KillNpcCreatureType" or "UpdateEnvObjState";
 }
 
@@ -69,7 +74,10 @@ public sealed record MapEventStep(
     [property: JsonPropertyName("obj")] MapEventObjective[] Objectives,
     [property: JsonPropertyName("post")] MapEventDirective[] Post,
     [property: JsonPropertyName("fail")] MapEventCondition[][]? Fail = null,
-    [property: JsonPropertyName("faildir")] MapEventDirective[]? FailDirectives = null);
+    [property: JsonPropertyName("faildir")] MapEventDirective[]? FailDirectives = null,
+    // "Collect points" steps: the UnifiedObjectivesList kills and the step's UnifiedObjectiveScore (tools/map_events.py).
+    [property: JsonPropertyName("uobj")] MapEventObjective[]? Unified = null,
+    [property: JsonPropertyName("score")] int Score = 0);
 
 public sealed record MapEventStage(
     [property: JsonPropertyName("id")] int Id,
@@ -540,7 +548,7 @@ public sealed class MapEventRun
         for (var i = 0; i < step.Objectives.Length; i++)
         {
             var o = step.Objectives[i];
-            if ((o.ClientSide || o.Unsupported) && i < fallbackAt.Length) fallbackAt[i] = now + FallbackMs;
+            if ((o.ClientSide || o.Unsupported || !Tracked(o, step)) && i < fallbackAt.Length) fallbackAt[i] = now + FallbackMs;
             // A CloseGuide objective shows its guide (the forced popup) when the step begins: OBSERVED 2026-10-19, ShowGuide (46) for
             // Tutorial_ForcedPopup_Fly_01 at the Subspace's first step and Tutorial_ForcedPopup_L1_ExitDungeon_01 with the Dream
             // Crossroad's join; the client reports CloseGuide (0x9230 kind 2) when the player closes it. Without it the player waited
@@ -552,6 +560,14 @@ public sealed class MapEventRun
         Tick(now);
         CheckStep(now);
     }
+
+    /// <summary>Objectives of the types the server tracks only with their data (a score with its UnifiedObjectivesList); the others
+    /// finish by the fallback.</summary>
+    static bool Tracked(MapEventObjective o, MapEventStep step) => o.Type switch
+    {
+        "AchieveUnifiedObjectivesScore" => step.Unified is { Length: > 0 },
+        _ => true,
+    };
 
     // ---------- Events from the world ----------
 
@@ -676,16 +692,30 @@ public sealed class MapEventRun
 
     static bool Names(MapEventObjective o, string spawnName) => o.Names.Any(n => NameMatches(n, spawnName));
 
-    /// <summary>An NPC of this instance died (its NpcData id, spawn entry name); <paramref name="spawnerAlive"/>: others of its spawner still live.</summary>
-    public bool Killed(int npcId, string spawnName, bool hostile, bool spawnerAlive, long now)
+    /// <summary>
+    /// An NPC of this instance died (its NpcData id, spawn entry name, NpcData NpcSubType when known); <paramref name="spawnerAlive"/>:
+    /// others of its spawner still live.
+    /// </summary>
+    public bool Killed(int npcId, string spawnName, bool hostile, bool spawnerAlive, long now, string subType = "")
     {
-        var changed = Apply(o => o.Type switch
+        bool Counts(MapEventObjective o) => o.Type switch
         {
             "KillNpc" => (o.Npcs ?? []).Contains(npcId) || Names(o, spawnName),
             "KillSpawner" => Names(o, spawnName) && !spawnerAlive,
-            "KillNpcRelationshipEntity" or "KillNpcSubtype" or "KillNpcCreatureType" => hostile,
+            // KillNpcSubtype names the NpcData NpcSubType (DungeonWave_0001: NormalMonster kills fill the gauge, EliteMonster ones the
+            // optional 100); a kill whose subtype is unknown counts as before.
+            "KillNpcSubtype" => hostile && (subType.Length == 0 || o.Value(0).Length == 0 || string.Equals(o.Value(0), subType, StringComparison.OrdinalIgnoreCase)),
+            "KillNpcRelationshipEntity" or "KillNpcCreatureType" => hostile,
             _ => false,
-        }, now);
+        };
+        // "Collect points" (UnifiedObjectives steps): each matching kill of the UnifiedObjectivesList gives its value 1 in points
+        // (Arkanis' Grade1 elites 2, NormalMonster 1); AchieveUnifiedObjectivesScore counts them up to its score. CANDIDATE: from the
+        // client's step data (zaraza87's fork), no recording of a score step.
+        var step = Step;
+        var points = !Finished && step is { Unified: { Length: > 0 } unified } ? unified.Where(Counts).Sum(o => o.Count) : 0;
+        var changed = Apply(Counts, now);
+        // The points are this step's (a kill that also ended the step does not score in the next one).
+        if (points > 0 && ReferenceEquals(Step, step)) changed |= Apply(o => o.Type == "AchieveUnifiedObjectivesScore", now, points);
         // A non-player kill never ran MapEventHp; death is 0% HP and must satisfy HpRemaining (Belgor / DQ1202013 step 8).
         return changed | HpChanged(npcId, spawnName, 0, now);
     }
