@@ -9,7 +9,8 @@ public sealed record TotpLoginChallenge(string ChallengeToken, DateTimeOffset Ex
 public interface ITotpAuthentication
 {
     Task<TotpStatus?> StatusAsync(Guid accountId, CancellationToken ct);
-    Task<TotpEnrollment?> BeginEnrollmentAsync(Guid accountId, string accountLabel, CancellationToken ct);
+    /// <summary>A new authenticator secret; null when two-step sign-in is already on or <paramref name="password"/> is wrong.</summary>
+    Task<TotpEnrollment?> BeginEnrollmentAsync(Guid accountId, string accountLabel, string password, CancellationToken ct);
     Task<(bool Ok, string[]? RecoveryCodes)> ConfirmEnrollmentAsync(Guid accountId, string code, CancellationToken ct);
     Task<(bool Ok, string[]? RecoveryCodes)> RegenerateRecoveryCodesAsync(Guid accountId, string password, CancellationToken ct);
     Task<bool> DisableAsync(Guid accountId, string password, string? code, string? recoveryCode, CancellationToken ct);

@@ -11,6 +11,11 @@ zaraza87's A2Core fork (AGPL-3.0). KiskLauncher renames an older launcher's data
 `A2CorePrivate` to `KiskPrivate` at its first start, and removes client patch paks under the old name
 `z_A2Core_Patch-Windows_P` (now `z_KiskEmu_Patch-Windows_P`).
 
+The two-step sign-in hardening (a code is accepted once, constant-time code checks, the password before an
+authenticator is set up, a key of its own for stored secrets, recovery codes accepted in any case and with dashes or
+spaces, the RFC 6238 test vectors) is ported from Addiboii's A2Core (https://github.com/Addiboii/A2Core, commits
+26306c5, add7287, e5e8d2b and a5d4bdc).
+
 The code is original work under the AGPL-3.0 (see LICENSE), with third-party open-source code under its own license:
 CUE4Parse (Apache-2.0, `third_party/CUE4Parse`) and the launcher's NuGet packages SteamKit2 (LGPL-2.1) and QRCoder
 (MIT). The game data the server runs on (`tools/data/*.json`, `data/aion-server-data.tar.gz`,

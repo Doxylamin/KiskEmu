@@ -395,7 +395,7 @@ function TwoStep({ token, onChanged }: { token: string; onChanged: () => void })
   const [state, setState] = useState<{ enabled: boolean; recoveryCodesRemaining: number } | null>(null);
   const [enroll, setEnroll] = useState<{ secret: string; otpAuthUri: string } | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
-  const [form, setForm] = useState<'regenerate' | 'disable' | null>(null);
+  const [form, setForm] = useState<'enroll' | 'regenerate' | 'disable' | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<StatusMessage | null>(null);
   const load = useCallback(() => api<{ enabled: boolean; recoveryCodesRemaining: number }>('/api/accounts/totp/status', { token })
@@ -420,10 +420,19 @@ function TwoStep({ token, onChanged }: { token: string; onChanged: () => void })
           <div><Button size="sm" onClick={() => setCodes(null)}>I saved them</Button></div>
         </div>
       )}
-      {state && !state.enabled && !enroll && (
-        <div><Button variant="primary" busy={busy} onClick={() => run(async () => {
-          setEnroll(await api<{ secret: string; otpAuthUri: string }>('/api/accounts/totp/enroll', { method: 'POST', token }));
-        })}>Set up authenticator</Button></div>
+      {state && !state.enabled && !enroll && form !== 'enroll' && (
+        <div><Button variant="primary" onClick={() => setForm('enroll')}>Set up authenticator</Button></div>
+      )}
+      {form === 'enroll' && !enroll && (
+        <form className="row wrap align-end" onSubmit={event => { event.preventDefault(); const password = field(event, 'password'); run(async () => {
+          setEnroll(await api<{ secret: string; otpAuthUri: string }>('/api/accounts/totp/enroll', { method: 'POST', token, body: { password } }));
+          setForm(null);
+        }); }}>
+          <div className="field grow"><label htmlFor="enroll-password">Your password</label>
+            <input id="enroll-password" name="password" type="password" className="input" required autoComplete="current-password" maxLength={256} /></div>
+          <Button type="submit" variant="primary" busy={busy}>Continue</Button>
+          <Button variant="ghost" onClick={() => setForm(null)}>Cancel</Button>
+        </form>
       )}
       {enroll && (
         <form className="stack" onSubmit={event => { event.preventDefault(); const code = field(event, 'code'); run(async () => {
