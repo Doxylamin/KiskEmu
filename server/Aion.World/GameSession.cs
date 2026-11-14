@@ -621,7 +621,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case DungeonRoomEditSettingRq: return DungeonRoomEditSetting(plain);
             case DungeonRoomLeaveRq: return DungeonRoomLeave();
             case DungeonRoomKickMemberRq: return DungeonRoomKick(plain);
-            case DungeonRoomStartRq: return DungeonRoomStart(now);
+            case DungeonRoomStartRq: return DungeonRoomStart(now, requireReady: true);
+            case DungeonRoomRefreshRq: return DungeonRoomRefresh();
             case DungeonRoomRetryRq: return DungeonRoomRetry(now);
             case DungeonRoomRetryResponseRq: return DungeonRoomRetryResponse(plain, now);
             case BattlePassPurchaseRq or LegacyBattlePassPurchaseRq: return await BattlePassPurchaseAsync(plain, now, ct);
