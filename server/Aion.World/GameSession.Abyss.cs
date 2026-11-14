@@ -197,11 +197,6 @@ public sealed partial class GameSession
         return PacketWriter.Opcode(PrevSeasonMissionInfoNt).I32(complete).I32(missions.Count).ToArray();
     }
 
-    List<byte[]> AbyssAtEntry(long now)
-    {
-        ApplyAbyssWeeklyReset(now);
-        return [PrevSeasonMissionInfo(now), AbyssPointUpdate(), RankingPointUpdate()];
-    }
 
     /// <summary>0x8ddc WorldMapAbyssRankerInfo_RQ: no rankers on the dev server yet.</summary>
     List<byte[]> WorldMapAbyssRankerInfo(byte[] plain)

@@ -1930,6 +1930,15 @@ staffSession.Teleport(1010, worktable.Position with { X = worktable.Position.X +
 var craftEntry = await staffSession.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
 Check(craftEntry.Any(b => b[0] == 0x7e && b[1] == 0x8d && b[2] > 0) && craftEntry.Any(b => b[0] == 0x8c && b[1] == 0x8d && b[2] == 113)
       && craftEntry.Any(b => b.SequenceEqual(Convert.FromHexString("378D0000000000"))), "world entry lists the recipes (0x8d7e), conversions (0x8d8c, 113) and gather skills (0x8d37)");
+// The entry lists in the recorded order (our 2026-11-12 entries; GameSession.EntryConstants.cs), the after-load part after the hotbar.
+ushort[] entryOrder = [0xe263, 0x8d53, 0x8d58, 0x5648, 0x564b, 0x5679, 0x5682, 0x5683, 0x5633, 0x8aaf, 0xe28c, 0x8d5b, 0xe22e, 0xe226, 0xe237,
+    0x9330, 0x610b, 0x8d7e, 0x8d37, 0x8d8c, 0xe224, 0xe32a, 0x9331, 0xe33b, 0xe33e, 0xffae, 0x6103, 0xe324, 0x56b6, 0xe256, 0xffa5, 0xffa7, 0xe262,
+    0xe25c, 0xe342, 0xe343, 0x572d, 0x5600, 0xe251, 0x400a, 0xe200, 0xffab, 0xe223, 0x6000, 0x570f];
+var entrySeen = craftEntry.Select(Op).Where(op => entryOrder.Contains(op)).ToList();
+Check(entrySeen.SequenceEqual(entryOrder), $"world entry lists in the recorded order (0xe263 .. 0x572d, hotbar, 0xe251 .. 0x570f); got {string.Join(' ', entrySeen.Select(o => o.ToString("x4")))}");
+Check(craftEntry.Single(b => Op(b) == 0x400a) is { Length: 11 } matching && matching[2] == 1 && matching[3] == 1 && matching[4] == 2 && matching[7] == 1 && matching[10] == 2
+      && craftEntry.Any(b => b.SequenceEqual(Convert.FromHexString("2d5700"))),
+      "ArenaMatchingInfo_NT for this world and 0x572d `00` at entry");
 staffStore.Items.AddRange([Stored(610620013, 4, "bag", null, 70), Stored(630541001, 2, "bag", null, 71)]);
 await staffSession.InventoryChangesAsync(default);
 staffSession.CraftRoll = () => 0;

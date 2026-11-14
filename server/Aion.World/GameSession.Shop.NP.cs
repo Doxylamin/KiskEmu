@@ -29,7 +29,7 @@ public sealed partial class GameSession
     /// <summary>
     /// 0xe262 TrustLimitInfo_NT, sent at world entry and on 0xe260. OBSERVED official (2026-11-12, 120 B, identical at entry and
     /// on every request): packed bools byte `07`, limit_info map varint 4 × {key u8, type u8 (= key), usage i64, limit i64,
-    /// reset time i64} for types 2..5, update_time i64, trust_step i32 5. The official type 2 limit is 1,953,125; ours are all
+    /// reset time i64} for types 2..5, update_time i64, trust_step i32 5. The official type 2 limit is 500,000,000 (`0065cd1d00000000`); ours are all
     /// -1 (no limit, as the official 3..5).
     /// </summary>
     static byte[] TrustLimitInfoNotice(long now)

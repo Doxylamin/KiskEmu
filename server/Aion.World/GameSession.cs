@@ -1642,31 +1642,11 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         else
         {
             replies.AddRange(BuffsAfterLoad());
-            if (Store is not null) replies.Add(RestorableItems());   // the buyback list (official: 0xe342 at world entry)
             replies.AddRange(GuildAtEntry());
-            // Titles and skins as the official entry lists them (both empty there: #196 0x5679 `0000`, #203 0x8d5b `000000010000`).
-            replies.Add(TitleList());
-            replies.Add(SkinInfo());
-            replies.Add(SeasonSchedule(now));
-            replies.Add(AchievementList(now));
-            replies.Add(BattlePassInfoList(now));
-            replies.Add(TrustLimitInfoNotice(now));   // official: 0xe262 in the entry burst (the account's trust step)
-            replies.AddRange(InventoryDepotSyncPackets());
-            replies.Add(PeriodCollectionList(now));
-            replies.Add(BossChallengeList());
-            replies.Add(BookmarkedContentList());
-            replies.Add(PartyDungeonChallengeList());
-            replies.Add(ContentsTicketsList(now));
-            replies.Add(DungeonCoolTimesList(now));
-            replies.Add(GodstoneList());
-            replies.Add(DaevanionPointUpdate());
-            replies.Add(DaevanionBoardInfo());
-            replies.AddRange(AbyssAtEntry(now));
-            replies.AddRange(EntryConstants(now, AccountContentsInfoList(now), SubscribeList(now)));
+            replies.AddRange(EntryLists(now, profile is not null));   // the lists in the recorded order (GameSession.EntryConstants.cs)
             replies.AddRange(AchieveSet("EquipItemLevel", EquipItemLevel(), now: now));
             if (fresh) { replies.AddRange(Achieve("LoginCharacter", now: now)); elapsedAchieveAt = now + 60_000; }
             replies.AddRange(ApplyLazyPeriodicResets(now, notifyClient: true));
-            replies.AddRange(CraftListsAtEntry());
         }
         if (!instanceMove && !shortLoad) replies.AddRange(MapEnvironment(mapId));   // every full map load (OBSERVED at the official world entry, map 1000 state 0)
         if (instanceMove && TestPiece(LayerPieceEnvironment))
@@ -1693,14 +1673,13 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 var actives = learned.Where(id => id >= 11_000_000 && !IsDodgeId(id) && data.StigmaPartParent(id) is null && data.Skill(id)?.Type == "Active").Order().ToList();
                 // The normal-skill slots hold equipped specialty parts (none yet), not the customizing ids (official 2026-11-12).
                 replies.Add(GamePackets.SkillOptionSlots(actives, null, StigmaSlotMap()));
-                replies.Add([0x58, 0x8d, 0x00]);
-                replies.Add(AgitDecoListAtEntry());
                 replies.AddRange(SettingsAtEntry(now));
                 // The player's saved hotbar, else the class's default bar for its level.
                 var hotbar = Hotbar(profile.DefaultBar());
                 replies.Add(hotbar);
                 LogSkillBarAtEntry(skillList, hotbar);
             }
+            replies.AddRange(EntryListsAfterLoad(now));   // 0xe251 .. 0x570f after the skill list and hotbar (recorded)
             var questUnlocks = QuestUnlockTypes().ToList();
             var extras = ExtraContentsUnlocks(questUnlocks).Concat(DaevanionExtraContentsUnlocks(questUnlocks));
             var unlockTypes = GamePackets.WorldEntryContentsUnlocks(level, questUnlocks, extras);
