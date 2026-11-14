@@ -153,6 +153,15 @@ public interface IGameplayStore
     Task<IReadOnlyList<int>?> TeleportArtifactsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default);
     // Records a bound Kibelisk; false when already bound or not owned.
     Task<bool> EngraveTeleportArtifactAsync(VerifiedAccount account, Guid character, int artifactId, CancellationToken ct = default);
+    /// <summary>The character's Monolith resonance counts (migration 111): Monolith id -> tokens resonated.</summary>
+    Task<IReadOnlyDictionary<int, int>> MonolithsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>());
+    /// <summary>
+    /// Uses up the token stacks (revision-checked), moves the Monolith's count from <paramref name="previous"/> to <paramref name="count"/>
+    /// (false when it is no longer <paramref name="previous"/>) and grants the rewards, in one transaction.
+    /// </summary>
+    Task<bool> ResonateMonolithAsync(VerifiedAccount account, Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int monolith,
+        int previous, int count, IReadOnlyList<(int TemplateId, long Count)> rewards, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>A title acquired (false when owned already or the character is not the account's).</summary>
     Task<bool> GrantWingAsync(VerifiedAccount account, Guid character, int wingId, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>Enchant level per registered wing (game.character_wings.enchant_level); null when not owned.</summary>

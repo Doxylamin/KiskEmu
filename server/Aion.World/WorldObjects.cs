@@ -26,7 +26,9 @@ public sealed record WorldObject(
     [property: JsonPropertyName("hit_skills")] int[]? HitSkills = null,
     [property: JsonPropertyName("carry")] CarryBox? Carry = null,
     [property: JsonPropertyName("required_combat_power")] int RequiredCombatPower = 0,
-    [property: JsonPropertyName("monolith")] bool Monolith = false)
+    [property: JsonPropertyName("monolith")] bool Monolith = false,
+    // An Empyrean Trace: its spawn's UseEnvObjSpawnerName achievement (OBSERVED in its 0x3634; GameSession.EmpyreanTraces.cs).
+    [property: JsonPropertyName("achievement")] int Achievement = 0)
 {
     public Vector3d At => new(Position[0], Position[1], Position[2]);
 

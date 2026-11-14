@@ -122,7 +122,7 @@ public sealed partial class GameSession
         var (stats, hpMax) = StatSheet();
         resources.HpMax = hpMax;
         resources.MpMax = MpMax;
-        resources.SpMax = GamePackets.SpawnSp + BuffStat("SPMax");
+        resources.SpMax = GamePackets.SpawnSp + BuffStat("SPMax") + MonolithStat("SPMax");
         resources.ApMax = PlayerApPools.ApMax(data, className, level, Profile()?.Resource);
         resources.Hp = Math.Min(resources.Hp, hpMax);
         resources.Mp = Math.Min(resources.Mp, resources.MpMax);

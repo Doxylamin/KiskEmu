@@ -52,6 +52,8 @@ public sealed partial class GameSession
     byte[] EnvObjSpawnPacket(int index, WorldObject o, long now)
     {
         var key = WorldObjects.FirstKey + index;
+        // An Empyrean Trace: its own form with the spawn's achievement (GameSession.EmpyreanTraces.cs).
+        if (IsTrace(o)) return GamePackets.TraceSpawn(key, o.Env, o.At, o.Yaw, now, o.UniqueKey, (byte)o.Relationship, o.Achievement);
         envObjPhase.TryGetValue(index, out var phase);
         // Usage=Monolith: client opens MonolithResonate (0xe30d) from 0xe30c, not InteractEnvObj (EnvObjData InteractTime 0).
         var canInteract = o.Monolith ? false : PlayerMayUseEnvObj(index, o);
@@ -192,6 +194,8 @@ public sealed partial class GameSession
         if (o.FlightRing) return FlyThroughRing(key2, now);
         if (position is { } at && Math.Sqrt(Math.Pow(at.X - o.Position[0], 2) + Math.Pow(at.Y - o.Position[1], 2)) > o.InteractRange + WorldObjects.InteractSlack)
             return [GamePackets.InteractEnvObjReply(key2, 1)];
+        // An Empyrean Trace (GameSession.EmpyreanTraces.cs): the reply comes with the start, not after the use (OBSERVED).
+        if (IsTrace(o)) return StartTraceUse(found, o, key2, now);
         var replies = new List<byte[]> { GamePackets.InteractEnvObjStarted(key2, playerKey) };
         var interactTime = o.InteractTime > 0 ? o.InteractTime : o.Carry is not null ? CarryPickupMs : 0;
         if (interactTime > 0)
@@ -242,6 +246,8 @@ public sealed partial class GameSession
     {
         var objects = WorldObjects.ObjectsOn(worldMap);
         if (index >= objects.Count) return [];
+        // An Empyrean Trace: its own order, the reply went with the start (GameSession.EmpyreanTraces.cs).
+        if (IsTrace(objects[index])) return await CollectTraceAsync(index, objects[index], now, ct);
         var key = WorldObjects.FirstKey + index;
         var replies = new List<byte[]>
         {
@@ -260,18 +266,11 @@ public sealed partial class GameSession
         var replies = new List<byte[]>();
         if (objects[index].Gather is not null) replies.AddRange(await CompleteGatherAsync(index, objects[index], now, ct));
         var destroyed = CarryUsed(index, objects[index], now, replies);
-        var monolithReplies = objects[index].Monolith ? await MonolithResonateAsync(objects[index], ct) : [];
-        replies.AddRange(monolithReplies);
-        var monolithQuest = monolithReplies.Count > 0;
         replies.AddRange(await CreditUseEnvObjQuestAsync(objects[index].Env, ct));
-        var chestUsedUp = false;
-        if (!monolithQuest)
-        {
-            var (lootPackets, tables, granted) = await GrantEnvObjLootAsync(objects[index], ct);
-            replies.AddRange(lootPackets);
-            // A field/dungeon treasure chest is used up once it paid out (from A2Core-ChanAge); quest props stay.
-            chestUsedUp = granted && LootTables.TreasureChestConsumes(tables);
-        }
+        var (lootPackets, tables, granted) = await GrantEnvObjLootAsync(objects[index], ct);
+        replies.AddRange(lootPackets);
+        // A field/dungeon treasure chest is used up once it paid out (from A2Core-ChanAge); quest props stay.
+        var chestUsedUp = granted && LootTables.TreasureChestConsumes(tables);
         // A carried-item box comes back after its FinishDuration even when a map event counts it (FierceHornCave BombBox_02).
         var consumed = chestUsedUp
             || objects[index].Carry is null && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(EventName(objects[index])));
