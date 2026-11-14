@@ -298,8 +298,11 @@ public sealed partial class GameSession
         if (IsTrace(objects[index])) return await CollectTraceAsync(index, objects[index], now, ct);
         var key = WorldObjects.FirstKey + index;
         var (used, usedUp) = await ObjectUsedAsync(index, now, ct);
+        // A gather node: 0x363a with its uses taken and 0x363b, then the gather's own packets (OBSERVED 2026-11-12; no 0x8d6d, no 0x3637).
+        if (objects[index].Gather is { } node)
+            return [GamePackets.InteractEnvObjCompleted(key, playerKey, GatherUsesTaken(index, node)), GamePackets.InteractEnvObjAvailableState(key), .. used];
         var replies = new List<byte[]> { GamePackets.InteractEnvObjCompleted(key, playerKey) };
-        if (objects[index].Gather is not null || objects[index].Carry is not null)
+        if (objects[index].Carry is not null)
             replies.AddRange([GamePackets.InteractEnvObjFinishState(key), GamePackets.InteractEnvObjAvailableState(key), GamePackets.InteractEnvObjReply(key)]);
         else if (timed && ReplyAtUseStart(objects[index]))
             replies.Add(usedUp ? GamePackets.InteractEnvObjFinishState(key) : GamePackets.InteractEnvObjAvailableState(key));
@@ -461,7 +464,7 @@ public sealed partial class GameSession
             replies.AddRange(await InventoryChangesAsync(ct, 0, DecreaseItemUse));
         }
         Note($"UseTeleportArtifact {artifactId}: map {mapId}");
-        replies.AddRange(Teleport(mapId, ArtifactArrival(mapId, at), now));
+        replies.AddRange(PcTeleport(mapId, ArtifactArrival(mapId, at), now));
         return replies;
     }
 

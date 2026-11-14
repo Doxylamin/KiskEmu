@@ -47,56 +47,82 @@ public sealed partial class GameSession
     /// <summary>A lost attempt whose end (0x8d33 result 2, the attempt spent) waits for the client's turns to play out.</summary>
     (int Index, int Key, long DueMs)? pendingGatherLoss;
 
-    /// <summary>One turn of the mini-game: EGatherTurnResult and the two gauges (percent) before and after it.</summary>
+    /// <summary>
+    /// One turn of the mini-game: EGatherTurnResult and the turn's gain in gauge units before and after gather-skill effects,
+    /// for the success gauge or the fail gauge (OBSERVED, two official 0x8d31 of 2026-11-12: a success turn carries only the
+    /// success pair, a fail turn only the fail pair; not percent, not cumulative; equal pairs without skills).
+    /// </summary>
     public readonly record struct GatherTurn(byte Result, int SuccessBefore, int SuccessAfter, int FailBefore, int FailAfter);
 
     const byte TurnEpicCritical = 1, TurnCritical = 2, TurnBasic = 3, TurnSmall = 4, TurnFailBasic = 5, TurnFailSmall = 6;
-    /// <summary>A basic success fills a Beginner node (gauge 360) in one turn, as the official turn did (0 -> 100).</summary>
+    /// <summary>The gauge both sides race to: a Beginner node's GatherGauge (360, OBSERVED: the lost attempt's fails sum to 360).</summary>
     const int GatherBasicGain = 360;
 
     /// <summary>
-    /// The turns of one gathering attempt (OURS, after the published rules: a blue success gauge against an orange failure
-    /// gauge, three attempts per node; the official turn rules are unrecorded). Each turn succeeds with 65% plus 3 points
-    /// per mastery level over the node (35..95%). A success adds a basic 360 gauge units (critical x1.5, epic x2, small
-    /// x0.5) towards the node's GatherGauge; a failure adds a third of it (small: a sixth) to the failure gauge. The
-    /// attempt ends when either gauge is full, after at most twelve turns.
+    /// A turn's gain in gauge units. OBSERVED (2026-11-12): small 50, basic 110, epic 200, fail basic 144, fail small 96.
+    /// Critical (2) unrecorded: 160 (OURS, between basic and epic).
+    /// </summary>
+    static int TurnGain(byte result) => result switch
+    {
+        TurnEpicCritical => 200, TurnCritical => 160, TurnBasic => 110, TurnSmall => 50, TurnFailBasic => 144, _ => 96,
+    };
+
+    /// <summary>
+    /// The turns of one gathering attempt (turn chances OURS; the official rules are unrecorded). Each turn succeeds with 65%
+    /// plus 3 points per mastery level over the node (35..95%) and adds its gain to that side's gauge; the last turn's gain
+    /// is capped at what the gauge still needs (OBSERVED: a final fail of 24). The attempt ends when either gauge is full.
     /// </summary>
     List<GatherTurn> GatherTurns(int target, int nodeMastery)
     {
         var turns = new List<GatherTurn>();
         var chance = Math.Clamp(6500 + 300 * (gatherLevel - nodeMastery), 3500, 9500);
         int success = 0, fail = 0;
-        int Percent(int units) => Math.Min(100, (int)Math.Round(100.0 * units / Math.Max(1, target)));
-        while (turns.Count < 12 && success < target && fail < target)
+        while (turns.Count < 30 && success < target && fail < target)
         {
-            int before = success, failBefore = fail;
-            byte result;
             if (GatherRoll() < chance)
             {
                 var kind = GatherRoll();
-                result = kind < 200 ? TurnEpicCritical : kind < 1200 ? TurnCritical : kind < 2700 ? TurnSmall : TurnBasic;
-                success += result switch { TurnEpicCritical => GatherBasicGain * 2, TurnCritical => GatherBasicGain * 3 / 2, TurnSmall => GatherBasicGain / 2, _ => GatherBasicGain };
+                var result = kind < 200 ? TurnEpicCritical : kind < 1200 ? TurnCritical : kind < 2700 ? TurnSmall : TurnBasic;
+                var gain = Math.Min(TurnGain(result), target - success);
+                success += gain;
+                turns.Add(new GatherTurn(result, gain, gain, 0, 0));
             }
             else
             {
-                result = GatherRoll() < 3000 ? TurnFailSmall : TurnFailBasic;
-                fail += result == TurnFailSmall ? Math.Max(1, target / 6) : Math.Max(1, target / 3);
+                var result = GatherRoll() < 3000 ? TurnFailSmall : TurnFailBasic;
+                var gain = Math.Min(TurnGain(result), target - fail);
+                fail += gain;
+                turns.Add(new GatherTurn(result, 0, 0, gain, gain));
             }
-            turns.Add(new GatherTurn(result, Percent(before), Percent(success), Percent(failBefore), Percent(fail)));
         }
         return turns;
     }
 
+    /// <summary>Whether the turns fill the success gauge.</summary>
+    static bool GatherWon(IReadOnlyList<GatherTurn> turns, int target) => turns.Sum(t => t.SuccessAfter) >= target;
+
     public (int Level, long Exp) GatherMastery => (gatherLevel, gatherExp);
 
-    byte[] GatherLevelUpdate() => PacketWriter.Opcode(GatherLevelUpdateNt).I32(gatherLevel).I64(gatherExp).I32(0).I32(0).ToArray();
+    /// <summary>0x8d36 GatherLevelUpdate_NT {level u16, exp i64, skill points u16, specialized points u16} (OBSERVED `368d 0200 0f00000000000000 0100 0000`).</summary>
+    byte[] GatherLevelUpdate() => PacketWriter.Opcode(GatherLevelUpdateNt).U16(gatherLevel).I64(gatherExp).U16(0).U16(0).ToArray();
+
+    /// <summary>0x8d34 after 0x8d33: player key, the 0x8d33 result, 0x3a, node key (OBSERVED `348d 884e 02 3a 9a8401`).</summary>
+    byte[] GatherEnded(int result, long key) => PacketWriter.Opcode(0x8d34).Varint(playerKey).U8((byte)result).U8(0x3a).Varint(key).ToArray();
+
+    /// <summary>A node's uses taken so far, for 0x363a: all of them once it is used up.</summary>
+    int GatherUsesTaken(int index, long[] node)
+    {
+        var total = node.Length >= 7 && node[6] > 0 ? (int)node[6] : 3;
+        return gatherAttempts.TryGetValue(index, out var left) ? total - left : total;
+    }
 
     /// <summary>Mastery exp for a gather (OURS): the level's need over eight; the packets, with the level-up.</summary>
-    async Task<List<byte[]>> GatherMasteryExpAsync(CancellationToken ct)
+    async Task<List<byte[]>> GatherMasteryExpAsync(CancellationToken ct, bool lost = false)
     {
         var need = Crafts.GatherMasteryNeed(gatherLevel);
         if (need <= 0) return [];
-        var gained = Math.Max(1, need / 8);
+        // A lost attempt pays too, about a third (OBSERVED 2026-11-12: 6 for a lost attempt, 20 for a won one).
+        var gained = Math.Max(1, lost ? need / 24 : need / 8);
         gatherExp += gained;
         var replies = new List<byte[]> { PacketWriter.Opcode(GatherExpUpdateNt).I64(gatherExp).I64(gained).ToArray() };
         var leveled = false;
@@ -195,7 +221,7 @@ public sealed partial class GameSession
         // 0x8d31's u32 counts the gathers on this node so far, this one included (OBSERVED), not the attempts left.
         var gatherNumber = total - attempts + 1;
         var turns = GatherTurns(target, node.Length >= 5 ? (int)node[4] : 1);
-        var won = turns.Count > 0 && turns[^1].SuccessAfter >= 100;
+        var won = GatherWon(turns, target);
         if (won)
         {
             var replies = await UseObjectAsync(new PacketWriter().U16(0x3636).Varint(key).ToArray(), now, ct);
@@ -206,15 +232,21 @@ public sealed partial class GameSession
                 if (pendingUse is { } use && use.Key == keyInt)
                     pendingUse = use with { DueMs = Math.Max(use.DueMs, now + GatherRaceMs(turns.Count)) };
             }
-            return [Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies];
+            // OBSERVED order: 0x3638 (the interaction started) before 0x8d31.
+            return replies.Count > 0 && replies[0] is [0x38, 0x36, ..]
+                ? [replies[0], Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies.Skip(1)]
+                : [Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies];
         }
         pendingUse = null;
         pendingGatherLoss = (index, keyInt, now + GatherRaceMs(turns.Count));
-        return [Reply(0, gatherNumber, false, turns), GamePackets.InteractEnvObjStarted(keyInt, playerKey)];
+        return [GamePackets.InteractEnvObjStarted(keyInt, playerKey), Reply(0, gatherNumber, false, turns)];
     }
 
-    /// <summary>A lost attempt's end once its turns have played out: 0x8d33 result 2; the attempt is spent and the last one uses the node up.</summary>
-    List<byte[]> GatherLossTick(long now)
+    /// <summary>
+    /// A lost attempt's end once its turns have played out; the attempt is spent and the last one uses the node up. OBSERVED order
+    /// (2026-11-12): 0x363a with the uses taken, 0x363b, the mastery exp, 0x8d33 result 2, 0x8d34.
+    /// </summary>
+    async Task<List<byte[]>> GatherLossTickAsync(long now, CancellationToken ct)
     {
         if (pendingGatherLoss is not { } loss || now < loss.DueMs) return [];
         pendingGatherLoss = null;
@@ -224,18 +256,18 @@ public sealed partial class GameSession
         var key = loss.Key;
         var total = node.Length >= 7 && node[6] > 0 ? (int)node[6] : 3;
         var attempts = (gatherAttempts.TryGetValue(index, out var left) ? left : total) - 1;
-        var lost = new List<byte[]> { GatherCompleted(GatherFailed, key).I32((int)node[0]).I32(0).I32(0).I32(0).I32(0).ToArray() };
         if (attempts <= 0)
         {
             gatherAttempts.Remove(index);
             gathered[index] = now + GatherRespawnMs;
             ScheduleRemoval(index, now);   // EnvObjDie and the despawn 4/3 on the object's timing (OBSERVED, see RemovalDelays)
         }
-        else
-        {
-            gatherAttempts[index] = attempts;
-            lost.Add(GamePackets.InteractEnvObjAvailableState((int)key));
-        }
+        else gatherAttempts[index] = attempts;
+        var lost = new List<byte[]> { GamePackets.InteractEnvObjCompleted(key, playerKey, GatherUsesTaken(index, node)) };
+        if (attempts > 0) lost.Add(GamePackets.InteractEnvObjAvailableState(key));
+        lost.AddRange(await GatherMasteryExpAsync(ct, lost: true));
+        lost.Add(GatherCompleted(GatherFailed, key).I32((int)node[0]).I32(0).I32(0).I32(0).I32(0).ToArray());
+        lost.Add(GatherEnded(GatherFailed, key));
         return lost;
     }
 
@@ -269,7 +301,6 @@ public sealed partial class GameSession
                 return [GatherCompleted(GatherFailed, key).I32(item).I32(0).I32(0).I32(0).I32(0).ToArray()];
             replies.AddRange(await InventoryChangesAsync(ct, IncreaseGatherSource, 0));
         }
-        replies.Insert(0, GatherCompleted(0, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
         // The gather takes one of the node's uses; the last one uses it up, the others leave it available (0x363b sent with the
         // interaction's end, ObjectUsedAsync).
         var total = g.Length >= 7 && g[6] > 0 ? (int)g[6] : 3;
@@ -281,8 +312,11 @@ public sealed partial class GameSession
             ScheduleRemoval(index, now);   // EnvObjDie and the despawn 4/3 on the object's timing (OBSERVED, see RemovalDelays)
         }
         else gatherAttempts[index] = usesLeft;
-        replies.AddRange(await GatherMasteryExpAsync(ct));
+        // OBSERVED order (2026-11-12): the mastery exp (and level), the item, 0x8d33, 0x8d34.
+        replies.InsertRange(0, await GatherMasteryExpAsync(ct));
         replies.AddRange(AchieveGather(gatherLevel));
+        replies.Add(GatherCompleted(0, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
+        replies.Add(GatherEnded(0, key));
         return replies;
     }
 }

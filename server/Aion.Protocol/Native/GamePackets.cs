@@ -143,6 +143,9 @@ public sealed record MyCharacterAppear
     public int SpentStigmaPoints { get; init; }
     public int ItemSkillPoints { get; init; }
     public int ItemStigmaPoints { get; init; }
+    /// <summary>Gather mastery (level, exp) and the craft masteries by category 1..5, in the CharDetail mastery lists.</summary>
+    public (int Level, long Exp) GatherMastery { get; init; } = (1, 0);
+    public IReadOnlyDictionary<int, (int Level, long Exp)>? CraftMasteries { get; init; }
     /// <summary>Equipped wing (Wing.dat id; 0 none). Flight and gliding need one: without it the client shows MSG_WING_EQUIP_NOTHING ("Flight available after Ascension").</summary>
     public int WingId { get; init; }
     /// <summary>Flight points (CharState fp / fp_max).</summary>
@@ -441,9 +444,17 @@ public static class GamePackets
 
     static void WriteSpawnDetailTail(PacketWriter w, int ascension = 1, MyCharacterAppear? a = null)
     {
-        // Observed starter layout (official offsets 66..183); semantics partly unknown.
-        w.U8(1).I32(1).I64(0).U8(0).U8(0).U8(5);
-        for (var category = 1; category <= 5; category++) w.U8(category).I32(1).I64(0);
+        // The mastery lists, sent on every map load (OBSERVED official 2026-11-12/13, entries and teleports alike; the
+        // level-up packets 0x8d36/0x8d7d come only with a level-up): gather {u16 level, i64 exp, u16 skill points, u16
+        // specialized points} (`01 0200 0f00000000000000 0100 0000`), then 5 x craft {u8 category, u16 level, i64 exp,
+        // u16 skill points}. Level 1 here dropped the client's masteries to level 1 on every teleport.
+        var (gatherLevel, gatherExp) = a?.GatherMastery ?? (1, 0);
+        w.U8(1).U16(Math.Max(1, gatherLevel)).I64(gatherExp).U16(0).U16(0).U8(5);
+        for (var category = 1; category <= 5; category++)
+        {
+            var (level, exp) = a?.CraftMasteries is { } crafts && crafts.TryGetValue(category, out var m) ? m : (1, 0L);
+            w.U8(category).U16(Math.Max(1, level)).I64(exp).U16(0);
+        }
         // Glide/sprint cooldowns, reputation, then the ascension grade (CANDIDATE).
         w.I32(0).I32(0).I64(0).U8(ascension);
         // Two CommonSkillPointInfo lists by ESkillPointType (1 Point, 2 Stigma, 3): the points spent, then the points
@@ -1408,8 +1419,11 @@ public static class GamePackets
 
     /// <summary>0x3638 InteractEnvObjStarted_NT: object key, interactor key, state 1.</summary>
     public static byte[] InteractEnvObjStarted(int key, int interactor) => PacketWriter.Opcode(0x3638).Varint(key).Varint(interactor).U8(1).ToArray();
-    /// <summary>0x363a InteractEnvObjCompleted_NT: object key, interactor key, interaction count, item id.</summary>
-    public static byte[] InteractEnvObjCompleted(int key, int interactor) => PacketWriter.Opcode(0x363a).Varint(key).Varint(interactor).I32(0).I32(0).ToArray();
+    /// <summary>
+    /// 0x363a InteractEnvObjCompleted_NT: object key, interactor key, interaction count, item id. A gather node's count is
+    /// its uses taken so far, which runs its use bar down (OBSERVED 2026-11-12: `3a36 9a8401 884e 01000000 00000000`, then 02).
+    /// </summary>
+    public static byte[] InteractEnvObjCompleted(int key, int interactor, int count = 0) => PacketWriter.Opcode(0x363a).Varint(key).Varint(interactor).I32(count).I32(0).ToArray();
     /// <summary>0x8d6d InteractionEnvObjFinishState_NT: object key (no usmap struct at this index; OBSERVED body = the key varint).</summary>
     public static byte[] InteractEnvObjFinishState(int key) => PacketWriter.Opcode(0x8d6d).Varint(key).ToArray();
     /// <summary>0x363b InteractEnvObjAvailableState_NT: object key.</summary>

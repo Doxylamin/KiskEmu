@@ -157,7 +157,7 @@ public sealed partial class GameSession
             if (granted.Count > 0) replies.AddRange(await InventoryChangesAsync(ct, IncreaseQuestReward, 0));
         }
         if (teleport is { } to && data.SpawnMaps.Contains(to.MapId))
-            replies.AddRange(Teleport(to.MapId, to.At, now));
+            replies.AddRange(PcTeleport(to.MapId, to.At, now));
         return replies;
     }
 

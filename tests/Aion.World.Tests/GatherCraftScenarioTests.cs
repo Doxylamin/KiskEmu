@@ -189,15 +189,19 @@ public sealed class GatherCraftScenarioTests
         session.GatherRoll = () => 0;
         session.GatherBonusRoll = () => 0;
         var won = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
-        Assert.Equal(GameSession.GatherStartRs, GameSessionTestHelpers.Op(won[0]));
-        Assert.Contains(won, b => GameSessionTestHelpers.Op(b) == 0x3638);
+        // OBSERVED order: 0x3638 before 0x8d31.
+        Assert.Equal(new[] { 0x3638, (int)GameSession.GatherStartRs }, won.Take(2).Select(b => (int)GameSessionTestHelpers.Op(b)));
         Assert.DoesNotContain(won, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt);
-        // The node's interaction ends only after the turns have played out on the client (one turn: 1.7 s).
-        var end = Math.Max(node.InteractTime, GameSession.GatherRaceMs(1));
+        // Two epic turns (200 units each) fill the 360 gauge; the interaction ends once they have played out on the client.
+        var end = Math.Max(node.InteractTime, GameSession.GatherRaceMs(2));
         var early = await session.TickAsync(Now + end - 50);
         Assert.DoesNotContain(early, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt);
         var done = await session.TickAsync(Now + end + 10);
         Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 0);
+        // 0x363a carries the uses taken (1), which runs the node's bar down; 0x8d34 follows 0x8d33 (OBSERVED).
+        Assert.Contains(done, b => b.SequenceEqual(GamePackets.InteractEnvObjCompleted(key, session.PlayerKey, 1)));
+        var ops = done.Select(b => (int)GameSessionTestHelpers.Op(b)).ToList();
+        Assert.Equal(ops.IndexOf(GameSession.GatherCompletedNt) + 1, ops.IndexOf(0x8d34));
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![0]);
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![2]);
     }

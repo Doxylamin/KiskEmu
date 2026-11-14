@@ -525,7 +525,7 @@ public sealed partial class GameSession
         var completed = RidePackets.ItemUseCompleted(playerKey, cast.Key, cast.ItemId);
         worldPlayer?.Map?.Broadcast(worldPlayer, [completed]);
         var (targetMap, home) = TelpoHomeDestination();
-        return [completed, RidePackets.ItemUsed(cast.Key, cast.ItemId), .. await InventoryChangesAsync(ct, 0, DecreaseItemUse), .. Teleport(targetMap, home, now)];
+        return [completed, RidePackets.ItemUsed(cast.Key, cast.ItemId), .. await InventoryChangesAsync(ct, 0, DecreaseItemUse), .. PcTeleport(targetMap, home, now)];
     }
 
     /// <summary>Return scroll destination: latest engraved TeleportArtifact (bind point), else race starter home.</summary>

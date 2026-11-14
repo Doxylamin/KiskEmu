@@ -1648,6 +1648,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 CustomizingData = character?.CustomizingData ?? [], VoiceType = character?.VoiceType ?? 0,
                 Ascension = selected?.Ascension ?? 1, DbId = selected?.WireId ?? 0,
                 SpentSkillPoints = SpentSkillPoints(), SpentStigmaPoints = SpentStigmaPoints(),
+                GatherMastery = (gatherLevel, gatherExp), CraftMasteries = new Dictionary<int, (int Level, long Exp)>(craftMastery),
                 ItemSkillPoints = skillItemPoints.GetValueOrDefault(SkillPointTypePoint), ItemStigmaPoints = skillItemPoints.GetValueOrDefault(SkillPointTypeStigma),
                 WingId = wingId, Fp = resources.Fp, FpMax = resources.FpMax,
                 EquipItemLevel = armed, HighestTotalItemLevel = armed,
@@ -2443,6 +2444,15 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         return [.. ending, GamePackets.PrepareEnterMap(loadTicket, mapId, at, now, reason: reason, effect: effect, cutscene: cutscene)];
     }
 
+    /// <summary>
+    /// A player's teleport (a teleporter, a return or teleport item, an artifact): the own 0x3647 with reason 2 and the effect
+    /// in the same burst as 0x3621 reason 2 (OBSERVED official 2026-11-12: `4736 884e 0200` with 0x3621 32 ms after the
+    /// request; a hall entry by item `4736 dd08 0262`). CANDIDATE: this pair plays the take-off before the loading screen,
+    /// which reason 0 skipped (live 2026-11-14).
+    /// </summary>
+    public List<byte[]> PcTeleport(int mapId, Vector3d at, long now, byte effect = 0) =>
+        [PlayerPackets.CharDisappear(playerKey, 2, effect), .. Teleport(mapId, at, now, 2, effect)];
+
     /// <summary>The reason of the pending map load (12: an instance-layer move, followed by the map environment).</summary>
     byte moveReason;
 
@@ -2893,7 +2903,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             pendingUse = null;
             replies.AddRange(await WithMapEventClearsFlushedAsync(await CompleteUseAsync(use.Index, ct, now, timed: true), ct));
         }
-        replies.AddRange(GatherLossTick(now));
+        replies.AddRange(await GatherLossTickAsync(now, ct));
         if (dead && now >= reviveAt) replies.AddRange(AutoRevive(now));
         WarnStuckReload(now);
         if (itemCast is { } cast && now >= cast.DueMs) replies.AddRange(await CompleteItemCastAsync(now, ct));

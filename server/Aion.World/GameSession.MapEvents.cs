@@ -1586,7 +1586,7 @@ public sealed partial class GameSession : IMapEventHost
             return moved.Count > 0 ? [.. Reply(0), .. moved] : Reply(1);
         }
         Note($"QuestTeleport {record.Code} uid {uid}: map {dest.Map} ({dest.Source}{(dest.Npc is { } npc ? $" npc {npc}" : "")})");
-        return [.. Reply(0), .. Teleport(dest.Map, dest.At, now)];
+        return [.. Reply(0), .. PcTeleport(dest.Map, dest.At, now)];
     }
 
     /// <summary>

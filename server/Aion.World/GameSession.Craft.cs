@@ -172,16 +172,17 @@ public sealed partial class GameSession
     static byte[] CraftLevelUpdate(int category, int level, long exp) =>
         PacketWriter.Opcode(CraftLevelUpdateNt).U8((byte)category).U16(level).I64(exp).U16(0).ToArray();
 
-    /// <summary>World entry: gather skills (none), the known recipes, the default conversions, then the masteries above level 1.</summary>
+    /// <summary>
+    /// World entry: gather skills (none), the known recipes, the default conversions. The mastery levels go in 0x3633's
+    /// CharDetail (OBSERVED: no 0x8d7d/0x8d36 on any official map load; sent here they printed a level-up line for every
+    /// craft on each teleport).
+    /// </summary>
     List<byte[]> CraftListsAtEntry()
     {
         var conversions = Crafts.Conversions(profileRace);
         var converted = PacketWriter.Opcode(0x8d8c).Varint(conversions.Count);
         foreach (var id in conversions) converted.I32(id).I32(0);
         var replies = new List<byte[]> { CraftRecipeList(), Convert.FromHexString("378D0000000000"), converted.ToArray() };   // OBSERVED order: 0x8d7e, 0x8d37, 0x8d8c
-        foreach (var (category, (lvl, exp)) in craftMastery.OrderBy(p => p.Key))
-            if (lvl > 1) replies.Add(CraftLevelUpdate(category, lvl, exp));
-        if (gatherLevel > 1) replies.Add(GatherLevelUpdate());
         return replies;
     }
 
