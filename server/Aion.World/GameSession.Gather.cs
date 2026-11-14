@@ -6,7 +6,9 @@ namespace Aion.World;
 // (0x3634, tools/world_objects.py "gather": material, count, bonus item, bonus count, mastery, gauge, attempts). The client starts one
 // with InteractEnvObj_RQ 0x3636 (the timed interaction already served) or GatherSourceStart_RQ 0x8d30 (0x8d run,
 // catalogue index + 0x89d1; which one is not observed). On completion: the material (and, OURS, the bonus item one
-// time in five), GatherSourceCompleted_NT 0x8d33, and the node is used up for this player for GatherRespawnMs (OURS).
+// time in five) and GatherSourceCompleted_NT 0x8d33. Every gather, won or lost, spends one of the node's uses (EnvObjData
+// InteractCount, usually 3; OBSERVED in game 2026-11-14: a Farming Odyle node gives three gathers, with a bar that runs
+// down); the last one uses the node up for this player for GatherRespawnMs (OURS).
 // Gather mastery (migration 029): a node needs its GatherSource MasteryLevel; each gather pays an eighth of the level's
 // GatherMastery need (OURS) as GatherExpUpdate_NT 0x8d35 {exp i64, gained i64}, a level-up GatherLevelUpdate_NT 0x8d36
 // {level i32, exp i64, skill points i32, specialized points i32} (usmap fields, CANDIDATE). The gather skill tree
@@ -30,7 +32,7 @@ public sealed partial class GameSession
     public Func<int> GatherRoll { get; set; } = () => Random.Shared.Next(10_000);
     int gatherLevel = 1;
     long gatherExp;
-    /// <summary>Attempts left on a node for this player (object index -> count), while some were used.</summary>
+    /// <summary>Uses left on a node for this player (object index -> count), while some were used: every gather takes one.</summary>
     readonly Dictionary<int, int> gatherAttempts = [];
 
     public int GatherAttemptsLeft(int index) => gatherAttempts.GetValueOrDefault(index, -1);
@@ -151,8 +153,8 @@ public sealed partial class GameSession
     /// 0x8d30 GatherSourceStart_RQ {target key}: the attempt's turns are rolled at once and sent in 0x8d31 (GatherTurnResult
     /// {EGatherTurnResult, no extra discovery, no skill effects, success gauge before/after, fail gauge before/after}; an
     /// empty turn list left the result panel waiting). A won attempt starts the node's timed interaction (completion as for
-    /// 0x3636: the material, 0x8d33, the node used up); a lost one costs one of the node's attempts (0x8d33 result 2, the node
-    /// available again) and the last loss uses the node up.
+    /// 0x3636: the material, 0x8d33); a lost one ends with 0x8d33 result 2. Either costs one of the node's uses, and the last
+    /// one uses the node up; until then it is available again.
     /// </summary>
     async Task<List<byte[]>> GatherStartAsync(byte[] plain, long now, CancellationToken ct)
     {
@@ -200,7 +202,6 @@ public sealed partial class GameSession
             var refused = replies.Any(b => b[0] == 0x37 && b[1] == 0x36 && b.Length > 2 && b[2] != 0);
             if (!refused)
             {
-                gatherAttempts.Remove(index);
                 // The node's timed interaction completes only once the turns have played out on the client.
                 if (pendingUse is { } use && use.Key == keyInt)
                     pendingUse = use with { DueMs = Math.Max(use.DueMs, now + GatherRaceMs(turns.Count)) };
@@ -269,9 +270,17 @@ public sealed partial class GameSession
             replies.AddRange(await InventoryChangesAsync(ct, IncreaseGatherSource, 0));
         }
         replies.Insert(0, GatherCompleted(0, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
-        gathered[index] = now + GatherRespawnMs;
-        gatherAttempts.Remove(index);
-        ScheduleRemoval(index, now);   // EnvObjDie and the despawn 4/3 on the object's timing (OBSERVED, see RemovalDelays)
+        // The gather takes one of the node's uses; the last one uses it up, the others leave it available (0x363b sent with the
+        // interaction's end, ObjectUsedAsync).
+        var total = g.Length >= 7 && g[6] > 0 ? (int)g[6] : 3;
+        var usesLeft = (gatherAttempts.TryGetValue(index, out var before) ? before : total) - 1;
+        if (usesLeft <= 0)
+        {
+            gathered[index] = now + GatherRespawnMs;
+            gatherAttempts.Remove(index);
+            ScheduleRemoval(index, now);   // EnvObjDie and the despawn 4/3 on the object's timing (OBSERVED, see RemovalDelays)
+        }
+        else gatherAttempts[index] = usesLeft;
         replies.AddRange(await GatherMasteryExpAsync(ct));
         replies.AddRange(AchieveGather(gatherLevel));
         return replies;

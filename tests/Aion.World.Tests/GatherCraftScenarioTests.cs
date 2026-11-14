@@ -82,6 +82,23 @@ public sealed class GatherCraftScenarioTests
         Assert.Contains(start, b => b.SequenceEqual(GamePackets.InteractEnvObjInterrupted(key, GamePackets.EnvObjGatherFailReason.LackLevel, session.PlayerKey)));
     }
 
+    /// <summary>The node's uses (EnvObjData InteractCount, 3 when unset): every gather takes one.</summary>
+    static int Uses(WorldObject node) => node.Gather is { Length: >= 7 } g && g[6] > 0 ? (int)g[6] : 3;
+
+    /// <summary>Gathers the node <paramref name="times"/> times with 0x3636; the last gather's tick and when it completed.</summary>
+    static async Task<(List<byte[]> Last, long DoneAt)> GatherTimesAsync(GameSession session, WorldObject node, int key, long at, int times)
+    {
+        var last = new List<byte[]>();
+        for (var i = 0; i < times; i++)
+        {
+            await session.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)key).ToArray(), at);
+            at += node.InteractTime + 10;
+            last = await session.TickAsync(at);
+            if (i < times - 1) at += 100;
+        }
+        return (last, at);
+    }
+
     [Fact]
     public async Task Gather_node_spawns_in_range_and_grants_material()
     {
@@ -97,12 +114,20 @@ public sealed class GatherCraftScenarioTests
         var done = await session.TickAsync(Now + node.InteractTime + 10);
         Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 0);
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![0]);
-        // The node dies and despawns on its timing, not with the gather (OBSERVED, GameSession.RemovalDelays).
+        // One gather takes one of the node's uses: it stays, available again (OBSERVED in game: Farming Odyle gathers three times).
         Assert.DoesNotContain(done, b => GameSessionTestHelpers.Op(b) is 0x3635 or 0x8d05);
+        Assert.Contains(done, b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(key)));
+        Assert.Equal(Uses(node) - 1, session.GatherAttemptsLeft(index));
+
+        // The last use: the node dies and despawns on its timing, not with the gather (OBSERVED, GameSession.RemovalDelays).
+        var (last, doneAt) = await GatherTimesAsync(session, node, key, Now + node.InteractTime + 200, Uses(node) - 1);
+        Assert.Contains(last, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 0);
+        Assert.Equal(Uses(node), store.Items.Where(i => i.TemplateId == (int)node.Gather![0]).Sum(i => i.Quantity) / Math.Max(1, (int)node.Gather![1]));
+        Assert.DoesNotContain(last, b => GameSessionTestHelpers.Op(b) is 0x3635 or 0x8d05);
         var (die, gone) = GameSession.RemovalDelays(node.FinishMs);
-        var dying = await session.TickAsync(Now + node.InteractTime + 10 + die);
+        var dying = await session.TickAsync(doneAt + die);
         Assert.Contains(dying, b => b.SequenceEqual(GamePackets.EnvObjDie(key)));
-        var leaving = await session.TickAsync(Now + node.InteractTime + 10 + gone);
+        var leaving = await session.TickAsync(doneAt + gone);
         Assert.Contains(leaving, b => b.SequenceEqual(GamePackets.EnvObjDespawn(key, 4, 3)));
     }
 
@@ -140,9 +165,7 @@ public sealed class GatherCraftScenarioTests
         var store = GatherStore();
         var (session, _) = await OnMap1010NearGatherAsync(store, Now, index);
         session.GatherBonusRoll = () => 4;
-        await session.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)key).ToArray(), Now);
-        var completeAt = Now + node.InteractTime + 10;
-        await session.TickAsync(completeAt);
+        var (_, completeAt) = await GatherTimesAsync(session, node, key, Now, Uses(node));
         var refused = await session.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)key).ToArray(), completeAt + 1000);
         Assert.Equal(1, refused[0][2]);
 
@@ -186,9 +209,8 @@ public sealed class GatherCraftScenarioTests
         var node = WorldObjects.ObjectsOn(1010)[index];
         var (a, b) = await TwoPlayersNearNodeAsync(index);
         a.GatherBonusRoll = () => 4;
-        await a.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)key).ToArray(), Now);
-        var aDone = await a.TickAsync(Now + node.InteractTime + 10);
-        aDone.AddRange(await a.TickAsync(Now + node.InteractTime + 10 + GameSession.RemovalDelays(node.FinishMs).Gone));
+        var (aDone, aAt) = await GatherTimesAsync(a, node, key, Now, Uses(node));
+        aDone.AddRange(await a.TickAsync(aAt + GameSession.RemovalDelays(node.FinishMs).Gone));
         Assert.Contains(aDone, p => p.SequenceEqual(GamePackets.EnvObjDespawn(key, 4, 3)));
 
         b.GatherBonusRoll = () => 4;
