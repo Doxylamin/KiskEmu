@@ -26,11 +26,12 @@ public sealed class CombatParityTests
 
     [Theory]
     [MemberData(nameof(Levels1To45))]
-    public void Kill_experience_is_disabled(int level)
+    public void Kill_experience_follows_the_reward_from_level_10(int level)
     {
         var session = new GameSession(Data, new GameSessionOptions { CharacterLevel = level, LevelCap = Data.MaxLevel }, new Random(level));
-        Assert.Equal(0, session.KillExperience(level));
-        Assert.Equal(0, session.KillExperience(Math.Max(1, level - 11)));
+        Assert.Equal(GameSession.KillReward(level, level, 3, false), session.KillExperience(level));
+        Assert.Equal(level >= GameSession.KillExperienceLevel, session.KillExperience(level) > 0);
+        Assert.True(session.KillExperience(Math.Max(1, level - 11)) <= session.KillExperience(level));
     }
 
     [Theory]

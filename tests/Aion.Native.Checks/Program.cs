@@ -593,9 +593,9 @@ await game.HandleAsync(Cast(basic, Combat.TrainingDummyKey, pos), killAt);
 var kill = await game.TickAsync(landAt);
 Check(dummy.Dead && kill.Any(b => b.SequenceEqual(GamePackets.NpcHp(Combat.TrainingDummyKey, 0))), "HP 0 is the kill");
 Check(game.Level == 1 && game.Experience == 0 && !kill.Any(b => b[0] == 0x07 && b[1] == 0x8d),
-      "field kills grant no experience (official capture 20261030/31)");
-Check(game.KillExperience(1) == 0 && new GameSession(data, new GameSessionOptions { CharacterLevel = 30 }, new Random(1)).KillExperience(10) == 0,
-      "KillExperience is always zero");
+      "a level-1 character gets no kill experience (none below level 10, CANDIDATE from the A2Core fork of addiboii)");
+Check(game.KillExperience(1) == 0 && new GameSession(data, new GameSessionOptions { CharacterLevel = 30 }, new Random(1)).KillExperience(25) == GameSession.KillReward(30, 25, 3, false),
+      "kill experience follows GameSession.KillReward (none below level 10)");
 var respawn = await game.TickAsync(landAt + GameSession.RespawnMs + 50);
 Check(respawn.Any(b => b.SequenceEqual(GamePackets.Death(Combat.TrainingDummyKey))) && dummy.Hp == dummy.HpMax, "corpse respawns at full HP");
 Check((await game.HandleAsync([0x30, 0x36], Now)).Single().SequenceEqual(GamePackets.Logout()), "logout reply");
