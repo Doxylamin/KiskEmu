@@ -11,6 +11,10 @@ public sealed partial class GameSession
     /// <summary>EAppearReasonType on respawn (OBSERVED with 0x3647 / 0x3621 after CharRespawn_RQ).</summary>
     const byte RespawnAppearReason = 4;
 
+    /// <summary>The respawn's TeleportEffect id on the own 0x3647 and the 0x3621 (OBSERVED by the community fork, 2026-11-06
+    /// 090856 #104116, #104118: 0x4f).</summary>
+    const byte RespawnTeleportEffect = 0x4f;
+
     /// <summary>The revive's abnormal at every revive: after the respawn's load request, or in place (OBSERVED 3 s).</summary>
     const int RespawnProtectAbnormal = 10003, RespawnProtectMs = 3000;
 
@@ -150,8 +154,8 @@ public sealed partial class GameSession
             return [.. revival, reborn, resources.FullUpdate()];
         }
         var at = RespawnPoint();
-        var replies = new List<byte[]> { PlayerPackets.CharDisappear(playerKey, RespawnAppearReason) };
-        replies.AddRange(Teleport(worldMap, at, now, RespawnAppearReason));
+        var replies = new List<byte[]> { PlayerPackets.CharDisappear(playerKey, RespawnAppearReason, RespawnTeleportEffect) };
+        replies.AddRange(Teleport(worldMap, at, now, RespawnAppearReason, RespawnTeleportEffect));
         AddBuff(RespawnProtectAbnormal, RespawnProtectMs, 0, now, replies, path: SelfAbnormalPath.DeathProtection);
         pendingRespawnLoadProtect = true;
         replies.Add(resources.Update());

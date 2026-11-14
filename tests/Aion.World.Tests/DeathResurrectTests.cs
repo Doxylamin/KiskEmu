@@ -57,8 +57,12 @@ public class DeathResurrectTests
         var rez = await session.HandleAsync(new PacketWriter().U16(RidePackets.RespawnRq).U8(RidePackets.RespawnAuto).U8(0).ToArray(), t + 2000);
         Assert.Contains(rez, p => p.SequenceEqual(RidePackets.RespawnReply(0)));
         Assert.False(session.Dead);
-        Assert.Contains(rez, p => GameSessionTestHelpers.Op(p) == 0x3647);
-        Assert.Contains(rez, p => GameSessionTestHelpers.Op(p) == 0x3621);
+        // The own disappear and the map load carry reason 4 and teleport effect 0x4f (community recording 090856 #104116, #104118).
+        Assert.Contains(rez, p => p.SequenceEqual(PlayerPackets.CharDisappear(session.PlayerKey, 4, 0x4f)));
+        var load = rez.First(p => GameSessionTestHelpers.Op(p) == 0x3621);
+        var expected = GamePackets.PrepareEnterMap(1, 0, Vector3d.Zero, 0, reason: 4, effect: 0x4f);
+        var head = PacketWriter.Opcode(0x3621).I32(0).I32(0).I64(0).Vec3(Vector3d.Zero).F32(0).ToArray().Length;   // ticket .. direction
+        Assert.Equal(expected[head..], load[head..]);
     }
 
     [Fact]
