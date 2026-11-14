@@ -1710,13 +1710,16 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (questLog is not null)
                 replies.AddRange(await QuestRecheckAsync(ct));
             replies.AddRange(QuestJournalAtEntry());
+            // 0xe257 just (re-)locked chat (45); the unlock update (0xe258) in the same burst raises
+            // System_ContentsUnlocked, which starts the Lime chat login. A teleport's reload always needs it
+            // (the client sends no new world-entry queries; live: chat stayed closed after MoveMap without it).
+            // The world entry needs it too: sent later as the reply to the last entry query (0x8a1c), the client
+            // no longer started chat (live 2026-11-14, 3527 and 3533 since 2026-11-12), while every reload that
+            // carried it in the burst did. The short load sends no 0xe257, so there is nothing to undo.
+            if (reloading || !unlockUpdateSent) { replies.Add(GamePackets.ContentsUnlockUpdate()); unlockUpdateSent = true; }
         }
         if (reloading)
         {
-            // A teleport's map load: 0xe257 just re-locked chat (45) and the client sends no new
-            // world-entry queries, so the unlock update (0xe258) follows directly (live: chat stayed
-            // closed after MoveMap without it). The short load sent no 0xe257, so nothing to undo.
-            if (!shortLoad) { replies.Add(GamePackets.ContentsUnlockUpdate()); unlockUpdateSent = true; }
             reloading = false;
             reloadStartedMs = 0;
             if (invisible) replies.Add(GamePackets.InvisibleMode(true));   // a GM stays hidden across the reload

@@ -55,8 +55,10 @@ public static class LimeChatEndpoints
             }
             catch (ChatRejectedException rejected)
             {
+                // The room type and key say which channel (party, legion, ...) was refused; never the token.
+                var room = LimeWire.ReadRoom(body?["gameRoomKeyInfo"]);
                 context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Aion.Chat")
-                    .LogInformation("Chat {Route} rejected: {Reason}", route, rejected.Message);
+                    .LogInformation("Chat {Route} rejected: {Reason} (room {RoomType}/{RoomKey})", route, rejected.Message, room.Type, room.RoomKey);
                 return Results.Json(LimeWire.Error(400, rejected.Message));
             }
         });

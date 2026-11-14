@@ -332,7 +332,8 @@ Check(opcodes.Count(o => o == 0x3641) == 1 + data.Spawns(1000).Count && data.Spa
 Check(entered.Any(b => b.SequenceEqual(GamePackets.ContentsUnlockList(GamePackets.UnlockedContents(game.Level)))), "world entry unlocks the contents of the character's level");
 Check(!GamePackets.UnlockedContents(3).Contains((byte)2) && GamePackets.UnlockedContents(4).Contains((byte)2) && !GamePackets.UnlockedContents(99).Contains((byte)45),
       "the skill window (2) unlocks at level 4 (ContentsUnlock.dat); chat stays for 0xe258");
-Check((await game.HandleAsync([0x1c, 0x8a], Now)).Select(b => b[0] | b[1] << 8).SequenceEqual(new[] { 0x8a1d, 0xe258 }), "last world-entry query carries the chat unlock");
+Check(opcodes.IndexOf(0xe258) > opcodes.IndexOf(0xe257) && opcodes.Count(o => o == 0xe258) == 1, "world entry unlocks chat (0xe258) in the burst, after the unlock list");
+Check((await game.HandleAsync([0x1c, 0x8a], Now)).Select(b => b[0] | b[1] << 8).SequenceEqual(new[] { 0x8a1d }), "the last world-entry query no longer repeats the chat unlock");
 // Skill levels for skill points (official #18470-18472): a level-10 development Gladiator buys Rending Blow level 2 for one of its 16 points.
 var pointed = new GameSession(data, new GameSessionOptions { CharacterLevel = 10 }, new Random(11));
 await pointed.HandleAsync(Strings(0x3613, Session, "", "t", "").Concat(new byte[9]).ToArray(), Now);
