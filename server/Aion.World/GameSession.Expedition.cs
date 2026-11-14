@@ -102,21 +102,25 @@ public sealed partial class GameSession
             else session.worldPlayer?.Send([pkt]);
     }
 
-    /// <summary>Clear score, complete/end dungeon state — every member in the copy (not only the script host).</summary>
-    void BroadcastPartyDungeonClearEnd(DungeonInfo room, long elapsedMs, int dungeonId, long now, long holdMs)
+    /// <summary>
+    /// The clear, to every member in the copy (not only the script host): an expedition's 0x6108 `00` first (OBSERVED by the
+    /// community fork), 0x6101 with that member's clear reward, Complete (3) for the hold, End (4) at once when the hold is 0
+    /// (else <see cref="DungeonEndTick"/>), and an expedition's score 0x9333 last (CANDIDATE).
+    /// </summary>
+    void BroadcastDungeonClear(DungeonInfo room, DungeonCopy c, long elapsedMs)
     {
-        if (room.Type != "Party") return;
-        var packets = new[]
-        {
-            DungeonCompleteResult(dungeonId, true),
-            DungeonState(dungeonId, DungeonStateComplete, now, now),
-            DungeonState(dungeonId, DungeonStateEnd, now, now + holdMs),
-            PartyDungeonClear(elapsedMs, room),
-        };
+        if (c.CompleteEndsMs == c.ClearedMs) c.EndSent = true;
         foreach (var session in DungeonCopySessions())
-            foreach (var pkt in packets)
-                if (session == this) mapEventOut.Add(pkt);
-                else session.worldPlayer?.Send([pkt]);
+        {
+            var packets = new List<byte[]>();
+            if (room.Type == "Party") packets.Add(PacketWriter.Opcode(DungeonClearKillNpcNt).U8(0).ToArray());
+            packets.Add(DungeonCompleteResult(c.DungeonId, true, session.ClearReward(room)));
+            packets.Add(DungeonState(c.DungeonId, DungeonStateComplete, c.ClearedMs, c.CompleteEndsMs));
+            if (c.EndSent) packets.Add(DungeonClearedState(c));
+            if (room.Type == "Party") packets.Add(PartyDungeonClear(elapsedMs, room));
+            if (session == this) mapEventOut.AddRange(packets);
+            else session.worldPlayer?.Send(packets);
+        }
     }
 
     /// <summary>A dungeon boss's hit against this player after the Oct 28 2026 boss attack cuts (Expedition and Transcendence stages).</summary>
@@ -130,12 +134,14 @@ public sealed partial class GameSession
         return factor > 1 ? (int)Math.Round(damage * factor) : Patch20261028.ScaleBossDamage(damage, factor);
     }
 
+    /// <summary>A death in the copy: DungeonDeathLimit_NT 0x6109 with the copy's deaths, in the dying player's replies and to
+    /// everyone else in the copy (whoever hosts it).</summary>
     List<byte[]> NotifyDungeonDeathCount()
     {
         if (copy is not { } c) return [];
         var pkt = PacketWriter.Opcode(DungeonDeathLimitNt).I32(c.Deaths).ToArray();
-        mapEventOut.Add(pkt);
-        foreach (var member in CopyMembers()) member.worldPlayer?.Send([pkt]);
+        foreach (var member in DungeonCopySessions())
+            if (member != this) member.worldPlayer?.Send([pkt]);
         return [pkt];
     }
 }

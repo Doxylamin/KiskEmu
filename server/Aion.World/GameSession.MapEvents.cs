@@ -688,6 +688,7 @@ public sealed partial class GameSession : IMapEventHost
         if (mapEventRuns.Count == 0 && pendingSpawns.Count == 0 && pendingExit is null && npcBuffs.Count == 0 && copy is null) return [];
         mapEventNow = now;
         DungeonTimeLimit(now);
+        DungeonEndTick(now);   // GameSession.PartyDungeons.cs
         var phase = DungeonPhaseTick(now);
         if (phase.Count > 0) mapEventOut.InsertRange(0, phase);
         NpcBuffTick(now);
@@ -1432,8 +1433,7 @@ public sealed partial class GameSession : IMapEventHost
             if (Instances.Of(worldMap) is not null) session.instanceExitAt ??= mapEventNow + InstanceExitDelayMs;
             else if (room is not null) session.instanceExitAt ??= mapEventNow + hold;
             // The clear reward (RewardDungeon.dat RewardLight/RewardDark by race: sealed dungeons' kina, materials, a title), once per copy.
-            if (first && room is not null && (session.profileRace == 2 ? room.RewardDark : room.RewardLight) is { Length: > 0 } reward)
-                session.pendingRewards.Add(reward.Where(r => r.Length >= 2).Select(r => ((int)r[0], r[1])).ToList());
+            if (first && room is not null && session.ClearReward(room) is { } reward) session.pendingRewards.Add(reward);
             if (first && room is not null) session.SpendContentTickets(MapEventData.DungeonIdOfMap(worldMap), "Clear", mapEventNow);
             if (first && room is not null)
             {
@@ -1445,8 +1445,12 @@ public sealed partial class GameSession : IMapEventHost
         if (copy is { } c && room is not null && !c.Cleared)
         {
             c.Cleared = true;
-            // OBSERVED (HQ001 clear #14161-14167): DungeonCompleteResult_NT, Complete (3), then End (4) until the hold's end — all copy members.
-            BroadcastPartyDungeonClearEnd(room, mapEventNow - c.StartedMs, c.DungeonId, mapEventNow, hold);
+            // OBSERVED (ours HQ001 clear #14161-14167; the community fork's recordings 2026-11-04 to 06): DungeonCompleteResult_NT
+            // with the clear reward, Complete (3) from the clear for Dungeon.dat's hold, End (4) when it ends, for 600 s — to
+            // everyone in the copy. The way out keeps its own timing (instanceExitAt above: the hold, else 60 s, OURS).
+            c.ClearedMs = mapEventNow;
+            c.CompleteEndsMs = mapEventNow + (room.Hold > 0 ? room.Hold * 1000L : 0);
+            BroadcastDungeonClear(room, c, mapEventNow - c.StartedMs);
         }
     }
 

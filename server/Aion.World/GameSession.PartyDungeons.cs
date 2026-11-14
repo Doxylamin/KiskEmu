@@ -11,7 +11,7 @@ namespace Aion.World;
 // (OBSERVED, AVION2: the mid bosses whose shares are in the cube), OdEnergyCubeReward_RQ/RS 0x5714/0x5715 (RS OBSERVED,
 // RQ between them CANDIDATE). The dungeon state family is OBSERVED at 0x6100-0x610b (catalogue 573-584 at
 // 0x5ec3 + index): DungeonState_NT 0x6100, DungeonCompleteResult_NT 0x6101, DungeonClearKillNpc_NT 0x6108, DungeonDeathLimit_NT 0x6109.
-// Their bodies are the usmap fields (CANDIDATE: none observed). PartyDungeonClear_NT 0x9333 (CANDIDATE) and middle-boss 0x3829 on
+// Their bodies are OBSERVED (ours and the community fork's recordings; 0x6100's length is open, capture #75 item 1). PartyDungeonClear_NT 0x9333 (CANDIDATE) and middle-boss 0x3829 on
 // clear/kill; the entry tickets and the cube's energy cost in GameSession.ContentTickets.cs; death
 // count on 0x6109 after each fall. Frenzy on pin: MapEvent SetMapEnvState (boss phases), not the Oct 21 Hard timer.
 // Not modelled: cube ceiling, DungeonCoolTimes (0 in dat), formal DeathLimit rows (0 in dat).
@@ -31,8 +31,13 @@ public sealed class DungeonCopy(GameSession host, int dungeonId, long now)
     public long ProcessAtMs { get; set; }
     /// <summary>Reward-cube bosses killed in this copy (NpcData ids).</summary>
     public HashSet<int> CubeBossesKilled { get; } = [];
-    /// <summary>Player deaths in this copy (the death-limit achievements).</summary>
+    /// <summary>Player deaths in this copy (the death-limit achievements; 0x6109 after each death and at entry).</summary>
     public int Deaths { get; set; }
+    /// <summary>When the clear happened and when its Complete state (Dungeon.dat CompleteStateHoldingTime) ends.</summary>
+    public long ClearedMs { get; set; }
+    public long CompleteEndsMs { get; set; }
+    /// <summary>The End state (4) that follows Complete was sent.</summary>
+    public bool EndSent { get; set; }
     /// <summary>Revives each character used in this run (character id, or player key for a development login), for the
     /// Dungeon.dat RebirthLimitCount.</summary>
     public Dictionary<string, int> Revives { get; } = [];
@@ -49,6 +54,9 @@ public sealed partial class GameSession
     public const byte DungeonStateProcess = 2, DungeonStateComplete = 3, DungeonStateEnd = 4;
     /// <summary>After the time limit the copy empties this long after the fail message (OURS).</summary>
     public const long DungeonFailExitMs = 5_000;
+    /// <summary>How long the End state (4) runs after the Complete state's hold (OBSERVED by the community fork, 2026-11-06
+    /// 234912 #45201 for sealed 310027 and the layer's #16209: 600 s).</summary>
+    public const long DungeonEndStateMs = 600_000;
 
     DungeonCopy? copy;
     readonly List<List<(int ItemId, long Count)>> pendingRewards = [];
@@ -128,28 +136,73 @@ public sealed partial class GameSession
     /// <summary>The copy a party member would join is full (MapEntrance MaxMember).</summary>
     static bool CopyFull(MapInstance inside, DungeonInfo room) => room.MaxMember > 0 && inside.Players.Count >= room.MaxMember;
 
-    /// <summary>DungeonState_NT 0x6100 {dungeon, EDungeonState u8, start, end, u8 0} (OBSERVED: `60000000 02 [now] 0 00` at the layer entry).</summary>
-    static byte[] DungeonState(int dungeonId, byte state, long startMs, long endMs) =>
-        PacketWriter.Opcode(DungeonStateNt).I32(dungeonId).U8(state).I64(startMs).I64(endMs).U8(0).ToArray();
+    /// <summary>
+    /// DungeonState_NT 0x6100 {dungeon i32, EDungeonState u8, start i64, end i64}, then a trailing u8 0 while
+    /// <see cref="DungeonStateTrailingByte"/> holds. The fields are OBSERVED (ours: `60000000 02 [now] 0 00` at the layer entry;
+    /// the community fork: byte-exact 2026-11-06 234912 #44953). The length is not settled (capture #75 item 1): ours read a
+    /// trailing 00 (24 bytes with the opcode), the fork's recordings show 23 bytes in all 33 + 4 instances.
+    /// </summary>
+    internal static byte[] DungeonState(int dungeonId, byte state, long startMs, long endMs)
+    {
+        var w = PacketWriter.Opcode(DungeonStateNt).I32(dungeonId).U8(state).I64(startMs).I64(endMs);
+        if (DungeonStateTrailingByte) w.U8(0);
+        return w.ToArray();
+    }
 
-    /// <summary>DungeonCompleteResult_NT 0x6101 (OBSERVED `00 60000000 01 00`: u8 0, dungeon, succeeded, no rewards).</summary>
-    static byte[] DungeonCompleteResult(int dungeonId, bool succeeded) =>
-        PacketWriter.Opcode(DungeonCompleteResultNt).U8(0).I32(dungeonId).U8((byte)(succeeded ? 1 : 0)).U8(0).ToArray();
+    /// <summary>CANDIDATE: 0x6100 ends in a u8 0 (our reading; the fork's recordings say no). Flip it once capture #75 item 1 answers.</summary>
+    internal const bool DungeonStateTrailingByte = true;
 
-    /// <summary>After the running state at entry (OBSERVED): DungeonDeathLimit_NT 0x6109 `00000000`, DungeonClearKillNpc_NT 0x6108 `00`.</summary>
-    static IEnumerable<byte[]> DungeonLimitsAtEntry() =>
-        [PacketWriter.Opcode(DungeonDeathLimitNt).I32(0).ToArray(), PacketWriter.Opcode(DungeonClearKillNpcNt).U8(0).ToArray()];
+    /// <summary>
+    /// DungeonCompleteResult_NT 0x6101 {u8 0, dungeon i32, succeeded u8, rewards varint count + [item i32, count i64]}: OBSERVED
+    /// `00 60000000 01 00` without rewards (ours, HQ001), and with them by the community fork (2026-11-06 234912 #44952, sealed
+    /// 310027: its RewardLight ordered by item id).
+    /// </summary>
+    internal static byte[] DungeonCompleteResult(int dungeonId, bool succeeded, IReadOnlyList<(int ItemId, long Count)>? rewards = null)
+    {
+        var w = PacketWriter.Opcode(DungeonCompleteResultNt).U8(0).I32(dungeonId).U8((byte)(succeeded ? 1 : 0)).Varint((uint)(rewards?.Count ?? 0));
+        foreach (var (item, count) in (rewards ?? []).OrderBy(r => r.ItemId)) w.I32(item).I64(count);
+        return w.ToArray();
+    }
+
+    /// <summary>The clear reward this character gets (RewardDungeon.dat RewardLight / RewardDark by race).</summary>
+    List<(int ItemId, long Count)>? ClearReward(DungeonInfo room) =>
+        (profileRace == 2 ? room.RewardDark : room.RewardLight) is { Length: > 0 } reward
+            ? reward.Where(r => r.Length >= 2).Select(r => ((int)r[0], r[1])).ToList() : null;
+
+    /// <summary>
+    /// After the running state at entry (OBSERVED): DungeonDeathLimit_NT 0x6109 with the copy's deaths (`00000000` at a first
+    /// entry; `05000000` at a re-entry after a wipe, community fork 2026-11-06 090856 #104160), DungeonClearKillNpc_NT 0x6108 `00`.
+    /// </summary>
+    internal static IEnumerable<byte[]> DungeonLimitsAtEntry(int deaths = 0) =>
+        [PacketWriter.Opcode(DungeonDeathLimitNt).I32(deaths).ToArray(), PacketWriter.Opcode(DungeonClearKillNpcNt).U8(0).ToArray()];
+
+    /// <summary>The cleared copy's current state: Complete (3) for the hold, then End (4) for 600 s.</summary>
+    static byte[] DungeonClearedState(DungeonCopy c) => c.EndSent
+        ? DungeonState(c.DungeonId, DungeonStateEnd, c.CompleteEndsMs, c.CompleteEndsMs + DungeonEndStateMs)
+        : DungeonState(c.DungeonId, DungeonStateComplete, c.ClearedMs, c.CompleteEndsMs);
 
     /// <summary>At the world entry of an expedition: its state (running until the deadline, or complete until the hold ends).</summary>
     List<byte[]> DungeonStateAtEntry(long now)
     {
         if (copy is not { } c || MapEventData.DungeonOfMap(worldMap) is not { } room) return [];
         // An instance layer (the story): running since the entry, no deadline (OBSERVED at the HQ001 entry).
-        if (!Timed(room)) return c.Cleared ? [] : [DungeonState(c.DungeonId, DungeonStateProcess, c.StartedMs, 0), .. DungeonLimitsAtEntry()];
+        if (!Timed(room)) return c.Cleared ? [] : [DungeonState(c.DungeonId, DungeonStateProcess, c.StartedMs, 0), .. DungeonLimitsAtEntry(c.Deaths)];
         if (c.Failed) return [];
         if (c.Phase == "Prepare") return [DungeonState(c.DungeonId, DungeonStatePrepare, c.StartedMs, c.ProcessAtMs)];
-        if (c.Cleared) return [DungeonState(c.DungeonId, DungeonStateEnd, now, (c.Host.instanceExitAt ?? now + PartyDungeonHoldMs))];   // state 4 carries the hold's end (OBSERVED)
-        return [DungeonState(c.DungeonId, DungeonStateProcess, c.StartedMs, c.DeadlineMs), .. DungeonLimitsAtEntry()];
+        // After the clear: the state it is in (OBSERVED by the community fork, 234912 #44953, #45201).
+        if (c.Cleared) return [DungeonClearedState(c)];
+        return [DungeonState(c.DungeonId, DungeonStateProcess, c.StartedMs, c.DeadlineMs), .. DungeonLimitsAtEntry(c.Deaths)];
+    }
+
+    /// <summary>The host's tick: the Complete state's hold ended, End (4) runs 600 s from there, for everyone in the copy.</summary>
+    void DungeonEndTick(long now)
+    {
+        if (copy is not { Cleared: true, EndSent: false } c || c.Host != this || now < c.CompleteEndsMs) return;
+        c.EndSent = true;
+        var end = DungeonClearedState(c);
+        foreach (var session in DungeonCopySessions())
+            if (session == this) mapEventOut.Add(end);
+            else session.worldPlayer?.Send([end]);
     }
 
     /// <summary>The host's tick: past the deadline the run fails and the copy empties.</summary>
