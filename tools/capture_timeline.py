@@ -17,7 +17,7 @@ envelopes and writes, next to the capture (``timeline-<port>/``):
   conflicting retransmission bytes, a gap and the bytes after it, trailing partial frame).
 - ``large/``: bodies above the hex limit, ``<i>-<op>.bin``.
 
-Capture markers (AVION2's marker key: the moment, a picture and a note on what was just done)
+Capture markers (AVION2, https://avion2.app: its marker key: the moment, a picture and a note on what was just done)
 are read from ``--markers <file>``, or from ``<capture stem>-markers.jsonl`` beside the capture
 when there is one (``session-…-markers.jsonl`` for ``session-….pcap``). Each marker,
 {utc_ms, n, note, screenshot}, becomes its own timeline line at its time:

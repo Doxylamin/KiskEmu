@@ -74,7 +74,7 @@ printing bodies.
 
 ### Capture markers
 
-AVION2's session recordings (`session-….pcap`, read directly, no conversion) can carry capture markers: press the
+[AVION2](https://avion2.app)'s session recordings (`session-….pcap`, read directly, no conversion) can carry capture markers: press the
 marker key (F9) in the game right after an action and type what you did. `capture_timeline.py` picks up
 `session-…-markers.jsonl` beside the recording (or `--markers <file>`; `--no-markers` leaves them out) and puts each
 marker into the timeline at its time, as its own line:
