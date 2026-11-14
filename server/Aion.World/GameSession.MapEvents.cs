@@ -467,6 +467,7 @@ public sealed partial class GameSession : IMapEventHost
         npcBuffs.Clear();
         if (!RunsMapEvents || targets is null) return;
         dormantSpawners.UnionWith(MapEventData.Deferred(worldMap));
+        dormantSpawners.UnionWith(DormantWaveSpawners());
         foreach (var t in targets.Values)
         {
             if (t.Key == Combat.TrainingDummyKey) continue;
@@ -1638,6 +1639,28 @@ public sealed partial class GameSession : IMapEventHost
         SpawnerNpcs(spawner).Any(t => !t.Dead && ai.Brains.TryGetValue(t.Key, out var brain) && brain.Engaged);
 
     bool IMapEventHost.SpawnerAlive(string spawner) => SpawnerNpcs(spawner).Any(t => !t.Dead);
+
+    (int Living, int Total) IMapEventHost.SpawnerCount(string spawner)
+    {
+        var all = SpawnerNpcs(spawner).ToList();
+        return (all.Count(t => !t.Dead), all.Count);
+    }
+
+    /// <summary>
+    /// A wave map's wave spawners wait for their order (MapEventRun.StartWave / WaveTick), and so do the placed spawners of the same
+    /// family that no wave names (DungeonWave_0001's Wave_L_1..20: nobody starts them). OBSERVED on map 900001 (official run of
+    /// 2026-11-12): only order 1 (Wave_L_21) at the join, Wave_L_1..20 never; before, all 30 spawned at entry (600 monsters at once).
+    /// The family rule elsewhere is CANDIDATE.
+    /// </summary>
+    IEnumerable<string> DormantWaveSpawners()
+    {
+        var waveSpawners = MapEventData.WaveSpawnersOn(worldMap).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (waveSpawners.Count == 0 || targets is null) return waveSpawners;
+        static string Family(string name) => name.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
+        var families = waveSpawners.Select(Family).Where(f => f.EndsWith('_')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unused = targets.Values.Select(t => t.Name).Where(n => !waveSpawners.Contains(n) && families.Contains(Family(n)));
+        return waveSpawners.Concat(unused).ToList();
+    }
 
     bool IMapEventHost.SpawnerExists(string spawner) =>
         startedSpawners.Contains(spawner) || !dormantSpawners.Contains(spawner) && (SpawnerNpcs(spawner).Any() || SpawnerObjects(spawner).Any());

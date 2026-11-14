@@ -314,6 +314,16 @@ public sealed class MapEventTables
     public int TeleportEffect(string name) => file.TeleportEffects?.GetValueOrDefault(name) ?? 0;
     /// <summary>WaveStepData.dat: a wave's spawners by order (StartWave spawns order 1; each next order when the one before is dead).</summary>
     public string[][]? Wave(string name) => file.Waves?.GetValueOrDefault(name);
+
+    /// <summary>The spawners of every wave the map's events run (ClearWave objectives, StartWave directives): they wait for their order.</summary>
+    public IEnumerable<string> WaveSpawnersOn(int mapId) =>
+        EventsOn(mapId).SelectMany(e => e.Stages.SelectMany(st => st.Steps).SelectMany(st =>
+                st.Objectives.Where(o => o.Type == "ClearWave").Select(o => o.Value(0))
+                    .Concat(st.Pre.Concat(st.Post).Concat(st.Objectives.SelectMany(o => (o.Pre ?? []).Concat(o.Post ?? [])))
+                        .Concat(e.Rules?.SelectMany(r => r.Directives) ?? [])
+                        .Where(d => d.Type == "StartWave").Select(d => d.Value(0)))))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .SelectMany(w => Wave(w) ?? []).SelectMany(order => order);
     /// <summary>The item id of an Item.dat internal name a CollectItem objective names; 0 when unknown.</summary>
     public int ItemId(string name) => file.Items?.GetValueOrDefault(name) ?? 0;
     /// <summary>Spawn entries a StartSpawner directive of the map's events starts: not spawned at map load.</summary>
@@ -411,6 +421,9 @@ public interface IMapEventHost
     long HeldItems(string itemName) => -1;
     /// <summary>Whether the player has gained the abnormal since <paramref name="sinceMs"/> or carries it now; null when the host cannot tell.</summary>
     bool? GainedAbnormal(int abnormalId, long sinceMs) => null;
+    /// <summary>How many NPCs carry the spawner name and how many of them live (a wave order's progress); (0, 0) when the host
+    /// cannot tell (then the wave waits for the whole order to die).</summary>
+    (int Living, int Total) SpawnerCount(string spawner) => (0, 0);
 }
 
 /// <summary>One player's run of a map event: stage, step, objective counters, directive sequences and repeaters.</summary>
@@ -577,7 +590,7 @@ public sealed class MapEventRun
             // A ClearWave whose wave no StartWave of the event starts (Dungeon_Daily_0001/0002: the wave's first order is the map's own
             // OrcusGem) runs from the step that waits for it (CANDIDATE: no script starts it, the client data says nothing else).
             if (o.Type == "ClearWave" && Tracked(o, step) && !waves.ContainsKey(o.Value(0)) && !clearedWaves.Contains(o.Value(0)) && !StartsWave(o.Value(0)))
-                StartWave(o.Value(0));
+                StartWave(o.Value(0), now);
             // A CloseGuide objective shows its guide (the forced popup) when the step begins: OBSERVED 2026-10-19, ShowGuide (46) for
             // Tutorial_ForcedPopup_Fly_01 at the Subspace's first step and Tutorial_ForcedPopup_L1_ExitDungeon_01 with the Dream
             // Crossroad's join; the client reports CloseGuide (0x9230 kind 2) when the player closes it. Without it the player waited
@@ -635,24 +648,51 @@ public sealed class MapEventRun
     }
 
     // ---------- Waves ----------
-    // WaveStepData.dat: a wave is spawner groups in order. StartWave spawns order 1; once no NPC of the current order lives the next
-    // order spawns (CANDIDATE: the client data has the orders, not the rule between them; an order of objects only goes on at once);
-    // after the last order the wave is cleared (ClearWave). EndWave stops it (its NPCs stay; the scripts despawn them themselves).
+    // WaveStepData.dat: a wave is spawner groups in order. StartWave spawns order 1; the next order spawns once few of the current
+    // one live; after the last order is all dead the wave is cleared (ClearWave). EndWave stops it (its NPCs stay; the scripts
+    // despawn them themselves). The wave spawners wait dormant at map load (GameSession.MapEventsPrepare).
+    // OBSERVED (capture-vm official-20261112-r2, daily dungeon DungeonWave_0001, map 900001): order 1 (Wave_L_21) appeared with the
+    // event join, orders 2-5 in WaveStepData order each ~200 ms after a kill, with 2, 3, 4 and 4 of the current order's 10 alive.
+    // CANDIDATE (#77): the next order at NextOrderAlivePercent or less alive (no single "alive <= N" fits the four triggers), the
+    // clear at the last order all dead (officially the 90 s timer ended first). With no NPC counts (objects, or a host that cannot
+    // count) an order goes on once none of it lives, as before.
+
+    /// <summary>OBSERVED: the next order's monsters appear this long after the kill that brings it.</summary>
+    public const int NextOrderDelayMs = 200;
+    /// <summary>CANDIDATE (#77): the next order comes once at most this share (percent) of the current order lives.</summary>
+    public const int NextOrderAlivePercent = 30;
+    /// <summary>OURS: an order none of whose NPCs came to life within this long counts as done (a spawn that failed must not stall the wave).</summary>
+    const int OrderAppearGraceMs = 5_000;
 
     readonly Dictionary<string, int> waves = new(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<string> clearedWaves = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>When each running wave's current order was spawned, and whether any of its NPCs has lived since.</summary>
+    readonly Dictionary<string, long> waveOrderSpawnedMs = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> waveOrderSeen = new(StringComparer.OrdinalIgnoreCase);
 
     bool StartsWave(string wave) =>
         Definition.Stages.SelectMany(st => st.Steps).SelectMany(st => st.Pre.Concat(st.Post).Concat(st.Objectives.SelectMany(o => (o.Pre ?? []).Concat(o.Post ?? []))))
             .Concat(Definition.Rules?.SelectMany(r => r.Directives) ?? [])
             .Any(d => d.Type == "StartWave" && string.Equals(d.Value(0), wave, StringComparison.OrdinalIgnoreCase));
 
-    void StartWave(string wave)
+    void StartWave(string wave, long now)
     {
         if (MapEventTables.Embedded.Wave(wave) is not { Length: > 0 } orders) { Host.Unsupported(this, $"directive StartWave {wave}: not in WaveStepData"); return; }
         clearedWaves.Remove(wave);
         waves[wave] = 0;
+        waveOrderSpawnedMs[wave] = now;
+        waveOrderSeen.Remove(wave);
         foreach (var spawner in orders[0]) Host.Spawn(spawner, 0);
+    }
+
+    /// <summary>Whether the wave's current order lets the next one come (or, the last, clears the wave).</summary>
+    bool OrderDone(string wave, string[] spawners, bool last, long now)
+    {
+        var (living, total) = spawners.Select(Host.SpawnerCount).Aggregate((Living: 0, Total: 0), (a, c) => (a.Living + c.Living, a.Total + c.Total));
+        if (total == 0) return !spawners.Any(Host.SpawnerAlive);
+        if (living > 0) waveOrderSeen.Add(wave);
+        else if (!waveOrderSeen.Contains(wave) && now < waveOrderSpawnedMs.GetValueOrDefault(wave) + OrderAppearGraceMs) return false;   // still to appear
+        return last ? living == 0 : living * 100 <= total * NextOrderAlivePercent;
     }
 
     /// <summary>The spawners of one wave's current order, if this run is running it.</summary>
@@ -665,9 +705,13 @@ public sealed class MapEventRun
         {
             if (MapEventTables.Embedded.Wave(wave) is not { } orders) { waves.Remove(wave); continue; }
             var at = order;
-            while (at < orders.Length && !orders[at].Any(Host.SpawnerAlive))
+            while (at < orders.Length && OrderDone(wave, orders[at], at == orders.Length - 1, now))
             {
-                if (++at < orders.Length) foreach (var spawner in orders[at]) Host.Spawn(spawner, 0);
+                if (++at >= orders.Length) break;
+                waveOrderSpawnedMs[wave] = now;
+                waveOrderSeen.Remove(wave);
+                foreach (var spawner in orders[at]) Host.Spawn(spawner, NextOrderDelayMs);
+                Host.ScriptBeat(this, "wave-order", $"{wave} {at + 1}/{orders.Length}", now);
             }
             if (at < orders.Length) { waves[wave] = at; continue; }
             waves.Remove(wave);
@@ -1137,7 +1181,7 @@ public sealed class MapEventRun
             case "StartFocusCamera": Host.FocusCamera(d.Value(0), d.Value(2)); break;
             case "EnvObjChangePhase": Host.EnvObjChangePhase(d.Value(0), d.Int(1)); break;
             case "SetEnvObjCanInteract": Host.SetEnvObjCanInteract(d.Value(0), d.Flag(1)); break;
-            case "StartWave": StartWave(d.Value(0)); break;
+            case "StartWave": StartWave(d.Value(0), now); break;
             case "EndWave": waves.Remove(d.Value(0)); break;
             case "CameraShake": case "PlayAct": case "ChangeBT": case "NpcMoveforSeamlessCutscene": case "NpcChangePhase":
                 break;   // client-side presentation, or NPC details the server does not model; the event goes on
