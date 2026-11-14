@@ -395,10 +395,17 @@ public sealed partial class GameSession
     sealed record SavedHeal(int EffectId, int IntervalMs, int PerTick, int Remaining, long NextAt);
     sealed record SavedDot(int EffectId, int IntervalMs, int PerTick, int Remaining, long NextAt);
     sealed record SavedCombat(int BarrierAmount, int ReflectPermille, bool Held, bool Silence, bool Rooted = false);
+    /// <summary>A stored buff. DurationMs (its full duration) and SavedAt (the clock at the save) are 0 in older saves.</summary>
     sealed record SavedBuff(int Uid, int AbnormalId, int SkillId, long ExpireAt, bool Rebirth, bool Polymorph, bool Scripted, int? Relationship,
-        Dictionary<string, int> Stats, List<SavedHeal> Heals, SavedCombat? Combat, List<SavedDot> Dots);
+        Dictionary<string, int> Stats, List<SavedHeal> Heals, SavedCombat? Combat, List<SavedDot> Dots, long DurationMs = 0, long SavedAt = 0);
 
-    /// <summary>Restores item buffs and cooldown groups after character select (official food/speed persist across relog).</summary>
+    /// <summary>
+    /// Restores item buffs and cooldown groups after character select (official food/speed persist across relog). A timed buff
+    /// comes back with the time it had left at the save: the time does not run while logged out, and its duration stays the full
+    /// one (OBSERVED, community recordings 2026-11-04 to 06: 234912 #56805 shows 22101051 with duration 300000 and 113585 ms left
+    /// after at least 14 minutes offline; 084658 #64328 three buffs with 78-84 s of 300 s). Older saves without SavedAt keep the
+    /// absolute expiry (the time ran offline).
+    /// </summary>
     void LoadBuffSettings(IReadOnlyDictionary<string, JsonElement> settings, long now)
     {
         buffs.Clear();
@@ -408,8 +415,16 @@ public sealed partial class GameSession
         {
             if (settings.TryGetValue(ActiveBuffsSetting, out var raw) && raw.Deserialize<SavedBuff[]>() is { } rows)
             {
-                foreach (var row in rows)
+                foreach (var stored in rows)
                 {
+                    // The offline time is added to every clock the buff keeps (expiry, heal and DoT ticks).
+                    var offline = stored.SavedAt > 0 && stored.ExpireAt != PassiveExpireTime ? Math.Max(0, now - stored.SavedAt) : 0;
+                    var row = offline == 0 ? stored : stored with
+                    {
+                        ExpireAt = stored.ExpireAt + offline,
+                        Heals = stored.Heals.Select(h => h with { NextAt = h.NextAt + offline }).ToList(),
+                        Dots = (stored.Dots ?? []).Select(d => d with { NextAt = d.NextAt + offline }).ToList(),
+                    };
                     if (row.ExpireAt <= now && row.ExpireAt != PassiveExpireTime) continue;
                     var info = AbnormalSpecs.Info(row.AbnormalId);
                     // A carried bomb stays with the map copy it was taken on: a relog drops it.
@@ -418,7 +433,7 @@ public sealed partial class GameSession
                     var buff = new Buff
                     {
                         Uid = row.Uid, AbnormalId = row.AbnormalId, SkillId = row.SkillId, Group = AbnormalStackRules.GroupOf(row.AbnormalId),
-                        DurationMs = row.ExpireAt == PassiveExpireTime ? -1 : Math.Max(0, row.ExpireAt - now),
+                        DurationMs = row.ExpireAt == PassiveExpireTime ? -1 : row.DurationMs > 0 ? row.DurationMs : Math.Max(0, row.ExpireAt - now),
                         ExpireAt = row.ExpireAt, Rebirth = row.Rebirth, Polymorph = row.Polymorph, Scripted = row.Scripted, Relationship = row.Relationship,
                     };
                     foreach (var (k, v) in row.Stats) buff.Stats[k] = v;
@@ -442,17 +457,18 @@ public sealed partial class GameSession
         catch (JsonException) { buffs.Clear(); itemCooldowns.Clear(); }
     }
 
-    SavedBuff[] SerializeBuffs() => buffs.Where(b => !IsSpiritSummonStateAbnormal(b.AbnormalId)).Select(b => new SavedBuff(b.Uid, b.AbnormalId, b.SkillId, b.ExpireAt, b.Rebirth, b.Polymorph, b.Scripted, b.Relationship,
+    SavedBuff[] SerializeBuffs(long now) => buffs.Where(b => !IsSpiritSummonStateAbnormal(b.AbnormalId)).Select(b => new SavedBuff(b.Uid, b.AbnormalId, b.SkillId, b.ExpireAt, b.Rebirth, b.Polymorph, b.Scripted, b.Relationship,
         new Dictionary<string, int>(b.Stats), b.Heals.Select(h => new SavedHeal(h.EffectId, h.IntervalMs, h.PerTick, h.Remaining, h.NextAt)).ToList(),
         b.Combat is { } c ? new SavedCombat(c.BarrierAmount, c.ReflectPermille, c.Held, c.Silence, c.Rooted) : null,
-        b.Combat?.Dots.Select(d => new SavedDot(d.EffectId, d.IntervalMs, d.PerTick, d.Remaining, d.NextAt)).ToList() ?? [])).ToArray();
+        b.Combat?.Dots.Select(d => new SavedDot(d.EffectId, d.IntervalMs, d.PerTick, d.Remaining, d.NextAt)).ToList() ?? [],
+        Math.Max(0, b.DurationMs), now)).ToArray();
 
     async Task FlushBuffSettingsAsync(long now, CancellationToken ct, bool force = false)
     {
         if (!buffSettingsDirty || Store is not { } store || CharacterId is not { } character || (!force && now < buffSettingsFlushAt)) return;
         buffSettingsFlushAt = now + 2000;
         buffSettingsDirty = false;
-        await SaveSettingAsync(ActiveBuffsSetting, SerializeBuffs(), ct);
+        await SaveSettingAsync(ActiveBuffsSetting, SerializeBuffs(now), ct);
         await SaveSettingAsync(ItemCooldownsSetting, itemCooldowns.Where(kv => kv.Value > now).ToDictionary(kv => kv.Key, kv => kv.Value), ct);
     }
 

@@ -1412,6 +1412,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 LoadSkillItemPoints(settings);
                 LoadCustomNpcFlags(settings);
                 LoadBuffSettings(settings, now);
+                LoadLogoutState(settings);   // the flight gauge at the logout (GameSession.LogoutState.cs)
                 LoadSkillCustomizing(settings);
                 await LoadBuybackAsync(store, state.Summary.CharacterId, ct);
                 await LoadGuildAsync(store, state.Summary.CharacterId, ct);
@@ -1561,6 +1562,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             ? storedWingId : GamePackets.DefaultWing(race);
         RefreshStats();   // wing equip/owned stats (HP, defense, ...) now that the wing is known
         resources.FpMax = resources.Fp = wingId != 0 ? FlightMax : 0;
+        if (fresh) RestoreLogoutFp();   // the first entry after a selection: the FP stored at the logout (GameSession.LogoutState.cs)
         // An instance-layer move in or out (the level stays loaded): the official load is the short list, not the world-entry
         // set (OBSERVED entry #9676-9702: 0x3623, 0x3633, 0x3646, 0x382a, 0x364a, 0x8d00, 0x4001, 0x4002, 0x6100.., 0x922e, spawns;
         // exit #14305-14345: the same with 0x3722 and 0x3742 after 0x4002 and no dungeon state). Live 2026-10-19: with the
@@ -2967,6 +2969,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         await FlushRewardLimitsAsync(now, ct, force: true);
         await FlushDungeonCooltimesAsync(now, ct, force: true);
         await FlushContentResetWorkAsync(ct);
+        await SaveLogoutStateAsync(now, ct);   // FP, and the buffs' time left as of now (GameSession.LogoutState.cs)
         await FlushBuffSettingsAsync(now, ct, force: true);
         await FlushPendingInstanceReturnAsync(ct);
         if (InWorld && Store is { } logoutStore && selected is { } logoutWho)
