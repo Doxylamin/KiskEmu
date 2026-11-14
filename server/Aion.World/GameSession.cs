@@ -672,6 +672,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case 0xe334 when CutsceneComplete(plain) is { } ended:
                 return await WithMapEventClearsFlushedAsync(MapEventCutsceneDone(ended.Name, ended.Key, now), ct);
             case 0x8d40: return [GamePackets.ClientOptionReply()];
+            case SlotExtendRq when plain.Length >= 16: return await SlotExtendAsync(plain, ct);
             // UpdateClientEnvSetting_RQ (dev 0x397D): the RS and the settings echoed as the NT (CANDIDATE; not yet seen from our client).
             case 0x8d42 when plain.Length > 2: return [GamePackets.ClientEnvSettingReply(), [0x44, 0x8d, .. plain.AsSpan(2)]];
             // MoveToLoginServer_RQ (the character screen's back button; live 2026-10-19 unanswered, the client hung):

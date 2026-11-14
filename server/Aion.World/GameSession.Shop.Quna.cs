@@ -96,7 +96,7 @@ public sealed partial class GameSession
     {
         if (Store is null || CharacterId is null) yield break;
         var level = EquipItemLevel();
-        yield return GamePackets.ItemDepotList([.. inventory.Values]);
+        yield return GamePackets.ItemDepotList([.. inventory.Values], slotExtends);
         yield return GamePackets.ItemEquipLevelChange(level, level);
     }
 

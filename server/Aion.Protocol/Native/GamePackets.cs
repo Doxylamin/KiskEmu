@@ -859,13 +859,16 @@ public static class GamePackets
     /// 0x5611 ItemDepotList_RS, the reply to the empty 0x5610 request: u16 0x0210 (unexplained,
     /// both official samples), the items, then six slot-extend counts. Bag items are container 1,
     /// equipped items container 11 with slot = equip slot. Replaces the 0x5611 candidate below,
-    /// which was one byte off (its packed-bool byte came from a later record of the sample).
+    /// which was one byte off (its packed-bool byte came from a later record of the sample). The six counts are the
+    /// slot-line expansions (CANDIDATE order: bag by item, bag by Kina, storage by Kina, storage by item, character storage
+    /// by Kina, character storage by item; all 0 in both samples).
     /// </summary>
-    public static byte[] ItemDepotList(IReadOnlyList<InventoryItem> items)
+    public static byte[] ItemDepotList(IReadOnlyList<InventoryItem> items, IReadOnlyList<int>? slotExtends = null)
     {
         var w = PacketWriter.Opcode(0x5611).U16(0x0210).Varint(items.Count);
         foreach (var item in items) WriteItem(w, item);
-        return w.Zeros(6).ToArray();
+        for (var i = 0; i < 6; i++) w.U8((byte)Math.Clamp(slotExtends is { Count: 6 } s ? s[i] : 0, 0, 255));
+        return w.ToArray();
     }
 
     /// <summary>0x561b ItemModificationList_NT: per entry type (0 add, 1 update; CANDIDATE), the item, increase/decrease/update reasons.</summary>
