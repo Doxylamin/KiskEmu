@@ -10,6 +10,8 @@ public sealed record ItemState(Guid InstanceId, string BuildId, int TemplateId, 
 /// <summary>A stored skill: <paramref name="Level"/> is the level the client shows; <paramref name="Purchased"/> is the level bought with
 /// skill points through SkillLevelUp (0 = none). Only the purchase counts as spent points, never the kit or auto-granted level.</summary>
 public sealed record SkillState(int SkillId, int Level, int? Slot, int Purchased = 0);
+/// <summary>A part equipped on a mastery skill's specialisation slot (migration 113).</summary>
+public sealed record SkillPartRecord(int SkillId, int Slot, int PartId);
 // Legions: a member (grade EGuildMemberGrade 0 Master, 1 Officer, 2 Member) and a legion with its members.
 public sealed record GuildMember(Guid CharacterId, string Name, int Level, int Grade, string Comment, int CreationId, DateTimeOffset Joined,
     long Reputation = 0, long WeeklyReputation = 0, long DonationReputation = 0, long WeeklyDonationReputation = 0, int DonationsToday = 0);
@@ -173,6 +175,11 @@ public interface IGameplayStore
     Task<bool> SetSkinEquipsAsync(VerifiedAccount account, Guid character, IReadOnlyDictionary<int, int> equips, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>A learned skill's level (a skill level bought with skill points).</summary>
     Task<bool> SetSkillLevelAsync(VerifiedAccount account, Guid character, int skillId, int level, int purchased, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>The parts equipped on the character's mastery skills (migration 113).</summary>
+    Task<IReadOnlyList<SkillPartRecord>> SkillPartsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<SkillPartRecord>>([]);
+    /// <summary>Replaces one skill's equipped parts when they still equal <paramref name="expected"/>; false otherwise.</summary>
+    Task<bool> ReplaceSkillPartsAsync(VerifiedAccount account, Guid character, int skillId, IReadOnlyList<SkillPartRecord> expected, IReadOnlyList<SkillPartRecord> parts,
+        CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>A mastery's level and exp.</summary>
     Task<bool> SaveMasteryAsync(VerifiedAccount account, Guid character, string kind, int category, int level, long exp, CancellationToken ct = default) => Task.FromResult(false);
     // Friends, requests and blocks of an owned character; null when not owned.

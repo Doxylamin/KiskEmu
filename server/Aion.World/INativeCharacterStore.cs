@@ -226,6 +226,11 @@ public interface INativeCharacterStore : IAsyncDisposable
     /// <summary>The stored skills with their levels (skill levels bought with skill points).</summary>
     Task<IReadOnlyList<SkillState>> SkillsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<SkillState>>([]);
     Task<bool> SetSkillLevelAsync(Guid character, int skillId, int level, int purchased, CancellationToken ct) => Task.FromResult(false);
+    /// <summary>The parts equipped on the character's mastery skills (specialisation).</summary>
+    Task<IReadOnlyList<SkillPartRecord>> SkillPartsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<SkillPartRecord>>([]);
+    /// <summary>Replaces one skill's equipped parts when they still equal <paramref name="expected"/>; false otherwise.</summary>
+    Task<bool> ReplaceSkillPartsAsync(Guid character, int skillId, IReadOnlyList<SkillPartRecord> expected, IReadOnlyList<SkillPartRecord> parts, CancellationToken ct) =>
+        Task.FromResult(false);
     /// <summary>Titles, skins and masteries (read at character selection).</summary>
     Task<CharacterExtras> ExtrasAsync(Guid character, CancellationToken ct) => Task.FromResult(CharacterExtras.None);
     Task<bool> GrantTitleAsync(Guid character, int titleId, CancellationToken ct) => Task.FromResult(false);

@@ -1101,6 +1101,18 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.SetSkillLevelAsync(identity.Account, character, skillId, level, purchased, ct);
     }
 
+    public async Task<IReadOnlyList<SkillPartRecord>> SkillPartsAsync(Guid character, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.SkillPartsAsync(identity.Account, character, ct);
+    }
+
+    public async Task<bool> ReplaceSkillPartsAsync(Guid character, int skillId, IReadOnlyList<SkillPartRecord> expected, IReadOnlyList<SkillPartRecord> parts, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.ReplaceSkillPartsAsync(identity.Account, character, skillId, expected, parts, ct);
+    }
+
     public async Task<CharacterExtras> ExtrasAsync(Guid character, CancellationToken ct)
     {
         await ValidateAsync(ct);

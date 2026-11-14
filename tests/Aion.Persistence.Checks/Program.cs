@@ -131,6 +131,16 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     var bag=(await game.InventoryAsync(first,id))!;
     Check(bag.Items.Count==1 && bag.Items[0].Location=="equipment" && bag.Items[0].Slot==1,"starter equipment persisted");
     Check(bag.Skills.Count==1 && bag.Skills[0].SkillId==201 && bag.Skills[0].Slot==0,"starter skills and bar persisted");
+    // Skill parts (migration 113, from addiboii's fork): a skill's set replaced by compare-and-set, owner-scoped.
+    SkillPartRecord Part(int slot,int part)=>new(11020000,slot,part);
+    Check(await game.ReplaceSkillPartsAsync(first,id,11020000,[],[Part(1,11020030)]) && !await game.ReplaceSkillPartsAsync(first,id,11020000,[],[Part(1,11020010)]),
+          "skill parts: equipped once from the empty set, a stale set refused");
+    var partSwaps=await Task.WhenAll(game.ReplaceSkillPartsAsync(first,id,11020000,[Part(1,11020030)],[Part(1,11020030),Part(2,11020040)]),
+        game.ReplaceSkillPartsAsync(first,id,11020000,[Part(1,11020030)],[Part(1,11020020)]));
+    Check(partSwaps.Count(x=>x)==1 && !await game.ReplaceSkillPartsAsync(second,id,11020000,[],[Part(1,11020010)]) && (await game.SkillPartsAsync(second,id)).Count==0,
+          "one concurrent parts change wins; ownership");
+    Check(await game.ReplaceSkillPartsAsync(first,id,11020000,(await game.SkillPartsAsync(first,id)).ToList(),[]) && (await game.SkillPartsAsync(first,id)).Count==0,
+          "unequipping every part removes the rows");
     if (Environment.GetEnvironmentVariable("AION_TEST_DAT_WEAPON") is { } datWeaponText
         && int.TryParse(datWeaponText, out var datWeapon))
     {
