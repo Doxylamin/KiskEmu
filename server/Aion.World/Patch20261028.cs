@@ -58,8 +58,12 @@ public static class Patch20261028
     public static int EntryItemLevel(DungeonInfo room) =>
         room.Type == "Party" && NewHardItemLevel.TryGetValue(room.Name, out var gate) ? gate : room.ItemLevel;
 
-    /// <summary>Revives each player has in the copy (0: unlimited).</summary>
-    public static int RevivesPerPlayer(DungeonInfo room) => IsHardExpedition(room) ? HardRevivesPerPlayer : 0;
+    /// <summary>
+    /// Revives each player has in the copy (0: unlimited): Dungeon.dat RebirthLimitCount (map-events.json rebirth_limit: 3 for the
+    /// four party _Hard dungeons, 2 for the raids), else the notice's 3 for a Hard Expedition the table does not mark.
+    /// </summary>
+    public static int RevivesPerPlayer(DungeonInfo room) =>
+        room.RebirthLimit > 0 ? room.RebirthLimit : IsHardExpedition(room) ? HardRevivesPerPlayer : 0;
 
     /// <summary>
     /// Transcendence stage (1-4) of a dungeon: the *_G_NN dungeons of a _G_Group are its stages in id order; 0 when it is not one.

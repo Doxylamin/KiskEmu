@@ -100,12 +100,20 @@ public sealed partial class GameSession
 
     const byte DecreaseUseRebirthItem = 85;
 
-    /// <summary>Revives this player may still take in the dungeon copy (Hard Expeditions: 3 each since Oct 28 2026); -1 without a limit.</summary>
+    /// <summary>The key of this character's revive count in a run: the character id, or the player key for a development login.</summary>
+    string ReviveKey => CharacterId?.ToString() ?? playerKey.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Revives this character may still take in the dungeon run (<see cref="Patch20261028.RevivesPerPlayer"/>: Dungeon.dat
+    /// RebirthLimitCount, 3 for the party _Hard dungeons, 2 for the raids); -1 without a limit. CANDIDATE: every revive counts
+    /// (respawn, item, rebirth buff, the automatic one), per character and run, so a reconnect does not refill it. Staff
+    /// revives do not count (OURS).
+    /// </summary>
     int DungeonRevivesLeft()
     {
         if (copy is not { } c || MapEventTables.Embedded.Dungeon(c.DungeonId) is not { } room) return -1;
         var limit = Patch20261028.RevivesPerPlayer(room);
-        return limit > 0 ? Math.Max(0, limit - c.Revives.GetValueOrDefault(playerKey)) : -1;
+        return limit > 0 ? Math.Max(0, limit - c.Revives.GetValueOrDefault(ReviveKey)) : -1;
     }
 
     Vector3d RespawnPoint()
@@ -115,12 +123,12 @@ public sealed partial class GameSession
         return data.MapStart(worldMap)?.Position ?? position ?? spawn?.Position ?? GamePackets.SpawnPosition;
     }
 
-    List<byte[]> Revive(long now, bool inPlace = false)
+    List<byte[]> Revive(long now, bool inPlace = false, bool counted = true)
     {
-        if (DungeonRevivesLeft() is var left && left >= 0 && copy is { } run)
+        if (counted && DungeonRevivesLeft() is var left && left >= 0 && copy is { } run)
         {
             if (left == 0) { inPlace = false; instanceExitAt = now; }
-            else run.Revives[playerKey] = run.Revives.GetValueOrDefault(playerKey) + 1;
+            else run.Revives[ReviveKey] = run.Revives.GetValueOrDefault(ReviveKey) + 1;
         }
         dead = false;
         LogResurrect(inPlace ? "in_place" : "respawn");

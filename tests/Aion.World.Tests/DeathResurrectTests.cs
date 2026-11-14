@@ -106,6 +106,33 @@ public class DeathResurrectTests
     }
 
     [Fact]
+    public async Task Dungeon_revives_count_per_character_and_staff_revives_do_not()
+    {
+        const long t = Now + 400_000;
+        var store = new FakeCharacterStore();
+        FakeCharacterStore.SeedExpeditionItemLevel(store);
+        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, t, level: 55);
+        await GameSessionTestHelpers.LoadInventoryAsync(session, t + 10);
+        session.Store = null;   // past the entry gates (level 99, item level 2400)
+        session.EnterDungeonById(600004, t + 50);   // KraoCave_Hard: Dungeon.dat RebirthLimitCount 3
+        session.Store = store;
+        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 60);
+        var run = Assert.IsType<DungeonCopy>(session.Copy);
+        var key = session.CharacterId!.Value.ToString();
+
+        session.NpcHitsPlayer(session.Resource.HpMax * 10, t + 1_000);
+        Assert.True(session.Dead);
+        session.StaffRestore(t + 2_000);
+        Assert.False(session.Dead);
+        Assert.False(run.Revives.ContainsKey(key));
+
+        session.NpcHitsPlayer(session.Resource.HpMax * 10, t + 3_000);
+        await session.HandleAsync(new PacketWriter().U16(RidePackets.RespawnRq).U8(RidePackets.RespawnAuto).I64(0).ToArray(), t + 300_000);
+        Assert.False(session.Dead);
+        Assert.Equal(1, run.Revives[key]);
+    }
+
+    [Fact]
     public async Task Load_complete_after_revive_restores_hp()
     {
         const long t = Now + 300_000;
