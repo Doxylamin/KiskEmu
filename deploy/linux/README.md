@@ -24,6 +24,15 @@ carry the address as an IPv4 literal.
 Open them in the provider's firewall as well; install.sh opens them in ufw when ufw is active.
 Some providers reserve 443 for their own panel: check that it is free.
 
+The login and game ports each take at most `Aion:Native:MaxConnections` connections (default 16), and one
+source IP address at most `Aion:Native:MaxConnectionsPerIp` of them (default 4), so a single address cannot
+take every slot. The two ports count separately, so a player's login and game connections do not compete.
+Loopback and private (LAN) addresses (10/8, 172.16/12, 192.168/16, link-local, IPv6 unique-local) are never
+limited; behind a NAT or proxy that shows every player from one private address, the cap does nothing. Raise
+it for households or internet cafés sharing one public address, or set 0 to turn it off, e.g.
+`Aion__Native__MaxConnectionsPerIp=8` in `/etc/aion/local.env`, then restart `aion-host`. A refused address
+is logged as a warning, at most once a minute per port.
+
 ## 1. On the development PC: pack the server data
 
 ```powershell

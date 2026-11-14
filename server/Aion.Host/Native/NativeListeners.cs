@@ -52,6 +52,12 @@ public sealed record NativeOptions
     public int[] ClientVersions { get; init; } = [];
     public int MaxConnections { get; init; } = 16;
     /// <summary>
+    /// Most connections one source IP may hold on each native port at once (ConnectionGuard), so one address cannot take
+    /// every MaxConnections slot. Login and game ports count separately; loopback and private (LAN) addresses are never
+    /// limited. 0 turns the cap off.
+    /// </summary>
+    public int MaxConnectionsPerIp { get; init; } = 4;
+    /// <summary>
     /// A connection without client data for this long is closed. Dead peers are found by TCP keepalive (ServeAsync) well
     /// before it; the limit only drops a live client that stays silent, as one may on the character screen (live
     /// 2026-10-19: a player waiting on the pre-login screens for 47 minutes), so it is generous.
@@ -76,6 +82,8 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
     protected NativeOptions Options { get; } = options;
     protected ILogger Logger { get; } = logger;
     readonly SemaphoreSlim slots = new(options.MaxConnections, options.MaxConnections);
+    readonly ConnectionGuard guard = new(options.MaxConnectionsPerIp);
+    long lastRefusalLog = -60_000;
 
     protected abstract string Name { get; }
     protected abstract byte[] HandshakeReply(RsaPublicKey key, byte[] sessionKey);
@@ -91,16 +99,27 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
             while (!stoppingToken.IsCancellationRequested)
             {
                 var client = await listener.AcceptTcpClientAsync(stoppingToken);
-                if (client.Client.RemoteEndPoint is not IPEndPoint { Address: var address } || (Options.Network.LoopbackOnly && !IPAddress.IsLoopback(address))
-                    || !await slots.WaitAsync(0, stoppingToken))
+                if (client.Client.RemoteEndPoint is not IPEndPoint { Address: var address } || (Options.Network.LoopbackOnly && !IPAddress.IsLoopback(address)))
                 {
+                    client.Dispose();
+                    continue;
+                }
+                if (!guard.TryAccept(address))
+                {
+                    LogRefusal(address);
+                    client.Dispose();
+                    continue;
+                }
+                if (!await slots.WaitAsync(0, stoppingToken))
+                {
+                    guard.Release(address);
                     client.Dispose();
                     continue;
                 }
                 _ = Task.Run(async () =>
                 {
                     try { await ServeAsync(client, stoppingToken); }
-                    finally { slots.Release(); client.Dispose(); }
+                    finally { slots.Release(); guard.Release(address); client.Dispose(); }
                 }, stoppingToken);
             }
         }
@@ -109,6 +128,16 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
         {
             listener.Stop();
         }
+    }
+
+    /// <summary>A warning when an address hits the per-IP cap, at most once a minute so a flood does not flood the log.</summary>
+    void LogRefusal(IPAddress address)
+    {
+        var now = Environment.TickCount64;
+        if (now - lastRefusalLog < 60_000) return;
+        lastRefusalLog = now;
+        Logger.LogWarning("{Name} refused a connection from {Address}: it already holds {Limit} (Aion:Native:MaxConnectionsPerIp); {Refused} refused since start",
+            Name, address, Options.MaxConnectionsPerIp, guard.Refused);
     }
 
     async Task ServeAsync(TcpClient client, CancellationToken stoppingToken)
