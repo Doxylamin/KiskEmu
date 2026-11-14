@@ -1675,10 +1675,22 @@ staffSession.GatherBonusRoll = () => 0;
 var gatherDone = await staffSession.TickAsync(Now + node.InteractTime + 10);
 Check(gatherDone.Any(b => b[0] == 0x33 && b[1] == 0x8d && b[2] == 0) && staffStore.Items.Any(i => i.TemplateId == node.Gather![0])
       && !gatherDone.Any(b => Op(b) is 0x3635 or 0x8d05), $"gathered material {node.Gather![0]} (0x8d33); the node is not removed at once");
-// The node's way out (OBSERVED in the community fork's recordings: EnvObjDie 0x8d05 about 50 ms after the use, FinishDuration
-// + 150 ms with one, then 0x3635 state 4 reason 3 50 ms later).
-var (nodeDie, nodeGone) = GameSession.RemovalDelays(node.FinishMs);
+// Every gather takes one of the node's uses (InteractCount, 3 when unset; OBSERVED in game: Farming Odyle gathers three
+// times); the node stays available until the last.
+var nodeUses = node.Gather is { Length: >= 7 } nodeGather && nodeGather[6] > 0 ? (int)nodeGather[6] : 3;
+Check(gatherDone.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(nodeKey))) && staffSession.GatherAttemptsLeft(nodeIndex) == nodeUses - 1,
+      $"one gather leaves the node available with {nodeUses - 1} of its {nodeUses} uses");
 var gatheredAt = Now + node.InteractTime + 10;
+for (var use = 1; use < nodeUses; use++)
+{
+    gatheredAt += 100;
+    await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)nodeKey).ToArray(), gatheredAt);
+    gatheredAt += node.InteractTime + 10;
+    await staffSession.TickAsync(gatheredAt);
+}
+// The node's way out after its last use (OBSERVED in the community fork's recordings: EnvObjDie 0x8d05 about 50 ms after the
+// use, FinishDuration + 150 ms with one, then 0x3635 state 4 reason 3 50 ms later).
+var (nodeDie, nodeGone) = GameSession.RemovalDelays(node.FinishMs);
 var nodeDying = await staffSession.TickAsync(gatheredAt + nodeDie);
 var nodeLeaving = await staffSession.TickAsync(gatheredAt + nodeGone);
 Check(nodeDying.Any(b => b.SequenceEqual(GamePackets.EnvObjDie(nodeKey))) && !nodeDying.Any(b => Op(b) == 0x3635)
