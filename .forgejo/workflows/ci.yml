@@ -3,7 +3,7 @@
 # - world: the Host and World xUnit suites (Elyos quests, Asmodian quests, everything else).
 # - persistence: tools/check_persistence.py against a throwaway PostgreSQL 18 cluster.
 # - launcher: the launcher checks, then KiskLauncher.exe, cross-built for win-x64 on Linux, as a workflow artifact.
-# Releases stay on GitHub (.github/workflows/kisklauncher.yml, tag launcher-v<version>). Forgejo reads this folder
+# Releases: a tag launcher-v<version> makes one here (launcher-release.yml) and on GitHub (.github/workflows/kisklauncher.yml). Forgejo reads this folder
 # instead of .github/workflows, so the GitHub workflow does not run here.
 name: CI
 
