@@ -400,7 +400,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 map.Broadcast(worldPlayer, MovementRelay(plain, reported));
             }
             var abandonedHeld = AbandonQueuedHeldCast(now);
-            var chargeCancelled = pendingSkillCharge is not null ? CancelPendingSkillCharge(sendStopReply: true) : [];
+            // Moving ends a charge unless its SkillCharge.dat row is bMovableInCharge (Bolt 17060000, 19200000).
+            var chargeCancelled = pendingSkillCharge is not null && !PendingChargeMovable ? CancelPendingSkillCharge(sendStopReply: true) : [];
             return await WithMapEventClearsFlushedAsync([.. abandonedHeld, .. chargeCancelled, .. uncovered, .. entering], ct);
         }
         switch (header)

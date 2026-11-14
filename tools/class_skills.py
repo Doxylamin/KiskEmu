@@ -419,6 +419,60 @@ def merge_chain_skills(cast, skills, seeds):
             cast[str(sid)]['chain_next'] = sorted(nxt)
 
 
+def charge_rows(table):
+    """{charge id: {min_ms, movable, steps: [[ChargeTime ms, ChargeSkillId], ...]}} from a SkillCharge.dat export (player skills).
+
+    Skill.dat ChargeId names the row of a charged skill (Ranger Deadshot 14010000 -> 14010000). Step n (1-based) is reached
+    after steps[n-1][0] ms of charging at charge rate 1; step 0 is the charged skill itself. Ported from the Addiboii fork
+    (d6ef0ed); the community recordings of 2026-11-06 name ChargeSkillId as the selected skill of a release (OBSERVED there).
+    """
+    if not table:
+        return {}
+    rows = json.loads(Path(table).read_text(encoding='utf-8'))['Properties']['Data']
+    charges = {}
+    for r in rows:
+        charge = _value(r['ID'])
+        if not PC_SKILL_MIN <= charge < PC_SKILL_MAX:
+            continue
+        charges[str(charge)] = {'min_ms': int(r.get('ChargeMinTime') or 0), 'movable': bool(r.get('bMovableInCharge')),
+                                'steps': [[int(s.get('ChargeTime') or 0), int(_value(s.get('ChargeSkillId')) or 0)]
+                                          for s in r.get('SkillChargeDataList', [])]}
+    return charges
+
+
+def merge_charge_skills(cast, skills, charges):
+    """Set `charge` on every cast row whose Skill.dat ChargeId names a SkillCharge row, and add each step's skill as a cast row
+    (the release casts it with its own damage; it is never learned). Returns the charge rows the cast rows use."""
+    used = {}
+    for key, row in cast.items():
+        charge = int(_value(skills.get(int(key), {}).get('raw', {}).get('ChargeId')) or 0)
+        if str(charge) in charges:
+            row['charge'] = charge
+            used[str(charge)] = charges[str(charge)]
+    for key, entry in used.items():
+        base = next((row for row in cast.values() if row.get('charge') == int(key)), {})
+        for _, step in entry['steps']:
+            if step in skills and str(step) not in cast:
+                row = cast_row(skills[step])
+                # Table rows carry only a string key: the charged skill names its steps.
+                if (not row.get('name') or str(row['name']).startswith('STR_SKILL')) and base.get('name'):
+                    row['name'] = base['name']
+                cast[str(step)] = row
+    return dict(sorted(used.items()))
+
+
+CHARGES_EVIDENCE = ('SkillCharge.dat ChargeMinTime, bMovableInCharge, SkillChargeDataList {ChargeTime, ChargeSkillId} of client 3533 '
+                    '(rows taken from the Addiboii fork d6ef0ed: no SkillCharge.dat export here yet); a cast row has charge = its '
+                    'Skill.dat ChargeId; the step skills are added as cast rows')
+
+
+def tracked_charges(charge_table=None):
+    """SkillCharge rows: from `charge_table` (a SkillCharge.dat export) when given, else the ones class-skills.json already has."""
+    if charge_table:
+        return charge_rows(charge_table)
+    return json.loads(DATA.read_text(encoding='utf-8')).get('charges', {}) if DATA.is_file() else {}
+
+
 def build(tables=TABLES, catalog=CATALOG):
     def rows(index):
         return json.loads((tables / f'table-{index:03}.json').read_text(encoding='utf-8'))['Properties']['Data']
@@ -471,6 +525,7 @@ def build(tables=TABLES, catalog=CATALOG):
     combo_seeds = {s for ids in E_COMBO_STACKS.values() for s in ids}
     cast = {str(skill): cast_row(skills[skill]) for skill in sorted(auto) if skill in skills}
     merge_chain_skills(cast, skills, set(auto) | combo_seeds)
+    charges = merge_charge_skills(cast, skills, tracked_charges())
 
     customizing = {}
     for sid_str, row in cast.items():
@@ -494,7 +549,7 @@ def build(tables=TABLES, catalog=CATALOG):
     return {'max_level': max(r['Level'] for r in stat_levels), 'common': COMMON,
             'stats': stats, 'weapon_stats': weapon_stats,
             'classes': {k: v for k, v in classes.items()}, 'common_unlocks': unlocks.get(COMMON, []),
-            'skills': cast, 'levels': levels, 'skill_customizing': customizing,
+            'skills': cast, 'levels': levels, 'skill_customizing': customizing, 'charges': charges,
             'e_combo_stacks': {k: v for k, v in e_combo_stacks().items()},
             'bar_context_by_default_skill': {str(k): v for k, v in bar_context_by_default_skill().items()},
             'evidence': {'acquire': 'SkillAcquireData bAutoLearn rows without costs/prerequisites/ascension',
@@ -504,7 +559,8 @@ def build(tables=TABLES, catalog=CATALOG):
                          'weapon_type': "most frequent NeedMainWeaponTypes of the class's auto-learned skills",
                          'starter_weapons': 'Item.dat equip_wp_<Type>_<L|D>_c_begin_001a_b (L for race 1, D for race 2)',
                          'chains': 'Skill.dat ChainSkill*; chain-only PC skills of every class merged from the catalogue',
-                         'skill_customizing': 'SkillEffectFilterId on Skill.dat effect rows (cond_id, skill_id, priority); SkillCondTable not exported'}}
+                         'skill_customizing': 'SkillEffectFilterId on Skill.dat effect rows (cond_id, skill_id, priority); SkillCondTable not exported',
+                         'charges': CHARGES_EVIDENCE}}
 
 
 @lru_cache(maxsize=1)
@@ -643,7 +699,9 @@ def improvise_missing_damage(result):
 def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('command', nargs='?', choices=['build', 'chains', 'stacks', 'install'], default='build')
+    parser.add_argument('command', nargs='?', choices=['build', 'chains', 'charges', 'stacks', 'install'], default='build')
+    parser.add_argument('--charge-table', type=Path,
+                        help='client SkillCharge.dat export (charges); without it the charge rows class-skills.json has are reused')
     parser.add_argument('--catalog', type=Path, default=CATALOG, help='game-catalog-v2 entries.jsonl (chains)')
     parser.add_argument('--skill-table', type=Path, help='client Skill table-000.json (chains), instead of --catalog')
     parser.add_argument('--effect-table', type=Path, default=EFFECT_TABLE,
@@ -652,6 +710,22 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == 'stacks':
         print(refresh_e_stacks())
+        return
+    if args.command == 'charges':
+        # Charged skills (Skill.dat ChargeId -> SkillCharge.dat): mark the cast rows and add each step's skill as a cast row.
+        if not args.skill_table:
+            raise SystemExit('charges needs --skill-table (client Skill table-000.json; --effect-table links the step damage)')
+        skills = table_skills(args.skill_table, args.effect_table if args.effect_table and args.effect_table.is_file() else None)
+        result = json.loads(DATA.read_text(encoding='utf-8'))
+        before = len(result['skills'])
+        result['charges'] = merge_charge_skills(result['skills'], skills, tracked_charges(args.charge_table))
+        result['evidence']['charges'] = CHARGES_EVIDENCE
+        try:
+            from .data_json import write_data_json as write
+        except ImportError:
+            from data_json import write_data_json as write
+        write(DATA, result)
+        print(f"{len(result['charges'])} charged skills, {len(result['skills']) - before} step skills added")
         return
     if args.command == 'chains':
         # Refresh chain skills in the tracked class-skills.json from the catalogue alone (no WorldProbe tables needed).

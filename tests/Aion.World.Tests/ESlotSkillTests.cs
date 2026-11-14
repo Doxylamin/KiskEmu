@@ -148,9 +148,20 @@ public sealed class ESlotSkillTests
         Assert.Contains(Enumerable.Range(0, bar[2]), i => bar[3 + i * 42 + 1] == 7 && BitConverter.ToInt32(bar, 3 + i * 42 + 15) == skill);
 
         var castId = CastSkillForESlot(data, cls, level, skill);
-        var cast = new PacketWriter().U16(0x3800).U16(0).I32(castId).U8(2).Varint(1).F32(0).F32(100).F32(200).F32(300).ToArray();
-        var replies = await session.HandleAsync(cast, Now + 10_000);
-        Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x3801 && GameSession.CastResultCode(p) == 0);
+        if (data.Skill(castId) is { Charge: > 0 })
+        {
+            // A charged skill (Templar Punishment 12090000) opens with SkillChargingStart_RQ, answered 0x381b result 0.
+            var charge = new PacketWriter().U16(GameSession.SkillChargingStartRq).I32(castId).U8(2).Varint(1).I32(0)
+                .F32(100).F32(200).F32(300).U8(0).ToArray();
+            var started = await session.HandleAsync(charge, Now + 10_000);
+            Assert.Contains(GamePackets.SkillChargingStartReply(0, castId), started);
+        }
+        else
+        {
+            var cast = new PacketWriter().U16(0x3800).U16(0).I32(castId).U8(2).Varint(1).F32(0).F32(100).F32(200).F32(300).ToArray();
+            var replies = await session.HandleAsync(cast, Now + 10_000);
+            Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x3801 && GameSession.CastResultCode(p) == 0);
+        }
 
         var up = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(skill).ToArray(), Now + 20_000);
         Assert.Equal(0, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(up), 2));

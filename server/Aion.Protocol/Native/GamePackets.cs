@@ -1580,17 +1580,23 @@ public static class GamePackets
         PacketWriter.Opcode(0x381b).U16(result).I32(skill).ToArray();
 
     /// <summary>
-    /// 0x381c SkillChargingStart_NT (live +0x157, OBSERVED Deadshot 2026-10-31): actor varint | skill i32 | level u8 |
-    /// target mask u8 2 | target varint | yaw f32 | Vec3 | charge rate f32 | act_move u8. The usmap also lists charging_act_id i32, but the recorded message ends after act_move (DeadshotChargingTests).
+    /// 0x381c SkillChargingStart_NT (live +0x157, OBSERVED Deadshot 2026-10-31): actor varint | u8 1 | skill i32 | level u8 |
+    /// target mask u8 2 | target varint | yaw f32 | Vec3 | charge rate f32 | act_move u8. The u8 1 after the actor is in our
+    /// capture (`1C38 B05B 01 90C6D500 ...`) and in the Addiboii fork's community recordings; its meaning is unknown. The usmap
+    /// also lists charging_act_id i32, but the recorded message ends after act_move (DeadshotChargingTests).
     /// </summary>
     public static byte[] SkillChargingStartNotify(int actorKey, int skillId, int skillLevel, int targetKey, float yaw, Vector3d location,
         float chargeRate = 1.236f, byte actMoveType = 1, int chargingActId = 0) =>
-        PacketWriter.Opcode(0x381c).Varint(actorKey).I32(skillId).U8(skillLevel).U8(2).Varint(targetKey).F32(yaw)
+        PacketWriter.Opcode(0x381c).Varint(actorKey).U8(1).I32(skillId).U8(skillLevel).U8(2).Varint(targetKey).F32(yaw)
             .F32((float)location.X).F32((float)location.Y).F32((float)location.Z).F32(chargeRate).U8(actMoveType).ToArray();
 
-    /// <summary>0x381e SkillChargingEnd_RS (OBSERVED): step u8, result u16, skill i32, i32 0, selected skill i32.</summary>
+    /// <summary>
+    /// 0x381e SkillChargingEnd_RS (OBSERVED): u8 1, result u16, charged skill i32, step i32, selected skill i32. Our capture is a
+    /// step-0 release (`1E38 01 0000 90C6D500 00000000 90C6D500`); the Addiboii fork's recordings (2026-11-06) show steps 1-3 with
+    /// the step's ChargeSkillId as the selected skill (`... 03000000 93C6D500`).
+    /// </summary>
     public static byte[] SkillChargingEndReply(int result, int skill, int step, int selectedSkill) =>
-        PacketWriter.Opcode(0x381e).U8(step).U16(result).I32(skill).I32(0).I32(selectedSkill).ToArray();
+        PacketWriter.Opcode(0x381e).U8(1).U16(result).I32(skill).I32(step).I32(selectedSkill).ToArray();
 
     /// <summary>0x3820 SkillChargingStop_RS: result i32.</summary>
     public static byte[] SkillChargingStopReply(int result = 0) => PacketWriter.Opcode(0x3820).I32(result).ToArray();

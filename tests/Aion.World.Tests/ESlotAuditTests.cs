@@ -25,6 +25,9 @@ public sealed class ESlotAuditTests
     static byte[] Cast(int skill) =>
         new PacketWriter().U16(0x3800).U16(0).I32(skill).U8(2).Varint(1).F32(0).F32(100).F32(200).F32(300).ToArray();
 
+    static byte[] ChargeStart(int skill) =>
+        new PacketWriter().U16(GameSession.SkillChargingStartRq).I32(skill).U8(2).Varint(1).I32(0).F32(100).F32(200).F32(300).U8(0).ToArray();
+
     static async Task<(GameSession Session, List<byte[]> Entry, StarterProfile Profile)> EnterAsync(int creation, int level)
     {
         var data = GameSessionTestHelpers.LiveGameData;
@@ -107,7 +110,15 @@ public sealed class ESlotAuditTests
             if (data.Skill(id)!.NeedsSpirit is { Length: > 0 }) continue;
             // SkillCond.dat conditional skills need a prerequisite buff: SkillCondSkillTests covers them.
             if (data.Skill(id)!.SkillCond is not null) continue;
-            if (data.Skill(id)!.SkillCond is not null) continue;
+            if (data.Skill(id)!.Charge > 0)
+            {
+                // A charged skill (Cleric 17060000) opens with SkillChargingStart_RQ: 0x381b result 0, then the stop ends it.
+                var started = await session.HandleAsync(ChargeStart(id), at);
+                Assert.True(started.Any(p => p.SequenceEqual(GamePackets.SkillChargingStartReply(0, id))), $"{cls}: E stack charge {id} was rejected");
+                await session.HandleAsync(PacketWriter.Opcode(GameSession.SkillChargingStopRq).ToArray(), at + 100);
+                at += 120_000;
+                continue;
+            }
             var replies = await session.HandleAsync(Cast(id), at);
             Assert.True(replies.Any(p => GameSessionTestHelpers.Op(p) == 0x3801 && GameSession.CastResultCode(p) == 0),
                 $"{cls}: E stack skill {id} was rejected");

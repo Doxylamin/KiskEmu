@@ -139,3 +139,29 @@ class ChainVariantTests(unittest.TestCase):
         self.assertEqual(cast['14020010']['chain_next'], [14030010])
         self.assertEqual(cast['14030010']['name'], 'Rapid Fire II')
         self.assertNotIn('14200010', cast)
+
+
+class ChargeSkillTests(unittest.TestCase):
+    def test_charged_skills_name_their_steps(self):
+        # SkillCharge.dat (client 3533): Deadshot's steps at 500/1000/1500 ms select 14010001-3, each a cast row of its own.
+        data = class_skills.data()
+        self.assertEqual(data['skills']['14010000']['charge'], 14010000)
+        self.assertEqual(data['charges']['14010000'], {'min_ms': 300, 'movable': False,
+                                                        'steps': [[500, 14010001], [1000, 14010002], [1500, 14010003]]})
+        for charge in data['charges'].values():
+            self.assertTrue(all(str(s) in data['skills'] for _, s in charge['steps']))
+
+    def test_merge_marks_charged_rows_and_adds_steps(self):
+        def row(i, charge=0):
+            raw = {'ID': {'Value': i}, 'ChargeId': {'Value': charge}, 'SkillType': 'ESkillType::Active'}
+            return {'id': i, 'name': 'STR_SKILL_PC_RANGER_%d' % i, 'raw': raw, 'facts': raw}
+        skills = {14010000: row(14010000, 14010000), 14010001: row(14010001), 14020000: row(14020000)}
+        cast = {'14010000': {'name': 'Deadshot'}, '14020000': {'name': 'Snipe'}}
+        charges = {'14010000': {'min_ms': 300, 'movable': False, 'steps': [[500, 14010001]]},
+                   '15060000': {'min_ms': 300, 'movable': False, 'steps': [[500, 15060001]]}}
+        used = class_skills.merge_charge_skills(cast, skills, charges)
+        self.assertEqual(list(used), ['14010000'])
+        self.assertEqual(cast['14010000']['charge'], 14010000)
+        self.assertNotIn('charge', cast['14020000'])
+        self.assertEqual(cast['14010001']['name'], 'Deadshot')
+        self.assertNotIn('15060001', cast)
