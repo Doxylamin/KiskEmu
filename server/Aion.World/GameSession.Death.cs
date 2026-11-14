@@ -11,7 +11,7 @@ public sealed partial class GameSession
     /// <summary>EAppearReasonType on respawn (OBSERVED with 0x3647 / 0x3621 after CharRespawn_RQ).</summary>
     const byte RespawnAppearReason = 4;
 
-    /// <summary>Invulnerability after accepting respawn, before the load completes (OBSERVED 3 s).</summary>
+    /// <summary>The revive's abnormal at every revive: after the respawn's load request, or in place (OBSERVED 3 s).</summary>
     const int RespawnProtectAbnormal = 10003, RespawnProtectMs = 3000;
 
     /// <summary>Invulnerability right after the own appearance on respawn load (OBSERVED 5 s).</summary>
@@ -73,7 +73,10 @@ public sealed partial class GameSession
                 return [RidePackets.RespawnReply(1)];
             var used = await Stored(async () => await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, 1, ct) ? [[]] : []);
             if (used.Count == 0) return [RidePackets.RespawnReply(1)];
-            return [RidePackets.RespawnReply(0), .. await InventoryChangesAsync(ct, 0, DecreaseUseRebirthItem), .. Revive(now, inPlace: true)];
+            // OBSERVED by the community fork (090856 #96729-#96741, three times): 0x8d23, abnormal 10003, 0x8d26 (self and
+            // nearby), 0x8d00, then the item change. Not sent: the system skill 8047 (0x3802/0x3806/0x3804) before the item.
+            var revived = Revive(now, inPlace: true);
+            return [RidePackets.RespawnReply(0), .. revived, .. await InventoryChangesAsync(ct, 0, DecreaseUseRebirthItem)];
         }
         return [RidePackets.RespawnReply(0), .. Revive(now)];
     }
@@ -93,9 +96,8 @@ public sealed partial class GameSession
     {
         if (!use) return [RidePackets.UseRebirthReply(0, false)];
         if (!dead || !CanRebirth || DungeonRevivesLeft() == 0) return [RidePackets.UseRebirthReply(1, false)];
-        var reborn = RidePackets.Reborn(playerKey);
-        worldPlayer?.Map?.Broadcast(worldPlayer, [reborn]);
-        return [RidePackets.UseRebirthReply(0, true), .. UseRebirthBuff(), reborn, .. Revive(now, inPlace: true)];
+        // CANDIDATE: as the item revive (the rebirth buff's path is unrecorded); Revive sends 0x8d26 in place.
+        return [RidePackets.UseRebirthReply(0, true), .. UseRebirthBuff(), .. Revive(now, inPlace: true)];
     }
 
     const byte DecreaseUseRebirthItem = 85;
@@ -136,8 +138,17 @@ public sealed partial class GameSession
         reviveAt = 0;
         if (resources is null) return [];
         (resources.Hp, resources.Mp) = (resources.HpMax, resources.MpMax);
+        // In place: no map load, abnormal 10003, 0x8d26 to self and nearby, every bar in one 0x8d00 (OBSERVED by the community
+        // fork, 090856 #96729-#96741). Ours used to reload the map where the player fell.
         if (inPlace && diedAt is { } fell)
-            return [resources.Update(), .. Teleport(worldMap, fell, now)];
+        {
+            position = fell;
+            var revival = new List<byte[]>();
+            AddBuff(RespawnProtectAbnormal, RespawnProtectMs, 0, now, revival, path: SelfAbnormalPath.DeathProtection);
+            var reborn = RidePackets.Reborn(playerKey);
+            worldPlayer?.Map?.Broadcast(worldPlayer, [reborn]);
+            return [.. revival, reborn, resources.FullUpdate()];
+        }
         var at = RespawnPoint();
         var replies = new List<byte[]> { PlayerPackets.CharDisappear(playerKey, RespawnAppearReason) };
         replies.AddRange(Teleport(worldMap, at, now, RespawnAppearReason));

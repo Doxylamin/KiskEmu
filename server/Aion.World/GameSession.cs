@@ -132,6 +132,10 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         public byte[] SpUpdate() => GamePackets.CharPoints(key, [(CharPoint.Sp, Sp)]);
         public byte[] OpUpdate() => GamePackets.CharPoints(key, [(CharPoint.Op, Op)]);
         public byte[] FpUpdate() => GamePackets.CharPoints(key, [(CharPoint.MaxFp, FpMax), (CharPoint.Fp, Fp)]);
+        /// <summary>Every bar in one message, as the official in-place revive (OBSERVED by the community fork, 2026-11-06 090856
+        /// #96734: i32 types 1-6, then the i64 HP).</summary>
+        public byte[] FullUpdate() => GamePackets.CharPoints(key,
+            [(CharPoint.Mp, Mp), (CharPoint.Ap, Ap), (CharPoint.Sp, Sp), (CharPoint.Dp, 0), (CharPoint.Op, Op), (CharPoint.Fp, Fp)], [(CharPoint.Hp, Hp)]);
         /// <summary>The world-entry maxima, as the official burst before 0x3633 (OP max 100000 observed).</summary>
         public int Fp, FpMax;
         public byte[] Maxima()

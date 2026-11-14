@@ -125,7 +125,7 @@ public sealed class CoreLoopE2ETests
         Assert.True(session.Dead);
         var rebirth = await session.HandleAsync(new PacketWriter().U16(RidePackets.UseRebirthRq).U8(1).ToArray(), t + 2100);
         Assert.Contains(rebirth, p => p.SequenceEqual(RidePackets.UseRebirthReply(0, true)));
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 2200);
+        Assert.DoesNotContain(rebirth, p => GameSessionTestHelpers.Op(p) == 0x3621);   // in place: no map load to complete
         Assert.False(session.Dead);
         Assert.Equal(fell, session.Position);
 

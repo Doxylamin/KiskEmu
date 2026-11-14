@@ -162,6 +162,29 @@ public class DeathResurrectTests
     }
 
     [Fact]
+    public async Task Spiritstone_revive_is_in_place_without_a_map_load_in_the_recorded_order()
+    {
+        const long t = Now + 700_000;
+        var store = new FakeCharacterStore();
+        var session = await EnterAscendedAsync(store, t);
+        store.Items.Add(FakeCharacterStore.BagItem(502760001, 2, 82));
+        await GameSessionTestHelpers.LoadInventoryAsync(session, t);
+        var fell = session.Position!.Value;
+        session.NpcHitsPlayer(session.Resource.HpMax * 10, t + 1000, killerKey: 2001);
+        var stone = await session.HandleAsync(new PacketWriter().U16(RidePackets.RespawnRq).U8(RidePackets.RespawnItem).I64(82).ToArray(), t + 2000);
+        Assert.False(session.Dead);
+        Assert.Equal(fell, session.Position);
+        Assert.Equal(session.Resource.HpMax, session.Resource.Hp);
+        Assert.DoesNotContain(stone, p => GameSessionTestHelpers.Op(p) == 0x3621);
+        Assert.Equal(RidePackets.RespawnReply(0), stone[0]);
+        var abnormal = stone.FindIndex(p => GameSessionTestHelpers.Op(p) == 0x382a);
+        var reborn = stone.FindIndex(p => p.SequenceEqual(RidePackets.Reborn(session.PlayerKey)));
+        var bars = stone.FindIndex(p => GameSessionTestHelpers.Op(p) == 0x8d00);
+        Assert.True(abnormal > 0 && reborn > abnormal && bars > reborn && bars < stone.Count - 1, string.Join(" ", stone.Select(p => GameSessionTestHelpers.Op(p).ToString("x4"))));
+        Assert.Contains(10003, session.ActiveBuffs);
+    }
+
+    [Fact]
     public async Task Load_complete_after_revive_restores_hp()
     {
         const long t = Now + 300_000;
