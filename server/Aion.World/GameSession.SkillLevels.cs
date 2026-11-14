@@ -108,11 +108,16 @@ public sealed partial class GameSession
     /// </summary>
     byte[] SkillPointUpdate() => GamePackets.SkillPointUpdate(SpentSkillPoints(), SkillPointTypePoint);
 
-    /// <summary>The kit plus the learned stigmas and their unlocked parts (both in 0x5100, OBSERVED official 2026-11-12).</summary>
+    /// <summary>
+    /// The kit plus the learned stigmas and their unlocked parts (both in 0x5100, OBSERVED official 2026-11-12), then the
+    /// specialisation children in effect at their parent's level (fork OBSERVED 0x5100 #643: 11030340, 11040340).
+    /// </summary>
     void RefreshWireClientSkillList(IReadOnlyList<(int SkillId, int Level)> kitAfterChainOverlay)
     {
         var kitIds = kitAfterChainOverlay.Select(k => k.SkillId).ToHashSet();
-        wireClientSkillList = [.. kitAfterChainOverlay, .. StigmaSkillEntries().Where(s => !kitIds.Contains(s.SkillId))];
+        var stigmaEntries = StigmaSkillEntries().Where(s => kitIds.Add(s.SkillId)).ToList();
+        var children = SpecializedChildren().Where(kitIds.Add).Select(c => (c, SkillWireDisplayLevel(c)));
+        wireClientSkillList = [.. kitAfterChainOverlay, .. stigmaEntries, .. children];
     }
 
     void RebuildWireClientSkillList()
@@ -147,8 +152,12 @@ public sealed partial class GameSession
         return map;
     }
 
-    int ChainMirrorSource(int skillId) =>
-        data.Skill(skillId) is { ChainPrev: > 0 } ? ChainRoot(skillId) : skillId;
+    /// <summary>The skill whose level a skill shows: a chain step its root's, a specialisation child its mastery parent's.</summary>
+    int ChainMirrorSource(int skillId)
+    {
+        var root = data.Skill(skillId) is { ChainPrev: > 0 } ? ChainRoot(skillId) : skillId;
+        return Specialized.ParentOf(root) is { } parent && Specialized.HasParts(parent) ? parent : root;
+    }
 
     int SkillWireMasteryLevel(int skillId) => MasteryLevel(ChainMirrorSource(skillId));
 
@@ -202,13 +211,15 @@ public sealed partial class GameSession
             var saved = await Stored(async () => await store.SetSkillLevelAsync(character, skillId, next, PurchasedLevel(skillId, next), ct) ? [[]] : []);
             if (saved.Count == 0) return [Reply(1), ..SkillPointClientSync()];
         }
+        var childBefore = SpecializedChild(skillId);
         ApplyMasteryLevel(skillId, next);
         LogSkillPoints(skillId, next, $"level_up left={SkillPointsLeft} sent5105={SkillPointsLeft}");
         List<byte[]>? chainUpdates = null;
         if (data.Skill(skillId) is { } def && SkillCooldown.IsFixSlot(def) && SkillCooldown.IsBasicAutoAttack(def))
             chainUpdates = SyncBasicChainSkills(skillId);
         RebuildWireClientSkillList();
-        return SkillMasteryCoreReplies(Reply(0), skillId, next, SkillPointLevelUp, chainUpdates);
+        // The specialisation children follow before the reply (GameSession.Specialization.cs).
+        return [.. SpecializedLevelChange(skillId, childBefore), .. SkillMasteryCoreReplies(Reply(0), skillId, next, SkillPointLevelUp, chainUpdates)];
     }
 
     /// <summary>After FixSlot basic mastery changes: base chain steps appear in 0x5100 at the same level (unlocks Skill Order rows).</summary>
@@ -283,8 +294,9 @@ public sealed partial class GameSession
         if (current <= baseline || !HasPurchasedMastery(skillId)) return [Reply(1), ..SkillPointClientSync()];
         var next = current - 1;
         if (!await SaveSkillLevelAsync(skillId, next, ct)) return [Reply(1), ..SkillPointClientSync()];
+        var childBefore = SpecializedChild(skillId);
         ApplyMasteryLevel(skillId, next);
-        return [..SkillMasteryCoreReplies(Reply(0), skillId, next, SkillPointLevelDown, appendSkillPointUpdate: false), ..SkillPointListResync(), SkillPointUpdate()];
+        return [..SpecializedLevelChange(skillId, childBefore), ..SkillMasteryCoreReplies(Reply(0), skillId, next, SkillPointLevelDown, appendSkillPointUpdate: false), ..SkillPointListResync(), SkillPointUpdate()];
     }
 
     /// <summary>
@@ -314,16 +326,19 @@ public sealed partial class GameSession
         }
         if (targets.Count == 0) return [Reply(1, []), ..SkillPointClientSync()];
         var updates = new List<byte[]>();
+        var children = new List<byte[]>();
         foreach (var id in targets)
         {
             var baseline = KitSkillLevel(id);
             if (!await SaveSkillLevelAsync(id, baseline, ct)) continue;
+            var childBefore = SpecializedChild(id);
             ApplyMasteryLevel(id, baseline);
+            children.AddRange(SpecializedLevelChange(id, childBefore));   // OURS: as a level down (GameSession.Specialization.cs)
             updates.Add(SkillLevelUpdate(id, baseline, SkillLevelModify));
         }
         if (updates.Count == 0) return [Reply(1, []), ..SkillPointClientSync()];
         RecomputeCombatPower();
-        return [CharCombatPowerUpdate(), Reply(0, targets), .. updates, ..SkillPointListResync(), SkillPointUpdate()];
+        return [.. children, CharCombatPowerUpdate(), Reply(0, targets), .. updates, ..SkillPointListResync(), SkillPointUpdate()];
     }
 
     async Task<bool> SaveSkillLevelAsync(int skillId, int newLevel, CancellationToken ct)
