@@ -13,7 +13,14 @@ public sealed class ItemEnhanceTables
         [property: JsonPropertyName("magicstones")] Dictionary<string, string[]> MagicStones,
         [property: JsonPropertyName("imprint_groups")] Dictionary<string, JsonElement[][]> ImprintGroups,
         [property: JsonPropertyName("soulbind_costs")] Dictionary<string, long[][]> SoulBindCosts,
-        [property: JsonPropertyName("soulbind_reroll")] Dictionary<string, long[]> SoulBindReroll);
+        [property: JsonPropertyName("soulbind_reroll")] Dictionary<string, long[]> SoulBindReroll,
+        [property: JsonPropertyName("soulbind_stats")] Dictionary<string, int[]>? SoulBindStats = null,
+        [property: JsonPropertyName("soulbind_pools")] int[][][]? SoulBindPools = null);
+
+    /// <summary>One line of a soul-bind pool: EStat wire id, MinValue, MaxValue, RandomWeight (Item.dat SubStats).</summary>
+    public sealed record SoulStatRange(int Stat, int Min, int Max, int Weight);
+    /// <summary>An item's soul-bind stats: SoulbindRandomStatCount lines drawn from its pool.</summary>
+    public sealed record SoulBinding(int StatCount, IReadOnlyList<SoulStatRange> Pool);
 
     /// <summary>Equipment: mana stone slots, the imprint Kina, the accepted mana stone groups and the soul bind cost row.</summary>
     public sealed record Equip(int Slots, long ImprintKina, IReadOnlyList<string> StoneGroups, string SoulBindCost);
@@ -55,6 +62,40 @@ public sealed class ItemEnhanceTables
     public Cost? SoulBindStep(int itemId, int count) =>
         Item(itemId) is { } equip && file.SoulBindCosts.TryGetValue(equip.SoulBindCost, out var steps) && count >= 0 && count < steps.Length
             ? new Cost(steps[count][0], (int)steps[count][1], (int)steps[count][2]) : null;
+
+    /// <summary>The item's soul-bind stat pool (Item.dat SoulbindRandomStat / SoulbindRandomStatCount / SubStats); null without one.</summary>
+    public SoulBinding? SoulBindStats(int itemId) =>
+        file.SoulBindStats is { } items && file.SoulBindPools is { } pools && items.TryGetValue(Key(itemId), out var r)
+        && r.Length == 2 && r[1] >= 0 && r[1] < pools.Length
+            ? new SoulBinding(r[0], pools[r[1]].Where(p => p.Length == 4).Select(p => new SoulStatRange(p[0], p[1], p[2], p[3])).ToList())
+            : null;
+
+    /// <summary>
+    /// The stats after a bind to <paramref name="count"/> (the new bind count), from the stats the item holds.
+    /// Ported from the community fork (Addiboii 13aa9ef, SoulBindPools.Bind). OBSERVED there (community recordings
+    /// 2026-11-04 and 11-06, every 0x5630 with stats): from bind count 2 the item holds SoulbindRandomStatCount distinct
+    /// stats of its pool, kept from bind to bind, each within MinValue..MaxValue, and a further bind raises them toward
+    /// MaxValue. CANDIDATE: the pool itself (SubStats; #75 item 13), the first bind drawing half the count rounded up,
+    /// a new stat drawn by RandomWeight at a uniform value, and a further bind adding a uniform 0..half the range.
+    /// <paramref name="roll"/> returns 0..max-1.
+    /// </summary>
+    public static List<(int Wire, int Value)> Bind(SoulBinding binding, IReadOnlyList<(int Wire, int Value)> held, int count, Func<int, int> roll)
+    {
+        var range = binding.Pool.GroupBy(p => p.Stat).ToDictionary(g => g.Key, g => g.First());
+        var stats = held.Where(s => range.ContainsKey(s.Wire))
+            .Select(s => count <= 1 ? s : (s.Wire, Math.Min(range[s.Wire].Max, s.Value + roll((range[s.Wire].Max - range[s.Wire].Min) / 2 + 1))))
+            .ToList();
+        var want = count <= 1 ? (binding.StatCount + 1) / 2 : binding.StatCount;
+        var left = binding.Pool.Where(p => p.Weight > 0 && stats.All(s => s.Wire != p.Stat)).ToList();
+        while (stats.Count < want && left.Count > 0)
+        {
+            var draw = roll(left.Sum(p => p.Weight));
+            var pick = left.FirstOrDefault(p => (draw -= p.Weight) < 0) ?? left[^1];
+            stats.Add((pick.Stat, pick.Min + roll(Math.Max(0, pick.Max - pick.Min) + 1)));
+            left.Remove(pick);
+        }
+        return stats;
+    }
 }
 
 // Mana stones (Manastone tab) and soul binding (Soul Binding tab). Live opcodes in the 0x56 run, usmap layouts:
@@ -67,9 +108,11 @@ public sealed class ItemEnhanceTables
 // item's SoulbindCostName: Kina + Soul Codex 535400001), ItemSoulBindComplete_RQ 0x562f {_uid} pays it and raises
 // upgrades.soul_bind. A start without a cost item on an unbound item is the free bind on equip (as before).
 // No official soul bind capture yet: the success result 0 (no kItem_SoulBind_Success in EResult; failures 849..860)
-// and the cost row index (step n = count n -> n + 1) are CANDIDATE. The bound sub-stat roll is not in the exported
-// tables (official bound items show DEX/CON/WIS/HPRegen lines that are not in Item.dat SubStats): stats are kept as
-// they are and echoed in 0x5630 (CANDIDATE gap).
+// and the cost row index (step n = count n -> n + 1) are CANDIDATE. A bind draws or raises the item's soul-bind stats
+// (upgrades.soul_stats [[EStat wire, value]], ItemEnhanceTables.Bind) from its Item.dat SubStats pool (the community
+// fork's finding, Addiboii 13aa9ef; the DEX/CON/WIS/HPRegen lines of official bound items are in that pool), sends them
+// in 0x5630 and the item detail, and counts them for the wearer (item-stats.json rolled_fields). The pool as the
+// source is CANDIDATE for us until capture #75 item 13.
 public sealed partial class GameSession
 {
     public const ushort ItemImprintRq = 0x5629, ItemImprintRs = 0x562a;
@@ -231,26 +274,49 @@ public sealed partial class GameSession
         if (Store is not { } store || CharacterId is not { } character || !storedItems.TryGetValue(key, out var row))
             return [GamePackets.SoulBindComplete(key, 0, SoulBindInvalidData)];
         var count = SoulBindCount(row);
-        var stats = RolledWireStats(row.RolledStats);
+        var held = SoulStatsOf(row);
         if (!soulBindStarts.Remove(key, out var costKey))
         {
-            if (count > 0) return [GamePackets.SoulBindComplete(key, count, SoulBindInvalidData, stats)];
-            var bound = await Stored(async () => await store.SoulBindItemAsync(character, row.InstanceId, 1, ct) ? [Array.Empty<byte>()] : []);
+            if (count > 0) return [GamePackets.SoulBindComplete(key, count, SoulBindInvalidData, held)];
+            var first = Enhance.SoulBindStats(row.TemplateId) is { } pool ? ItemEnhanceTables.Bind(pool, held, 1, UpgradeRoll) : null;
+            // Without stats the plain bind (as before); with stats the bind and its stats in one revision-checked write.
+            var bound = first is { Count: > 0 }
+                ? await Stored(async () => await store.UpgradeItemAsync(character, row.InstanceId, row.Revision, [], SoulPatch(1, first), ct) ? [Array.Empty<byte>()] : [])
+                : await Stored(async () => await store.SoulBindItemAsync(character, row.InstanceId, 1, ct) ? [Array.Empty<byte>()] : []);
             if (bound.Count != 1) return [GamePackets.SoulBindComplete(key, 0, SoulBindInternalError)];
-            return [GamePackets.SoulBindComplete(key, 1, 0, stats), .. await InventoryChangesAsync(ct, 0, 0, update: UpdateSoulBind), .. Achieve("SoulbindTry")];
+            List<byte[]> freeReplies = [GamePackets.SoulBindComplete(key, 1, 0, first), .. await InventoryChangesAsync(ct, 0, 0, update: UpdateSoulBind), .. Achieve("SoulbindTry")];
+            if (row.Location == "equipment" && first is { Count: > 0 }) freeReplies.AddRange(RefreshStats());
+            return freeReplies;
         }
-        if (Enhance.SoulBindStep(row.TemplateId, count) is not { } step) return [GamePackets.SoulBindComplete(key, count, SoulBindOverCount, stats)];
+        if (Enhance.SoulBindStep(row.TemplateId, count) is not { } step) return [GamePackets.SoulBindComplete(key, count, SoulBindOverCount, held)];
         var plan = new MaterialPlan(this, row.InstanceId);
         if (!plan.Take(KinaItemId, step.Kina) || !plan.Take(step.ItemId, step.Count, [costKey]))
-            return [GamePackets.SoulBindComplete(key, count, SoulBindNotEnoughCost, stats)];
+            return [GamePackets.SoulBindComplete(key, count, SoulBindNotEnoughCost, held)];
         var after = (byte)(count + 1);
-        var patch = JsonSerializer.SerializeToElement(new { soul_bind = (int)after });
-        var done = await Stored(async () => await store.UpgradeItemAsync(character, row.InstanceId, row.Revision, plan.Costs, patch, ct) ? [[]] : []);
-        if (done.Count == 0) return [GamePackets.SoulBindComplete(key, count, SoulBindInternalError, stats)];
+        var stats = Enhance.SoulBindStats(row.TemplateId) is { } binding ? ItemEnhanceTables.Bind(binding, held, after, UpgradeRoll) : null;
+        var done = await Stored(async () => await store.UpgradeItemAsync(character, row.InstanceId, row.Revision, plan.Costs, SoulPatch(after, stats), ct) ? [[]] : []);
+        if (done.Count == 0) return [GamePackets.SoulBindComplete(key, count, SoulBindInternalError, held)];
         var replies = await InventoryChangesAsync(ct, 0, DecreaseItemSoulBind, update: UpdateSoulBind);
         replies.Insert(0, GamePackets.SoulBindComplete(key, after, 0, stats));
         replies.AddRange(Achieve("SoulbindTry"));
         if (row.Location == "equipment") replies.AddRange(RefreshStats());
         return replies;
+    }
+
+    /// <summary>The upgrades patch of a bind: soul_bind = count and, when drawn, soul_stats = [[EStat wire, value], ...].</summary>
+    static JsonElement SoulPatch(int count, IReadOnlyList<(int Wire, int Value)>? stats) => stats is { Count: > 0 }
+        ? JsonSerializer.SerializeToElement(new { soul_bind = count, soul_stats = stats.Select(s => new[] { s.Wire, s.Value }) })
+        : JsonSerializer.SerializeToElement(new { soul_bind = count });
+
+    /// <summary>A stored item's soul-bind stats (upgrades.soul_stats, [[EStat wire, value], ...]).</summary>
+    static IReadOnlyList<(int Wire, int Value)> SoulStatsOf(ItemState item)
+    {
+        if (item.Upgrades.ValueKind != JsonValueKind.Object || !item.Upgrades.TryGetProperty("soul_stats", out var stats) || stats.ValueKind != JsonValueKind.Array)
+            return [];
+        var list = new List<(int, int)>();
+        foreach (var s in stats.EnumerateArray())
+            if (s.ValueKind == JsonValueKind.Array && s.GetArrayLength() == 2 && s[0].TryGetInt32(out var wire) && s[1].TryGetInt32(out var value))
+                list.Add((wire, value));
+        return list;
     }
 }

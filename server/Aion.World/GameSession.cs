@@ -995,7 +995,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                     (byte)EnchantOf(item), SoulBindCount(item) > 0 ? owner : 0, SoulBindCount(item),
                     (byte)EnchantOf(item, "surpass_enchant"), EnchantOf(item, "enchant_bonus"), EnchantOf(item, "surpass_enchant_bonus"), GodstonesOf(item),
                     RolledWireStats(item.RolledStats),
-                    (byte)Math.Clamp(SkinExtractionUsed(item), 0, 255), WireMagicStones(item)) : null));
+                    (byte)Math.Clamp(SkinExtractionUsed(item), 0, 255), WireMagicStones(item), SoulStatsOf(item)) : null));
         }
         return result;
     }

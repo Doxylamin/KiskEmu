@@ -12,6 +12,13 @@ through tools/data/item-stat-wire.json. Rebuild with `python tools/enhance_data.
   CriticalResist / 2 = 9 from Intermediate Manastone (ms_30_common_normal): those are exactly this table's values.
 - soulbind_costs: cost name -> [[Kina, item ID, count] per bind step (step n raises the bind count from n to n + 1)].
 - soulbind_reroll: cost name -> [Kina, item ID, count] (Attune).
+- soulbind_stats: equipment ID -> [SoulbindRandomStatCount, pool index] for the items with SoulbindRandomStat.
+- soulbind_pools: the shared pools, [[EStat wire id, MinValue, MaxValue, RandomWeight], ...] from the item's SubStats
+  (rows with weight 0 or an EStat without a wire id are left out). Ported from the community fork (Addiboii,
+  tools/soulbind_data.py, commit 13aa9ef), rebuilt here from our Item.dat export. OBSERVED there (community recordings
+  2026-11-04 and 11-06): the bound item carries SoulbindRandomStatCount stats of this pool, each inside
+  MinValue..MaxValue (110130050: 4 of 4; 115030052: 4 of 4; 210540022: 3 of 3). CANDIDATE for us: no capture of our
+  own shows where the lines come from (#75 item 13).
 """
 import json
 import sys
@@ -43,8 +50,18 @@ def build(research):
     def item_id(name):
         return KINA if name == 'GoldCombined' else ids.get(name, 0)
 
-    items, stones = {}, {}
+    items, stones, soul, pools, pool_index = {}, {}, {}, [], {}
     for item, raw in sorted(raws.items()):
+        if raw.get('ItemType') == 'EItemType::Equip' and raw.get('SoulbindRandomStat') and int(raw.get('SoulbindRandomStatCount') or 0) > 0:
+            pool = [[wire[s['Key'].removeprefix('EStat::')], int(s['Value']['MinValue']), int(s['Value']['MaxValue']), int(s['Value']['RandomWeight'])]
+                    for s in raw.get('SubStats') or []
+                    if s['Key'].removeprefix('EStat::') in wire and int(s['Value'].get('RandomWeight') or 0) > 0]
+            if pool:
+                key = json.dumps(pool)
+                if key not in pool_index:
+                    pool_index[key] = len(pools)
+                    pools.append(pool)
+                soul[str(item)] = [int(raw['SoulbindRandomStatCount']), pool_index[key]]
         if raw.get('ItemType') == 'EItemType::Equip':
             slots = int(raw.get('MagicStoneSlotCount') or 0)
             cost = raw.get('SoulbindCostName') or 'None'
@@ -68,7 +85,8 @@ def build(research):
         costs[row['Name']] = [[int(c['CostA_Amount']) if c['CostA_Id'] == 'GoldCombined' else 0, item_id(c['CostB_Id']), int(c['CostB_Amount'])]
                               for c in row['CostDatas']]
         reroll[row['Name']] = [int(row['RerollCostCount']), item_id(row['RerollCostItem']), int(row['RerollCostItemCount'])]
-    return {'items': items, 'magicstones': stones, 'imprint_groups': groups, 'soulbind_costs': costs, 'soulbind_reroll': reroll}
+    return {'items': items, 'magicstones': stones, 'imprint_groups': groups, 'soulbind_costs': costs, 'soulbind_reroll': reroll,
+            'soulbind_stats': soul, 'soulbind_pools': pools}
 
 
 def main():
@@ -76,7 +94,8 @@ def main():
     data = build(research)
     DATA.write_text(json.dumps(data, separators=(',', ':')) + '\n', encoding='utf-8')
     print(f"item_enhance.json: {len(data['items'])} items, {len(data['magicstones'])} mana stones, "
-          f"{len(data['imprint_groups'])} imprint groups, {len(data['soulbind_costs'])} soul bind costs")
+          f"{len(data['imprint_groups'])} imprint groups, {len(data['soulbind_costs'])} soul bind costs, "
+          f"{len(data['soulbind_stats'])} soul-bind stat items in {len(data['soulbind_pools'])} pools")
 
 
 if __name__ == '__main__':
