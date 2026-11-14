@@ -1651,6 +1651,12 @@ Check(guildMembers[0] == 0x05 && guildMembers[2] == 0 && guildMembers[4] == 1, "
 Check((await staffSession.HandleAsync([0x0a, 0x8a], Now)).Single()[2] == 2, "the master cannot leave (result 2)");
 var disbanded = await staffSession.HandleAsync([0x34, 0x8a], Now);
 Check(disbanded[0][0] == 0x35 && disbanded[0][2] == 0 && staffSession.Guild is null && disbanded.Any(b => b[0] == 0x33 && b[1] == 0x8a), "the master disbands it (0x8a35); the tag clears");
+// The live 3533 client (2026-11-14) ends 0x8a00 after the emblem: no intro string (11 bytes after the opcode with a 4-letter name).
+var liveCreate = new PacketWriter().U16(0x8a00).String("Test").U8(0).String("").I32(1).ToArray();
+var liveCreated = await staffSession.HandleAsync(liveCreate, Now);
+Check(liveCreate.Length == 2 + 11 && liveCreated.Count > 0 && liveCreated[0][0] == 0x01 && liveCreated[0][1] == 0x8a && liveCreated[0][2] == 0
+      && staffSession.Guild?.Name == "Test", "0x8a00 without the intro string (live 3533 body) still creates the legion (0x8a01 result 0)");
+await staffSession.HandleAsync([0x34, 0x8a], Now);
 // Gathering: a map 1010 gather node (an EnvObj spawned with 0x3634) used with 0x3636: after its 3 s the material is
 // granted, GatherSourceCompleted_NT 0x8d33, and the node is used up for this player (0x3635; refused until it is back).
 var nodes = WorldObjects.ObjectsOn(1010);

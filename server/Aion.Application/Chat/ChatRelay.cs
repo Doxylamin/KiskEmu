@@ -16,8 +16,10 @@ namespace Aion.Application.Chat;
 /// Rooms: the client joins WORLD/{serverKey}/{serverKey}, REGION/{serverKey}/RG (common) and
 /// REGION/{serverKey}/SH (shout), with serverKey from Login_RS — the same for every character
 /// on this host, so all players share them. Only those rooms of the session's own server key
-/// can be joined (party, guild, race and other rooms need membership checks that do not exist
-/// yet), and a message reaches a room only from a member.
+/// can be joined, plus the GUILD room of a legion member and the PARTY room of a party member
+/// (client ECommunityChatType GUILD/PARTY, room key prefix GU/PA from ChatTypeRoomKeyPrefix);
+/// race and other rooms need membership checks that do not exist yet. A message reaches a room
+/// only from a member; GUILD and PARTY messages reach the sender's legion or party only.
 ///
 /// Senders: an account identity speaks as its character in the world (stored and displayed
 /// name from the world, checked on every message); a development identity uses the client's
@@ -70,11 +72,11 @@ public sealed class ChatRelay(TimeProvider clock, IChatDirectory? directory = nu
 
     public void Logout(string token) => sessions.TryRemove(token, out _);
 
-    /// <summary>Joins one of the rooms every player on this server shares (see the class summary), or the legion room of a legion member.</summary>
+    /// <summary>Joins one of the rooms every player on this server shares (see the class summary), the legion room of a legion member or the party room of a party member.</summary>
     public void Join(string token, ChatRoomKey room)
     {
         var session = Require(token);
-        if (!Joinable(session.Identity, room) && !(room.Type == "GUILD" && room.ServerKey == session.Identity.ServerKey && GuildOf(session) > 0))
+        if (!Joinable(session.Identity, room) && !(room.ServerKey == session.Identity.ServerKey && GroupOf(session, room.Type) > 0))
             throw new ChatRejectedException("This chat channel is not available.");
         lock (session) session.Rooms.Add(room);
     }
@@ -85,6 +87,13 @@ public sealed class ChatRelay(TimeProvider clock, IChatDirectory? directory = nu
     /// </summary>
     long GuildOf(Session session) =>
         session.Identity is { AccountId: { } account, Character: { } character } ? directory?.Current(character.Id, account)?.GuildId ?? 0 : 0;
+
+    /// <summary>The party the session's character is in now (0 none, and always 0 for development identities); like the legion room, the PA... key is not relied on.</summary>
+    long PartyOf(Session session) =>
+        session.Identity is { AccountId: { } account, Character: { } character } ? directory?.Current(character.Id, account)?.PartyId ?? 0 : 0;
+
+    /// <summary>For a GUILD or PARTY room, the session's legion or party (0 none); 0 for every other room type.</summary>
+    long GroupOf(Session session, string type) => type switch { "GUILD" => GuildOf(session), "PARTY" => PartyOf(session), _ => 0 };
 
     public void Leave(string token, ChatRoomKey room)
     {
@@ -107,12 +116,15 @@ public sealed class ChatRelay(TimeProvider clock, IChatDirectory? directory = nu
         var speaker = Resolve(sender, message.UserName);
         CheckMute(sender.Identity);
         Validate(sender.Identity, message.Content);
-        var legion = room.Type == "GUILD" ? GuildOf(sender) : 0;
-        if (room.Type == "GUILD" && legion == 0) throw new ChatRejectedException("You are not in a legion.");
+        var group = GroupOf(sender, room.Type);
+        if (room.Type == "GUILD" && group == 0) throw new ChatRejectedException("You are not in a legion.");
+        if (room.Type == "PARTY" && group == 0) throw new ChatRejectedException("You are not in a party.");
         var notification = Notify(sender.Identity, speaker, room, message);
         Moderation?.Logged(new(room.Type == "REGION" ? "REGION/" + room.RoomKey : room.Type, sender.Identity.AccountId, speaker.Name, null, message.Content));
-        var targets = sessions.Where(pair => { lock (pair.Value) return pair.Value.Rooms.Contains(room); })
-            .Where(pair => legion == 0 || GuildOf(pair.Value) == legion)
+        // A party's room key is not relied on (members may name it differently): any PARTY room of the server key, same party.
+        var targets = sessions.Where(pair => { lock (pair.Value) return room.Type == "PARTY"
+                ? pair.Value.Rooms.Any(r => r.Type == "PARTY" && r.ServerKey == room.ServerKey) : pair.Value.Rooms.Contains(room); })
+            .Where(pair => group == 0 || GroupOf(pair.Value, room.Type) == group)
             .Select(pair => new ChatDelivery(pair.Key, notification)).ToList();
         return (notification.Guid, targets);
     }
