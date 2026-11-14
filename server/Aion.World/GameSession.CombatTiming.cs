@@ -301,7 +301,7 @@ partial class GameSession
         replies.AddRange(AchieveKill(target.NpcId));
         replies.AddRange(BossChallengeKilled(target, now));
         InstanceKill(target, now);
-        killedLevels.Add(target.Level);
+        killedLevels.Add((target.Level, target.Grade, instanceKey != 0));
         replies.AddRange(DropLoot(target, now));
         replies.Add(GamePackets.TargetUpdate(target.Key));
         // OBSERVED: a player killer's legion name and emblem u16 follow its name (e.g. "WHITEOUT", emblem 1).
