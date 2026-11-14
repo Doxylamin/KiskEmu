@@ -536,6 +536,7 @@ public sealed partial class GameSession : IMapEventHost
     {
         if (ToCopyOwner(o => o.MapEventKilled(target, now))) return [];
         CubeKilled(target, now);
+        DailyKillPoints(target, now);   // GameSession.DailyDungeons.cs
         if (mapEventRuns.Count == 0) return DrainMapEvents();
         mapEventNow = now;
         var alive = targets?.Values.Any(t => string.Equals(t.Name, target.Name, StringComparison.OrdinalIgnoreCase) && !t.Dead) == true;
@@ -690,6 +691,7 @@ public sealed partial class GameSession : IMapEventHost
         if (mapEventRuns.Count == 0 && pendingSpawns.Count == 0 && pendingExit is null && npcBuffs.Count == 0 && copy is null) return [];
         mapEventNow = now;
         DungeonTimeLimit(now);
+        DailyCountdownTick(now);   // GameSession.DailyDungeons.cs
         DungeonEndTick(now);   // GameSession.PartyDungeons.cs
         var phase = DungeonPhaseTick(now);
         if (phase.Count > 0) mapEventOut.InsertRange(0, phase);

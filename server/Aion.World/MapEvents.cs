@@ -538,6 +538,17 @@ public sealed class MapEventRun
         Goals = [];
         Host.Progress(this);
     }
+    /// <summary>The dungeon ended outside the script (a daily dungeon's countdown): complete, nothing more runs or spawns.</summary>
+    public void Stop()
+    {
+        if (Status is Complete or Expired) return;
+        Status = Complete;
+        Goals = [];
+        sequences.Clear();
+        repeaters.Clear();
+        waves.Clear();
+        Host.Progress(this);
+    }
     public MapEventStage? Stage => StageIndex < Definition.Stages.Length ? Definition.Stages[StageIndex] : null;
     public MapEventStep? Step => Stage is { } stage && StepIndex < stage.Steps.Length ? stage.Steps[StepIndex] : null;
     public int StageOrder => Stage?.Id ?? 0;

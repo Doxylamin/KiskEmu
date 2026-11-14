@@ -45,6 +45,11 @@ public sealed class DungeonCopy(GameSession host, int dungeonId, long now)
     public BossFrenzy Frenzy { get; } = new();
     /// <summary>The final boss's cube reward each player took (player key → items), once per run.</summary>
     public Dictionary<int, List<(int ItemId, long Count)>> CubeTaken { get; } = [];
+    /// <summary>A daily dungeon's points so far (DungeonPoint.dat; GameSession.DailyDungeons.cs).</summary>
+    public int Points { get; set; }
+    /// <summary>A daily dungeon's countdown: when it began and when it ends (0: none yet).</summary>
+    public long WaveStartedMs { get; set; }
+    public long WaveEndsMs { get; set; }
 }
 
 public sealed partial class GameSession
@@ -189,6 +194,7 @@ public sealed partial class GameSession
         if (!Timed(room)) return c.Cleared ? [] : [DungeonState(c.DungeonId, DungeonStateProcess, c.StartedMs, 0), .. DungeonLimitsAtEntry(c.Deaths)];
         if (c.Failed) return [];
         if (c.Phase == "Prepare") return [DungeonState(c.DungeonId, DungeonStatePrepare, c.StartedMs, c.ProcessAtMs)];
+        if (DailyStateAtEntry(c, now) is { } daily) return daily;   // GameSession.DailyDungeons.cs
         // After the clear: the state it is in (OBSERVED by the community fork, 234912 #44953, #45201).
         if (c.Cleared) return [DungeonClearedState(c)];
         return [DungeonState(c.DungeonId, DungeonStateProcess, c.StartedMs, c.DeadlineMs), .. DungeonLimitsAtEntry(c.Deaths)];
@@ -280,17 +286,22 @@ public sealed partial class GameSession
         return items;
     }
 
-    async Task<List<byte[]>> GrantPendingRewardsAsync(long now, CancellationToken ct)
+    Task<List<byte[]>> GrantPendingRewardsAsync(long now, CancellationToken ct) => GrantRewardsAsync(pendingRewards, IncreaseDropItemGet, now, ct);
+
+    /// <summary>The daily dungeons' point rewards, with EIncreaseReason kDungeonReward (OBSERVED 58 on the official reward).</summary>
+    Task<List<byte[]>> GrantDungeonRewardsAsync(long now, CancellationToken ct) => GrantRewardsAsync(pendingDungeonRewards, IncreaseDungeonReward, now, ct);
+
+    async Task<List<byte[]>> GrantRewardsAsync(List<List<(int ItemId, long Count)>> pending, byte reason, long now, CancellationToken ct)
     {
-        var batches = pendingRewards.ToList();
-        pendingRewards.Clear();
+        var batches = pending.ToList();
+        pending.Clear();
         var items = batches.SelectMany(b => b).ToList();
         if (items.Count == 0) return [];
         if (Store is { } store && CharacterId is { } character)
         {
             var granted = await Stored(async () => await store.GrantLootAsync(character, items, ct) ? [[]] : []);
             if (granted.Count == 0) return [];
-            var replies = await InventoryChangesAsync(ct, IncreaseDropItemGet, 0);
+            var replies = await InventoryChangesAsync(ct, reason, 0);
             replies.AddRange(await AutoUseAcquiredItemsAsync(items.Select(i => i.Item1), now, ct));
             return replies;
         }

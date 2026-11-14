@@ -2898,6 +2898,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         // Map events cleared by a talk or a timer pay their quest objective here (kills pay on the cast).
         if (clearedEvents.Count > 0) replies.AddRange(await QuestKillsAsync(ct));
         if (pendingRewards.Count > 0) replies.AddRange(await GrantPendingRewardsAsync(now, ct));
+        if (pendingDungeonRewards.Count > 0) replies.AddRange(await GrantDungeonRewardsAsync(now, ct));
         if (pendingQuestChanges.Count > 0)
         {
             var changed = pendingQuestChanges.ToList();

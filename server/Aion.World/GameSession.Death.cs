@@ -81,7 +81,7 @@ public sealed partial class GameSession
             var revived = Revive(now, inPlace: true);
             return [RidePackets.RespawnReply(0), .. revived, .. await InventoryChangesAsync(ct, 0, DecreaseUseRebirthItem)];
         }
-        return [RidePackets.RespawnReply(0), .. Revive(now)];
+        return [RidePackets.RespawnReply(0), .. Revive(now, leave: RespawnLeavesDungeon)];
     }
 
     bool TryResolveRebirthItem(long itemUid, out ItemState row)
@@ -128,7 +128,9 @@ public sealed partial class GameSession
         return data.MapStart(worldMap)?.Position ?? position ?? spawn?.Position ?? GamePackets.SpawnPosition;
     }
 
-    List<byte[]> Revive(long now, bool inPlace = false, bool counted = true)
+    /// <param name="leave">Dungeon.dat ResurrectionType Restart (GameSession.DailyDungeons.cs): out of the dungeon instead of its
+    /// revival point (the way the dungeon's exit goes, LastPosition for the dailies).</param>
+    List<byte[]> Revive(long now, bool inPlace = false, bool counted = true, bool leave = false)
     {
         if (counted && DungeonRevivesLeft() is var left && left >= 0 && copy is { } run)
         {
@@ -152,6 +154,16 @@ public sealed partial class GameSession
             worldPlayer?.Map?.Broadcast(worldPlayer, [reborn]);
             return [.. revival, reborn, resources.FullUpdate()];
         }
+        if (leave && !inPlace)
+        {
+            var gone = LeaveInstance(now);
+            if (gone.Count > 0)
+            {
+                AddBuff(RespawnProtectAbnormal, RespawnProtectMs, 0, now, gone, path: SelfAbnormalPath.DeathProtection);
+                gone.Add(resources.Update());
+                return gone;
+            }
+        }
         var at = RespawnPoint();
         var replies = new List<byte[]> { PlayerPackets.CharDisappear(playerKey, RespawnAppearReason, RespawnTeleportEffect) };
         replies.AddRange(Teleport(worldMap, at, now, RespawnAppearReason, RespawnTeleportEffect));
@@ -161,7 +173,7 @@ public sealed partial class GameSession
     }
 
     /// <summary>Timer-driven auto-rez at the respawn point (same replies as an accepted CharRespawn_RQ).</summary>
-    List<byte[]> AutoRevive(long now) => [RidePackets.RespawnReply(0), .. Revive(now)];
+    List<byte[]> AutoRevive(long now) => [RidePackets.RespawnReply(0), .. Revive(now, leave: RespawnLeavesDungeon)];
 
     List<byte[]> EnsureAliveAfterLoad()
     {
