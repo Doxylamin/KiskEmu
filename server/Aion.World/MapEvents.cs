@@ -61,11 +61,15 @@ public sealed record MapEventObjective(
     /// <summary>Objectives only the client can finish (a cutscene, a note, a talk, a guide); it reports them with 0x9230.</summary>
     public bool ClientSide => Type is "CompleteCutscene" or "CloseNote" or "CompleteNpcTalk" or "CloseGuide";
     /// <summary>
-    /// Objectives the server does not track yet (puzzles, items): finished after a grace period so the event goes on. A score
-    /// without its UnifiedObjectivesList and a wave not in WaveStepData also wait for it (MapEventRun.Tracked).
+    /// Objectives the server does not track yet (puzzles, item uses): finished after a grace period so the event goes on. A score
+    /// without its UnifiedObjectivesList and a wave not in WaveStepData also wait for it (MapEventRun.Tracked); CollectItem and
+    /// GetAbnormal too when the host cannot tell (MapEventRun.HeldKnown).
     /// </summary>
-    public bool Unsupported => Type is "ClearBoardPuzzle" or "GetAbnormal" or "PCSocial"
-        or "UseUsableItemType" or "CollectItem" or "KillNpcCreatureType" or "UpdateEnvObjState";
+    public bool Unsupported => Type is "ClearBoardPuzzle" or "PCSocial"
+        or "UseUsableItemType" or "KillNpcCreatureType" or "UpdateEnvObjState";
+
+    /// <summary>Objectives counted from the player's state (the bag's items, the abnormals gained), checked every tick.</summary>
+    public bool Held => Type is "CollectItem" or "GetAbnormal";
 }
 
 public sealed record MapEventStep(
@@ -189,7 +193,8 @@ public sealed class MapEventTables
         [property: JsonPropertyName("deferred")] Dictionary<string, string[]> Deferred,
         [property: JsonPropertyName("teleports")] Dictionary<string, TeleportTarget>? Teleports = null,
         [property: JsonPropertyName("teleport_effects")] Dictionary<string, int>? TeleportEffects = null,
-        [property: JsonPropertyName("waves")] Dictionary<string, string[][]>? Waves = null);
+        [property: JsonPropertyName("waves")] Dictionary<string, string[][]>? Waves = null,
+        [property: JsonPropertyName("items")] Dictionary<string, int>? Items = null);
 
     readonly File file;
     readonly Dictionary<int, int> dungeonByMap = [];
@@ -305,6 +310,8 @@ public sealed class MapEventTables
     public int TeleportEffect(string name) => file.TeleportEffects?.GetValueOrDefault(name) ?? 0;
     /// <summary>WaveStepData.dat: a wave's spawners by order (StartWave spawns order 1; each next order when the one before is dead).</summary>
     public string[][]? Wave(string name) => file.Waves?.GetValueOrDefault(name);
+    /// <summary>The item id of an Item.dat internal name a CollectItem objective names; 0 when unknown.</summary>
+    public int ItemId(string name) => file.Items?.GetValueOrDefault(name) ?? 0;
     /// <summary>Spawn entries a StartSpawner directive of the map's events starts: not spawned at map load.</summary>
     public IReadOnlySet<string> Deferred(int mapId) => (file.Deferred.GetValueOrDefault(K(mapId)) ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
 }
@@ -394,6 +401,12 @@ public interface IMapEventHost
     bool SpawnerExists(string spawner);
     bool PlayerDead { get; }
     double? DistanceTo(string spawner);
+
+    /// <summary>How many of an item (Item.dat internal name) the player holds; -1 when the host cannot tell (then the CollectItem
+    /// objective waits for the fallback).</summary>
+    long HeldItems(string itemName) => -1;
+    /// <summary>Whether the player has gained the abnormal since <paramref name="sinceMs"/> or carries it now; null when the host cannot tell.</summary>
+    bool? GainedAbnormal(int abnormalId, long sinceMs) => null;
 }
 
 /// <summary>One player's run of a map event: stage, step, objective counters, directive sequences and repeaters.</summary>
@@ -402,6 +415,8 @@ public sealed class MapEventRun
     public const int Ready = 1, Incomplete = 2, Complete = 3, Expired = 4;
     /// <summary>Client-side and untracked objectives finish by themselves after this long, so the story cannot stall.</summary>
     public const int FallbackMs = 30_000;
+    /// <summary>Held objectives (CollectItem, GetAbnormal) whose host can tell: no 30 s fallback, only this long safety net (OURS).</summary>
+    public const int HeldFallbackMs = 300_000;
     public const int VariableCount = 8;
 
     sealed class Sequence(IReadOnlyList<MapEventDirective> list, int step)
@@ -538,6 +553,7 @@ public sealed class MapEventRun
     {
         var step = Step!;
         Goals = new int[step.Objectives.Length];
+        stepStartedMs = now;
         repeaters.Clear();
         stepObjectivesDone = false;
         stepSerial++;
@@ -552,6 +568,8 @@ public sealed class MapEventRun
         {
             var o = step.Objectives[i];
             if ((o.ClientSide || o.Unsupported || !Tracked(o, step)) && i < fallbackAt.Length) fallbackAt[i] = now + FallbackMs;
+            // The bag's items and the gained abnormals count by state (before: always the 30 s fallback).
+            else if (o.Held && i < fallbackAt.Length) fallbackAt[i] = now + (HeldKnown(o) ? HeldFallbackMs : FallbackMs);
             // A ClearWave whose wave no StartWave of the event starts (Dungeon_Daily_0001/0002: the wave's first order is the map's own
             // OrcusGem) runs from the step that waits for it (CANDIDATE: no script starts it, the client data says nothing else).
             if (o.Type == "ClearWave" && Tracked(o, step) && !waves.ContainsKey(o.Value(0)) && !clearedWaves.Contains(o.Value(0)) && !StartsWave(o.Value(0)))
@@ -576,6 +594,41 @@ public sealed class MapEventRun
         "ClearWave" => MapEventTables.Embedded.Wave(o.Value(0)) is { Length: > 0 },
         _ => true,
     };
+
+    // ---------- Held objectives (CollectItem, GetAbnormal) ----------
+
+    /// <summary>When the current step began: abnormals gained from then on count for its GetAbnormal objectives.</summary>
+    long stepStartedMs;
+
+    bool HeldKnown(MapEventObjective o) => o.Type switch
+    {
+        "CollectItem" => Host.HeldItems(o.Value(0)) >= 0,
+        "GetAbnormal" => int.TryParse(o.Value(0), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) && Host.GainedAbnormal(id, stepStartedMs) is not null,
+        _ => false,
+    };
+
+    /// <summary>
+    /// CollectItem follows the count of the named item in the bag (as the quests' collect steps; a count once reached stays: a Seal
+    /// key is used on its door right after); GetAbnormal is done once the player gained the abnormal. The Seal events'
+    /// "Quest_UseItem_NoEffect_Key_A_c_01a_b" (Worn Key 534960001, from the Seal_Dungeon_Usable_Env reward objects) waited for the
+    /// 30 s fallback in 13 Seal events. CANDIDATE: from the client's objective data (zaraza87's fork), no recording.
+    /// </summary>
+    void HeldTick(long now)
+    {
+        if (Finished || Step is not { } step) return;
+        for (var i = 0; i < step.Objectives.Length && i < Goals.Length && ReferenceEquals(Step, step) && !Finished; i++)
+        {
+            var o = step.Objectives[i];
+            if (!o.Held || Goals[i] >= o.Count) continue;
+            var reached = o.Type switch
+            {
+                "CollectItem" => Host.HeldItems(o.Value(0)) is var held and >= 0 ? (int)Math.Min(o.Count, held) : 0,
+                "GetAbnormal" => int.TryParse(o.Value(0), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) && Host.GainedAbnormal(id, stepStartedMs) == true ? o.Count : 0,
+                _ => 0,
+            };
+            if (reached > Goals[i]) Apply(x => ReferenceEquals(x, o), now, reached - Goals[i]);
+        }
+    }
 
     // ---------- Waves ----------
     // WaveStepData.dat: a wave is spawner groups in order. StartWave spawns order 1; once no NPC of the current order lives the next
@@ -923,6 +976,8 @@ public sealed class MapEventRun
             if (!progressed) break;
         }
         if (!Finished && waves.Count > 0) WaveTick(now);
+        if (Finished) return;
+        HeldTick(now);
         if (Finished) return;
         // Client-side and untracked objectives time out as done.
         if (Step is { } step)

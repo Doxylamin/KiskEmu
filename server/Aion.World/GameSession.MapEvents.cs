@@ -1635,6 +1635,14 @@ public sealed partial class GameSession : IMapEventHost
 
     bool IMapEventHost.PlayerDead => dead;
 
+    /// <summary>The bag's count of a CollectItem objective's item (map-events.json items: Item.dat internal name to id); -1 when unknown.</summary>
+    long IMapEventHost.HeldItems(string itemName) =>
+        MapEventTables.Embedded.ItemId(itemName) is var item and > 0 ? QuestHeldCount(item) : -1;
+
+    /// <summary>The abnormal is on the player, or landed since the step began (GameSession.Buffs.cs AddBuff).</summary>
+    bool? IMapEventHost.GainedAbnormal(int abnormalId, long sinceMs) =>
+        buffs.Any(b => b.AbnormalId == abnormalId) || abnormalsGainedAt.TryGetValue(abnormalId, out var at) && at >= sinceMs;
+
     double? IMapEventHost.DistanceTo(string spawner)
     {
         if (position is not { } at) return null;

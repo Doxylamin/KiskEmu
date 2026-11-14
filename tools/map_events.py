@@ -229,6 +229,14 @@ def _item_ids(catalog=CATALOG):
     return ids
 
 
+def collect_items(events, catalog=CATALOG):
+    """Item.dat internal name -> item id for the items CollectItem objectives name (Quest_UseItem_NoEffect_Key_A_c_01a_b)."""
+    ids = _item_ids(catalog)
+    names = {node['v'][0] for event in events.values() for node in _walk(event)
+             if isinstance(node, dict) and node.get('t') == 'CollectItem' and node.get('v')}
+    return {name: ids[name] for name in sorted(names) if name in ids}
+
+
 def cube_rewards(names, cubes=CUBES, reward_items=REWARD_ITEMS, catalog=CATALOG):
     """RewardOdEnergyCube name -> {'boss': final boss NpcData id, 'rewards': {npc id: [[item, prob of 1e8, min, max], ...]}}
     (RewardCommon for the final boss, RewardMiddleBossList for the mid bosses; RewardItem rows resolved to Item ids)."""
@@ -406,6 +414,7 @@ def build(raw=RAW, dungeon_table=DUNGEONS, npc_table=NPCDATA, served_types=SERVE
         'deferred': spawners,
         'teleports': teleports,
         'teleport_effects': effects,
+        'items': collect_items(events),
     }
 
 

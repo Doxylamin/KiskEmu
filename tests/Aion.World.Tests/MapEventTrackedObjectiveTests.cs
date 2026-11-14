@@ -5,7 +5,7 @@ namespace Aion.World.Tests;
 
 /// <summary>
 /// Map-event objectives the server now tracks instead of finishing them by the 30 s fallback (#72, zaraza87's fork): "collect
-/// points" scores.
+/// points" scores, WaveStepData waves, items in the bag and abnormals gained.
 /// </summary>
 public sealed class MapEventTrackedObjectiveTests
 {
@@ -50,6 +50,11 @@ public sealed class MapEventTrackedObjectiveTests
         public bool SpawnerExists(string spawner) => true;
         public bool PlayerDead => false;
         public double? DistanceTo(string spawner) => null;
+        public Dictionary<string, long> Items { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool KnowsHeld { get; set; } = true;
+        public Dictionary<int, long> AbnormalsAt { get; } = [];
+        public long HeldItems(string itemName) => !KnowsHeld ? -1 : Items.GetValueOrDefault(itemName);
+        public bool? GainedAbnormal(int abnormalId, long sinceMs) => !KnowsHeld ? null : AbnormalsAt.TryGetValue(abnormalId, out var at) && at >= sinceMs;
     }
 
     static MapEventObjective O(int id, string type, params string[] values) => new(id, type, values);
@@ -144,6 +149,51 @@ public sealed class MapEventTrackedObjectiveTests
         var run = Run(host, new MapEventStep(1, [], [O(1, "ClearWave", "ReforgedAbyss_Hard_01_Wave_01")], []));
         TickTo(run, 500, 31_000);
         Assert.Equal(99, run.StepOrder);
+    }
+
+    const string Key = "Quest_UseItem_NoEffect_Key_A_c_01a_b";
+
+    [Fact]
+    public void Collect_item_follows_the_bag()
+    {
+        Assert.Equal(534960001, MapEventTables.Embedded.ItemId(Key));
+        var host = new Host();
+        var run = Run(host, new MapEventStep(1, [], [O(1, "CollectItem", Key, "2")], []));
+        // Not held: past the 30 s the step still waits for the key.
+        TickTo(run, 500, 40_000);
+        Assert.Equal(1, run.StepOrder);
+        host.Items[Key] = 1;
+        run.Tick(40_500);
+        Assert.Equal([1], run.Goals);
+        host.Items[Key] = 2;
+        TickTo(run, 41_000, 43_000);
+        Assert.Equal(99, run.StepOrder);
+    }
+
+    [Fact]
+    public void Get_abnormal_counts_one_gained_during_the_step()
+    {
+        var host = new Host();
+        host.AbnormalsAt[12253001] = -1;   // gained before the step: does not count
+        var run = Run(host, new MapEventStep(1, [], [O(1, "GetAbnormal", "12253001")], []));
+        TickTo(run, 500, 40_000);
+        Assert.Equal(1, run.StepOrder);
+        host.AbnormalsAt[12253001] = 40_100;
+        TickTo(run, 40_500, 42_000);
+        Assert.Equal(99, run.StepOrder);
+    }
+
+    [Fact]
+    public void Held_objectives_keep_a_safety_net_and_the_fallback_when_the_host_cannot_tell()
+    {
+        var host = new Host();
+        var run = Run(host, new MapEventStep(1, [], [O(1, "CollectItem", Key, "1")], []));
+        TickTo(run, 500, MapEventRun.HeldFallbackMs + 1_000);
+        Assert.Equal(99, run.StepOrder);
+        var blind = new Host { KnowsHeld = false };
+        var other = Run(blind, new MapEventStep(1, [], [O(1, "GetAbnormal", "12253001")], []));
+        TickTo(other, 500, 31_000);
+        Assert.Equal(99, other.StepOrder);
     }
 
     [Fact]
