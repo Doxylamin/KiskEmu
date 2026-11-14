@@ -462,6 +462,23 @@ public sealed partial class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
+    /// <summary>Monolith resonance counts (game.character_monoliths).</summary>
+    public Dictionary<int, int> Monoliths { get; } = [];
+
+    public Task<IReadOnlyDictionary<int, int>> MonolithsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>(Monoliths));
+
+    public Task<bool> ResonateMonolithAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int monolith, int previous, int count,
+        IReadOnlyList<(int TemplateId, long Count)> rewards, CancellationToken ct)
+    {
+        if (Monoliths.GetValueOrDefault(monolith) != previous || count <= previous) return Task.FromResult(false);
+        if (costs.Any(c => !Items.Any(i => i.InstanceId == c.Item && i.Revision == c.Revision && i.Location == "bag" && i.Quantity >= c.Count)))
+            return Task.FromResult(false);
+        foreach (var (item, revision, n) in costs) Consume(item, revision, n);
+        Monoliths[monolith] = count;
+        return GrantLootAsync(character, rewards, ct);
+    }
+
     public Task<bool> GrantLootAsync(Guid character, IReadOnlyList<(int TemplateId, long Count)> items, CancellationToken ct)
     {
         var empty = JsonSerializer.SerializeToElement(new { });

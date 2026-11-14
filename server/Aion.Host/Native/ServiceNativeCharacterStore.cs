@@ -1055,6 +1055,21 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.TeleportArtifactsAsync(identity.Account, character, ct) ?? [];
     }
 
+    public async Task<IReadOnlyDictionary<int, int>> MonolithsAsync(Guid character, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.MonolithsAsync(identity.Account, character, ct);
+    }
+
+    public async Task<bool> ResonateMonolithAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int monolith, int previous, int count,
+        IReadOnlyList<(int TemplateId, long Count)> rewards, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        var done = await game.ResonateMonolithAsync(identity.Account, character, costs, monolith, previous, count, rewards, ct);
+        if (done) await RefreshItemCacheAsync(character, ct);
+        return done;
+    }
+
     public async Task<bool> EngraveTeleportArtifactAsync(Guid character, int artifactId, CancellationToken ct)
     {
         await ValidateAsync(ct);

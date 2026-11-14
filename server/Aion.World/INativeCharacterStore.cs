@@ -227,6 +227,11 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<IReadOnlyList<int>> TeleportArtifactsAsync(Guid character, CancellationToken ct);
     /// <summary>Records a bound Kibelisk; false when it was already bound.</summary>
     Task<bool> EngraveTeleportArtifactAsync(Guid character, int artifactId, CancellationToken ct);
+    /// <summary>Monolith resonance counts (migration 111): Monolith id -> tokens resonated.</summary>
+    Task<IReadOnlyDictionary<int, int>> MonolithsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>());
+    /// <summary>Uses up the token stacks, moves the Monolith's count from <paramref name="previous"/> to <paramref name="count"/> and grants the level rewards, atomically.</summary>
+    Task<bool> ResonateMonolithAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int monolith, int previous, int count,
+        IReadOnlyList<(int TemplateId, long Count)> rewards, CancellationToken ct) => Task.FromResult(false);
     /// <summary>The stored skills with their levels (skill levels bought with skill points).</summary>
     Task<IReadOnlyList<SkillState>> SkillsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<SkillState>>([]);
     Task<bool> SetSkillLevelAsync(Guid character, int skillId, int level, int purchased, CancellationToken ct) => Task.FromResult(false);

@@ -489,7 +489,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case NPShopGameMoneyLimitRq when plain.Length >= 3: return await NPShopGameMoneyLimitAsync(plain, now, ct);
             case NPShopPurchaseRq when plain.Length >= 10: return await NPShopPurchaseAsync(plain, now, ct);
             case TrustLimitInfoRq: return TrustLimitInfo(now);
-            case GamePackets.MonolithResonateRq when plain.Length >= 14: return await MonolithResonateRequestAsync(plain, ct);
+            case GamePackets.MonolithResonateRq when plain.Length >= 10: return await MonolithResonateRequestAsync(plain, ct);
             case GamePackets.SyncMonolithAccountAchievementsRq when plain.Length >= 6: return await SyncMonolithAccountAchievementsAsync(plain);
             case ItemRestoreRq when plain.Length >= 3: return await RestoreItemsAsync(plain, ct);
             case ItemEnchantRq when plain.Length >= 10: return await EnchantAsync(plain, ct);
@@ -1432,6 +1432,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 await LoadQuestsAsync(store, state.Summary.CharacterId, state.Race, ct);
                 engraved.Clear();
                 engraved.AddRange(await store.TeleportArtifactsAsync(state.Summary.CharacterId, ct));
+                LoadMonoliths(await store.MonolithsAsync(state.Summary.CharacterId, ct));
                 fog.Clear();
                 fog.UnionWith(await store.MapFogAsync(state.Summary.CharacterId, ct));
                 await LoadSocialAsync(ct);
@@ -2199,7 +2200,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             33 => (Type: s.Type, Value: WeaponLine("WeaponMinDamage", 33, weapon.Min) + TitleStat("FixingDamage")),
             128 => (Type: s.Type, Value: WeaponLine("Critical", 128, weapon.Critical)),
             318 => (Type: s.Type, Value: WeaponAccuracySheet()),
-            193 => (Type: s.Type, Value: hpMax), 199 => (Type: s.Type, Value: MpMax), 242 => (Type: s.Type, Value: GamePackets.SpawnSp + BuffStat("SPMax")),
+            193 => (Type: s.Type, Value: hpMax), 199 => (Type: s.Type, Value: MpMax), 242 => (Type: s.Type, Value: GamePackets.SpawnSp + BuffStat("SPMax") + MonolithStat("SPMax")),
             307 => (Type: s.Type, Value: Defense),
             _ => (Type: s.Type, Value: (ItemStats.NameOfWire(s.Type) is { } statName && basis.GetValueOrDefault(statName) is var fromBasis && fromBasis != 0
                 ? fromBasis : s.Value) + D(s.Type)),
@@ -2241,7 +2242,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         var (stats, hpMax) = StatSheet();
         resources.HpMax = hpMax;
         resources.MpMax = MpMax;
-        resources.SpMax = GamePackets.SpawnSp + BuffStat("SPMax");
+        resources.SpMax = GamePackets.SpawnSp + BuffStat("SPMax") + MonolithStat("SPMax");
         resources.ApMax = PlayerApPools.ApMax(data, className, level, Profile()?.Resource);
         resources.Hp = Math.Min(resources.Hp, hpMax);
         resources.Mp = Math.Min(resources.Mp, resources.MpMax);

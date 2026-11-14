@@ -1464,6 +1464,33 @@ public static class GamePackets
         return w.ToArray();
     }
 
+    /// <summary>
+    /// 0x3634 EnvObjSpawn_NT of an Empyrean Trace: the placed form (<see cref="EnvObjSpawn(int,int,Vector3d,double,long,int,byte)"/>)
+    /// with presence mask 0x0c instead of 4 and _achievement_id_from_spawn_unit (i32, the spawn's UseEnvObjSpawnerName achievement)
+    /// after the phase byte. OBSERVED by zaraza87/A2Core (MonolithPackets.cs, #72), official recording 20261106-105448 #637:
+    /// `3436 e7f501 0c00 81d91300 21d01dc8c3ce97c60076c846 00000000 00807743 010101 da7967a5a1010000 0000000000000000 a5232d2d 09 00
+    /// 22817307 00` (E_D1_GodFragment_01_Ground_129, achievement 125010210). Every recorded trace spawn has state 1 / can interact 1 /
+    /// reason 1, collected or not: the client greys a collected one out itself (EnvObjData InteractCondition NotGetRewardOnce).
+    /// </summary>
+    public static byte[] TraceSpawn(int key, int envObjId, Vector3d position, double yaw, long createTime, int uniqueKey, byte relationship, int achievement) =>
+        PacketWriter.Opcode(0x3634).Varint(key).U8(0x0c).U8(0).I32(envObjId).F32(position.X).F32(position.Y).F32(position.Z)
+            .I32(0).F32(yaw).U8(1).U8(1).U8(1).I64(createTime).Zeros(8).I32(uniqueKey).U8(relationship).U8(0).I32(achievement).U8(0).ToArray();
+
+    /// <summary>
+    /// 0xe33a (no usmap name found): an object's reward right after its 0x363a/0x8d6d - object key i32 | the object's position |
+    /// varint count | {item i32, count i32}; the 0x561b with the items (increase reason 49) follows. OBSERVED by zaraza87/A2Core
+    /// (EnvBoxPackets.cs, #72) in 9 official samples, e.g. an Empyrean Trace: 631900007 x3.
+    /// </summary>
+    public static byte[] EnvObjReward(int key, Vector3d at, IReadOnlyList<(int ItemId, long Count)> items)
+    {
+        var w = PacketWriter.Opcode(0xe33a).I32(key).Vec3(at).Varint(items.Count);
+        foreach (var (item, count) in items) w.I32(item).I32((int)Math.Min(count, int.MaxValue));
+        return w.ToArray();
+    }
+
+    /// <summary>EIncreaseReason of the items an object's 0xe33a reward adds (0x561b; OBSERVED 49 in the fork's three samples).</summary>
+    public const byte IncreaseEnvObjReward = 49;
+
     /// <summary>0xe36a SyncMonolithAccountAchievements_RS: u16 result + reward item list (Common_RewardItem).</summary>
     public static byte[] SyncMonolithAccountAchievementsReply(int result = 0) =>
         PacketWriter.Opcode(SyncMonolithAccountAchievementsRs).U16(result).Varint(0).ToArray();

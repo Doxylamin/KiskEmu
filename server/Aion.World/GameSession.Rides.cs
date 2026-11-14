@@ -266,6 +266,7 @@ public sealed partial class GameSession
             "GetSkin" or "GetSkinSet" when use.Values is [{ Length: > 0 }, ..] => await UseSkinItemAsync(store, character, row, use, reply, ct),
             "GetSocialAction" when use.Values is [var emoteText, ..] && int.TryParse(emoteText, out var emote) => await UseSocialActionItemAsync(store, character, row, emote, reply, ct),
             "GetDaevanionPoint" => await UseDaevanionPointItemAsync(store, character, row, use, reply, ct),
+            "MonolithAllClear" => await UseMonolithVoucherAsync(store, character, row, use, reply, now, ct),   // GameSession.EmpyreanTraces.cs
             "GetSkillPoint" => await UseSkillPointItemAsync(store, character, row, use, SkillPointTypePoint, reply, ct),
             "GetStigmaShard" => await UseSkillPointItemAsync(store, character, row, use, SkillPointTypeStigma, reply, ct),
             "GetWing" when use.Values is [var wingText, ..] && int.TryParse(wingText, out var wing) && wing > 0 => await UseWingItemAsync(store, character, row, wing, reply, ct),

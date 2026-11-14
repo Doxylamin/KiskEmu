@@ -2771,6 +2771,41 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await t.CommitAsync(ct); return added;
     }
 
+    // Monoliths (migration 111; ported from zaraza87/A2Core, #72): the Empyrean Trace tokens resonated per Monolith.
+    public async Task<IReadOnlyDictionary<int,int>> MonolithsAsync(VerifiedAccount account, Guid character, CancellationToken ct=default)
+    {
+        var counts=new Dictionary<int,int>();
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        if(!await Own(c,t,account.AccountId,character,ct)) return counts;
+        await using(var q=Query(c,t,"SELECT monolith_id,resonate_count FROM game.character_monoliths WHERE character_id=$1",character))
+        { await using var r=await q.ExecuteReaderAsync(ct); while(await r.ReadAsync(ct)) counts[r.GetInt32(0)]=r.GetInt32(1); }
+        await t.CommitAsync(ct); return counts;
+    }
+
+    public async Task<bool> ResonateMonolithAsync(VerifiedAccount account, Guid character, IReadOnlyList<(Guid Item,long Revision,int Count)> costs, int monolith,
+        int previous, int count, IReadOnlyList<(int TemplateId,long Count)> rewards, CancellationToken ct=default)
+    {
+        if(monolith<=0 || previous<0 || count<=previous || costs.Count==0 || costs.Any(x=>x.Count<1) || rewards.Any(r=>r.Count<1)) throw new GameplayException("invalid_monolith");
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        if(!await Own(c,t,account.AccountId,character,ct)) return false;
+        foreach(var (cost,revision,n) in costs)
+            if(!await Consume(c,t,character,cost,revision,n,ct)) return false;
+        // The count moves only from the value the session saw (two resonances at once cannot both pass).
+        var stored=previous==0
+            ? await Scalar(c,t,"INSERT INTO game.character_monoliths(character_id,monolith_id,resonate_count) VALUES($1,$2,$3) ON CONFLICT(character_id,monolith_id) "
+                +"DO UPDATE SET resonate_count=EXCLUDED.resonate_count,updated_at=now() WHERE game.character_monoliths.resonate_count=0 RETURNING resonate_count",ct,character,monolith,count)
+            : await Scalar(c,t,"UPDATE game.character_monoliths SET resonate_count=$3,updated_at=now() WHERE character_id=$1 AND monolith_id=$2 AND resonate_count=$4 RETURNING resonate_count",
+                ct,character,monolith,count,previous);
+        if(stored is not int) return false;
+        var build=await Scalar(c,t,"SELECT build_id FROM catalog.builds ORDER BY imported_at DESC LIMIT 1",ct) as string;
+        foreach(var (template,n) in rewards)
+            if(build is not null && await Scalar(c,t,"SELECT template_id FROM catalog.items WHERE build_id=$1 AND template_id=$2",ct,build,template) is not null)
+                await Scalar(c,t,"SELECT game.grant_item($1,$2,$3,$4,$5)",ct,character,build,template,n,Guid.NewGuid());
+        await Execute(c,t,"INSERT INTO audit.events(action,character_id,actor_id,details) VALUES('monolith_resonated',$1,$2,$3)",ct,character,account.AccountId,
+            Json(new {monolith,previous,count,costs=costs.Select(x=>new{x.Item,x.Count}),rewards=rewards.Select(r=>new[]{(long)r.TemplateId,r.Count})}));
+        await t.CommitAsync(ct); return true;
+    }
+
     public async Task<bool> SoulBindItemAsync(VerifiedAccount account, Guid character, Guid item, byte count, CancellationToken ct=default)
     {
         if(count<1) throw new GameplayException("invalid_soul_bind");

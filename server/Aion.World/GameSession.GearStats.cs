@@ -81,7 +81,8 @@ public sealed partial class GameSession
     /// <summary>Combat stat total used in formulas and the stat sheet.</summary>
     int AggregatedStat(string stat, int daevanionWire) =>
         EquipStat(stat) + BuffStat(stat) + TitleStat(stat) + EnchantStat(stat) + ExceedStat(stat) + BoardStat(stat)
-        + SetStat(stat) + RideStat(stat) + WingStat(stat) + DaevanionWireStat(daevanionWire);
+        + SetStat(stat) + RideStat(stat) + WingStat(stat) + DaevanionWireStat(daevanionWire)
+        + MonolithStat(stat);   // the Monolith levels reached (GameSession.Monolith.cs)
 
     /// <summary>Wire values for combat stats not handled by the legacy DefaultStats switch.</summary>
     IReadOnlyDictionary<int, int> ExtraSheetStats()
