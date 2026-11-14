@@ -67,6 +67,7 @@
     <EmbeddedResource Include="../../tools/data/expedition.json" LogicalName="expedition.json" />
     <EmbeddedResource Include="../../tools/data/resets.json" LogicalName="resets.json" />
     <EmbeddedResource Include="../../tools/data/titles.json" LogicalName="titles.json" />
+    <EmbeddedResource Include="../../tools/data/sealstones.json" LogicalName="sealstones.json" />
     <EmbeddedResource Include="../../tools/data/skins.json" LogicalName="skins.json" />
     <EmbeddedResource Include="../../tools/data/skin_extraction.json" LogicalName="skin_extraction.json" />
     <EmbeddedResource Include="../../tools/data/item-decompose-skins.json" LogicalName="item-decompose-skins.json" />
