@@ -1363,5 +1363,20 @@ public sealed partial class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
+    /// <summary>Equipped specialisation parts (game.character_skill_parts).</summary>
+    public List<SkillPartRecord> SkillParts { get; } = [];
+
+    public Task<IReadOnlyList<SkillPartRecord>> SkillPartsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<SkillPartRecord>>(SkillParts.OrderBy(p => p.SkillId).ThenBy(p => p.Slot).ToList());
+
+    public Task<bool> ReplaceSkillPartsAsync(Guid character, int skillId, IReadOnlyList<SkillPartRecord> expected, IReadOnlyList<SkillPartRecord> parts, CancellationToken ct)
+    {
+        var current = SkillParts.Where(p => p.SkillId == skillId).OrderBy(p => p.Slot).ToList();
+        if (!current.SequenceEqual(expected.OrderBy(p => p.Slot))) return Task.FromResult(false);
+        SkillParts.RemoveAll(p => p.SkillId == skillId);
+        SkillParts.AddRange(parts);
+        return Task.FromResult(true);
+    }
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

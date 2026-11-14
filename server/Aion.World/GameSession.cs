@@ -494,6 +494,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case GatherStartRq when plain.Length >= 3: return await GatherStartAsync(plain, now, ct);
             case TitleChangeRq when plain.Length >= 6: return await TitleChangeAsync(plain, ct);
             case SkillLevelUpRq: return await SkillLevelUpAsync(plain, ct);
+            case SpecializedEquipRq when plain.Length >= 7: return await EquipSkillPartAsync(plain, ct);   // GameSession.Specialization.cs
+            case SpecializedUnequipRq when plain.Length >= 6: return await UnequipSkillPartAsync(plain, ct);
+            case SpecializedChangeRq when plain.Length >= 10: return await ChangeSkillPartSlotAsync(plain, ct);
             case TitleEquipRq when plain.Length >= 7: return await TitleEquipAsync(plain, ct);
             case SkinEquipRq when plain.Length >= 3: return await SkinEquipAsync(plain, ct);
             case SkinExtractionRq when plain.Length >= 3: return await SkinExtractionAsync(plain, ct);
@@ -1442,6 +1445,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 className = profile.Class;
                 RefreshKitSkillLevels();
                 LoadSkillLevels(await store.SkillsAsync(state.Summary.CharacterId, ct));
+                LoadSkillParts(await store.SkillPartsAsync(state.Summary.CharacterId, ct));   // GameSession.Specialization.cs
                 var savedMap = state.Progress.MapId.Value;
                 // Logged out inside an instance layer: back at its exit on the field map (the copy is gone).
                 if (Instances.Of(savedMap) is { } left)
@@ -1691,8 +1695,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 replies.AddRange(SkillPointSpendBaselineSeeds());
                 replies.AddRange(SkillPointsAtEntry());
                 var actives = learned.Where(id => id >= 11_000_000 && !IsDodgeId(id) && data.StigmaPartParent(id) is null && data.Skill(id)?.Type == "Active").Order().ToList();
-                // The normal-skill slots hold equipped specialty parts (none yet), not the customizing ids (official 2026-11-12).
-                replies.Add(GamePackets.SkillOptionSlots(actives, null, StigmaSlotMap()));
+                // The normal-skill slots hold the equipped specialty parts, not the customizing ids (official 2026-11-12: zeros
+                // with none on); GameSession.Specialization.cs.
+                replies.Add(GamePackets.SkillOptionSlots(actives, null, SpecializedSlotMap()));
                 replies.Add([0x58, 0x8d, 0x00]);
                 replies.Add(AgitDecoListAtEntry());
                 replies.AddRange(SettingsAtEntry(now));
@@ -1890,6 +1895,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             && resources.Mp >= cost.Mp && resources.Sp >= cost.Sp && resources.Hp > cost.Hp
             && (resources.ApMax <= 0 || resources.Ap >= cost.Ap)
             && (SkillFamilyLearned(skill) || normalDodge || chainSkill || CarriedSkill == skill)
+            && !SpecializedChildRefused(skill)   // a specialisation child only with its parts on (GameSession.Specialization.cs)
             && (weapons.Count == 0 || weapons.Contains(data.WeaponType(equippedWeapon) ?? ""))
             && UseConditionMet(definition, now, request.TargetKey, skill)
             && CastTargetReachValid(definition, skill, request);

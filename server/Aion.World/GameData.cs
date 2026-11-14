@@ -632,7 +632,8 @@ public sealed class GameData
     public SkillDefinition? Skill(int skillId)
     {
         var key = skillId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        return classes.Skills.GetValueOrDefault(key) ?? stigma.Value.Skills?.GetValueOrDefault(key);
+        // Then a specialisation child class-skills.json does not carry (specialized-skills.json, the same Skill.dat reading).
+        return classes.Skills.GetValueOrDefault(key) ?? stigma.Value.Skills?.GetValueOrDefault(key) ?? SpecializedSkillTables.Embedded.Skill(skillId);
     }
 
     /// <summary>tools/data/stigma-skills.json (tools/stigma_data.py): SkillAcquireData Stigma rows, Exp.dat BonusStigmaPoint, SpecializedSkillParts.</summary>
