@@ -641,9 +641,17 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case SkillLevelResetRq: return await SkillLevelResetAsync(plain, ct);
             // InteractEnvObjStop_RQ {key}: a timed interaction cancelled (moved, or the client's cancel).
             case 0x363d when QuestKey(plain, 2) is { } stopKey:
-                if (pendingUse?.Key == stopKey) pendingUse = null;
-                if (pendingGatherLoss?.Key == stopKey) pendingGatherLoss = null;
-                return [GamePackets.InteractEnvObjStopReply(stopKey)];
+                // OBSERVED (community fork's recordings 185000 #6763-#6764, #26846-#26847; 162208 #5193): 0x363e {0, key} with
+                // 0x3639 reason 0x1906 for the use in progress; with none, 0x363e {0x3813, key 0}. A lost gather attempt still
+                // playing out keeps the plain {0, key} (not recorded).
+                if (pendingGatherLoss?.Key == stopKey)
+                {
+                    pendingGatherLoss = null;
+                    return [GamePackets.InteractEnvObjStopReply(stopKey)];
+                }
+                if (pendingUse?.Key != stopKey) return [GamePackets.InteractEnvObjStopReply(0, GamePackets.InteractStopNothing)];
+                pendingUse = null;
+                return [GamePackets.InteractEnvObjStopReply(stopKey), GamePackets.InteractEnvObjInterrupted(stopKey, GamePackets.InterruptStopped, playerKey)];
             // The key as sent even when it is no longer among the targets (after a layer move): the failure reply below needs it
             // (NpcKeyFromBody only resolves present keys, which made that branch unreachable).
             case 0xe242 when (NpcKeyFromBody(plain) ?? QuestKey(plain, 2)) is { } npcKey:
@@ -1733,6 +1741,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         shownObjects.Clear();
         shownTriggers.Clear();
         usedObjects.Clear();
+        objectRemovals.Clear();
         ResetEnvObjHits();
         pendingUse = null;
         pendingGatherLoss = null;
@@ -2149,6 +2158,14 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         }
         combatUntil = now + CombatTimeoutMs;
         replies.AddRange(PlayerDamageReplies(damage, killerKey, now));
+        // A hit ends a timed object use: 0x363b, then 0x3639 reason 0x1905 (OBSERVED in the community fork's recordings,
+        // 234912 #10314-#10315, 185000 #5953-#5957). Gather nodes keep their own flow.
+        if (pendingUse is { } use && WorldObjects.ObjectsOn(worldMap) is var hitObjects && use.Index < hitObjects.Count && hitObjects[use.Index].Gather is null)
+        {
+            pendingUse = null;
+            replies.Add(GamePackets.InteractEnvObjAvailableState(use.Key));
+            replies.Add(GamePackets.InteractEnvObjInterrupted(use.Key, GamePackets.InterruptDamaged, playerKey));
+        }
         return replies;
     }
 
@@ -2764,6 +2781,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         var replies = new List<byte[]>();
         while (posted.TryDequeue(out var item)) replies.AddRange(await item.Run(now));
         replies.AddRange(IdleReturnTick(now));
+        replies.AddRange(ObjectRemovalTick(now));   // used-up objects die and despawn on their timing
         if (arrivalCheckDue && !reloading && position is { } arrivedAt)
         {
             // The arrival is a position too: event triggers, the area objectives (an EnterSubZone at the map's start: live
@@ -2845,7 +2863,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         if (pendingUse is { } use && now >= use.DueMs)
         {
             pendingUse = null;
-            replies.AddRange(await WithMapEventClearsFlushedAsync(await CompleteUseAsync(use.Index, ct, now), ct));
+            replies.AddRange(await WithMapEventClearsFlushedAsync(await CompleteUseAsync(use.Index, ct, now, timed: true), ct));
         }
         replies.AddRange(GatherLossTick(now));
         if (dead && now >= reviveAt) replies.AddRange(AutoRevive(now));

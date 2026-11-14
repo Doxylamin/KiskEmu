@@ -1674,7 +1674,18 @@ Check(gatherStart.Any(b => b[0] == 0x38 && b[1] == 0x36), "using a gather node s
 staffSession.GatherBonusRoll = () => 0;
 var gatherDone = await staffSession.TickAsync(Now + node.InteractTime + 10);
 Check(gatherDone.Any(b => b[0] == 0x33 && b[1] == 0x8d && b[2] == 0) && staffStore.Items.Any(i => i.TemplateId == node.Gather![0])
-      && gatherDone.Any(b => b.SequenceEqual(GamePackets.EnvObjDespawn(nodeKey))), $"gathered material {node.Gather![0]} (0x8d33), the node despawns (0x3635)");
+      && !gatherDone.Any(b => Op(b) is 0x3635 or 0x8d05), $"gathered material {node.Gather![0]} (0x8d33); the node is not removed at once");
+// The node's way out (OBSERVED in the community fork's recordings: EnvObjDie 0x8d05 about 50 ms after the use, FinishDuration
+// + 150 ms with one, then 0x3635 state 4 reason 3 50 ms later).
+var (nodeDie, nodeGone) = GameSession.RemovalDelays(node.FinishMs);
+var gatheredAt = Now + node.InteractTime + 10;
+var nodeDying = await staffSession.TickAsync(gatheredAt + nodeDie);
+var nodeLeaving = await staffSession.TickAsync(gatheredAt + nodeGone);
+Check(nodeDying.Any(b => b.SequenceEqual(GamePackets.EnvObjDie(nodeKey))) && !nodeDying.Any(b => Op(b) == 0x3635)
+      && nodeLeaving.Any(b => b.SequenceEqual(GamePackets.EnvObjDespawn(nodeKey, 4, 3))) && !nodeLeaving.Any(b => Op(b) == 0x8d05),
+      "the gathered node dies (0x8d05) on its timing, then despawns with state 4 reason 3 (as recorded)");
+Check(GameSession.RemovalDelays(0) == (50, 100) && GameSession.RemovalDelays(500) == (650, 700) && GameSession.RemovalDelays(1000) == (1150, 1200),
+      "removal delays: 50 ms with no FinishDuration, FinishDuration + 150 ms (the recorded 650 and 1150 ms)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)nodeKey).ToArray(), Now + 5000))[0][2] == 1, "a used-up node refuses another gather");
 // The mini-game on GatherSourceStart_RQ 0x8d30: the attempt's turns go in 0x8d31; a lost attempt costs one of the node's tries.
 var node2Index = nodes.Select((o, i) => (o, i)).Where(x => x.o.Gather is not null).Skip(1).First().i;
@@ -1992,13 +2003,31 @@ Check(wornEnchant.Any(b => b[0] == 0x23 && b[1] == 0x56 && BitConverter.ToUInt16
 // Kibelisk: binding the Poeta Kibelisk (key 900000) stores it, sends the official order and 0x9233 once.
 var bind = await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(Kibelisks.FirstKey).I64(0).I32(1200081).ToArray(), Now);
 var firstKibelisk = Kibelisks.OnMap(staffSession.MapId!.Value)[0].ArtifactId;
-var nearObject = WorldObjects.ObjectsOn(staffSession.MapId!.Value).Select((o, i) => (o, i)).First(x => x.o.InteractTime > 0);
+var nearObject = WorldObjects.ObjectsOn(staffSession.MapId!.Value).Select((o, i) => (o, i))
+    .First(x => x.o.InteractTime > 0 && x.o.Gather is null && x.o.Carry is null && x.o.Achievement == 0);
+var nearKey = WorldObjects.FirstKey + nearObject.i;
 await staffSession.HandleAsync(new PacketWriter().U16(0x3700).U8(2).Vec3(nearObject.o.At).U16(0).F32(0).U8(1).U64(1).ToArray(), Now + 600_000);
-var useStart = await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(WorldObjects.FirstKey + nearObject.i).I64(0).I32(nearObject.o.Env).ToArray(), Now + 600_000);
+var useStart = await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(nearKey).I64(0).I32(nearObject.o.Env).ToArray(), Now + 600_000);
 var useDone = await staffSession.TickAsync(Now + 600_000 + nearObject.o.InteractTime);
-Check(useStart.Single().SequenceEqual(GamePackets.InteractEnvObjStarted(WorldObjects.FirstKey + nearObject.i, staffSession.PlayerKey))
-      && useDone.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjCompleted(WorldObjects.FirstKey + nearObject.i, staffSession.PlayerKey))),
-      "a timed quest object: 0x3638 at once, 0x363a after its InteractTime");
+Check(useStart.Count == 2 && useStart[0].SequenceEqual(GamePackets.InteractEnvObjStarted(nearKey, staffSession.PlayerKey)) && useStart[1].SequenceEqual(GamePackets.InteractEnvObjReply(nearKey))
+      && useDone.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjCompleted(nearKey, staffSession.PlayerKey))) && !useDone.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjReply(nearKey)))
+      && useDone.Count(b => b.SequenceEqual(GamePackets.InteractEnvObjFinishState(nearKey)) || b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(nearKey))) == 1,
+      "a timed object: 0x3638 and the 0x3637 reply at once, 0x363a with 0x8d6d or 0x363b after its InteractTime (community recordings 2026-11)");
+var useStopped = await staffSession.HandleAsync(new PacketWriter().U16(0x363d).Varint(nearKey).ToArray(), Now + 610_000);
+Check(useStopped.Single().SequenceEqual(Convert.FromHexString("3e36" + "1338" + "00")), "a stop with no use in progress: 0x363e {0x3813, key 0} (162208 #5193)");
+await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(nearKey).I64(0).I32(nearObject.o.Env).ToArray(), Now + 611_000);
+useStopped = await staffSession.HandleAsync(new PacketWriter().U16(0x363d).Varint(nearKey).ToArray(), Now + 611_100);
+Check(useStopped.Count == 2 && useStopped[0].SequenceEqual(GamePackets.InteractEnvObjStopReply(nearKey)) && useStopped[1].SequenceEqual(GamePackets.InteractEnvObjInterrupted(nearKey, 0x1906, staffSession.PlayerKey))
+      && !(await staffSession.TickAsync(Now + 611_000 + nearObject.o.InteractTime)).Any(b => b[0] == 0x3a && b[1] == 0x36),
+      "the player's stop: 0x363e {0, key} and 0x3639 reason 0x1906; the use does not complete (185000 #6763-#6764)");
+await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(nearKey).I64(0).I32(nearObject.o.Env).ToArray(), Now + 620_000);
+var hitWhileUsing = staffSession.NpcHitsPlayer(1, Now + 620_100, killerKey: 2001);
+Check(hitWhileUsing.Count >= 2 && hitWhileUsing[^2].SequenceEqual(GamePackets.InteractEnvObjAvailableState(nearKey))
+      && hitWhileUsing[^1].SequenceEqual(Convert.FromHexString("3936" + Convert.ToHexString(NativeVarint.Encode((uint)nearKey)) + "0519" + Convert.ToHexString(NativeVarint.Encode((uint)staffSession.PlayerKey)) + "00000000"))
+      && !(await staffSession.TickAsync(Now + 620_000 + nearObject.o.InteractTime)).Any(b => b[0] == 0x3a && b[1] == 0x36),
+      "a hit ends the use: 0x363b, then 0x3639 reason 0x1905 (234912 #10314-#10315); it does not complete");
+Check(GamePackets.InteractEnvObjInterrupted(0x7bc, 0x1905, 0x11d2).SequenceEqual(Convert.FromHexString("3936bc0f0519d22300000000")),
+      "0x3639 layout: key varint, reason u16, interactor varint, count i32 (as the community recordings)");
 Check(bind.Count >= 4 && bind[0].SequenceEqual(GamePackets.InteractEnvObjStarted(Kibelisks.FirstKey, staffSession.PlayerKey))
       && bind[3].SequenceEqual(GamePackets.EngravedTeleportArtifactAdd(firstKibelisk)) && staffStore.Artifacts.SequenceEqual([firstKibelisk]),
       "binding a Kibelisk (0x3636 -> 0x3638, 0x363a, 0x3637, 0x9233) stores it once");

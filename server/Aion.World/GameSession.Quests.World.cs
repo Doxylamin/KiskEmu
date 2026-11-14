@@ -42,6 +42,47 @@ public sealed partial class GameSession
     /// HQ002 despawned 100 ms after its use, 0x3635 state 4 reason 3, and never came back; before this they could be used without end).
     /// </summary>
     readonly HashSet<int> usedObjects = [];
+
+    /// <summary>Used-up objects on their way out: EnvObjDie at DieAt, the despawn (state 4, reason 3) at GoneAt.</summary>
+    readonly List<(int Index, long DieAt, long GoneAt)> objectRemovals = [];
+
+    /// <summary>
+    /// When a used-up object dies and despawns, after its use. OBSERVED (community fork's recordings, 191 EnvObjDie in 40 files;
+    /// addiboii's fork): EnvObjDie 0x8d05 about 50 ms after the use's 0x8d6d (176 of 185), about 650 or 1150 ms for objects with
+    /// an EnvObjData FinishDuration of 500 or 1000 (9), then the despawn 0x3635 state 4 reason 3 about 50 ms later (188 of the
+    /// despawns after a use; state 1 reason 1: 6). CANDIDATE: FinishDuration + 150 ms for the other FinishDurations (up to 50 min
+    /// in the data; only 500 and 1000 were recorded).
+    /// </summary>
+    public static (long Die, long Gone) RemovalDelays(int finishMs) => finishMs > 0 ? (finishMs + 150, finishMs + 200) : (50, 100);
+
+    /// <summary>The object dies and despawns for this player on its timing (it stays shown until then).</summary>
+    void ScheduleRemoval(int index, long now)
+    {
+        var objects = WorldObjects.ObjectsOn(worldMap);
+        var (die, gone) = RemovalDelays(index < objects.Count ? objects[index].FinishMs : 0);
+        objectRemovals.RemoveAll(r => r.Index == index);
+        objectRemovals.Add((index, now + die, now + gone));
+    }
+
+    /// <summary>The due EnvObjDie and despawns of used-up objects (only those this player still has shown).</summary>
+    List<byte[]> ObjectRemovalTick(long now)
+    {
+        if (objectRemovals.Count == 0) return [];
+        var replies = new List<byte[]>();
+        for (var i = 0; i < objectRemovals.Count; i++)
+        {
+            var (index, dieAt, goneAt) = objectRemovals[i];
+            var key = WorldObjects.FirstKey + index;
+            if (dieAt != long.MinValue && now >= dieAt)
+            {
+                if (shownObjects.Contains(index)) replies.Add(GamePackets.EnvObjDie(key));
+                objectRemovals[i] = (index, long.MinValue, goneAt);
+            }
+            if (now >= goneAt && shownObjects.Remove(index)) replies.Add(GamePackets.EnvObjDespawn(key, 4, 3));
+        }
+        objectRemovals.RemoveAll(r => now >= r.GoneAt);
+        return replies;
+    }
     /// <summary>Map-event EnvObjChangePhase per object index on this map layer.</summary>
     readonly Dictionary<int, byte> envObjPhase = [];
     /// <summary>Map-event SetEnvObjCanInteract; when absent the client default is interactable.</summary>
@@ -165,10 +206,13 @@ public sealed partial class GameSession
     }
 
     /// <summary>
-    /// Using a quest object (0x3636 with its key): in range, 0x3638 started; after its InteractTime
-    /// (EnvObjData; 0 at once) 0x363a completed, 0x8d6d finish state, 0x363b available state, then the 0x3637 reply
-    /// (the official order of the player's own interaction, capture 20261013-144836 #10090-10093) and UseEnvObj quest
-    /// progress. Without 0x8d6d/0x363b the client kept the interaction (the gather result panel) open.
+    /// Using a quest object (0x3636 with its key): in range, 0x3638 started. OBSERVED (community fork's recordings 2026-11-04
+    /// to 06): an object with an InteractTime (EnvObjData) answers 0x3637 at once and at the end sends 0x363a with 0x8d6d
+    /// (finish state) when it is used up or 0x363b (available) when it stays; an instant one sends 0x363a, 0x8d6d, [0x363b],
+    /// then the 0x3637 reply (capture 20261013-144836 #10090-10093), then UseEnvObj quest progress. CANDIDATE: the rule
+    /// "0x8d6d = used up, 0x363b = usable again" (8 env ids in the fork's recordings). Gather nodes and carried-item boxes keep
+    /// 0x363a, 0x8d6d, 0x363b, 0x3637 at the end (not recorded; without 0x8d6d/0x363b the client kept the gather result panel open).
+    /// Empyrean Traces have their own order (GameSession.EmpyreanTraces.cs).
     /// </summary>
     async Task<List<byte[]>> UseObjectAsync(byte[] plain, long now, CancellationToken ct)
     {
@@ -201,6 +245,7 @@ public sealed partial class GameSession
         if (interactTime > 0)
         {
             pendingUse = (found, key2, now + interactTime);
+            if (ReplyAtUseStart(o)) replies.Add(GamePackets.InteractEnvObjReply(key2));   // OBSERVED: the reply at the start
             return replies;
         }
         replies.AddRange(await CompleteUseAsync(found, ct, now));
@@ -242,24 +287,34 @@ public sealed partial class GameSession
         return granted.Count == 0 ? ([], tables, false) : (await InventoryChangesAsync(ct, IncreaseEnvObjReward, 0), tables, true);
     }
 
-    async Task<List<byte[]>> CompleteUseAsync(int index, CancellationToken ct, long now = 0)
+    /// <summary>A timed use of this object answers 0x3637 at its start, not at its end (OBSERVED); gather nodes and carried-item boxes do not.</summary>
+    static bool ReplyAtUseStart(WorldObject o) => o.InteractTime > 0 && o.Gather is null && o.Carry is null;
+
+    async Task<List<byte[]>> CompleteUseAsync(int index, CancellationToken ct, long now = 0, bool timed = false)
     {
         var objects = WorldObjects.ObjectsOn(worldMap);
         if (index >= objects.Count) return [];
         // An Empyrean Trace: its own order, the reply went with the start (GameSession.EmpyreanTraces.cs).
         if (IsTrace(objects[index])) return await CollectTraceAsync(index, objects[index], now, ct);
         var key = WorldObjects.FirstKey + index;
-        var replies = new List<byte[]>
+        var (used, usedUp) = await ObjectUsedAsync(index, now, ct);
+        var replies = new List<byte[]> { GamePackets.InteractEnvObjCompleted(key, playerKey) };
+        if (objects[index].Gather is not null || objects[index].Carry is not null)
+            replies.AddRange([GamePackets.InteractEnvObjFinishState(key), GamePackets.InteractEnvObjAvailableState(key), GamePackets.InteractEnvObjReply(key)]);
+        else if (timed && ReplyAtUseStart(objects[index]))
+            replies.Add(usedUp ? GamePackets.InteractEnvObjFinishState(key) : GamePackets.InteractEnvObjAvailableState(key));
+        else
         {
-            GamePackets.InteractEnvObjCompleted(key, playerKey), GamePackets.InteractEnvObjFinishState(key), GamePackets.InteractEnvObjAvailableState(key),
-            GamePackets.InteractEnvObjReply(key),
-        };
-        replies.AddRange(await ObjectUsedAsync(index, now, ct));
+            replies.Add(GamePackets.InteractEnvObjFinishState(key));
+            if (!usedUp) replies.Add(GamePackets.InteractEnvObjAvailableState(key));
+            replies.Add(GamePackets.InteractEnvObjReply(key));
+        }
+        replies.AddRange(used);
         return replies;
     }
 
-    /// <summary>What using an object does past the interaction packets.</summary>
-    async Task<List<byte[]>> ObjectUsedAsync(int index, long now, CancellationToken ct)
+    /// <summary>What using an object does past the interaction packets; UsedUp when the object is gone for this player afterwards.</summary>
+    async Task<(List<byte[]> Packets, bool UsedUp)> ObjectUsedAsync(int index, long now, CancellationToken ct)
     {
         var objects = WorldObjects.ObjectsOn(worldMap);
         var key = WorldObjects.FirstKey + index;
@@ -275,18 +330,25 @@ public sealed partial class GameSession
         var consumed = chestUsedUp
             || objects[index].Carry is null && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(EventName(objects[index])));
         replies.AddRange(MapEventUsedObject(EventName(objects[index]), now));
-        if (consumed || destroyed)
+        if (destroyed)
         {
+            // A tower that took the carried bomb: gone at once, as a broken object (OURS).
             usedObjects.Add(index);
             shownObjects.Remove(index);
             replies.Add(GamePackets.EnvObjDespawn(key, 4, 3));
+        }
+        else if (consumed)
+        {
+            // EnvObjDie and the despawn 4/3 on the object's timing (OBSERVED, see RemovalDelays).
+            usedObjects.Add(index);
+            ScheduleRemoval(index, now);
         }
         replies.AddRange(ApplyEnvObjSelfAction(objects[index], now));
         // The expedition's reward cube (Usage OdEnergyCube): the final boss's reward, once per player per run.
         if (objects[index].Cube) replies.AddRange(await CubeRewardAsync(null, now, ct));
         replies.AddRange(Achieve("UseEnvObjSpawnerName", 1, e => e.Has(objects[index].Name), now));
         replies.AddRange(Achieve("UseEnvObj", 1, e => e.Envs?.Contains(objects[index].Env) == true, now));
-        return replies;
+        return (replies, consumed || destroyed);
     }
 
     async Task<List<byte[]>> OpenFogAsync(IReadOnlyList<int> groups, CancellationToken ct)

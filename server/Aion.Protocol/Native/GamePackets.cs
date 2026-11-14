@@ -1383,8 +1383,15 @@ public static class GamePackets
     public static byte[] EnvObjHitCount(int key, int hitCount) => PacketWriter.Opcode(0x8d93).Varint(key).I32(hitCount).ToArray();
     /// <summary>0x8d05 EnvObjDie_NT: object key. OBSERVED in all our captures (66x, `058d 8fd701`); was the usmap number 0x3940 (#74).</summary>
     public static byte[] EnvObjDie(int key) => PacketWriter.Opcode(0x8d05).Varint(key).ToArray();
-    /// <summary>0x363e InteractEnvObjStop_RS: result, object key (usmap; answering 0x363d). CANDIDATE.</summary>
+    /// <summary>
+    /// 0x363e InteractEnvObjStop_RS: result u16, object key (OBSERVED in the community fork's recordings 2026-11-04 to 06:
+    /// 185000 #6764 `0000 bcef01`; nothing in progress 162208 #5193 `1338 00`).
+    /// </summary>
     public static byte[] InteractEnvObjStopReply(int key, int result = 0) => PacketWriter.Opcode(0x363e).U16(result).Varint(key).ToArray();
+    /// <summary>0x363e's result for a stop with no use in progress (OBSERVED 0x3813, key 0; community fork's recordings).</summary>
+    public const int InteractStopNothing = 0x3813;
+    /// <summary>0x3639 reasons OBSERVED (community fork's recordings): 0x1905 after a hit on the player, 0x1906 with the player's stop. CANDIDATE: the names.</summary>
+    public const int InterruptDamaged = 0x1905, InterruptStopped = 0x1906;
     /// <summary>EnvObjSpawn for a quest object: relationship from EnvObjData (Kibelisks: 8 EnvObj_Light).</summary>
     public static byte[] EnvObjSpawn(int key, int envObjId, Vector3d position, double yaw, long createTime, int uniqueKey, byte relationship) =>
         EnvObjSpawn(key, envObjId, position, yaw, createTime, uniqueKey, relationship, state: 1, canInteract: 1, reason: 1, phase: 0);
@@ -1409,12 +1416,14 @@ public static class GamePackets
     public static byte[] InteractEnvObjAvailableState(int key) => PacketWriter.Opcode(0x363b).Varint(key).ToArray();
 
     /// <summary>
-    /// Gather / interaction refusal on 0x3639 InteractEnvObjInterrupted_NT (DevPacketData_GameServer_InteractEnvObjInterrupted_NT:
-    /// ActionProtocol _key i32, _reason i32, _interactor_key i32, _interaction_count i32). OBSERVED _reason values match
-    /// ESlotRestrictIconType (LackLevel 4, LackMasteryLevel 5, …) when gather level or character level is too low.
+    /// 0x3639 InteractEnvObjInterrupted_NT (usmap DevPacketData_GameServer_InteractEnvObjInterrupted_NT: _key, _reason,
+    /// _interactor_key, _interaction_count): key varint, reason u16, interactor key varint, interaction count i32. The layout is
+    /// OBSERVED in the community fork's recordings 2026-11-04 to 06 (18 samples, e.g. 185000 #5957 `3936 bcef01 0519 d223
+    /// 00000000`); it replaces the usmap's all-i32 reading, which no recording had. Not yet in one of our own captures (#75).
+    /// Gather refusals send ESlotRestrictIconType as the reason (LackLevel 4, LackMasteryLevel 5, …).
     /// </summary>
     public static byte[] InteractEnvObjInterrupted(int key, int reason, int interactorKey, int interactionCount = 0) =>
-        PacketWriter.Opcode(0x3639).I32(key).I32(reason).I32(interactorKey).I32(interactionCount).ToArray();
+        PacketWriter.Opcode(0x3639).Varint(key).U16(reason).Varint(interactorKey).I32(interactionCount).ToArray();
 
     /// <summary>ESlotRestrictIconType values sent as 0x3639 _reason for gather refusals (OBSERVED).</summary>
     public static class EnvObjGatherFailReason

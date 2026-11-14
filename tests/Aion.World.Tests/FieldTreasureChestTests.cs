@@ -56,6 +56,12 @@ public sealed class FieldTreasureChestTests
         var replies = await OpenChestAsync(session, key, obj, Now);
         Assert.Contains(store.Items, i => i.TemplateId == FieldEventRewardItem && i.Quantity > 0);
         Assert.True(store.Items.Sum(i => i.Quantity) > before);
+        // The used-up chest dies (0x8d05), then despawns 4/3 on its timing (OBSERVED, GameSession.RemovalDelays).
+        var usedAt = Now + 20 + (obj.InteractTime > 0 ? obj.InteractTime + 180 : 0);
+        var (die, gone) = GameSession.RemovalDelays(obj.FinishMs);
+        replies.AddRange(await session.TickAsync(usedAt + die));
+        replies.AddRange(await session.TickAsync(usedAt + gone));
+        Assert.Contains(replies, p => p.SequenceEqual(GamePackets.EnvObjDie(key)));
         Assert.Contains(replies, p => p.SequenceEqual(GamePackets.EnvObjDespawn(key, 4, 3)));
         var granted = store.Items.Sum(i => i.Quantity);
         await OpenChestAsync(session, key, obj, Now + 5000);
