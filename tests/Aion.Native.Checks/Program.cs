@@ -1660,6 +1660,12 @@ var liveCreated = await staffSession.HandleAsync(liveCreate, Now);
 Check(liveCreate.Length == 2 + 11 && liveCreated.Count > 0 && liveCreated[0][0] == 0x01 && liveCreated[0][1] == 0x8a && liveCreated[0][2] == 0
       && staffSession.Guild?.Name == "Test", "0x8a00 without the intro string (live 3533 body) still creates the legion (0x8a01 result 0)");
 await staffSession.HandleAsync([0x34, 0x8a], Now);
+// The live 3533 body of 2026-11-14: `07 "KiskEmu" 00 00 01 00 00`, three bytes after the password (emblem u16, empty intro).
+var liveCreate2 = Convert.FromHexString("008A" + "074B69736B456D75" + "0000010000");
+var liveCreated2 = await staffSession.HandleAsync(liveCreate2, Now);
+Check(liveCreated2.Count > 0 && liveCreated2[0][0] == 0x01 && liveCreated2[0][1] == 0x8a && liveCreated2[0][2] == 0 && staffSession.Guild?.Name == "KiskEmu",
+      "the live 0x8a00 with a 3-byte tail (emblem u16, empty intro) creates the legion");
+await staffSession.HandleAsync([0x34, 0x8a], Now);
 // Gathering: a map 1010 gather node (an EnvObj spawned with 0x3634) used with 0x3636: after its 3 s the material is
 // granted, GatherSourceCompleted_NT 0x8d33, and the node is used up for this player (0x3635; refused until it is back).
 var nodes = WorldObjects.ObjectsOn(1010);
