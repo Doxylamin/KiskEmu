@@ -46,8 +46,8 @@ public sealed class EnvObjDestroyTests
         var skill = MapEventScenarioHelpers.BasicAttackSkill(session);
         var replies = await MapEventScenarioHelpers.CombatCastAsync(session, skill, key, at, Now + 1000);
 
-        Assert.Contains(replies, p => Is(p, 0x39ce, key));
-        Assert.Contains(replies, p => Is(p, 0x3940, key));
+        Assert.Contains(replies, p => Is(p, 0x8d93, key));
+        Assert.Contains(replies, p => Is(p, 0x8d05, key));
         Assert.Contains(replies, p => Is(p, 0x3635, key) && p[^3] == 4 && p[^2] == 3);
         Assert.Equal(1, session.Quests.Get("HQ2102040")!.Goals[goal]);
     }
@@ -58,10 +58,10 @@ public sealed class EnvObjDestroyTests
         var (session, key, at) = await AtRemainsAsync(questStep: true);
         var skill = MapEventScenarioHelpers.BasicAttackSkill(session);
         var first = await MapEventScenarioHelpers.CombatCastAsync(session, skill, key, at, Now + 1000);
-        Assert.Contains(first, p => Is(p, 0x3940, key));
+        Assert.Contains(first, p => Is(p, 0x8d05, key));
 
         var again = await MapEventScenarioHelpers.CombatCastAsync(session, skill, key, at, Now + 5000);
-        Assert.DoesNotContain(again, p => Is(p, 0x39ce, key) || Is(p, 0x3940, key));
+        Assert.DoesNotContain(again, p => Is(p, 0x8d93, key) || Is(p, 0x8d05, key));
         var moved = await session.HandleAsync(MapEventScenarioHelpers.MoveUpdate(at), Now + 6000);
         Assert.DoesNotContain(moved, p => Is(p, 0x3634, key));
     }

@@ -23,7 +23,6 @@ public sealed partial class GameSession
         if (resources is null || now < fogCheckAt) return [];
         fogCheckAt = now + FogCheckMs;
         var replies = ObjectVisibility(at, now);
-        replies.AddRange(await TryMonolithProximityResonateAsync(at, ct));
         replies.AddRange(await AreaQuestsAsync(at, ct));
         if (Subzones.GroupAt(worldMap, at) is { } group && !fog.Contains(group)) replies.AddRange(await OpenFogAsync([group], ct));
         replies.AddRange(DismountIfSubzoneForbidden());
@@ -54,7 +53,7 @@ public sealed partial class GameSession
     {
         var key = WorldObjects.FirstKey + index;
         envObjPhase.TryGetValue(index, out var phase);
-        // Usage=Monolith: client opens MonolithResonate from 0x3baa, not InteractEnvObj (EnvObjData InteractTime 0).
+        // Usage=Monolith: client opens MonolithResonate (0xe30d) from 0xe30c, not InteractEnvObj (EnvObjData InteractTime 0).
         var canInteract = o.Monolith ? false : PlayerMayUseEnvObj(index, o);
         return GamePackets.EnvObjSpawn(key, o.Env, o.At, o.Yaw, now, o.UniqueKey, (byte)o.Relationship,
             state: 1, canInteract: canInteract ? (byte)1 : (byte)0, reason: 1, phase: phase);
