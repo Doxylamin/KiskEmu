@@ -211,12 +211,14 @@ public sealed partial class GameSession
         return factor > 1 ? (int)Math.Round(damage * factor) : Patch20261028.ScaleBossDamage(damage, factor);
     }
 
+    /// <summary>A death in the copy: DungeonDeathLimit_NT 0x6109 with the copy's deaths, in the dying player's replies and to
+    /// everyone else in the copy (whoever hosts it).</summary>
     List<byte[]> NotifyDungeonDeathCount()
     {
         if (copy is not { } c) return [];
         var pkt = PacketWriter.Opcode(DungeonDeathLimitNt).I32(c.Deaths).ToArray();
-        mapEventOut.Add(pkt);
-        foreach (var member in CopyMembers()) member.worldPlayer?.Send([pkt]);
+        foreach (var member in DungeonCopySessions())
+            if (member != this) member.worldPlayer?.Send([pkt]);
         return [pkt];
     }
 }
