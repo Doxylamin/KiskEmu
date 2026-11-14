@@ -68,14 +68,11 @@ public sealed partial class GameSession
             await Stored(async () => { await store.SaveCharacterSettingAsync(character, name, JsonSerializer.SerializeToElement(value), ct); return []; });
     }
 
-    /// <summary>The world-entry lists these settings drive (after the skill list, as official).</summary>
+    /// <summary>The emote list after the skill list (OBSERVED: 0x5100, 0x3900, 0x9501, 0x5600). The potion and auto-use lists, the
+    /// presets and the restore counts go with the entry lists (GameSession.EntryConstants.cs).</summary>
     List<byte[]> SettingsAtEntry(long now) =>
     [
         GamePackets.SocialActionInfo(GamePackets.DefaultSocialActions.Concat(earnedEmotes).Distinct().Order().ToList()),
-        PotionAutoUseList(),
-        ItemAutoUseList(),
-        PresetInfo(),
-        ItemRestoreStatus(now),
         // OBSERVED i1146 (2026-11-06 234912, via the addiboii fork): RegisterSealStoneAutoUse_RS {0, uid} with the registered stack.
         .. sealStoneItem != 0 ? [PacketWriter.Opcode(SealStoneRegisterRs).U16(0).I64(sealStoneItem).ToArray()] : Array.Empty<byte[]>(),
     ];
