@@ -591,14 +591,14 @@ public sealed partial class GameSession : IMapEventHost
         return DrainMapEvents();
     }
 
-    List<byte[]> MapEventUsedObject(string spawnName, long now)
+    List<byte[]> MapEventUsedObject(string spawnName, long now, string? dataName = null)
     {
-        if (ToCopyOwner(o => o.MapEventUsedObject(spawnName, now)) || mapEventRuns.Count == 0) return [];
+        if (ToCopyOwner(o => o.MapEventUsedObject(spawnName, now, dataName)) || mapEventRuns.Count == 0) return [];
         mapEventNow = now;
         foreach (var run in mapEventRuns.ToList())
         {
             var before = string.Join(',', run.Goals);
-            var counted = run.UsedObject(spawnName, now);
+            var counted = run.UsedObject(spawnName, now, dataName);
             if (counted)
                 DebugMapEvent($"UseEnvObj {spawnName}: counted {before} -> {string.Join(',', run.Goals)} step {run.StepOrder}");
             else if (run.Step is { } step)
@@ -1505,8 +1505,7 @@ public sealed partial class GameSession : IMapEventHost
         {
             if (!usedObjects.Contains(i)) continue;
             var o = objects[i];
-            if (MapEventRun.NameMatches(spawnName, o.Name)) return true;
-            if (o.EnvName is { Length: > 0 } env && MapEventRun.NameMatches(spawnName, env)) return true;
+            if (MapEventRun.ObjectNamed(spawnName, o.Name, o.EnvDataName)) return true;
         }
         return false;
     }

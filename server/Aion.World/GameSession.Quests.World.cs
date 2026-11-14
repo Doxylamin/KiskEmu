@@ -158,7 +158,7 @@ public sealed partial class GameSession
         if (o.RequiredCombatPower <= 0 || combatPower >= o.RequiredCombatPower) return false;
         if (questLog?.OpenUseEnvObjIds().Contains(o.Env) == true) return false;
         if (QuestCollectItemRescueEnv(o)) return false;
-        if (mapEventRuns.Any(r => r.WantsObject(EventName(o)))) return false;
+        if (mapEventRuns.Any(r => r.WantsObject(o.Name, o.EnvDataName))) return false;
         return true;
     }
 
@@ -274,8 +274,8 @@ public sealed partial class GameSession
         }
         // A carried-item box comes back after its FinishDuration even when a map event counts it (FierceHornCave BombBox_02).
         var consumed = chestUsedUp
-            || objects[index].Carry is null && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(EventName(objects[index])));
-        replies.AddRange(MapEventUsedObject(EventName(objects[index]), now));
+            || objects[index].Carry is null && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(objects[index].Name, objects[index].EnvDataName));
+        replies.AddRange(MapEventUsedObject(objects[index].Name, now, objects[index].EnvDataName));
         if (consumed || destroyed)
         {
             usedObjects.Add(index);

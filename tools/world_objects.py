@@ -322,7 +322,11 @@ def build():
             entry['objects'].extend(placed)
             entry['triggers'].extend(areas)
     merge_monolith_placements(maps)
-    return {'source': 'MapData.dat SpawnInfoList/TriggerActorDataMap + EnvObjData.dat', 'maps': maps}
+    # Map events' UseEnvObj goals name an object by its spawn entry or its EnvObjData name (the server matches either exactly):
+    # every placed object's EnvObjData name, by id.
+    placed = {o['env'] for m in maps.values() for o in m['objects']}
+    env_names = {str(env): rows[env]['name'] for env in sorted(placed) if env in rows and rows[env]['name']}
+    return {'source': 'MapData.dat SpawnInfoList/TriggerActorDataMap + EnvObjData.dat', 'maps': maps, 'env_names': env_names}
 
 
 def main():

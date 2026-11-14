@@ -72,6 +72,15 @@ class WorldObjectTests(unittest.TestCase):
         door = next(o for o in maps['1010']['objects'] if o['name'] == 'World_L_A_Layer_01_EnterDoor')
         self.assertEqual(door['portal'], [2])
 
+    def test_every_placed_object_has_its_envobjdata_name(self):
+        data = json.loads((ROOT / 'tools/data/world-objects.json').read_text(encoding='utf-8'))
+        names = data['env_names']
+        # Munihelle's second firewood is spawned as E_D0_FireWood_001_2 but is EnvObjData E_D0_FireWood_002.
+        fire = {o['name']: names.get(str(o['env'])) for o in data['maps']['110002']['objects'] if 'FireWood' in o['name']}
+        self.assertEqual(fire, {'E_D0_FireWood_001_1': 'E_D0_FireWood_001', 'E_D0_FireWood_001_2': 'E_D0_FireWood_002'})
+        placed = {o['env'] for m in data['maps'].values() for o in m['objects']}
+        self.assertTrue({str(e) for e in placed} >= set(names) and len(names) > 0.95 * len(placed))
+
     def test_generated_poeta(self):
         data = json.loads((ROOT / 'tools/data/world-objects.json').read_text(encoding='utf-8'))['maps']['1000']
         self.assertIn(1200530, [o['env'] for o in data['objects']])

@@ -615,10 +615,24 @@ public sealed class MapEventRun
         return false;
     }
 
-    /// <summary>Any step of the event uses this env spawner on a UseEnvObj objective.</summary>
-    public static bool ReferencesUseEnvObj(MapEventDefinition definition, string spawnName) =>
+    /// <summary>
+    /// A name a UseEnvObj goal lists names this placed object: exactly its spawn entry or exactly its EnvObjData name
+    /// (CANDIDATE, from the client's tables: of the 2232 UseEnvObj names of map-events.json, the exact rule finds placed objects
+    /// for the same 2000 as the spawn-name prefix, without the prefix's 59 extra matches of other EnvObjData rows, such as
+    /// E_Draconic_005_Easy_BUFF_01 taking its _Portal or AbyssStone_01 its V01/V02 variants). Munihelle's second firewood
+    /// (E_D0_FireWood_002 spawned as E_D0_FireWood_001_2) answers to its own name. Without an EnvObjData name, the spawn-name
+    /// rule of NPCs (<see cref="NameMatches"/>).
+    /// </summary>
+    internal static bool ObjectNamed(string goal, string spawnName, string? dataName) => dataName is null ? NameMatches(goal, spawnName)
+        : string.Equals(goal, dataName, StringComparison.OrdinalIgnoreCase) || string.Equals(goal, spawnName, StringComparison.OrdinalIgnoreCase);
+
+    internal static bool NamesObject(MapEventObjective o, string spawnName, string? dataName) =>
+        o.Names.Any(n => ObjectNamed(n, spawnName, dataName));
+
+    /// <summary>Any step of the event uses this env object (spawn entry, EnvObjData name) on a UseEnvObj objective.</summary>
+    public static bool ReferencesUseEnvObj(MapEventDefinition definition, string spawnName, string? dataName = null) =>
         definition.Stages.SelectMany(s => s.Steps).SelectMany(st => st.Objectives)
-            .Any(o => o.Type == "UseEnvObj" && o.Names.Any(n => NameMatches(n, spawnName)));
+            .Any(o => o.Type == "UseEnvObj" && NamesObject(o, spawnName, dataName));
 
     /// <summary>
     /// A kill the player already landed, before this step opened, fills the step. The stone in the forest can die
@@ -693,16 +707,17 @@ public sealed class MapEventRun
         Apply(o => o.Type == (close ? "CloseNpc" : "AskNpc") && ((o.Npcs ?? []).Contains(npcId) || Names(o, spawnName))
                    && (index is not { } i || Step!.Objectives.Length <= i || ReferenceEquals(Step.Objectives[i], o)), now);
 
-    public bool UsedObject(string spawnName, long now) => Apply(o => o.Type == "UseEnvObj" && Names(o, spawnName), now);
+    /// <summary>The player used a placed object (its spawn entry and EnvObjData name, <see cref="ObjectNamed"/>).</summary>
+    public bool UsedObject(string spawnName, long now, string? dataName = null) =>
+        Apply(o => o.Type == "UseEnvObj" && NamesObject(o, spawnName, dataName), now);
 
-    /// <summary>Whether a UseEnvObj objective of the current step still counts this spawner (the object despawns once used: OBSERVED for the phoenix eggs).</summary>
-    public bool WantsObject(string spawnName) =>
-        !Finished && Step is { } step && step.Objectives.Where((o, i) => i < Goals.Length && Goals[i] < o.Count && o.Type == "UseEnvObj" && Names(o, spawnName)).Any();
+    /// <summary>Whether a UseEnvObj objective of the current step still counts this object (the object despawns once used: OBSERVED for the phoenix eggs).</summary>
+    public bool WantsObject(string spawnName, string? dataName = null) =>
+        !Finished && Step is { } step && step.Objectives.Where((o, i) => i < Goals.Length && Goals[i] < o.Count && o.Type == "UseEnvObj"
+                                                                          && NamesObject(o, spawnName, dataName)).Any();
 
-    /// <summary>Whether this spawner name appears on any UseEnvObj objective of the run (open or not yet reached).</summary>
-    public bool ReferencesUseEnvObj(string spawnName) =>
-        Definition.Stages.SelectMany(s => s.Steps).SelectMany(st => st.Objectives)
-            .Any(o => o.Type == "UseEnvObj" && Names(o, spawnName));
+    /// <summary>Whether this object appears on any UseEnvObj objective of the run (open or not yet reached).</summary>
+    public bool ReferencesUseEnvObj(string spawnName, string? dataName = null) => ReferencesUseEnvObj(Definition, spawnName, dataName);
 
     /// <summary>Where the player stands: EnterVolumePC (trigger names) and EnterSubZone objectives.</summary>
     public bool PositionAt(Func<string, bool> insideTrigger, Func<string, bool> insideSubzone, long now) =>
