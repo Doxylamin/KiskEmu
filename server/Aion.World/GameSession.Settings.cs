@@ -76,6 +76,8 @@ public sealed partial class GameSession
         ItemAutoUseList(),
         PresetInfo(),
         ItemRestoreStatus(now),
+        // OBSERVED i1146 (2026-11-06 234912, via the addiboii fork): RegisterSealStoneAutoUse_RS {0, uid} with the registered stack.
+        .. sealStoneItem != 0 ? [PacketWriter.Opcode(SealStoneRegisterRs).U16(0).I64(sealStoneItem).ToArray()] : Array.Empty<byte[]>(),
     ];
 
     // ---------- Emotes ----------
@@ -102,12 +104,17 @@ public sealed partial class GameSession
 
     // ---------- Seal stone ----------
 
+    /// <summary>OBSERVED kToggle_SetAlready: a toggle to the state it has (i27405, 2026-11-06 234912, via the addiboii fork).</summary>
+    const int ToggleSetAlready = 0x1960;
+
     /// <summary>
     /// Activate/DeactivateSealStone_RQ (no body): the toggle (EToggleType SealStone = toggle flag 1, which the official
-    /// appearance carries) -> RS {u16 0}, SealStoneStatusChange_NT {key, on} to the player and those around.
+    /// appearance carries) -> RS {u16 0}, SealStoneStatusChange_NT {key, on} to the player and those around. A toggle to the
+    /// state it already has: RS {u16 0x1960} alone (OBSERVED).
     /// </summary>
     async Task<List<byte[]>> SealStoneToggleAsync(bool on, CancellationToken ct)
     {
+        if (on == sealStoneOn) return [PacketWriter.Opcode(on ? SealStoneActivateRs : SealStoneDeactivateRs).U16(ToggleSetAlready).ToArray()];
         sealStoneOn = on;
         await SaveSettingAsync("seal_stone", new SealStoneSetting(on, sealStoneItem), ct);
         var status = PacketWriter.Opcode(SealStoneStatusNt).Varint(playerKey).Bool(on).ToArray();
@@ -116,27 +123,25 @@ public sealed partial class GameSession
     }
 
     /// <summary>
-    /// RegisterSealStoneAutoUse_RQ {item uid i64}: a bag item (0 clears) -> RS {u16, uid}, BroadcastSealStoneChange_NT {key, item id}.
-    /// INFERRED: slotting a stack also turns the toggle on (SealStoneStatusChange_NT), so a slotted stack is spent without a
-    /// separate ActivateSealStone_RQ.
+    /// RegisterSealStoneAutoUse_RQ {item uid i64}: a bag seal stone (0 clears) -> BroadcastSealStoneChange_NT {key, item id},
+    /// RS {u16 0, uid}, then the stat sheet (0x364a) with the stone's stats. OBSERVED order i24886-24888 (2026-11-06 234912,
+    /// via the addiboii fork); the recorded reply has no SealStoneStatusChange_NT, so registering leaves the toggle as it is.
+    /// OURS: a bag item that is no seal stone (sealstones.json) is refused with RS {u16 1, uid}.
     /// </summary>
     async Task<List<byte[]>> RegisterSealStoneAsync(long uid, CancellationToken ct)
     {
         var itemId = 0;
         if (uid != 0)
         {
-            if (!storedItems.TryGetValue(uid, out var row) || row.Location != "bag") return [PacketWriter.Opcode(SealStoneRegisterRs).U16(1).I64(uid).ToArray()];
+            if (!storedItems.TryGetValue(uid, out var row) || row.Location != "bag" || !SealStones.IsStone(row.TemplateId))
+                return [PacketWriter.Opcode(SealStoneRegisterRs).U16(1).I64(uid).ToArray()];
             itemId = row.TemplateId;
         }
         sealStoneItem = uid;
-        var turnOn = uid != 0 && !sealStoneOn;
-        if (turnOn) sealStoneOn = true;
         await SaveSettingAsync("seal_stone", new SealStoneSetting(sealStoneOn, uid), ct);
-        var change = PacketWriter.Opcode(SealStoneBroadcastNt).Varint(playerKey).I32(itemId).ToArray();
-        List<byte[]> shown = [change];
-        if (turnOn) shown.Add(PacketWriter.Opcode(SealStoneStatusNt).Varint(playerKey).Bool(true).ToArray());
-        worldPlayer?.Map?.Broadcast(worldPlayer, shown);
-        return [PacketWriter.Opcode(SealStoneRegisterRs).U16(0).I64(uid).ToArray(), .. shown];
+        var change = PlayerPackets.SealstoneChange(playerKey, itemId);
+        worldPlayer?.Map?.Broadcast(worldPlayer, [change]);
+        return [change, PacketWriter.Opcode(SealStoneRegisterRs).U16(0).I64(uid).ToArray(), .. RefreshStats()];
     }
 
     int SealStoneItemId => sealStoneItem != 0 && storedItems.TryGetValue(sealStoneItem, out var row) ? row.TemplateId : 0;

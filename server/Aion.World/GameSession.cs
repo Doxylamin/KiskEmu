@@ -2213,6 +2213,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (!byType.ContainsKey(wire)) byType[wire] = value;
         foreach (var (wire, value) in ExtraSheetStats())
             byType[wire] = value;
+        foreach (var (wire, name) in SealStoneSheetStats)   // GameSession.SealStone.cs: gear, titles, ... plus the registered stone
+            if (byType.GetValueOrDefault(wire) + AggregatedStat(name, 0) + SealStoneStat(name) is var seal and not 0) byType[wire] = seal;
         foreach (var attr in ItemStats.AttributeStats)
         {
             if (ItemStats.WireOf(attr) is not { } attrWire) continue;
