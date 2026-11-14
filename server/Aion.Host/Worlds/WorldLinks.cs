@@ -8,7 +8,7 @@ using Aion.Host.Chat;
 namespace Aion.Host.Worlds;
 
 /// <summary>A character in a world process, as that process reports it to the primary host (/internal/world/presence).</summary>
-public sealed record WorldPresenceEntry(Guid CharacterId, Guid AccountId, string Name, string DisplayName, long GuildId, int Race);
+public sealed record WorldPresenceEntry(Guid CharacterId, Guid AccountId, string Name, string DisplayName, long GuildId, int Race, long PartyId = 0);
 
 /// <summary>A chat command forwarded to the world the sender plays on (/internal/world/command).</summary>
 public sealed record WorldCommandRequest(ChatIdentity Sender, string UserName, string Content);
@@ -332,7 +332,7 @@ public sealed class RealmChatDirectory(WorldChatDirectory? local, WorldPresenceM
         };
     }
 
-    static ChatCharacter Character(WorldPresenceEntry entry) => new(entry.CharacterId, entry.Name, entry.DisplayName, entry.GuildId, entry.Race);
+    static ChatCharacter Character(WorldPresenceEntry entry) => new(entry.CharacterId, entry.Name, entry.DisplayName, entry.GuildId, entry.Race, entry.PartyId);
 }
 
 /// <summary>

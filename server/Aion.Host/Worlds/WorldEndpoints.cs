@@ -290,7 +290,7 @@ public static class WorldEndpoints
         foreach (var entry in presence.All)
             if (entry is { AccountId: { } account, Session: { InWorld: true, CharacterId: { } id } session }
                 && Chat.WorldChatDirectory.Describe(id, session) is { } character)
-                entries.Add(new WorldPresenceEntry(id, account, character.Name, character.DisplayName, character.GuildId, character.Race));
+                entries.Add(new WorldPresenceEntry(id, account, character.Name, character.DisplayName, character.GuildId, character.Race, character.PartyId));
         return entries;
     }
 

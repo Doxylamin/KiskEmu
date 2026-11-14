@@ -275,6 +275,10 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     public int PlayerKey => playerKey;
     public WorldPlayer? WorldPlayer => worldPlayer;
 
+    long partyKey;
+    /// <summary>The party this player is in (0 none), as of its last tick: party state is read under the world gate, chat reads this from elsewhere.</summary>
+    public long PartyKey => Volatile.Read(ref partyKey);
+
     readonly ConcurrentQueue<(Func<long, Task<List<byte[]>>> Run, Action Cancel)> posted = new();
 
     public INativeCharacterStore? Store { get; set; }
@@ -2783,6 +2787,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         lastNow = now;
         var replies = new List<byte[]>();
         while (posted.TryDequeue(out var item)) replies.AddRange(await item.Run(now));
+        Volatile.Write(ref partyKey, worldPlayer is { } me && Social?.PartyOf(me) is { } myParty ? myParty.Key : 0);
         replies.AddRange(IdleReturnTick(now));
         replies.AddRange(ObjectRemovalTick(now));   // used-up objects die and despawn on their timing
         if (arrivalCheckDue && !reloading && position is { } arrivedAt)
