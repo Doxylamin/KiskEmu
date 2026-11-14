@@ -2492,10 +2492,10 @@ var hildeDown = await hilde.TickAsync(killingCast + SkillTiming.HitLandMs(data.S
 Check(hilde.Dead && hildeDown.Any(b => Op(b) == 0x8d04), "a lethal hit kills the enemy (0x8d04 with the killer)");
 var abyssKillPackets = peace.Concat(killing);
 Check(abyssKillPackets.Any(b => Op(b) == GameSession.AbyssPointUpdateNt) && abyssKillPackets.Any(b => Op(b) == GameSession.RankingPointUpdateNt),
-      "an Abyss kill updates weekly AP acc and ranking points (0x3C06, 0x3B78)");
+      "an Abyss kill updates weekly AP acc and ranking points (0xffab, 0xe273)");
 Check(AbyssTables.Embedded.KillAp(hilde.AbyssRankingGrade) > 0, "kill AP comes from the victim's rank in abyss.json");
-var ranker = await gunnar.HandleAsync([0x17, 0x3a], Now + 80_220);
-Check(ranker.Single().Length >= 4 && Op(ranker[0]) == GameSession.WorldMapAbyssRankerInfoRs, "WorldMapAbyssRankerInfo_RQ gets an empty ranker list (0x3A18)");
+var ranker = await gunnar.HandleAsync([0xdc, 0x8d], Now + 80_220);
+Check(ranker.Single().Length >= 4 && Op(ranker[0]) == GameSession.WorldMapAbyssRankerInfoRs, "WorldMapAbyssRankerInfo_RQ gets an empty ranker list (0x8ddd)");
 var siege = await gunnar.HandleAsync([0x2c, 0x37], Now + 80_225);
 Check(siege.Any(b => Op(b) == GameSession.AirspaceBattleNt) && siege.Any(b => b.Length > 4), "AirspaceBattle_RQ gets the fortress schedule (0x372D)");
 var field = await WorldSession("Ivar", darkCreation);
