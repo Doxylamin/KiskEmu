@@ -126,8 +126,7 @@ public sealed class SkillPointAccountingTests
 
         Assert.Equal(2, session2.SkillLevel(11010000));
         Assert.Equal(0, session2.SkillPointsLeft);
-        var pointsPkt = entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);
-        Assert.Equal(GamePackets.SkillPointUpdate(1), pointsPkt);
+        Assert.DoesNotContain(entry, p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);   // OBSERVED: no 0x5105 at an official entry; the points ride in 0x3633
         Assert.DoesNotContain(await session2.TickAsync(Now + 60_000), p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);
         var refused = await session2.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelUpRq).I32(11010000).ToArray(), Now);
         Assert.Equal(GameSession.SkillAcquireNotEnoughSkillPoint, BitConverter.ToUInt16(GameSessionTestHelpers.SkillLevelUpRs(refused), 2));
@@ -152,8 +151,7 @@ public sealed class SkillPointAccountingTests
         await session2.HandleAsync(new PacketWriter().U16(0x361f).Varint((uint)wireId << 16).I32(0).Vec3(Vector3d.Zero).ToArray(), Now);
         var entry = await session2.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
 
-        var pointsPkt = entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);
-        Assert.Equal(GamePackets.SkillPointUpdate(1), pointsPkt);   // 1 of 16 spent
+        Assert.DoesNotContain(entry, p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);   // OBSERVED: no 0x5105 at an official entry; the points ride in 0x3633
         Assert.Equal(15, session2.SkillPointsLeft);
         Assert.DoesNotContain(await session2.TickAsync(Now + 60_000), p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);
         var skillList = entry.Single(p => GameSessionTestHelpers.Op(p) == 0x5100);

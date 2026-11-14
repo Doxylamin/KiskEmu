@@ -331,13 +331,12 @@ var passives = entered.First(b => b[0] == 0x2a && b[1] == 0x38);
 Check(Convert.ToHexStringLower(passives).Contains(Convert.ToHexStringLower(BitConverter.GetBytes(110000001)) + "ffffffffffffffff" + Convert.ToHexStringLower(BitConverter.GetBytes(4_102_412_400_000L))),
       "world entry announces the class passives (0x382a: Equip Gladiator Weapon 110000001, permanent)");
 Check(opcodes.Count(o => o == 0x3641) == 1 + data.Spawns(1000).Count && data.Spawns(1000).Count > 200, "training dummy and every Poeta NPC appear");
-Check(entered.Any(b => b.SequenceEqual(GamePackets.ContentsUnlockList(GamePackets.UnlockedContents(game.Level)))), "world entry unlocks the contents of the character's level");
+Check(entered.Any(b => b[0] == 0x57 && b[1] == 0xe2 && b.Skip(3).Contains((byte)45) && GamePackets.UnlockedContents(game.Level).All(t => b.Skip(3).Contains(t))),
+      "world entry unlocks the contents of the character's level, chat (45) included (OBSERVED: official 0xe257 carries 45)");
 Check(!GamePackets.UnlockedContents(3).Contains((byte)2) && GamePackets.UnlockedContents(4).Contains((byte)2) && !GamePackets.UnlockedContents(99).Contains((byte)45),
-      "the skill window (2) unlocks at level 4 (ContentsUnlock.dat); chat stays for 0xe258");
-Check(opcodes.IndexOf(0xe258) > opcodes.IndexOf(0xe257) && opcodes.Count(o => o == 0xe258) == 1, "world entry unlocks chat (0xe258) in the burst, after the unlock list");
-Check((await game.HandleAsync([0x1c, 0x8a], Now)).Select(b => b[0] | b[1] << 8).SequenceEqual(new[] { 0x8a1d, 0xe257, 0xe258 }),
-      "the last world-entry query re-sends the unlock list and the chat unlock together, once (a reload's pair starts chat)");
-Check((await game.HandleAsync([0x1c, 0x8a], Now)).Select(b => b[0] | b[1] << 8).SequenceEqual(new[] { 0x8a1d }), "the pair goes out once per world entry");
+      "the skill window (2) unlocks at level 4 (ContentsUnlock.dat); chat (45) is added by WorldEntryContentsUnlocks");
+Check(!opcodes.Contains(0xe258), "no 0xe258 at world entry (OBSERVED: the official server never sends it)");
+Check((await game.HandleAsync([0x1c, 0x8a], Now)).Select(b => b[0] | b[1] << 8).SequenceEqual(new[] { 0x8a1d }), "the last world-entry query answers alone (no unlock packets)");
 // Skill levels for skill points (official #18470-18472): a level-10 development Gladiator buys Rending Blow level 2 for one of its 16 points.
 var pointed = new GameSession(data, new GameSessionOptions { CharacterLevel = 10 }, new Random(11));
 await pointed.HandleAsync(Strings(0x3613, Session, "", "t", "").Concat(new byte[9]).ToArray(), Now);
@@ -1096,7 +1095,9 @@ Check(BitConverter.ToUInt16((await stored.HandleAsync(NameRequest("Player1"), No
 var picked = await stored.HandleAsync(new PacketWriter().U16(0x361f).Varint(store.States[0].WireId << 16).I32(0).Vec3(Vector3d.Zero).ToArray(), Now);
 // SelectCharacter_RS: tag, u16 result, varint key, i32 last_using_pc_id, then the i64 dbid.
 var pickedKey = new PacketWriter().Varint(store.States[0].WireId << 16).ToArray();
-Check(picked.Count == 3 && picked[0].AsSpan(4, pickedKey.Length).SequenceEqual(pickedKey)
+// Then ClientEnvSetting, 0xe257 with chat (45) and 0x3621 (OBSERVED: the unlock list before the map load).
+Check(picked.Count == 4 && picked[2][0] == 0x57 && picked[2][1] == 0xe2 && picked[2].Skip(3).Contains((byte)45) && picked[3][0] == 0x21 && picked[3][1] == 0x36
+      && picked[0].AsSpan(4, pickedKey.Length).SequenceEqual(pickedKey)
       && BitConverter.ToInt64(picked[0], 4 + pickedKey.Length + 4) == store.States[0].WireId, "shifted selection key resolves the stored character");
 await stored.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
 await stored.HandleAsync(moved, Now);
@@ -2231,7 +2232,7 @@ var layerJoined = layer.FirstOrDefault(b => Op(b) == 0x922e);
 Check(layerJoined is not null && Encoding.ASCII.GetString(layerJoined, 7, 30) == "World_L_Starter_HQ001_MapEvent" && eve.MapEventRuns.Count == 1 && eve.InstanceKey == eve.PlayerKey,
       "inside: MapEventJoin_NT 0x922e names the layer's event; a private copy");
 var layerOps = layer.Select(Op).ToList();
-Check(layerOps.Contains(0x3746) && layerOps.Contains(0xe257) && layerOps.Contains(0x5100) && layerOps.Contains(0xe258) && !layerOps.Contains(0x4001),
+Check(layerOps.Contains(0x3746) && layerOps.Contains(0xe257) && layerOps.Contains(0x5100) && !layerOps.Contains(0xe258) && !layerOps.Contains(0x4001),
       "a layer load is the full set without the map environment (the live-tested default pieces)");
 var layerLoad = layer.First(b => Op(b) == 0x3623);
 var layerSelf = layer.First(b => Op(b) == 0x3633);
@@ -2695,10 +2696,8 @@ Check((await Gm(game, "Player1", "//SetInvincible false")).Reply == "Invincible:
 Check((await Gm(game, "Player1", "//NoCool true")).Reply == "Cooldowns off." && game.NoCool, "NoCool");
 Check((await Gm(game, "Player1", "//Teleport 1000 10 20 30")).Packets.Any(b => b[0] == 0x21 && b[1] == 0x36), "Teleport sends the map load (0x3621)");
 var reload = await game.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), clock);
-var unlockAt = reload.FindLastIndex(b => b[0] == 0x58 && b[1] == 0xe2);
-Check(unlockAt > reload.FindIndex(b => b[0] == 0x57 && b[1] == 0xe2) && reload.Any(b => b[0] == 0x33 && b[1] == 0x36),
-      "a teleport's reload re-sends the chat unlock (0xe258) after the unlock list re-locks it");
-Check((await game.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), clock)).All(b => !(b[0] == 0x58 && b[1] == 0xe2)), "only once per teleport");
+Check(!reload.Any(b => b[0] == 0x58 && b[1] == 0xe2) && reload.Any(b => b[0] == 0x57 && b[1] == 0xe2 && b.Skip(3).Contains((byte)45)) && reload.Any(b => b[0] == 0x33 && b[1] == 0x36),
+      "a teleport's reload keeps chat (45) in the unlock list, no 0xe258 (OBSERVED: never sent)");
 Check(game.Resource.Hp < game.Resource.HpMax, "a teleport keeps HP (it used to be a full heal)");
 // Death: HP 0 kills (0x8d04 with the player as victim), casts are refused, a revive follows by itself.
 var death = game.NpcHitsPlayer(game.Resource.HpMax * 10, clock, killerKey: 2001);

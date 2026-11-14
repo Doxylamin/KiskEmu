@@ -247,16 +247,12 @@ public static class GamePackets
             .Except(LaterUnlockedContents).Distinct().Order().ToArray();
 
     /// <summary>
-    /// Full 0xe257 merge at world entry: level and quest gates, ride/Daevanion extras, and Chat/Customizing once their
-    /// quests are done (still withheld from 0xe257 until then so 0xe258 can raise System_ContentsUnlocked on first login).
+    /// Full 0xe257 merge at world entry: level and quest gates, ride/Daevanion extras, and Chat (45) / Customizing (43).
+    /// OBSERVED (official 2026-11-12/13, every entry from character select): 45 is in 0xe257, and the server never sends
+    /// 0xe258 at all. Withheld for a later 0xe258, the client started its chat login only after a teleport (live 2026-11-14).
     /// </summary>
-    public static byte[] WorldEntryContentsUnlocks(int level, IEnumerable<byte> questUnlockTypes, IEnumerable<byte> extraTypes)
-    {
-        var quest = questUnlockTypes as IReadOnlySet<byte> ?? questUnlockTypes.ToHashSet();
-        var withheld = LaterUnlockedContents.Where(t => !quest.Contains(t));
-        return UnlockedContents(level).Concat(questUnlockTypes).Concat(extraTypes)
-            .Except(withheld).Distinct().Order().ToArray();
-    }
+    public static byte[] WorldEntryContentsUnlocks(int level, IEnumerable<byte> questUnlockTypes, IEnumerable<byte> extraTypes) =>
+        UnlockedContents(level).Concat(LaterUnlockedContents).Concat(questUnlockTypes).Concat(extraTypes).Distinct().Order().ToArray();
 
     /// <summary>
     /// PCLevelQuickSlot.dat level-1 rows (identical for all 8 classes, AscensionGrade_1): consumable bar slot -> item.

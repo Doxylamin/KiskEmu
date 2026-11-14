@@ -23,10 +23,11 @@ public sealed class ContentsUnlockTests
     }
 
     [Fact]
-    public void World_entry_withholds_chat_until_starter_quest()
+    public void World_entry_carries_chat_without_a_later_unlock()
     {
+        // OBSERVED (official 2026-11-12/13): every 0xe257 at an entry carries chat (45); 0xe258 is never sent.
         var list = GamePackets.WorldEntryContentsUnlocks(16, [], []);
-        Assert.DoesNotContain((byte)45, list);
-        Assert.DoesNotContain((byte)43, list);
+        Assert.Contains((byte)45, list);
+        Assert.Contains((byte)43, list);
     }
 }

@@ -261,7 +261,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     int worldMap;
     (bool Hp, bool Mp, bool Sp) invincible;
     bool noCool;
-    bool unlockUpdateSent, lobbyLoginSent;
+    bool lobbyLoginSent;
     Vector3d? position, savedPosition;
     long checkpointAt;
     readonly Dictionary<int, long> cooldowns = [];
@@ -704,7 +704,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case 0x3648: { var (sheet, hpMax) = StatSheet(); return [GamePackets.CharAllStats(sheet, hpMax)]; }
             case 0x3659:
                 // Comm key request (only when Login_RS gave none), then the chat unlock update.
-                return [GamePackets.CommServerKeyReply(), .. UnlockUpdateOnce()];
+                return [GamePackets.CommServerKeyReply()];
             case 0xe34f when Store is null && !lobbyLoginSent:
                 // Login_RS resent from the lobby: its handler needs [A+0x428], absent when the
                 // instant game-login reply arrives, so the chat server key (Lime+0x80) stayed
@@ -773,8 +773,6 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         noCool = false;
         sprinting = false;
         Resting = false;
-        unlockUpdateSent = false;  // the next world entry re-locks chat in 0xe257 and needs 0xe258 again
-        chatRestartedAfterEntry = false;
         reloading = false;
     }
 
@@ -1175,31 +1173,6 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         return [GamePackets.ItemModificationList(changes), .. acquired, .. quest, .. qunaRefresh];
     }
 
-    /// <summary>The 0xe257 list of the last full map load (null before the first).</summary>
-    byte[]? entryUnlockTypes;
-    bool chatRestartedAfterEntry;
-
-    /// <summary>
-    /// Once, after the first world entry's last query: 0xe257 again, then 0xe258, as a reload's burst carries them. Live
-    /// 2026-11-14 (3533): 0xe258 in the first entry burst did not start the Lime chat login (no authn_token, no
-    /// loginWithToken), while the next teleport's reload burst with both did at once. CANDIDATE: the client's chat side
-    /// is not ready during the first load; the pair re-sent after it starts it.
-    /// </summary>
-    List<byte[]> ChatRestartAfterEntry()
-    {
-        if (chatRestartedAfterEntry || entryUnlockTypes is not { } types) return UnlockUpdateOnce();
-        chatRestartedAfterEntry = true;
-        unlockUpdateSent = true;
-        return [GamePackets.ContentsUnlockList(types), GamePackets.ContentsUnlockUpdate()];
-    }
-
-    List<byte[]> UnlockUpdateOnce()
-    {
-        if (unlockUpdateSent) return [];
-        unlockUpdateSent = true;
-        return [GamePackets.ContentsUnlockUpdate()];
-    }
-
     StarterProfile? Profile() => character is null ? data.Profile(1, 1) : data.Profile(character.CreationId, character.Gender);
 
     /// <summary>A race's starting map: Poeta (1000) for Light, Ishalgen (1100) for Dark (tools/configure_starters.py).</summary>
@@ -1505,8 +1478,10 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 instanceKey = IsInstanceMap(savedMap) ? playerKey : 0;
                 spawn = (savedMap, savedAt);
                 loadTicket = 1;
+                // OBSERVED (official, every entry from character select): 0xe257 with chat (45) before the map load (0x3621).
                 return [GamePackets.SelectCharacter((int)key, state.WireId, playerKey, profile.PcId, state.Appearance, now, skillCustomizing: SkillCustomizingForSelect(profile.Class, level)),
-                    GamePackets.ClientEnvSetting(), GamePackets.PrepareEnterMap(loadTicket, savedMap, savedAt, now)];
+                    GamePackets.ClientEnvSetting(), GamePackets.ContentsUnlockList(GamePackets.WorldEntryContentsUnlocks(level, [], [])),
+                    GamePackets.PrepareEnterMap(loadTicket, savedMap, savedAt, now)];
             });
         }
         if (request is null) return [];
@@ -1712,8 +1687,10 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 var skillList = WireSkillListPacket();
                 replies.Add(skillList);
                 LogSkillPointsAtEntry();
-                replies.AddRange(SkillPointSpendBaselineSeeds());
-                replies.AddRange(SkillPointsAtEntry());
+                // The 0x3813 seeds only at the entry from character select; no 0x3811/0x5105 point updates on any load
+                // (OBSERVED official 2026-11-12: the points ride in 0x3633's CharDetail; sent here, the client printed
+                // "Obtained ... points" at login and "Acquired 0 Skill Point(s)" on every teleport).
+                if (!reloading) replies.AddRange(SkillPointSpendBaselineSeeds());
                 var actives = learned.Where(id => id >= 11_000_000 && !IsDodgeId(id) && data.StigmaPartParent(id) is null && data.Skill(id)?.Type == "Active").Order().ToList();
                 // The normal-skill slots hold the equipped specialty parts, not the customizing ids (official 2026-11-12: zeros
                 // with none on); GameSession.Specialization.cs.
@@ -1733,20 +1710,13 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (unlockTypes.Contains(RideContentsUnlock)) rideContentsUnlocked = true;
             if (unlockTypes.Contains(DaevanionContentsUnlock)) daevanionContentsUnlocked = true;
             replies.Add(GamePackets.ContentsUnlockList(unlockTypes));
-            entryUnlockTypes = unlockTypes;
             // Rewarded quests go in too (EQuestStatus 4): acquirable list and HUD part progress both read journal status per Quest.dat Part.
             // NPC markers, Alt+1) from Quest.dat PreQuest/NextQuestName against this list. Without them it took the opening
             // HQ1100010 as never done and offered it, and never offered the next NPC-acquired story quest (HQ1101030 after HQ1101021).
             if (questLog is not null)
                 replies.AddRange(await QuestRecheckAsync(ct));
             replies.AddRange(QuestJournalAtEntry());
-            // 0xe257 just (re-)locked chat (45); the unlock update (0xe258) in the same burst raises
-            // System_ContentsUnlocked, which starts the Lime chat login. A teleport's reload always needs it
-            // (the client sends no new world-entry queries; live: chat stayed closed after MoveMap without it).
-            // The world entry needs it too: sent later as the reply to the last entry query (0x8a1c), the client
-            // no longer started chat (live 2026-11-14, 3527 and 3533 since 2026-11-12), while every reload that
-            // carried it in the burst did. The short load sends no 0xe257, so there is nothing to undo.
-            if (reloading || !unlockUpdateSent) { replies.Add(GamePackets.ContentsUnlockUpdate()); unlockUpdateSent = true; }
+            // No 0xe258: 0xe257 carries chat (45) itself (OBSERVED, WorldEntryContentsUnlocks).
         }
         if (reloading)
         {

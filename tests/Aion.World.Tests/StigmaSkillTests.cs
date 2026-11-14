@@ -166,12 +166,12 @@ public sealed class StigmaSkillTests
         await session.HandleAsync(LevelUp(stigmas[1]), Now + 2);
         var part = GameData.Embedded.StigmaParts(stigmas[0])[0].Child;
 
-        // Relog keeps them: 0x5100 lists the stigmas and the part, the entry 0x5105 type 2 carries the spent 5 + 2 + 1.
+        // Relog keeps them: 0x5100 lists the stigmas and the part; the spent points ride in 0x3633 (no entry 0x5105, OBSERVED).
         var (relogged, _, entry) = await EnterAsync(store, 45, 3);
         var list = entry.Single(p => Op(p) == 0x5100);
         Assert.Contains(stigmas[0], SkillIds(list));
         Assert.Contains(part, SkillIds(list));
-        Assert.Contains(entry, p => Op(p) == GameSession.SkillPointUpdateNt && p[3] == 2 && Points(p) == (2, 8));
+        Assert.DoesNotContain(entry, p => Op(p) == GameSession.SkillPointUpdateNt);
         Assert.Equal(6, relogged.StigmaSkillLevel(stigmas[0]));
         var options = entry.Single(p => Op(p) == 0x3900);
         Assert.True(Contains(options, new PacketWriter().I32(stigmas[0]).U8(5).U8(1).I32(part).ToArray()));

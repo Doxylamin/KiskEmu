@@ -85,20 +85,6 @@ public sealed partial class GameSession
 
     byte[] StigmaPointUpdate() => GamePackets.SkillPointUpdate(SpentStigmaPoints(), SkillPointTypeStigma);
 
-    /// <summary>
-    /// World entry: the item point totals (0x3811, CANDIDATE: not seen at an official entry), the stigma points spent once the
-    /// character has a stigma pool (level 23+ or shards), then the skill points spent last (single-entry 0x5105 packets, as
-    /// every official one).
-    /// </summary>
-    List<byte[]> SkillPointsAtEntry()
-    {
-        var replies = skillItemPoints.Where(p => p.Value > 0).OrderBy(p => p.Key)
-            .Select(p => GamePackets.UpdateItemSkillPoint(p.Key, p.Value)).ToList();
-        if (EarnedStigmaPoints() > 0 || stigmaLevels.Count > 0) replies.Add(StigmaPointUpdate());
-        replies.Add(SkillPointUpdate());
-        return replies;
-    }
-
     void LoadSkillItemPoints(IReadOnlyDictionary<string, JsonElement> settings)
     {
         skillItemPoints.Clear();

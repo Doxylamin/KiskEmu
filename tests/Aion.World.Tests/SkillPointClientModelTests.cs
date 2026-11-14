@@ -231,10 +231,8 @@ public sealed class SkillPointClientModelTests
         }
 
         var (session2, entry) = await EnterAsync(store, data, 12);
-        var window = new ClientWindow(data.SkillPoints(12));
-        window.Feed(entry);
         Assert.Equal(21, session2.SkillPointsLeft);
-        Assert.Equal(21, window.Shown);
+        Assert.DoesNotContain(entry, p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);   // OBSERVED: no 0x5105 at an official entry; the points ride in 0x3633
 
         var list = entry.Single(p => GameSessionTestHelpers.Op(p) == 0x5100);
         var offset = 3;
@@ -319,7 +317,7 @@ public sealed class SkillPointClientModelTests
         Assert.Equal(41, data.SkillPoints(level));
         Assert.Equal(0, session.SkillPointsLeft);
         Assert.Equal(41, serverSpent);
-        Assert.Equal(GamePackets.SkillPointUpdate(41), entry.Single(p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt));
+        Assert.DoesNotContain(entry, p => GameSessionTestHelpers.Op(p) == GameSession.SkillPointUpdateNt);   // OBSERVED: no 0x5105 at an official entry; the points ride in 0x3633
         var list = entry.Single(p => GameSessionTestHelpers.Op(p) == 0x5100);
         for (var i = 0; i < spendTargets.Count; i++)
         {
