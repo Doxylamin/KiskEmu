@@ -43,6 +43,21 @@ public sealed class DungeonRoomRequestTests
     }
 
     [Fact]
+    public async Task Create_reads_the_3533_body_with_the_level_first()
+    {
+        // OBSERVED 2026-11-14 (game version 3533, our test server's client trace): level 0, dungeon 600002, race 3,
+        // "Leaving now.", public, join type 1, four wanted roles, no invite. Read dungeon-first, it named no dungeon.
+        var (world, lead, _, _) = await Pair(7);
+        var body = Convert.FromHexString("0397" + "00" + "C2270900" + "03" + "0C4C656176696E67206E6F772E" + "01" + "01" + "0402040304040405" + "04" + "00");
+
+        var replies = await lead.HandleAsync(body, Now + 1);
+
+        Assert.Equal(0, Result(replies, GameSession.DungeonRoomCreateRs));
+        var room = Assert.Single(world.Social.DungeonRooms.Values);
+        Assert.Equal((600002, (byte)0, (byte)3, "Leaving now.", true), (room.ContentDungeonId, room.DungeonLevel, room.Race, room.Desc, room.Public));
+    }
+
+    [Fact]
     public async Task Refusals_carry_the_clients_room_codes()
     {
         var (world, lead, mate, _) = await Pair(3);

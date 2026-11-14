@@ -136,14 +136,23 @@ public sealed partial class GameSession
     /// <summary>EPartyRole 1..4 as picked; anything else is 4 (All).</summary>
     static byte RoomRole(byte role) => role is >= 1 and <= RoomRoleAll ? role : RoomRoleAll;
 
+    /// <summary>
+    /// 0x9703 body. Game version 3533 sends the level byte before the dungeon id (OBSERVED 2026-11-14, our test server's
+    /// client trace: <c>00 C2270900 03 0C"Leaving now." 01 01 04 0204 0304 0404 0504 00</c> = level 0, dungeon 600002,
+    /// race 3, desc, public, join type, four wanted roles, no invite). The 2.0.6 usmap lists the dungeon id first, as the
+    /// fork and our tests send it; that order is kept for a body whose level-first reading names no known dungeon.
+    /// </summary>
     (int ContentDungeonId, byte DungeonLevel, byte Race, string Desc, bool Public, byte JoinType, List<int> Affixes)? ParseCreate(byte[] plain)
     {
         if (plain.Length < 7) return null;
+        var levelFirst = plain[2] < 0x10
+            && MapEventData.Dungeon(Expeditions.ResolveDungeonId(BitConverter.ToInt32(plain, 3), plain[2])) is not null;
         try
         {
             var reader = new PacketReader(plain) { Offset = 2 };
+            var level = levelFirst ? reader.U8() : (byte)0;
             var dungeonId = reader.I32();
-            var level = reader.Remaining > 0 ? reader.U8() : (byte)0;
+            if (!levelFirst) level = reader.Remaining > 0 ? reader.U8() : (byte)0;
             var race = reader.Remaining > 0 ? reader.U8() : (byte)0;
             var desc = reader.Remaining > 0 ? ReadFString(reader) : "";
             // A shorter body (dungeon and level only) opens a public room, as the fork does: a private room takes no Join_RQ.
