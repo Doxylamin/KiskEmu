@@ -97,7 +97,13 @@ public sealed class GatherCraftScenarioTests
         var done = await session.TickAsync(Now + node.InteractTime + 10);
         Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 0);
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![0]);
-        Assert.Contains(done, b => b.SequenceEqual(GamePackets.EnvObjDespawn(key)));
+        // The node dies and despawns on its timing, not with the gather (OBSERVED, GameSession.RemovalDelays).
+        Assert.DoesNotContain(done, b => GameSessionTestHelpers.Op(b) is 0x3635 or 0x8d05);
+        var (die, gone) = GameSession.RemovalDelays(node.FinishMs);
+        var dying = await session.TickAsync(Now + node.InteractTime + 10 + die);
+        Assert.Contains(dying, b => b.SequenceEqual(GamePackets.EnvObjDie(key)));
+        var leaving = await session.TickAsync(Now + node.InteractTime + 10 + gone);
+        Assert.Contains(leaving, b => b.SequenceEqual(GamePackets.EnvObjDespawn(key, 4, 3)));
     }
 
     [Fact]
@@ -182,7 +188,8 @@ public sealed class GatherCraftScenarioTests
         a.GatherBonusRoll = () => 4;
         await a.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)key).ToArray(), Now);
         var aDone = await a.TickAsync(Now + node.InteractTime + 10);
-        Assert.Contains(aDone, p => p.SequenceEqual(GamePackets.EnvObjDespawn(key)));
+        aDone.AddRange(await a.TickAsync(Now + node.InteractTime + 10 + GameSession.RemovalDelays(node.FinishMs).Gone));
+        Assert.Contains(aDone, p => p.SequenceEqual(GamePackets.EnvObjDespawn(key, 4, 3)));
 
         b.GatherBonusRoll = () => 4;
         var bStart = await b.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)key).ToArray(), Now + 50);

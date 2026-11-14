@@ -78,6 +78,16 @@ public sealed class EnvObjTimedUseTests
     }
 
     [Fact]
+    public void Used_up_objects_die_and_despawn_on_the_recorded_timing()
+    {
+        // 50 ms with no FinishDuration; FinishDuration + 150 ms (the recorded 650 and 1150 ms); the despawn 50 ms later.
+        Assert.Equal((50L, 100L), GameSession.RemovalDelays(0));
+        Assert.Equal((650L, 700L), GameSession.RemovalDelays(500));
+        Assert.Equal((1150L, 1200L), GameSession.RemovalDelays(1000));
+        Assert.Equal(Convert.FromHexString("058dc98003"), GamePackets.EnvObjDie(0xc049));
+    }
+
+    [Fact]
     public void Interrupted_layout_matches_the_recording()
     {
         // 185000 #5957 `3936 bcef01 0519 d223 00000000` (key varint, reason u16, interactor varint, count i32).

@@ -1744,6 +1744,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         shownObjects.Clear();
         shownTriggers.Clear();
         usedObjects.Clear();
+        objectRemovals.Clear();
         ResetEnvObjHits();
         pendingUse = null;
         pendingGatherLoss = null;
@@ -2779,6 +2780,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         var replies = new List<byte[]>();
         while (posted.TryDequeue(out var item)) replies.AddRange(await item.Run(now));
         replies.AddRange(IdleReturnTick(now));
+        replies.AddRange(ObjectRemovalTick(now));   // used-up objects die and despawn on their timing
         if (arrivalCheckDue && !reloading && position is { } arrivedAt)
         {
             // The arrival is a position too: event triggers, the area objectives (an EnterSubZone at the map's start: live
