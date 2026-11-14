@@ -84,8 +84,6 @@ public sealed record SkillDefinition(
     [property: JsonPropertyName("skill_cond_source")] string? SkillCondSource = null,
     [property: JsonPropertyName("skill_cond_grant")] SkillCondGrant? SkillCondGrant = null,
     [property: JsonPropertyName("skill_cond_grant_source")] string? SkillCondGrantSource = null,
-    [property: JsonPropertyName("stagger_gauge")] int StaggerGauge = 0,
-    [property: JsonPropertyName("stagger_gauge_source")] string? StaggerGaugeSource = null,
     // Skill.dat ChargeId: the SkillCharge.dat row of a charged skill (GameSession.SkillCharging.cs), 0 for an ordinary cast.
     [property: JsonPropertyName("charge")] int Charge = 0);
 

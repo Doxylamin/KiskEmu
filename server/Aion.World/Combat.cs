@@ -59,19 +59,18 @@ public sealed class Target
     public NpcRoute? Route { get; init; }
     /// <summary>Walking its route now (the appear says move_state Walk).</summary>
     public bool Walking { get; set; }
-    /// <summary>Accumulated stagger gauge damage toward <see cref="StaggerGaugeMax"/> (shared map state).</summary>
-    public int StaggerGauge { get; set; }
-    /// <summary>Gauge capacity; 0 until first stagger hit (then default 100).</summary>
-    public int StaggerGaugeMax { get; set; }
-    /// <summary>Unix ms while the target is in Stagger (EAbnormalEffectType), after the gauge breaks.</summary>
+    /// <summary>Unix ms while the NPC is groggy (Stagger) after its groggy guard broke (Stagger.cs, NpcData GroggyTime).</summary>
     public long StaggerUntil { get; set; }
     /// <summary>Class skill id that spawned this PC summon (Spiritmaster 16100000…); 0 for ordinary NPCs.</summary>
     public int SummonSourceSkill { get; set; }
     public string SubType { get; init; } = "NormalMonster";
     public int Grade { get; init; } = 3;
-    /// <summary>Boss groggy guard (0 = none); sent with 0xe005 UpdateGroggyInfo_NT.</summary>
-    public int GroggyMax { get; set; }
-    public int GroggyEnergy { get; set; }
+    /// <summary>
+    /// The groggy guard's energy (Stagger.cs, 0xe005) once a player's skill drained it; null while full or after a respawn. 0 = broken.
+    /// </summary>
+    public int? GroggyEnergy { get; set; }
+    /// <summary>When a broken guard refills (the break + NpcData GroggyTime; Stagger.Refill).</summary>
+    public long GroggyRefillAt { get; set; }
 
     /// <summary>A custom NPC (staff dashboard: NPCs) this target places; null for every other NPC.</summary>
     public Aion.Application.Gameplay.CustomNpc? Custom { get; init; }
@@ -275,7 +274,6 @@ public static class Combat
                 SubType = spawn.SubType, Grade = spawn.Grade,
                 Defense = NpcDefense(spawn.Level, spawn.SubType, spawn.Grade, data.BaseStats("Gladiator", spawn.Level).GetValueOrDefault("Defense")),
             };
-            NpcAi.InitGroggy(targets[key]);
         }
         return targets;
     }

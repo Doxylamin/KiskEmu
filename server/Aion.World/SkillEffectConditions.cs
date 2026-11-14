@@ -125,7 +125,7 @@ public static class SkillEffectConditions
     }
 
     static int Gauge(Target? npc, WorldPlayer? player) =>
-        npc is not null ? npc.StaggerGauge : player?.Session.StaggerGauge ?? 0;
+        npc is not null ? 0 : player?.Session.CombatGauge ?? 0;
 
     static bool BackAttack(GameSession caster, Target target)
     {

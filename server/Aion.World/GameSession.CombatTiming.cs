@@ -8,7 +8,7 @@ partial class GameSession
 
     sealed record ScheduledCombatHit(
         int SkillId, CastRequest Request, byte ActionUid, int TargetKey, Hit Hit, int Seq,
-        long DueMs, CombatHitKind Kind, bool QuestKill, bool MapEventKill, int Row = 0);
+        long DueMs, CombatHitKind Kind, bool QuestKill, bool MapEventKill, int Row = 0, IReadOnlyList<Stagger.DrainRow>? GuardDrains = null);
 
     readonly List<ScheduledCombatHit> pendingCombatHits = [];
 
@@ -74,8 +74,11 @@ partial class GameSession
             // The client flies an arrow for the 0x3803's remaining time from when it arrives, so it goes out at the release and its
             // 0x3804 lands one tick after that flight. A ground shot's arrow flies to the 0x3802 location: no 0x3803 at a monster.
             var splash = ground || (area is { OnTarget: true, IsArea: true } && target != shotAt);
+            int HitSeq(int i) => area is { Projectile: > 0 } ? timedRows[Math.Min(i, timedRows.Length - 1)] + 1 : i + 1;
             for (var i = 0; i < hits.Count; i++)
             {
+                // The skill's groggy-guard drain rides the hit of its SkillEffectTimeDataList seq (Stagger.cs).
+                var drains = Stagger.HasGuard(target.NpcId) ? Stagger.DrainsOnHit(skill, i > 0 ? HitSeq(i - 1) : 0, HitSeq(i), i == hits.Count - 1) : null;
                 if (area is { Projectile: > 0 })
                 {
                     // One arrow per timed row; its other effects (Deadshot's second) land with it under the same seq.
@@ -86,11 +89,11 @@ partial class GameSession
                     if (projectile > 0 && !splash && (i == 0 || timedRows[i - 1] != row))
                         pendingProjectiles.Add(new(release, skill, actionUid, target.Key, projectile, flight.Announced, row + 1));
                     pendingCombatHits.Add(new(skill, request, actionUid, target.Key, hits[i], row + 1, release + landsAfter, CombatHitKind.Npc,
-                        questKill, mapEventKill, i));
+                        questKill, mapEventKill, i, drains));
                 }
                 else
                     pendingCombatHits.Add(new(skill, request, actionUid, target.Key, hits[i], i + 1,
-                        now + SkillTiming.HitLandMs(definition, i) + flight.Arrival, CombatHitKind.Npc, questKill, mapEventKill, i));
+                        now + SkillTiming.HitLandMs(definition, i) + flight.Arrival, CombatHitKind.Npc, questKill, mapEventKill, i, drains));
             }
         }
         pendingCombatHits.Sort((a, b) => a.DueMs.CompareTo(b.DueMs));
@@ -271,8 +274,9 @@ partial class GameSession
             CastArea(scheduled.SkillId) is { Projectile: > 0 }
                 ? GamePackets.ProjectileHit(target.Key, playerKey, scheduled.SkillId, hit.EffectId, hit.Amount, hit.Critical, scheduled.ActionUid, scheduled.Seq, AttackSpeed)
                 : GamePackets.SkillHit(target.Key, playerKey, scheduled.SkillId, hit.EffectId, hit.Amount, hit.Critical, scheduled.ActionUid, scheduled.Seq, AttackSpeed),
-            GamePackets.NpcHp(target.Key, target.Hp),
         };
+        if (scheduled.GuardDrains is { } drains && !target.Dead) replies.AddRange(DrainGuard(scheduled.SkillId, target, scheduled.ActionUid, now, drains));
+        replies.Add(GamePackets.NpcHp(target.Key, target.Hp));
         replies.AddRange(GodstoneProcReplies(target, scheduled.SkillId, now));
         replies.AddRange(MapEventHp(target, now));
         if (target.Dead)
@@ -285,7 +289,6 @@ partial class GameSession
             if (scheduled.Row == 0) replies.AddRange(SkillDebuffReplies(target, scheduled.SkillId, now));
             if (scheduled.Row == 0 && !UsesChainCasterAbnormalOnAccept(scheduled.SkillId))
                 replies.AddRange(ApplyCasterSkillAbnormals(scheduled.SkillId, now));
-            replies.AddRange(ApplyStaggerGaugeOnNpcHit(target, scheduled.SkillId, scheduled.Row, now));
             if (hit.Amount > 0) LogCombatHit(scheduled.SkillId, target.Key, hit.Amount, kill: false);
             if (hit.Amount > 0) replies.AddRange(ai.Engage(targets, target, now, playerKey, hit.Amount));
         }
@@ -328,12 +331,7 @@ partial class GameSession
             theirs.Update(),
         };
         opponent.Send(packets);
-        if (scheduled.Row == 0 && theirs.Hp > 1)
-        {
-            PvpSkillDebuffs(opponent, scheduled.SkillId, now);
-            var stagger = ApplyStaggerGaugeOnPlayerHit(opponent, scheduled.SkillId, scheduled.Row, now);
-            if (stagger.Count > 0) opponent.Send(stagger);
-        }
+        if (scheduled.Row == 0 && theirs.Hp > 1) PvpSkillDebuffs(opponent, scheduled.SkillId, now);
         if (theirs.Hp <= 1) EndDuel(duel, DuelCompleteReason.Die, worldPlayer, now);
         return packets;
     }
@@ -352,12 +350,7 @@ partial class GameSession
             theirs.Update(),
         };
         victim.Send(packets);
-        if (scheduled.Row == 0 && theirs.Hp > 1)
-        {
-            PvpSkillDebuffs(victim, scheduled.SkillId, now);
-            var stagger = ApplyStaggerGaugeOnPlayerHit(victim, scheduled.SkillId, scheduled.Row, now);
-            if (stagger.Count > 0) victim.Send(stagger);
-        }
+        if (scheduled.Row == 0 && theirs.Hp > 1) PvpSkillDebuffs(victim, scheduled.SkillId, now);
         if (theirs.Hp <= 1) ArenaDeath(match, worldPlayer, victim, now);
         return packets;
     }
@@ -373,12 +366,7 @@ partial class GameSession
         };
         packets.AddRange(victim.Session.NpcHitsPlayer(hit.Amount, now, playerKey));
         victim.Send(packets);
-        if (scheduled.Row == 0 && !victim.Session.dead)
-        {
-            PvpSkillDebuffs(victim, scheduled.SkillId, now);
-            var stagger = ApplyStaggerGaugeOnPlayerHit(victim, scheduled.SkillId, scheduled.Row, now);
-            if (stagger.Count > 0) victim.Send(stagger);
-        }
+        if (scheduled.Row == 0 && !victim.Session.dead) PvpSkillDebuffs(victim, scheduled.SkillId, now);
         if (hit.Amount > 0) packets.AddRange(AccrueFortressPvp(Abyss.Siege.PvpHitPoints, now));
         if (victim.Session.dead) packets.AddRange(FactionKillRewards(victim, now));
         return packets;

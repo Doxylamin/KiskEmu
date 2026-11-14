@@ -65,9 +65,6 @@ def build_producers(skills_doc, areas_doc):
         if skill.get('skill_cond_grant'):
             g = skill['skill_cond_grant']['abnormal']
             by_group[g].append(f'{sid} skill_cond_grant')
-        gauge = skill.get('stagger_gauge') or 0
-        if gauge:
-            by_effect['Stagger'].append(f'{sid} stagger_gauge +{gauge}')
 
     for sid, area in (areas_doc.get('skills') or {}).items():
         for row in area.get('debuffs') or []:
@@ -91,7 +88,7 @@ def producer_note(kind: str, detail: str, by_group, by_effect) -> str:
         effect = clean.split()[-1]
         sources = by_effect.get(effect, [])
         if effect == 'Stagger' and not sources:
-            return 'StaggerGaugeCombat on NPC gauge break'
+            return 'Stagger.cs groggy guard break (stagger.json, abnormal 10000002)'
         return '; '.join(sources[:3]) + (' …' if len(sources) > 3 else '') if sources else 'no server producer found'
     if kind == 'spirit_summon':
         return 'GameSession.Summons elemental spirits'

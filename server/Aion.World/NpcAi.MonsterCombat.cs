@@ -4,7 +4,7 @@ namespace Aion.World;
 
 /// <summary>
 /// Monster NPC combat (not player summons): cast-time 0x3809 then 0x3802, multi-hit 0x3804 from tools/data/world-npcs.json
-/// skill_hits, 0x3803/0x380e projectiles, 0x3806 end, 0xe005 groggy on bosses. Timing from official capture notes.
+/// skill_hits, 0x3803/0x380e projectiles, 0x3806 end (groggy guards: Stagger.cs). Timing from official capture notes.
 /// </summary>
 public sealed partial class NpcAi
 {
@@ -14,9 +14,6 @@ public sealed partial class NpcAi
     public const int MonsterNextSkillMaxMs = 150;
     /// <summary>The flight of a monster projectile missing from projectiles.json (OURS); the others fly by <see cref="Projectiles.Flight"/>.</summary>
     public const int MonsterProjectileFlightMs = 1000;
-
-    /// <summary>Default groggy guard for bosses without an explicit ratio (OBSERVED 2701401: 50/50).</summary>
-    public const int DefaultGroggyMax = 50;
 
     IReadOnlyList<NpcSkillHitRow> HitsOf(int skillId, NpcSkill skill) =>
         data?.NpcSkillHits(skillId) is { Count: > 0 } rows ? rows : [new NpcSkillHitRow(skill.Effect, 0, 0)];
@@ -56,7 +53,7 @@ public sealed partial class NpcAi
                 brain.Volley.Add(new(land + flight.Announced, ShotKind.Collision, id, seq, victim.Key, i + 1, row.Projectile, 0, 0, row.Effect));
             }
             brain.Volley.Add(new(land + flight.Arrival, ShotKind.Hit, id, seq, victim.Key, i + 1,
-                Damage: perHit, Effect: row.Effect, Groggy: row.Groggy));
+                Damage: perHit, Effect: row.Effect));
             last = Math.Max(last, land + flight.Arrival);
         }
         brain.Volley.Add(new(last + MonsterEndAfterLastHitMs, ShotKind.End, id, seq, victim.Key, 0));
@@ -120,30 +117,7 @@ public sealed partial class NpcAi
             LastAttacker = target.Key;
             replies.Add(GamePackets.NpcSkillHit(victimKey, target.Key, shot.SkillId, shot.ActionSeq, shot.Effect, damage, effectSeq: shot.Seq));
             if (hitPlayer is not null) replies.AddRange(hitPlayer(damage));
-            if (shot.Groggy > 0 && target.GroggyMax > 0)
-            {
-                target.GroggyEnergy = Math.Max(0, target.GroggyEnergy - shot.Groggy);
-                replies.Add(GamePackets.UpdateGroggyInfo(target.Key, target.GroggyMax, target.GroggyEnergy, target.GroggyEnergy <= 0));
-            }
         }
         return replies;
-    }
-
-    internal static void InitGroggy(Target target)
-    {
-        if (target.GroggyMax > 0) return;
-        if (target.SubType is "HeroMonster" or "LegendMonster" || target.Grade >= 5)
-        {
-            target.GroggyMax = DefaultGroggyMax;
-            target.GroggyEnergy = DefaultGroggyMax;
-        }
-    }
-
-    internal static byte[]? GroggyAppear(Target target) =>
-        target.GroggyMax > 0 ? GamePackets.UpdateGroggyInfo(target.Key, target.GroggyMax, target.GroggyEnergy) : null;
-
-    internal static void ResetGroggy(Target target)
-    {
-        if (target.GroggyMax > 0) target.GroggyEnergy = target.GroggyMax;
     }
 }

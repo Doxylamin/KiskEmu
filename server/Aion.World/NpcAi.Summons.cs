@@ -20,7 +20,7 @@ public sealed partial class NpcAi
     public enum ShotKind { Projectile, Hit, End, CastingStart, SkillStart, Fire, Collision }
 
     public sealed record SummonShot(long DueMs, ShotKind Kind, int SkillId, int ActionSeq, int TargetKey, int Seq,
-        int ProjectileId = 0, int FlightMs = 0, int Damage = 0, int Effect = 0, bool Projectile = false, int Groggy = 0);
+        int ProjectileId = 0, int FlightMs = 0, int Damage = 0, int Effect = 0, bool Projectile = false);
 
     /// <summary>The summon's attacks: its damaging cooldown-free basics, and per skill family its first damaging special.</summary>
     internal (List<(int Id, NpcSkill Skill)> Basics, List<(int Id, NpcSkill Skill)> Specials) SummonRotation(Target summon)
@@ -155,11 +155,6 @@ public sealed partial class NpcAi
                 ? GamePackets.ProjectileHit(t.Key, summon.Key, shot.SkillId, shot.Effect, shot.Damage, false, (byte)shot.ActionSeq, shot.Seq)
                 : GamePackets.SkillHit(t.Key, summon.Key, shot.SkillId, shot.Effect, shot.Damage, false, (byte)shot.ActionSeq, shot.Seq));
             replies.AddRange(HitNpc(current, t.Key, summon, shot.Damage, now));
-            if (shot.Seq == 1 && summon.SummonSourceSkill > 0 && data is { } gd)
-            {
-                var gauge = StaggerGaugeCombat.GaugeDamage(gd, summon.SummonSourceSkill);
-                replies.AddRange(StaggerGaugeCombat.AddGaugeDamage(t, gauge, summon.OwnerKey, now, session: null, firstRow: true));
-            }
         }
         return replies;
     }

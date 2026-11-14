@@ -25,6 +25,8 @@
     <EmbeddedResource Include="../../tools/data/pc-zones.json" LogicalName="pc-zones.json" />
     <EmbeddedResource Include="../../tools/data/skill-areas.json" LogicalName="skill-areas.json" />
     <EmbeddedResource Include="../../tools/data/projectiles.json" LogicalName="projectiles.json" />
+    <!-- tools/stagger_data.py (build 26262663 tables): groggy guard drains per skill, guarded NPCs and their GroggyTime. -->
+    <EmbeddedResource Include="../../tools/data/stagger.json" LogicalName="stagger.json" />
     <EmbeddedResource Include="../../tools/data/skill-cast-ranges.json" LogicalName="skill-cast-ranges.json" />
     <EmbeddedResource Include="../../tools/data/wings.json" LogicalName="wings.json" />
     <EmbeddedResource Include="../../tools/data/items.json" LogicalName="items.json" />

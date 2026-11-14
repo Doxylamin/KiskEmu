@@ -730,7 +730,7 @@ public sealed partial class GameSession : IMapEventHost
     /// <summary>The appear goes out now. Far from the player it is not marked seen, so the next approach sends it again.</summary>
     void ShowSpawned(Target t)
     {
-        mapEventOut.Add(GamePackets.NpcAppear(SpawnAppearance(t)));
+        mapEventOut.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(SpawnAppearance(t)), t));
         if (position is { } at && !InNpcView(t.Position, at)) seenNpcs.Remove(t.Key);
         else seenNpcs.Add(t.Key);
     }
@@ -901,6 +901,7 @@ public sealed partial class GameSession : IMapEventHost
     void BringBack(Target t)
     {
         t.Hp = t.HpMax;
+        Stagger.Restore(t);   // the guard comes back full with the spawn (OURS)
         t.CorpseRemoved = false;
         t.Held = false;
         t.Immune = false;
@@ -941,7 +942,7 @@ public sealed partial class GameSession : IMapEventHost
         if (!t.Hostile || t.Dead) return;
         var wasTalk = t.AppearNonAggressive;
         t.AppearNonAggressive = false;
-        mapEventOut.Add(GamePackets.NpcAppear(SpawnAppearance(t)));
+        mapEventOut.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(SpawnAppearance(t)), t));
         DebugMapEvent($"turned hostile {t.Name} ({t.NpcId}) key={t.Key} rel={t.Relationship} wasTalk={wasTalk}: re-appear");
     }
 
@@ -999,6 +1000,7 @@ public sealed partial class GameSession : IMapEventHost
             if (!t.Dead && !t.CorpseRemoved) { already++; continue; }
             revived++;
             t.Hp = t.HpMax;
+            Stagger.Restore(t);   // the guard comes back full with the spawn (OURS)
             t.CorpseRemoved = false;
             t.Held = false;
             t.Immune = false;
@@ -1105,6 +1107,7 @@ public sealed partial class GameSession : IMapEventHost
             var angle = index++ * 2 * Math.PI / Math.Max(1, count);
             t.Position = centre with { X = centre.X + Math.Cos(angle) * Math.Min(radius, 400), Y = centre.Y + Math.Sin(angle) * Math.Min(radius, 400) };
             t.Hp = t.HpMax;
+            Stagger.Restore(t);   // the guard comes back full with the spawn (OURS)
             t.CorpseRemoved = false;
             ShowSpawned(t);
         }

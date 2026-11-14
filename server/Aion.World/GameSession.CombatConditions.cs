@@ -2,13 +2,8 @@ namespace Aion.World;
 
 partial class GameSession
 {
-    /// <summary>Player stagger gauge (PvP): same break rules as NPC <see cref="StaggerGaugeCombat"/>.</summary>
-    internal int StaggerGauge { get; set; }
-    internal int StaggerGaugeMax { get; set; }
-    internal long StaggerUntil { get; set; }
-
     internal bool InCombatForConditions => inCombat;
-    internal int CombatGauge => resources is { ApMax: > 0 } ? resources.Ap : StaggerGauge;
+    internal int CombatGauge => resources is { ApMax: > 0 } ? resources.Ap : 0;
 
     internal bool TargetInCombat(int targetKey) =>
         targetKey >= SharedWorld.FirstPlayerKey
@@ -18,7 +13,6 @@ partial class GameSession
     internal bool PlayerHasAbnormalEffect(string? effectType, long now, int? casterKey)
     {
         if (string.IsNullOrEmpty(effectType)) return false;
-        if (effectType.Equals("Stagger", StringComparison.OrdinalIgnoreCase) && StaggerUntil > now) return true;
         return buffs.Any(b => (!casterKey.HasValue || b.Uid != 0)
             && AbnormalSpecs.Types(b.AbnormalId).Any(t => t.Equals(effectType, StringComparison.OrdinalIgnoreCase)));
     }
@@ -62,24 +56,6 @@ partial class GameSession
             else if (player is not null) dist = Math.Sqrt(from.DistanceSquared(player.Position));
         }
         return new(this, npc, player, skillId, mainTargetKey, now, rng, mainTarget, dist);
-    }
-
-    internal List<byte[]> BreakPlayerStagger(long now, int casterKey)
-    {
-        StaggerUntil = now + StaggerGaugeCombat.StaggerDurationMs;
-        return TryApplyPlayerDebuff(StaggerGaugeCombat.StaggerAbnormalId, StaggerGaugeCombat.StaggerDurationMs, now, null, casterKey);
-    }
-
-    internal List<byte[]> ApplyStaggerGaugeOnPlayerHit(WorldPlayer victim, int skillId, int row, long now)
-    {
-        var gauge = StaggerGaugeCombat.GaugeDamage(data, skillId);
-        return StaggerGaugeCombat.AddPlayerGaugeDamage(victim.Session, gauge, playerKey, now, row == 0);
-    }
-
-    internal void ClearPlayerStaggerIfExpired(long now)
-    {
-        if (StaggerUntil <= 0 || now < StaggerUntil) return;
-        StaggerUntil = 0;
     }
 
     internal bool HasApBar => resources is { ApMax: > 0 };
