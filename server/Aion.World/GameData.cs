@@ -85,7 +85,15 @@ public sealed record SkillDefinition(
     [property: JsonPropertyName("skill_cond_grant")] SkillCondGrant? SkillCondGrant = null,
     [property: JsonPropertyName("skill_cond_grant_source")] string? SkillCondGrantSource = null,
     [property: JsonPropertyName("stagger_gauge")] int StaggerGauge = 0,
-    [property: JsonPropertyName("stagger_gauge_source")] string? StaggerGaugeSource = null);
+    [property: JsonPropertyName("stagger_gauge_source")] string? StaggerGaugeSource = null,
+    // Skill.dat ChargeId: the SkillCharge.dat row of a charged skill (GameSession.SkillCharging.cs), 0 for an ordinary cast.
+    [property: JsonPropertyName("charge")] int Charge = 0);
+
+/// <summary>A SkillCharge.dat row (client 3533): ChargeMinTime, bMovableInCharge, steps [ChargeTime ms, ChargeSkillId].</summary>
+public sealed record ChargeRow(
+    [property: JsonPropertyName("min_ms")] int MinMs,
+    [property: JsonPropertyName("movable")] bool Movable,
+    [property: JsonPropertyName("steps")] int[][] Steps);
 
 public sealed record WeaponStats(
     [property: JsonPropertyName("min")] int Min,
@@ -189,7 +197,8 @@ public sealed class GameData
         [property: JsonPropertyName("skills")] Dictionary<string, SkillDefinition> Skills,
         [property: JsonPropertyName("skill_customizing")] Dictionary<string, int[][]>? SkillCustomizing = null,
         [property: JsonPropertyName("e_combo_stacks")] Dictionary<string, int[]>? EComboStacks = null,
-        [property: JsonPropertyName("bar_context_by_default_skill")] Dictionary<string, int[]>? BarContextByDefaultSkill = null);
+        [property: JsonPropertyName("bar_context_by_default_skill")] Dictionary<string, int[]>? BarContextByDefaultSkill = null,
+        [property: JsonPropertyName("charges")] Dictionary<string, ChargeRow>? Charges = null);
 
     /// <summary>An NpcData template of the compact world-npcs.json (every field of a spawn but where it stands).</summary>
     sealed record NpcTemplate(
@@ -628,6 +637,10 @@ public sealed class GameData
 
     List<int> DirectChainNext(int skillId) =>
         Skill(skillId)?.ChainNext is { Length: > 0 } next ? [.. next] : [];
+
+    /// <summary>The SkillCharge.dat row of a charge id (Skill.dat ChargeId), else null.</summary>
+    public ChargeRow? Charge(int chargeId) =>
+        classes.Charges?.GetValueOrDefault(chargeId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     public SkillDefinition? Skill(int skillId)
     {
