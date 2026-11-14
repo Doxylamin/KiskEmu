@@ -78,7 +78,7 @@ def build() -> dict:
         'percent_stats': sorted(PERCENT_STATS),
         'aliases': STAT_ALIASES,
         'rolled_fields': [
-            'sub_stats', 'add_sub_stats', 'soul_add_sub_stats', 'arcana_main_stats', 'magicstones',
+            'sub_stats', 'add_sub_stats', 'soul_add_sub_stats', 'arcana_main_stats', 'magicstones', 'soul_stats',
         ],
     }
 

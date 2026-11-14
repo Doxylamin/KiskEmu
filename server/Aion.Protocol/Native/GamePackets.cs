@@ -75,7 +75,8 @@ public sealed record EquipDetail(
     int ItemLevel, byte EquipSlot, byte EnchantLevel = 0, long SoulBindOwner = 0, byte SoulBindCount = 0,
     byte SurpassEnchantLevel = 0, int EnchantBonusProb = 0, int SurpassEnchantBonusProb = 0, int[]? Godstones = null,
     IReadOnlyList<(int Wire, int Value)>? RolledStats = null,
-    byte SkinExtractionCount = 0, IReadOnlyList<MagicStoneSlot>? MagicStones = null)
+    byte SkinExtractionCount = 0, IReadOnlyList<MagicStoneSlot>? MagicStones = null,
+    IReadOnlyList<(int Wire, int Value)>? SoulStats = null)
 {
     /// <summary>
     /// _magicstone_slots: one {i32 mana stone item id, u16 EStat, u8 EItemMagicStoneGrade} per slot (official 0x5611 and
@@ -96,7 +97,7 @@ public sealed record EquipDetail(
             || a.SoulBindOwner != b.SoulBindOwner || a.SoulBindCount != b.SoulBindCount
             || a.SurpassEnchantLevel != b.SurpassEnchantLevel || a.EnchantBonusProb != b.EnchantBonusProb
             || a.SurpassEnchantBonusProb != b.SurpassEnchantBonusProb || a.SkinExtractionCount != b.SkinExtractionCount
-            || !(a.MagicStones ?? []).SequenceEqual(b.MagicStones ?? []))
+            || !(a.MagicStones ?? []).SequenceEqual(b.MagicStones ?? []) || !(a.SoulStats ?? []).SequenceEqual(b.SoulStats ?? []))
             return false;
         if (a.Godstones is null || b.Godstones is null)
         {
@@ -889,11 +890,15 @@ public static class GamePackets
         PacketWriter.Opcode(0x562c).U16(result).I64(uid).I64(costUid).I32(costId).ToArray();
     /// <summary>0x562e ItemSoulBindCancel_RS: result, item uid.</summary>
     public static byte[] SoulBindCancel(long uid, int result = 0) => PacketWriter.Opcode(0x562e).U16(result).I64(uid).ToArray();
-    /// <summary>0x5630 ItemSoulBindComplete_RS: result, item uid, bind count, the bound stats {i32 EStat, i32 value}, no skills.</summary>
+    /// <summary>
+    /// 0x5630 ItemSoulBindComplete_RS: result, item uid, bind count, the bound stats {u16 EStat, i32 value} and skills (none).
+    /// OBSERVED in the community fork (Addiboii 13aa9ef: community recordings 2026-11-04 and 11-06, 3 and 4 stats, every one
+    /// without skills; byte-exact to its #49976). We had {i32, i32} from nothing recorded.
+    /// </summary>
     public static byte[] SoulBindComplete(long uid, byte count = 1, int result = 0, IReadOnlyList<(int Wire, int Value)>? stats = null)
     {
         var w = PacketWriter.Opcode(0x5630).U16(result).I64(uid).U8(count).Varint((stats ?? []).Count);
-        foreach (var (wire, value) in stats ?? []) w.I32(wire).I32(value);
+        foreach (var (wire, value) in stats ?? []) Stat(w, wire, value);
         return w.Varint(0).ToArray();
     }
 
@@ -933,13 +938,28 @@ public static class GamePackets
             var gs = d.Godstones ?? [0, 0, 0];
             w.Varint(3);
             for (var i = 0; i < 3; i++) w.I32(i < gs.Length ? gs[i] : 0);
-            w.Varint(0);
-            var subs = d.RolledStats ?? [];
-            w.Varint(subs.Count);
-            foreach (var (wire, value) in subs) Stat(w, wire, value);
-            w.Varint(0).Varint(0).Varint(0).Varint(0).Varint(0).U8(d.SkinExtractionCount);
+            DetailTail(w, d, d.SkinExtractionCount);
         }
         return w;
+    }
+
+    /// <summary>
+    /// The item detail after the godstones (usmap order): _arcana_main_stats (empty), _sub_stats, _add_sub_stats, the four
+    /// skill arrays (empty) and _skin_extraction_count. _sub_stats are the rolled stats, then the soul-bind stats;
+    /// _add_sub_stats are the soul-bind stats' types at 0. OBSERVED in the community fork (Addiboii 101b443: every 0x561b
+    /// of a soul-bound item in the community recordings of 2026-11-04 and 11-06, 7 of 7, byte-exact to its #49975).
+    /// CANDIDATE: an item with both rolled and soul-bind stats (rolled first; none recorded).
+    /// </summary>
+    public static PacketWriter DetailTail(PacketWriter w, EquipDetail d, byte skinExtractionCount)
+    {
+        var rolled = d.RolledStats ?? [];
+        var soul = d.SoulStats ?? [];
+        w.Varint(0).Varint(rolled.Count + soul.Count);
+        foreach (var (wire, value) in rolled) Stat(w, wire, value);
+        foreach (var (wire, value) in soul) Stat(w, wire, value);
+        w.Varint(soul.Count);
+        foreach (var (wire, _) in soul) Stat(w, wire, 0);
+        return w.Varint(0).Varint(0).Varint(0).Varint(0).U8(skinExtractionCount);
     }
 
     /// <summary>Candidate 0x5611 equipped inventory with one item (observed record widths).</summary>
