@@ -197,6 +197,21 @@ public sealed class MapEventTrackedObjectiveTests
     }
 
     [Fact]
+    public void Object_states_count_the_use_and_the_destruction()
+    {
+        var host = new Host();
+        var run = Run(host, new MapEventStep(1, [],
+            [O(1, "UpdateEnvObjState", "E_Test_Collector_001", "Occupied"), O(2, "UpdateEnvObjState", "E_Test_Wall_001", "Dead")], []));
+        // Used by its EnvObjData name: Occupied counts; a use does not break the wall.
+        run.UsedObject("S1_Test_Collector_Dummy_1", 1_000, "E_Test_Collector_001");
+        run.UsedObject("S1_Test_Wall_1", 1_100, "E_Test_Wall_001");
+        Assert.Equal([1, 0], run.Goals);
+        run.Destroyed("S1_Test_Wall_1", 1_200, "E_Test_Wall_001");
+        TickTo(run, 1_500, 3_000);
+        Assert.Equal(99, run.StepOrder);
+    }
+
+    [Fact]
     public void Score_steps_carry_their_unified_lists()
     {
         var awaken = MapEventTables.Embedded.Event("Dungeon_Awaken_001_01_MapEvent")!;

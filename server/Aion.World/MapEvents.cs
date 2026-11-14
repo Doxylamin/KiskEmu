@@ -63,7 +63,9 @@ public sealed record MapEventObjective(
     /// <summary>
     /// Objectives the server does not track yet (puzzles, item uses): finished after a grace period so the event goes on. A score
     /// without its UnifiedObjectivesList and a wave not in WaveStepData also wait for it (MapEventRun.Tracked); CollectItem and
-    /// GetAbnormal too when the host cannot tell (MapEventRun.HeldKnown).
+    /// GetAbnormal too when the host cannot tell (MapEventRun.HeldKnown). UpdateEnvObjState counts the states play reaches (used:
+    /// Occupied, Finish; destroyed: Dead) and keeps the fallback: some of its objects play cannot reach (CoastalCave's
+    /// E_CoastalCave_StoneWall_Auto_001 "Dead" is not destructible, Musphel's barriers are EnvObj_MonsterEnemy).
     /// </summary>
     public bool Unsupported => Type is "ClearBoardPuzzle" or "PCSocial"
         or "UseUsableItemType" or "KillNpcCreatureType" or "UpdateEnvObjState";
@@ -840,9 +842,25 @@ public sealed class MapEventRun
         Apply(o => o.Type == (close ? "CloseNpc" : "AskNpc") && ((o.Npcs ?? []).Contains(npcId) || Names(o, spawnName))
                    && (index is not { } i || Step!.Objectives.Length <= i || ReferenceEquals(Step.Objectives[i], o)), now);
 
-    /// <summary>The player used a placed object (its spawn entry and EnvObjData name, <see cref="ObjectNamed"/>).</summary>
-    public bool UsedObject(string spawnName, long now, string? dataName = null) =>
-        Apply(o => o.Type == "UseEnvObj" && NamesObject(o, spawnName, dataName), now);
+    /// <summary>
+    /// The player used a placed object (its spawn entry and EnvObjData name, <see cref="ObjectNamed"/>). A used object went through
+    /// Occupied (while used) to Finish: UpdateEnvObjState objectives on those states count it too (zaraza87's fork; before, they
+    /// waited for the 30 s fallback: Dungeon_L_0017's Od collectors, Seal_Altgard_043's tablets, EP7_5's stone door).
+    /// </summary>
+    public bool UsedObject(string spawnName, long now, string? dataName = null)
+    {
+        var state = Apply(o => o.Type == "UpdateEnvObjState" && o.Value(1) is "Finish" or "Occupied" && NamesObject(o, spawnName, dataName), now);
+        return Apply(o => o.Type == "UseEnvObj" && NamesObject(o, spawnName, dataName), now) | state;
+    }
+
+    /// <summary>An object the player destroyed (EnvObj_Destroy hits, bombs): its uses, and UpdateEnvObjState "Dead" (Dungeon_D_0001's
+    /// stone wall, E_Dungeon_D_0001_StoneWall_001 Dead, and EP2_1's E_D1_FQ_StoneWall_02 waited for the 30 s fallback before).</summary>
+    public bool Destroyed(string spawnName, long now, string? dataName = null)
+    {
+        var dead = Apply(o => o.Type == "UpdateEnvObjState" && string.Equals(o.Value(1), "Dead", StringComparison.OrdinalIgnoreCase)
+                              && NamesObject(o, spawnName, dataName), now);
+        return UsedObject(spawnName, now, dataName) | dead;
+    }
 
     /// <summary>Whether a UseEnvObj objective of the current step still counts this object (the object despawns once used: OBSERVED for the phoenix eggs).</summary>
     public bool WantsObject(string spawnName, string? dataName = null) =>

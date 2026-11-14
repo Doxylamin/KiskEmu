@@ -92,7 +92,7 @@ partial class GameSession
             if (questLog is not null)
                 replies.AddRange(await Stored(() => QuestChangesAsync(questLog.UsedObject(o.Env, level), ct)));
             if (map == worldMap && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(o.Name, o.EnvDataName))) usedObjects.Add(index);
-            replies.AddRange(MapEventUsedObject(o.Name, at, o.EnvDataName));
+            replies.AddRange(MapEventUsedObject(o.Name, at, o.EnvDataName, destroyed: true));
             replies.AddRange(Achieve("UseEnvObjSpawnerName", 1, e => e.Has(o.Name), at));
             replies.AddRange(Achieve("UseEnvObj", 1, e => e.Envs?.Contains(o.Env) == true, at));
         }

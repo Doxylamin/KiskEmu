@@ -591,14 +591,15 @@ public sealed partial class GameSession : IMapEventHost
         return DrainMapEvents();
     }
 
-    List<byte[]> MapEventUsedObject(string spawnName, long now, string? dataName = null)
+    /// <summary>A placed object used (or, <paramref name="destroyed"/>, broken by hits) for the map events.</summary>
+    List<byte[]> MapEventUsedObject(string spawnName, long now, string? dataName = null, bool destroyed = false)
     {
-        if (ToCopyOwner(o => o.MapEventUsedObject(spawnName, now, dataName)) || mapEventRuns.Count == 0) return [];
+        if (ToCopyOwner(o => o.MapEventUsedObject(spawnName, now, dataName, destroyed)) || mapEventRuns.Count == 0) return [];
         mapEventNow = now;
         foreach (var run in mapEventRuns.ToList())
         {
             var before = string.Join(',', run.Goals);
-            var counted = run.UsedObject(spawnName, now, dataName);
+            var counted = destroyed ? run.Destroyed(spawnName, now, dataName) : run.UsedObject(spawnName, now, dataName);
             if (counted)
                 DebugMapEvent($"UseEnvObj {spawnName}: counted {before} -> {string.Join(',', run.Goals)} step {run.StepOrder}");
             else if (run.Step is { } step)
