@@ -46,7 +46,7 @@ public sealed partial class GameSession
     public List<byte[]> StaffRestore(long now)
     {
         if (resources is null) throw new InvalidOperationException("Not in the world.");
-        if (dead) return Revive(now, inPlace: true);
+        if (dead) return Revive(now, inPlace: true, counted: false);   // OURS: a staff revive uses up no dungeon revive
         (resources.Hp, resources.Mp) = (resources.HpMax, resources.MpMax);
         return [resources.Update()];
     }

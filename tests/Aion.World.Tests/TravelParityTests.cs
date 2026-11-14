@@ -321,7 +321,7 @@ public sealed class TravelParityTests
         Assert.True(session.Dead);
         var rebirth = await session.HandleAsync(new PacketWriter().U16(RidePackets.UseRebirthRq).U8(1).ToArray(), t + 2000);
         Assert.Contains(rebirth, p => p.SequenceEqual(RidePackets.UseRebirthReply(0, true)));
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 2100);
+        Assert.DoesNotContain(rebirth, p => GameSessionTestHelpers.Op(p) == 0x3621);   // in place: no map load to complete
         Assert.False(session.Dead);
         Assert.Equal(fell, session.Position);
         session.NpcHitsPlayer(session.Resource.HpMax * 10, t + 3000, killerKey: 2001);
@@ -334,7 +334,7 @@ public sealed class TravelParityTests
         var stone = await session.HandleAsync(new PacketWriter().U16(RidePackets.RespawnRq).U8(RidePackets.RespawnItem).I64(82).ToArray(), t + 6000);
         Assert.Contains(stone, p => p.SequenceEqual(RidePackets.RespawnReply(0)));
         Assert.False(session.Dead);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 6100);
+        Assert.DoesNotContain(stone, p => GameSessionTestHelpers.Op(p) == 0x3621);
         Assert.Equal(fellAgain, session.Position);
         Assert.DoesNotContain(store.Items, i => i.TemplateId == 502760001 && i.Quantity > 0);
     }

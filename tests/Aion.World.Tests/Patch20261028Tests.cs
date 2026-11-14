@@ -31,6 +31,14 @@ public sealed class Patch20261028Tests
         Assert.Equal(0, Patch20261028.FrenzyMs(room));
     }
 
+    [Theory]
+    [InlineData(600082)]
+    [InlineData(620011)]
+    [InlineData(620021)]
+    [InlineData(620022)]
+    public void Raids_have_the_two_revives_of_dungeon_dat(int id) =>
+        Assert.Equal(2, Patch20261028.RevivesPerPlayer(Room(id)));
+
     [Fact]
     public void Other_dungeons_keep_their_table_gate_and_unlimited_revives()
     {

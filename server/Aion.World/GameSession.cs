@@ -132,6 +132,10 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         public byte[] SpUpdate() => GamePackets.CharPoints(key, [(CharPoint.Sp, Sp)]);
         public byte[] OpUpdate() => GamePackets.CharPoints(key, [(CharPoint.Op, Op)]);
         public byte[] FpUpdate() => GamePackets.CharPoints(key, [(CharPoint.MaxFp, FpMax), (CharPoint.Fp, Fp)]);
+        /// <summary>Every bar in one message, as the official in-place revive (OBSERVED by the community fork, 2026-11-06 090856
+        /// #96734: i32 types 1-6, then the i64 HP).</summary>
+        public byte[] FullUpdate() => GamePackets.CharPoints(key,
+            [(CharPoint.Mp, Mp), (CharPoint.Ap, Ap), (CharPoint.Sp, Sp), (CharPoint.Dp, 0), (CharPoint.Op, Op), (CharPoint.Fp, Fp)], [(CharPoint.Hp, Hp)]);
         /// <summary>The world-entry maxima, as the official burst before 0x3633 (OP max 100000 observed).</summary>
         public int Fp, FpMax;
         public byte[] Maxima()
@@ -1629,9 +1633,11 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.Add(RideInit());
             replies.Add(GamePackets.GlideCooltime(playerKey));
         }
-        // Respawn protection (10002) and class passives right after the own appearance (0x3633 / 0x3645).
+        // The class passives right after the own appearance and its barrier list (0x3633, 0x3646), then the load protection
+        // 10002 before the stats (0x364a) on every load; see LoadProtection.
         var appearAt = replies.FindIndex(b => b[0] == 0x46 && b[1] == 0x36) + 1;
-        replies.InsertRange(appearAt, [.. RespawnLoadProtectAfterAppear(now), .. PassiveAbnormals(resend: true)]);
+        replies.InsertRange(appearAt, PassiveAbnormals(resend: true));
+        if (replies.FindIndex(b => b[0] == 0x4a && b[1] == 0x36) is >= 0 and var statsAt) replies.InsertRange(statsAt, LoadProtection(now));
         replies.InsertRange(0, sameLevelRemovals);   // the same level's old entities go before the load reply (OBSERVED)
         sameLevelRemovals = [];
         if (shortLoad)

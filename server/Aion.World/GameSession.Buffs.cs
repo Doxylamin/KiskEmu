@@ -314,8 +314,12 @@ public sealed partial class GameSession
     List<byte[]> ClearBuffs()
     {
         var speedBefore = BuffStat("MoveSpeed");
-        return [.. RemoveBuffs(buffs.Where(b => !b.Rebirth).ToList(), ExpireEtc), .. BuffStatsChanged(speedBefore)];
+        return [.. RemoveBuffs(buffs.Where(b => !b.Rebirth).ToList(), ExpireDeath), .. BuffStatsChanged(speedBefore)];
     }
+
+    /// <summary>The expire reason of every buff removed at a death (OBSERVED 0x13, players and NPCs, community recording
+    /// 2026-11-06 090856 #96385).</summary>
+    const byte ExpireDeath = 0x13;
 
     public bool CanRebirth => buffs.Any(b => b.Rebirth);
 
@@ -369,8 +373,10 @@ public sealed partial class GameSession
     List<byte[]> BuffsAfterLoad()
     {
         var replies = SyncSpiritSummonStateAbnormal(lastNow);
-        if (buffs.Count == 0) return replies;
-        replies.Add(PlayerPackets.AbnormalAdd(playerKey, buffs.Select(Wire).ToList()));
+        // The load protection went out with the appearance just before (LoadProtection); it is not listed twice.
+        var listed = buffs.Where(b => b.AbnormalId != RespawnLoadProtectAbnormal).ToList();
+        if (listed.Count == 0) return replies;
+        replies.Add(PlayerPackets.AbnormalAdd(playerKey, listed.Select(Wire).ToList()));
         if (BuffStat("MoveSpeed") is var speed and not 0) replies.Add(PlayerPackets.MoveSpeedUpdate(playerKey, [(MoveSpeedStat, speed)]));
         return replies;
     }

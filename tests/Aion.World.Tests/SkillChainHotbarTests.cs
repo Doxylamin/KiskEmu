@@ -108,6 +108,7 @@ public sealed class SkillChainHotbarTests
     {
         var session = await AssassinAsync();
         var t = Now + 28_000;
+        await session.TickAsync(t - 1_000);   // the load protection 10002 (5 s) is over
         var before = session.ActiveBuffs.Count;
         var replies = await session.HandleAsync(Cast(13_010_000), t);
         Assert.DoesNotContain(replies, p => GameSessionTestHelpers.Op(p) == 0x382a);
@@ -122,6 +123,7 @@ public sealed class SkillChainHotbarTests
     {
         var session = await RangerAsync();
         var t = Now + 30_000;
+        await session.TickAsync(t - 1_000);   // the load protection 10002 (5 s) is over
         var before = session.ActiveBuffs.Count;
         var replies = await session.HandleAsync(Cast(14_020_000), t);
         Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x3818);

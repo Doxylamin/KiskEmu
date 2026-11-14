@@ -322,10 +322,12 @@ Check(Convert.ToHexStringLower(GamePackets.ClientEnvSetting()) == "448d01fffffff
 }
 var entered = await game.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
 var opcodes = entered.Select(b => b[0] | b[1] << 8).ToList();
-Check(opcodes.Take(8).SequenceEqual(new[] { 0x3623, 0x3746, 0x8d00, 0x3633, 0x3646, 0x382a, 0x364a, 0x3657 }) && opcodes.Contains(0x5100) && opcodes.Contains(0xe257), "world entry burst");
+Check(opcodes.Take(9).SequenceEqual(new[] { 0x3623, 0x3746, 0x8d00, 0x3633, 0x3646, 0x382a, 0x382a, 0x364a, 0x3657 }) && opcodes.Contains(0x5100) && opcodes.Contains(0xe257), "world entry burst");
+// The load protection 10002 for 5000 ms after the passives, right before 0x364a (official #542: abnormal uid 4).
+Check(entered[6].AsSpan().IndexOf(Convert.FromHexString("1227000088130000")) > 0, "world entry: abnormal 10002 for 5000 ms right before 0x364a");
 // The class passives as permanent abnormals (official world entry: 110000001, duration -1, expire 2100): the Gladiator's
 // WeaponEquipable Greatsword/Guarder is what lets the client equip greatswords.
-var passives = entered.Single(b => b[0] == 0x2a && b[1] == 0x38);
+var passives = entered.First(b => b[0] == 0x2a && b[1] == 0x38);
 Check(Convert.ToHexStringLower(passives).Contains(Convert.ToHexStringLower(BitConverter.GetBytes(110000001)) + "ffffffffffffffff" + Convert.ToHexStringLower(BitConverter.GetBytes(4_102_412_400_000L))),
       "world entry announces the class passives (0x382a: Equip Gladiator Weapon 110000001, permanent)");
 Check(opcodes.Count(o => o == 0x3641) == 1 + data.Spawns(1000).Count && data.Spawns(1000).Count > 200, "training dummy and every Poeta NPC appear");
@@ -1473,8 +1475,8 @@ staffSession.NpcHitsPlayer(staffSession.Resource.HpMax * 10, Now + 411_000, kill
 Check(staffSession.Dead && staffSession.CanRebirth, "the rebirth buff survives death");
 var reborn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d24).U8(1).ToArray(), Now + 412_000);
 Check(reborn[0].SequenceEqual(RidePackets.UseRebirthReply(0, true)) && !staffSession.Dead && !staffSession.CanRebirth && staffSession.Position == fellAt
-      && reborn.Any(b => b[0] == 0x21 && b[1] == 0x36), "UseRebirth revives in place (0x8d25, map load where the player fell) and uses the buff");
-await staffSession.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 412_100);
+      && !reborn.Any(b => b[0] == 0x21 && b[1] == 0x36) && reborn.Any(b => b[0] == 0x26 && b[1] == 0x8d),
+      "UseRebirth revives in place (0x8d25, 0x8d26, no map load) and uses the buff");
 staffSession.NpcHitsPlayer(staffSession.Resource.HpMax * 10, Now + 413_000, killerKey: 2001);
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x8d24).U8(1).ToArray(), Now + 413_500))[0][2] == 1, "no rebirth buff: UseRebirth refused");
 var respawned = await staffSession.HandleAsync(new PacketWriter().U16(0x8d22).U8(2).I64(0).ToArray(), Now + 414_000);
@@ -1485,7 +1487,9 @@ var fellAgain = staffSession.Position!.Value;
 var stone = await staffSession.HandleAsync(new PacketWriter().U16(0x8d22).U8(3).I64(25).ToArray(), Now + 416_000);
 Check(stone[0].SequenceEqual(RidePackets.RespawnReply(0)) && !staffSession.Dead && staffSession.Position == fellAgain && staffStore.Items.Single(i => i.WireId == 25).Quantity == 1,
       "CharRespawn type 3 with a spiritstone revives in place and uses one");
-await staffSession.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 416_100);
+Check(stone.FindIndex(b => b[0] == 0x2a && b[1] == 0x38) is > 0 and var reviveAbnormal && stone.FindIndex(b => b[0] == 0x26 && b[1] == 0x8d) > reviveAbnormal
+      && !stone.Any(b => b[0] == 0x21 && b[1] == 0x36),
+      "the spiritstone revive in the recorded order: 0x8d23, abnormal 10003, 0x8d26, the bars, the item change; no map load");
 // Creature boards: acquiring rides fed their type's board (500 exp per acquire, NeedExp 500 at level 1 -> level 2,
 // two slots per panel); rolling a slot costs crystals + Kina and gives a graded option; locked slots are kept.
 loadRides.Invoke(staffSession, [staffStore, staffSession.CharacterId!.Value, CancellationToken.None]);
