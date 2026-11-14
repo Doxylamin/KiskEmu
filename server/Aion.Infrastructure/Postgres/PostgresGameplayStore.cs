@@ -2223,27 +2223,27 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await t.CommitAsync(ct); return true;
     }
 
-    public async Task<IReadOnlyList<(int TicketId,string Period,int Count)>> ExpeditionTicketsAsync(VerifiedAccount account, Guid character, CancellationToken ct=default)
+    public async Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(VerifiedAccount account, Guid character, CancellationToken ct=default)
     {
         await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
         if(!await Own(c,t,account.AccountId,character,ct)) return [];
-        var rows=new List<(int,string,int)>();
-        await using(var q=Query(c,t,"SELECT ticket_id,period,count FROM game.character_expedition_tickets WHERE character_id=$1",character))
+        var rows=new List<ContentTicketRecord>();
+        await using(var q=Query(c,t,"SELECT ticket_id,remaining,updated_at FROM game.character_content_tickets WHERE character_id=$1",character))
         {
             await using var r=await q.ExecuteReaderAsync(ct);
-            while(await r.ReadAsync(ct)) rows.Add((r.GetInt32(0),r.GetString(1),r.GetInt32(2)));
+            while(await r.ReadAsync(ct)) rows.Add(new(r.GetInt32(0),r.GetInt32(1),r.GetFieldValue<DateTimeOffset>(2).ToUnixTimeMilliseconds()));
         }
         await t.CommitAsync(ct); return rows;
     }
 
-    public async Task<bool> SaveExpeditionTicketsAsync(VerifiedAccount account, Guid character, IReadOnlyList<(int TicketId,string Period,int Count)> rows, CancellationToken ct=default)
+    public async Task<bool> SaveContentTicketsAsync(VerifiedAccount account, Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct=default)
     {
-        if(rows.Any(r=>r.Count<1)) throw new GameplayException("invalid_expedition_ticket");
+        if(rows.Any(r=>r.Remaining<0)) throw new GameplayException("invalid_content_ticket");
         await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
         if(!await Own(c,t,account.AccountId,character,ct)) return false;
-        await Execute(c,t,"DELETE FROM game.character_expedition_tickets WHERE character_id=$1",ct,character);
-        foreach(var (ticketId,period,count) in rows)
-            await Execute(c,t,"INSERT INTO game.character_expedition_tickets(character_id,ticket_id,period,count) VALUES($1,$2,$3,$4)",ct,character,ticketId,period,count);
+        foreach(var row in rows)
+            await Execute(c,t,"INSERT INTO game.character_content_tickets(character_id,ticket_id,remaining,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT (character_id,ticket_id) DO UPDATE SET remaining=EXCLUDED.remaining,updated_at=EXCLUDED.updated_at",
+                ct,character,row.TicketId,row.Remaining,DateTimeOffset.FromUnixTimeMilliseconds(row.UpdatedMs));
         await t.CommitAsync(ct); return true;
     }
 

@@ -59,18 +59,19 @@ public sealed class InstanceParityTests
     }
 
     [Fact]
-    public async Task Party_member_joining_leaders_copy_consumes_expedition_ticket()
+    public async Task Party_member_joining_leaders_copy_takes_no_entry_ticket()
     {
         var (world, lead, mate, _, leadStore, mateStore, _) = await ExpeditionPartyOfThreeAsync();
         lead.EnterDungeonById(KraoEasy, Now + 20);
         await lead.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 21);
         await lead.TickAsync(Now + 22_000);
-        Assert.Contains(leadStore.ExpeditionTickets, t => t.TicketId == 4 && t.Count == 1);
         mate.EnterDungeonById(KraoEasy, Now + 30);
         await mate.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 31);
         await mate.TickAsync(Now + 32_000);
         Assert.Equal(lead.InstanceKey, mate.InstanceKey);
-        Assert.Contains(mateStore.ExpeditionTickets, t => t.TicketId == 4 && t.Count == 1);
+        // MapEntrance names only the Unclaimed reward ticket (60000009, 10 at the start) for expeditions: nothing is taken.
+        Assert.Equal(10, leadStore.ContentTicket(60000009));
+        Assert.Equal(10, mateStore.ContentTicket(60000009));
     }
 
     [Fact]
@@ -147,7 +148,7 @@ public sealed class InstanceParityTests
     }
 
     [Fact]
-    public async Task Unanimous_retry_vote_restarts_dungeon_and_consumes_tickets()
+    public async Task Unanimous_retry_vote_restarts_dungeon()
     {
         var world = new SharedWorld(GameData.Embedded);
         var leadStore = new FakeCharacterStore();
@@ -179,8 +180,6 @@ public sealed class InstanceParityTests
         await mate.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 102_002);
         Assert.Equal(600002, lead.MapId);
         Assert.Contains(lead.MapEventRuns, r => r.Name == "KraoCave_Easy_MapEvent");
-        Assert.Contains(leadStore.ExpeditionTickets, t => t.TicketId == 4);
-        Assert.Contains(mateStore.ExpeditionTickets, t => t.TicketId == 4);
     }
 
     [Fact]
@@ -225,16 +224,15 @@ public sealed class InstanceParityTests
     }
 
     [Fact]
-    public async Task Weekly_ticket_period_reset_allows_reentry_after_new_week()
+    public async Task Weekly_ticket_recharge_allows_reentry_after_new_week()
     {
-        var store = new FakeCharacterStore();
-        FakeCharacterStore.SeedExpeditionItemLevel(store);
-        var period = ShopTables.Period(2, DateTimeOffset.FromUnixTimeMilliseconds(Now));
-        store.ExpeditionTickets.Add((4, period, 30));
+        // The daily dungeon's ticket 101 (14, +14 on Wednesday 16:00 KST) used up, then a week later.
+        var store = new FakeCharacterStore { Progress = (55, 0) };
+        store.ContentTickets.Add(new Aion.Application.Gameplay.ContentTicketRecord(101, 0, Now));
         var weekLater = Now + 8L * 24 * 60 * 60 * 1000;
         var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, weekLater, level: 55);
         await GameSessionTestHelpers.LoadInventoryAsync(session, weekLater + 10);
-        var moved = session.EnterDungeonById(KraoEasy, weekLater + 50);
+        var moved = session.EnterDungeonById(900001, weekLater + 50);
         Assert.NotEmpty(moved);
     }
 

@@ -36,7 +36,7 @@ public sealed class ExpeditionRoomMatchmakingTests
     }
 
     [Fact]
-    public async Task Room_start_puts_both_players_in_same_instance_and_consumes_tickets()
+    public async Task Room_start_puts_both_players_in_same_instance()
     {
         var world = new SharedWorld(GameData.Embedded);
         var leadStore = new FakeCharacterStore();
@@ -58,8 +58,9 @@ public sealed class ExpeditionRoomMatchmakingTests
         Assert.Equal(lead.InstanceKey, mate.InstanceKey);
         await lead.TickAsync(Now + 60_000);
         await mate.TickAsync(Now + 60_000);
-        Assert.Contains(leadStore.ExpeditionTickets, t => t.TicketId == 4 && t.Count == 1);
-        Assert.Contains(mateStore.ExpeditionTickets, t => t.TicketId == 4 && t.Count == 1);
+        // No entry ticket for expeditions (MapEntrance: only the Unclaimed reward ticket, 10 at the start).
+        Assert.Equal(10, leadStore.ContentTicket(60000009));
+        Assert.Equal(10, mateStore.ContentTicket(60000009));
         Assert.DoesNotContain(world.Social.DungeonRooms, kv => kv.Key == roomKey);
     }
 

@@ -790,17 +790,23 @@ public sealed partial class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
-    public List<(int TicketId, string Period, int Count)> ExpeditionTickets { get; } = [];
+    public List<ContentTicketRecord> ContentTickets { get; } = [];
 
-    public Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(Guid character, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<(int, string, int)>>(ExpeditionTickets.ToList());
+    public Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ContentTicketRecord>>(ContentTickets.ToList());
 
-    public Task<bool> SaveExpeditionTicketsAsync(Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct)
+    public Task<bool> SaveContentTicketsAsync(Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct)
     {
-        ExpeditionTickets.Clear();
-        ExpeditionTickets.AddRange(rows);
+        foreach (var row in rows)
+        {
+            ContentTickets.RemoveAll(r => r.TicketId == row.TicketId);
+            ContentTickets.Add(row);
+        }
         return Task.FromResult(true);
     }
+
+    /// <summary>The stored count of a content ticket, or null without a row.</summary>
+    public int? ContentTicket(int ticketId) => ContentTickets.FirstOrDefault(r => r.TicketId == ticketId)?.Remaining;
 
     public AbyssRecord? Abyss { get; set; }
     public Task<AbyssRecord?> AbyssAsync(Guid character, CancellationToken ct) => Task.FromResult(Abyss);

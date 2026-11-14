@@ -313,9 +313,9 @@ public sealed partial class GameSession : IMapEventHost
         // took the start point (2026-10-30, HQ003: TriggerActor_03 fired, the client stayed at the door), so a door is a PCTeleport
         // (reason 2) with the door's effect SeamlessDoorTeleport_heavy_in (TeleportEffect 40).
         var moved = InstanceMove(room.Map, arrival, now, teleportEffect: throughDoor ? DoorTeleportEffect : null);
-        // Every member pays one weekly ticket on first entry (portal join into the leader's copy included); room UI passes consumeTicket too.
-        if (moved.Count > 0 && !IsAdmin && Timed(room) && !alreadyInCopy)
-            ConsumeExpeditionTicket(room, now);
+        // Every member pays the dungeon's Enter tickets on first entry (portal join into the leader's copy included).
+        if (moved.Count > 0 && !IsAdmin && !alreadyInCopy)
+            SpendContentTickets(dungeonId, "Enter", now);
         return moved;
     }
 
@@ -1431,6 +1431,7 @@ public sealed partial class GameSession : IMapEventHost
             // The clear reward (RewardDungeon.dat RewardLight/RewardDark by race: sealed dungeons' kina, materials, a title), once per copy.
             if (first && room is not null && (session.profileRace == 2 ? room.RewardDark : room.RewardLight) is { Length: > 0 } reward)
                 session.pendingRewards.Add(reward.Where(r => r.Length >= 2).Select(r => ((int)r[0], r[1])).ToList());
+            if (first && room is not null) session.SpendContentTickets(MapEventData.DungeonIdOfMap(worldMap), "Clear", mapEventNow);
             if (first && room is not null)
             {
                 var earned = session.AchieveDungeonClear(room, run.Name, CopyMembers().Count() + 1);

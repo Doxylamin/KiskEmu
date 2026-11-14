@@ -61,7 +61,7 @@ def build():
         {'id': 'abyss_entry_pool', 'scope': 'character', 'period': 'weekly', 'store': 'game.character_abyss', 'lazy': True},
         {'id': 'shop_limited_goods', 'scope': 'character/account', 'period': 'daily|weekly|monthly', 'store': 'game.shop_purchases.period', 'lazy': True},
         {'id': 'conversion_morph', 'scope': 'character/account/world', 'period': 'weekly', 'store': 'game.conversion_counts', 'lazy': True},
-        {'id': 'expedition_tickets', 'scope': 'character', 'period': 'weekly', 'store': 'game.character_expedition_tickets', 'lazy': True},
+        {'id': 'content_tickets', 'scope': 'character', 'period': 'daily|weekly|cycle', 'store': 'game.character_content_tickets', 'lazy': True},
         {'id': 'achievement_daily', 'scope': 'character', 'period': 'daily', 'store': 'game.character_achievements', 'lazy': True},
         {'id': 'achievement_weekly', 'scope': 'character', 'period': 'weekly', 'store': 'game.character_achievements', 'lazy': True},
         {'id': 'attendance_login', 'scope': 'character', 'period': 'daily', 'store': 'achievements Attendance type', 'lazy': True},

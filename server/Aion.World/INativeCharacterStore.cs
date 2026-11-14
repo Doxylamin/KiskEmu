@@ -128,9 +128,9 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<bool> SaveDaevanionAsync(Guid character, DaevanionProgress progress, CancellationToken ct) => Task.FromResult(false);
     Task<IReadOnlyList<BossChallengeRecord>> BossChallengesAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<BossChallengeRecord>>([]);
     Task<bool> SaveBossChallengeAsync(Guid character, BossChallengeRecord record, CancellationToken ct) => Task.FromResult(false);
-    Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(Guid character, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<(int, string, int)>>([]);
-    Task<bool> SaveExpeditionTicketsAsync(Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct) =>
+    Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ContentTicketRecord>>([]);
+    Task<bool> SaveContentTicketsAsync(Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct) =>
         Task.FromResult(false);
     Task<AbyssRecord?> AbyssAsync(Guid character, CancellationToken ct) => Task.FromResult<AbyssRecord?>(null);
     Task<bool> SaveAbyssAsync(Guid character, AbyssRecord record, CancellationToken ct) => Task.FromResult(false);

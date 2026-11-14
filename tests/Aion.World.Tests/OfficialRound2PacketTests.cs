@@ -35,11 +35,14 @@ public class OfficialRound2PacketTests
         Assert.Equal(0x610b, GameSessionTestHelpers.Op(list));
         var r = new PacketReader(list) { Offset = 2 };
         var count = (int)r.Varint();
+        Assert.Equal(73, count);
         for (var i = 0; i < count; i++)
         {
-            Assert.Equal(0x04, r.U8());   // bit 2: remain_count only
+            var mask = r.U8();   // bit 0 remain time (Time tickets), bit 2 remain count (Count tickets); a zero field left out
+            Assert.Equal(0, mask & ~0x05);
             r.I32();
-            r.Varint();
+            if ((mask & 1) != 0) Assert.True(r.I64() > 0);
+            if ((mask & 4) != 0) Assert.True(r.Varint() > 0);
         }
         Assert.True(r.End);
     }

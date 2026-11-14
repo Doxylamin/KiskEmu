@@ -4,18 +4,9 @@ using Aion.Protocol.Native;
 
 namespace Aion.World;
 
-/// <summary>Expedition entry tickets (tools/data/expedition.json, tools/expedition_data.py).</summary>
+/// <summary>Expedition difficulty tiers and affixes (tools/data/expedition.json, tools/expedition_data.py); the tickets are ContentTicketTables.</summary>
 public sealed class ExpeditionTables
 {
-    public sealed record Ticket(
-        [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("max_count")] int MaxCount,
-        [property: JsonPropertyName("reset")] int Reset,
-        [property: JsonPropertyName("dungeon_types")] string[] DungeonTypes)
-    {
-        public int Id { get; set; }
-    }
-
     public sealed record LevelTier(
         [property: JsonPropertyName("level")] int Level,
         [property: JsonPropertyName("dungeon_id")] int DungeonId,
@@ -29,7 +20,6 @@ public sealed class ExpeditionTables
     public sealed record AffixRow([property: JsonPropertyName("name")] string Name);
 
     sealed record File(
-        [property: JsonPropertyName("tickets")] Dictionary<string, Ticket> Tickets,
         [property: JsonPropertyName("expeditions")] Dictionary<string, ExpeditionGroup>? Expeditions,
         [property: JsonPropertyName("affixes")] Dictionary<string, AffixRow>? Affixes);
 
@@ -40,7 +30,6 @@ public sealed class ExpeditionTables
     ExpeditionTables(File file)
     {
         this.file = file;
-        foreach (var (key, row) in file.Tickets) row.Id = int.Parse(key, System.Globalization.CultureInfo.InvariantCulture);
         foreach (var (_, group) in file.Expeditions ?? [])
             foreach (var tier in group.Levels)
             {
@@ -57,10 +46,6 @@ public sealed class ExpeditionTables
     });
 
     public static ExpeditionTables Embedded => embedded.Value;
-    public IEnumerable<Ticket> AllTickets => file.Tickets.Values;
-
-    public Ticket? TicketFor(DungeonInfo room) =>
-        file.Tickets.Values.FirstOrDefault(t => t.DungeonTypes.Contains(room.Type, StringComparer.OrdinalIgnoreCase));
 
     public ExpeditionGroup? GroupForContent(int contentDungeonId) =>
         expeditionByContent.GetValueOrDefault(contentDungeonId)
@@ -85,75 +70,9 @@ public sealed class ExpeditionTables
 
 public sealed partial class GameSession
 {
-    public const ushort PartyDungeonClearNt = 0x9333 /* CANDIDATE: usmap 0x3A69 + 0x58ca, the run of the OBSERVED 0x9330/0x9331 (#74) */, PartyDungeonMiddleBossKillNt = 0x572e /* OBSERVED (AVION2: 10 mid-boss kills, npc u32) */,
-        ContentsTicketsNt = 0x610b, ContentsTicketUpdateNt = 0x610c; // OBSERVED live (round 2, 2026-11-12)
+    public const ushort PartyDungeonClearNt = 0x9333 /* CANDIDATE: usmap 0x3A69 + 0x58ca, the run of the OBSERVED 0x9330/0x9331 (#74) */, PartyDungeonMiddleBossKillNt = 0x572e /* OBSERVED (AVION2: 10 mid-boss kills, npc u32) */;
 
     static ExpeditionTables Expeditions => ExpeditionTables.Embedded;
-
-    readonly Dictionary<int, (string Period, int Count)> expeditionTickets = [];
-    bool expeditionTicketsDirty;
-
-    void LoadExpeditionTickets(IReadOnlyList<(int TicketId, string Period, int Count)> stored)
-    {
-        expeditionTickets.Clear();
-        foreach (var row in stored) expeditionTickets[row.TicketId] = (row.Period, row.Count);
-    }
-
-    async Task FlushExpeditionTicketsAsync(CancellationToken ct)
-    {
-        if (!expeditionTicketsDirty || Store is not { } store || CharacterId is not { } character) return;
-        expeditionTicketsDirty = false;
-        var rows = expeditionTickets.Select(kv => (kv.Key, kv.Value.Period, kv.Value.Count)).ToList();
-        await Stored(async () => await store.SaveExpeditionTicketsAsync(character, rows, ct) ? [[]] : []);
-    }
-
-    (int Remaining, int Max, string Period) TicketState(ExpeditionTables.Ticket ticket, long now)
-    {
-        var period = ShopTables.Period(ticket.Reset, DateTimeOffset.FromUnixTimeMilliseconds(now));
-        var used = expeditionTickets.TryGetValue(ticket.Id, out var row) && row.Period == period ? row.Count : 0;
-        return (Math.Max(0, ticket.MaxCount - used), ticket.MaxCount, period);
-    }
-
-    bool HasExpeditionTicket(DungeonInfo room, long now, out ExpeditionTables.Ticket? ticket)
-    {
-        ticket = Expeditions.TicketFor(room);
-        if (ticket is null || ticket.MaxCount <= 0 || !Timed(room)) return true;
-        return TicketState(ticket, now).Remaining > 0;
-    }
-
-    void ConsumeExpeditionTicket(DungeonInfo room, long now)
-    {
-        if (Expeditions.TicketFor(room) is not { MaxCount: > 0 } ticket || !Timed(room)) return;
-        var period = ShopTables.Period(ticket.Reset, DateTimeOffset.FromUnixTimeMilliseconds(now));
-        var used = expeditionTickets.TryGetValue(ticket.Id, out var row) && row.Period == period ? row.Count : 0;
-        expeditionTickets[ticket.Id] = (period, used + 1);
-        expeditionTicketsDirty = true;
-        var remaining = Math.Max(0, ticket.MaxCount - used - 1);
-        worldPlayer?.Send([ContentsTicketUpdate(ticket.Id, remaining, ticket.MaxCount)]);
-    }
-
-    /// <summary>ContentsTickets_NT 0x610b at world entry: varint n | n × ContentsTicketInfo (OBSERVED, official 2026-11-12).</summary>
-    internal byte[] ContentsTicketsList(long now)
-    {
-        var tickets = Expeditions.AllTickets.ToList();
-        var w = PacketWriter.Opcode(ContentsTicketsNt).Varint((uint)tickets.Count);
-        foreach (var ticket in tickets) WriteTicketInfo(w, ticket.Id, TicketState(ticket, now).Remaining);
-        return w.ToArray();
-    }
-
-    /// <summary>ContentsTicketInfo: u8 presence mask | i32 id | [bit0 remain_time i64] [bit1 remain_charge_time i64]
-    /// [bit2 remain_count varint] [bit3 remain_charge_count varint] (OBSERVED). We only track the remaining count.</summary>
-    static void WriteTicketInfo(PacketWriter w, int ticketId, int remaining) =>
-        w.U8(0x04).I32(ticketId).Varint((uint)Math.Max(0, remaining));
-
-    /// <summary>ContentsTicketUpdate_NT 0x610c: u8 mask (bit0 = charge_value follows) | ContentsTicketInfo | u8 ETicketReason
-    /// (1 Charge, 2 Recharge, 3 Use) | [i32 charge_value] (OBSERVED: `0c61 00 0c 65000000 0d 06 03` on a dungeon entry).</summary>
-    static byte[] ContentsTicketUpdate(int ticketId, int remaining, int max)
-    {
-        var w = PacketWriter.Opcode(ContentsTicketUpdateNt).U8(0);
-        WriteTicketInfo(w, ticketId, remaining);
-        return w.U8(3).ToArray();
-    }
 
     /// <summary>PartyDungeonClear_NT after a party dungeon script clear (CANDIDATE score breakdown).</summary>
     static byte[] PartyDungeonClear(long elapsedMs, DungeonInfo room)

@@ -325,10 +325,11 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     Check(await new CharacterPersistenceService(new PostgresCharacterRepository(source)).SaveAsync(first,id,saved.Revision-1,saved.Progress) is null,"old world save cannot overwrite GM changes");
     await using var reopened=NpgsqlDataSource.Create(connectionString);
     var period="2026-W44";
-    Check(await game.SaveExpeditionTicketsAsync(first,id,[(4,period,2)]),"expedition tickets save");
-    Check((await game.ExpeditionTicketsAsync(first,id)).Single()==(4,period,2),"expedition tickets load");
-    Check(await game.SaveExpeditionTicketsAsync(first,id,[]),"expedition tickets clear");
-    Check((await game.ExpeditionTicketsAsync(first,id)).Count==0,"expedition tickets empty after clear");
+    const long ticketAt=1_762_970_000_000;
+    Check(await game.SaveContentTicketsAsync(first,id,[new(80000001,2,ticketAt),new(101,0,ticketAt)]),"content tickets save");
+    Check((await game.SaveContentTicketsAsync(first,id,[new(80000001,1,ticketAt+1000)])),"content ticket update");
+    var storedTickets=(await game.ContentTicketsAsync(first,id)).OrderBy(r=>r.TicketId).ToList();
+    Check(storedTickets.SequenceEqual([new ContentTicketRecord(101,0,ticketAt),new ContentTicketRecord(80000001,1,ticketAt+1000)]),"content tickets load (upsert keeps the other rows)");
     // full character state survives a new pool (logout / server restart).
     Check(await game.SaveProgressAsync(first,id,12,98765),"level and experience save");
     var gatingQuest=await game.SaveQuestAsync(first,id,new QuestRecord("HQ1101018",1101018,0,2,4,[1,0,0,0,0,0]));

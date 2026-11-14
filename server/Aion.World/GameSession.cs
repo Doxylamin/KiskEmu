@@ -610,6 +610,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case DaevanionOpenRouteNodeRq when plain.Length >= 6: return await DaevanionOpenRouteNodeAsync(plain, ct);
             case BossChallengeEnterRq: return BossChallengeEnter(plain, now);
             case PartyDungeonEnterRq: return PartyDungeonEnter(now);
+            case DungeonEnterRq: return DungeonEnterRequest(plain, now);
             case DungeonRoomListRq: return DungeonRoomList(plain);
             case DungeonRoomCreateRq: return DungeonRoomCreate(plain, now);
             case DungeonRoomJoinRq: return DungeonRoomJoin(plain, now);
@@ -1398,7 +1399,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 LoadAchievements(await store.AchievementsAsync(state.Summary.CharacterId, ct), await store.GroupRewardsTakenAsync(state.Summary.CharacterId, ct), now);
                 LoadCollections(await store.CollectionsAsync(state.Summary.CharacterId, ct));
                 LoadBossChallenges(await store.BossChallengesAsync(state.Summary.CharacterId, ct));
-                LoadExpeditionTickets(await store.ExpeditionTicketsAsync(state.Summary.CharacterId, ct));
+                LoadContentTickets(await store.ContentTicketsAsync(state.Summary.CharacterId, ct), now);
                 LoadRewardLimits(await store.RewardLimitsAsync(state.Summary.CharacterId, ct));
                 LoadDungeonCooltimes(await store.DungeonCooltimesAsync(state.Summary.CharacterId, ct));
                 LoadAbyss(await store.AbyssAsync(state.Summary.CharacterId, ct), now);
@@ -2887,7 +2888,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         await FlushAbyssAsync(now, ct);
         await FlushAirspaceAsync(ct);
         await FlushBossChallengeAsync(ct);
-        await FlushExpeditionTicketsAsync(ct);
+        ContentTicketRechargeTick(now);
+        replies.AddRange(ContentTicketUpdates());   // 0x610c for the tickets spent or recharged since the last tick
+        await FlushContentTicketsAsync(ct);
         await FlushRewardLimitsAsync(now, ct);
         await FlushDungeonCooltimesAsync(now, ct);
         await FlushBuffSettingsAsync(now, ct);
@@ -2970,7 +2973,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         await FlushAbyssAsync(now, ct, force: true);
         await FlushAirspaceAsync(ct);
         await FlushBossChallengeAsync(ct);
-        await FlushExpeditionTicketsAsync(ct);
+        await FlushContentTicketsAsync(ct);
         await FlushRewardLimitsAsync(now, ct, force: true);
         await FlushDungeonCooltimesAsync(now, ct, force: true);
         await FlushContentResetWorkAsync(ct);
