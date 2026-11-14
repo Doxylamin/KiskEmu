@@ -179,6 +179,7 @@ public sealed class BombBoxCarryTests
         var pickedAt = t + 100 + GameSession.CarryPickupMs;
         await session.TickAsync(pickedAt);
         Assert.Equal(1196, session.CarriedGroup);
+        await session.TickAsync(pickedAt + 10_000);   // the last load's protection 10002 (5 s) is over
         var early = await session.TickAsync(pickedAt + GameSession.CarryTimeoutMs - 1_000);
         Assert.DoesNotContain(early, p => p.Length > 1 && p[0] == 0x2c && p[1] == 0x38);
         var late = await session.TickAsync(pickedAt + GameSession.CarryTimeoutMs + 1_000);

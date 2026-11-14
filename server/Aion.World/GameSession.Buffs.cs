@@ -373,8 +373,10 @@ public sealed partial class GameSession
     List<byte[]> BuffsAfterLoad()
     {
         var replies = SyncSpiritSummonStateAbnormal(lastNow);
-        if (buffs.Count == 0) return replies;
-        replies.Add(PlayerPackets.AbnormalAdd(playerKey, buffs.Select(Wire).ToList()));
+        // The load protection went out with the appearance just before (LoadProtection); it is not listed twice.
+        var listed = buffs.Where(b => b.AbnormalId != RespawnLoadProtectAbnormal).ToList();
+        if (listed.Count == 0) return replies;
+        replies.Add(PlayerPackets.AbnormalAdd(playerKey, listed.Select(Wire).ToList()));
         if (BuffStat("MoveSpeed") is var speed and not 0) replies.Add(PlayerPackets.MoveSpeedUpdate(playerKey, [(MoveSpeedStat, speed)]));
         return replies;
     }

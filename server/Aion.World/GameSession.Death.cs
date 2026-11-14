@@ -18,7 +18,7 @@ public sealed partial class GameSession
     /// <summary>The revive's abnormal at every revive: after the respawn's load request, or in place (OBSERVED 3 s).</summary>
     const int RespawnProtectAbnormal = 10003, RespawnProtectMs = 3000;
 
-    /// <summary>Invulnerability right after the own appearance on respawn load (OBSERVED 5 s).</summary>
+    /// <summary>The load protection after the own appearance of every map load (OBSERVED 5 s, see <see cref="LoadProtection"/>).</summary>
     const int RespawnLoadProtectAbnormal = 10002, RespawnLoadProtectMs = 5000;
 
     bool dead;
@@ -27,7 +27,6 @@ public sealed partial class GameSession
     long reloadStartedMs;
     int lastKillerKey;
     int lastNpcHitSkill;
-    bool pendingRespawnLoadProtect;
     Vector3d? diedAt;
     public bool Dead => dead;
     public ConnectionPacketTrace PacketTrace { get; } = new();
@@ -157,7 +156,6 @@ public sealed partial class GameSession
         var replies = new List<byte[]> { PlayerPackets.CharDisappear(playerKey, RespawnAppearReason, RespawnTeleportEffect) };
         replies.AddRange(Teleport(worldMap, at, now, RespawnAppearReason, RespawnTeleportEffect));
         AddBuff(RespawnProtectAbnormal, RespawnProtectMs, 0, now, replies, path: SelfAbnormalPath.DeathProtection);
-        pendingRespawnLoadProtect = true;
         replies.Add(resources.Update());
         return replies;
     }
@@ -173,10 +171,14 @@ public sealed partial class GameSession
         return [resources.Update()];
     }
 
-    List<byte[]> RespawnLoadProtectAfterAppear(long now)
+    /// <summary>
+    /// Abnormal 10002 for 5000 ms at every map load, after the own appearance and the passives, before the stats 0x364a:
+    /// OBSERVED in our captures at the world entry (official #542 and #4586, abnormal uid 4 after the passives) and by the
+    /// community fork in all 61 loads with 0x3633 of its recordings: world entries (234912 #56805-56811), layer moves
+    /// (reason 12), teleports (2) and revives (4). Ours sent it after a respawn-point revive only. CANDIDATE: what it does.
+    /// </summary>
+    List<byte[]> LoadProtection(long now)
     {
-        if (!pendingRespawnLoadProtect) return [];
-        pendingRespawnLoadProtect = false;
         var replies = new List<byte[]>();
         AddBuff(RespawnLoadProtectAbnormal, RespawnLoadProtectMs, 0, now, replies, path: SelfAbnormalPath.DeathProtection);
         return replies;

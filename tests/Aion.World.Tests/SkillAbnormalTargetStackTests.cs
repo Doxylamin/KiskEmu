@@ -68,6 +68,7 @@ public sealed class SkillAbnormalTargetStackTests
     public async Task Basic_attack_does_not_add_caster_abnormals_after_the_hit()
     {
         var (session, mob) = await SetupGladiatorAsync();
+        await session.TickAsync(Now + 9_000);   // the load protection 10002 (5 s) is over
         var before = session.ActiveBuffs.Count;
         await session.HandleAsync(Cast(RendingBlow, mob.Key), Now + 10_000);
         await session.TickAsync(Now + 12_000);
@@ -90,6 +91,7 @@ public sealed class SkillAbnormalTargetStackTests
     public async Task Official_ranger_basic_chain_hits_do_not_add_self_abnormals()
     {
         var (session, mob) = await SetupAsync("Ranger");
+        await session.TickAsync(Now + 9_000);   // the load protection 10002 (5 s) is over
         var before = session.ActiveBuffs.Count;
         var data = GameSessionTestHelpers.LiveGameData;
         var t = Now + 20_000;

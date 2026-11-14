@@ -1622,9 +1622,11 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.Add(RideInit());
             replies.Add(GamePackets.GlideCooltime(playerKey));
         }
-        // Respawn protection (10002) and class passives right after the own appearance (0x3633 / 0x3645).
+        // The class passives right after the own appearance and its barrier list (0x3633, 0x3646), then the load protection
+        // 10002 before the stats (0x364a) on every load; see LoadProtection.
         var appearAt = replies.FindIndex(b => b[0] == 0x46 && b[1] == 0x36) + 1;
-        replies.InsertRange(appearAt, [.. RespawnLoadProtectAfterAppear(now), .. PassiveAbnormals(resend: true)]);
+        replies.InsertRange(appearAt, PassiveAbnormals(resend: true));
+        if (replies.FindIndex(b => b[0] == 0x4a && b[1] == 0x36) is >= 0 and var statsAt) replies.InsertRange(statsAt, LoadProtection(now));
         replies.InsertRange(0, sameLevelRemovals);   // the same level's old entities go before the load reply (OBSERVED)
         sameLevelRemovals = [];
         if (shortLoad)

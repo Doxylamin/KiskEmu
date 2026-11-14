@@ -188,6 +188,35 @@ public class DeathResurrectTests
         Assert.Contains(10003, session.ActiveBuffs);
     }
 
+    static bool IsLoadProtection(byte[] p) =>
+        GameSessionTestHelpers.Op(p) == 0x382a && p.AsSpan().IndexOf(BitConverter.GetBytes(10002)) >= 0;
+
+    [Fact]
+    public async Task Every_map_load_has_abnormal_10002_after_the_passives_before_the_stats()
+    {
+        const long t = Now + 800_000;
+        var session = new GameSession(GameData.Embedded,
+            new GameSessionOptions { World = new SharedWorld(GameData.Embedded), CharacterLevel = 10, TrainingDummy = true }, new Random(31))
+        { Store = new FakeCharacterStore() };
+        await session.HandleAsync(GameSessionTestHelpers.Login(), t);
+        await session.HandleAsync(GameSessionTestHelpers.LightCreate(), t);
+        var wireId = ((FakeCharacterStore)session.Store!).States[0].WireId;
+        await session.HandleAsync(new PacketWriter().U16(0x361f).Varint((uint)wireId << 16).I32(0).Vec3(Vector3d.Zero).ToArray(), t);
+        var entry = await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t);
+        await session.TickAsync(t + 9_000);   // the entry's 10002 is over: the teleport adds a new one
+        session.Teleport(1010, GameSessionTestHelpers.MapStartOrDefault(1010), t + 10_000);
+        var teleport = await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 10_001);
+        foreach (var load in new[] { entry, teleport })
+        {
+            var appear = load.FindIndex(p => GameSessionTestHelpers.Op(p) == 0x3646);
+            var protection = load.FindIndex(IsLoadProtection);
+            var stats = load.FindIndex(p => GameSessionTestHelpers.Op(p) == 0x364a);
+            Assert.True(appear >= 0 && protection > appear && stats == protection + 1,
+                string.Join(" ", load.Select(p => GameSessionTestHelpers.Op(p).ToString("x4"))));
+            Assert.Single(load, IsLoadProtection);
+        }
+    }
+
     [Fact]
     public async Task Load_complete_after_revive_restores_hp()
     {
