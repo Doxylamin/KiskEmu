@@ -180,8 +180,7 @@ static partial class MapEventScenarioHelpers
         var objects = WorldObjects.ObjectsOn(mapId).ToList();
         foreach (var name in obj.Names)
         {
-            var index = objects.FindIndex(o => NameMatches(name, o.Name)
-                || o.EnvName is { Length: > 0 } env && NameMatches(name, env));
+            var index = objects.FindIndex(o => MapEventRun.ObjectNamed(name, o.Name, o.EnvDataName));
             if (index < 0) continue;
             var wireKey = WorldObjects.FirstKey + index;
             await SyncPositionAsync(session, objects[index].At, now);

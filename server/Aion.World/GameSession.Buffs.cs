@@ -43,6 +43,8 @@ public sealed partial class GameSession
     }
 
     readonly List<Buff> buffs = [];
+    /// <summary>When each abnormal last landed on the player (map-event GetAbnormal objectives, GameSession.MapEvents.cs).</summary>
+    readonly Dictionary<int, long> abnormalsGainedAt = [];
     int buffUid;
     public const int MoveSpeedStat = 205;
     const byte ExpireTimeout = 1, ExpireReplaced = 4, ExpireDispel = 3, ExpireEtc = 7, ExpireEventFunction = 9;
@@ -200,6 +202,7 @@ public sealed partial class GameSession
         if (buff.Combat is { BarrierAmount: > 0 })
             replies.Add(GamePackets.CharBarrierInfo(playerKey, [(buff.Uid, buff.Combat.BarrierAmount)]));
         buffs.Add(buff);
+        abnormalsGainedAt[buff.AbnormalId] = now;
         MarkBuffSettingsDirty();
         var packets = new List<byte[]> { PlayerPackets.AbnormalAdd(playerKey, [Wire(buff)]) };
         if (buff.Polymorph) packets.Add(RidePackets.PolymorphUpdate(playerKey, buff.Uid));

@@ -538,7 +538,7 @@ public sealed partial class GameSession : IMapEventHost
         if (mapEventRuns.Count == 0) return DrainMapEvents();
         mapEventNow = now;
         var alive = targets?.Values.Any(t => string.Equals(t.Name, target.Name, StringComparison.OrdinalIgnoreCase) && !t.Dead) == true;
-        foreach (var run in mapEventRuns.ToList()) run.Killed(target.NpcId, target.Name, target.Hostile, alive, now);
+        foreach (var run in mapEventRuns.ToList()) run.Killed(target.NpcId, target.Name, target.Hostile, alive, now, target.SubType);
         return DrainMapEvents();
     }
 
@@ -591,14 +591,15 @@ public sealed partial class GameSession : IMapEventHost
         return DrainMapEvents();
     }
 
-    List<byte[]> MapEventUsedObject(string spawnName, long now)
+    /// <summary>A placed object used (or, <paramref name="destroyed"/>, broken by hits) for the map events.</summary>
+    List<byte[]> MapEventUsedObject(string spawnName, long now, string? dataName = null, bool destroyed = false)
     {
-        if (ToCopyOwner(o => o.MapEventUsedObject(spawnName, now)) || mapEventRuns.Count == 0) return [];
+        if (ToCopyOwner(o => o.MapEventUsedObject(spawnName, now, dataName, destroyed)) || mapEventRuns.Count == 0) return [];
         mapEventNow = now;
         foreach (var run in mapEventRuns.ToList())
         {
             var before = string.Join(',', run.Goals);
-            var counted = run.UsedObject(spawnName, now);
+            var counted = destroyed ? run.Destroyed(spawnName, now, dataName) : run.UsedObject(spawnName, now, dataName);
             if (counted)
                 DebugMapEvent($"UseEnvObj {spawnName}: counted {before} -> {string.Join(',', run.Goals)} step {run.StepOrder}");
             else if (run.Step is { } step)
@@ -1513,8 +1514,7 @@ public sealed partial class GameSession : IMapEventHost
         {
             if (!usedObjects.Contains(i)) continue;
             var o = objects[i];
-            if (MapEventRun.NameMatches(spawnName, o.Name)) return true;
-            if (o.EnvName is { Length: > 0 } env && MapEventRun.NameMatches(spawnName, env)) return true;
+            if (MapEventRun.ObjectNamed(spawnName, o.Name, o.EnvDataName)) return true;
         }
         return false;
     }
@@ -1643,6 +1643,14 @@ public sealed partial class GameSession : IMapEventHost
         startedSpawners.Contains(spawner) || !dormantSpawners.Contains(spawner) && (SpawnerNpcs(spawner).Any() || SpawnerObjects(spawner).Any());
 
     bool IMapEventHost.PlayerDead => dead;
+
+    /// <summary>The bag's count of a CollectItem objective's item (map-events.json items: Item.dat internal name to id); -1 when unknown.</summary>
+    long IMapEventHost.HeldItems(string itemName) =>
+        MapEventTables.Embedded.ItemId(itemName) is var item and > 0 ? QuestHeldCount(item) : -1;
+
+    /// <summary>The abnormal is on the player, or landed since the step began (GameSession.Buffs.cs AddBuff).</summary>
+    bool? IMapEventHost.GainedAbnormal(int abnormalId, long sinceMs) =>
+        buffs.Any(b => b.AbnormalId == abnormalId) || abnormalsGainedAt.TryGetValue(abnormalId, out var at) && at >= sinceMs;
 
     double? IMapEventHost.DistanceTo(string spawner)
     {

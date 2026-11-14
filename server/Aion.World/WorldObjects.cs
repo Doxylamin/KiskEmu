@@ -35,6 +35,12 @@ public sealed record WorldObject(
     public Vector3d At => new(Position[0], Position[1], Position[2]);
 
     /// <summary>
+    /// Its EnvObjData name (world-objects.json env_names, for every placed object with a named row). <see cref="EnvName"/> is
+    /// only set where a map event names an object by it; map events match UseEnvObj goals against this and the spawn entry.
+    /// </summary>
+    public string? EnvDataName => WorldObjects.EnvDataName(Env) ?? EnvName;
+
+    /// <summary>
     /// ERelationshipEntity EnvObj_Destroy: the client targets and attacks it as an enemy and never sends InteractEnvObj_RQ;
     /// hits break it (EnvObjData HitLimit, HitSkillIdList). On a map with carried-item boxes it takes the carried bomb instead.
     /// </summary>
@@ -100,16 +106,23 @@ public static class WorldObjects
 
     sealed record MapEntry([property: JsonPropertyName("objects")] WorldObject[] Objects,
                            [property: JsonPropertyName("triggers")] TriggerArea[] Triggers);
-    sealed record File([property: JsonPropertyName("maps")] Dictionary<string, MapEntry> Maps);
+    sealed record File([property: JsonPropertyName("maps")] Dictionary<string, MapEntry> Maps,
+                       [property: JsonPropertyName("env_names")] Dictionary<string, string>? EnvNames = null);
 
-    static readonly Lazy<Dictionary<string, MapEntry>> maps = new(() =>
+    static readonly Lazy<File> file = new(() =>
     {
         using var stream = typeof(WorldObjects).Assembly.GetManifestResourceStream("world-objects.json")
             ?? throw new InvalidOperationException("world-objects.json is not embedded");
-        return (JsonSerializer.Deserialize<File>(stream) ?? throw new InvalidDataException("world-objects.json")).Maps;
+        return JsonSerializer.Deserialize<File>(stream) ?? throw new InvalidDataException("world-objects.json");
     });
 
+    static readonly Lazy<Dictionary<string, MapEntry>> maps = new(() => file.Value.Maps);
+
     static MapEntry? Map(int mapId) => maps.Value.GetValueOrDefault(mapId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>A placed object's EnvObjData name by its id (world-objects.json env_names, tools/world_objects.py).</summary>
+    public static string? EnvDataName(int env) =>
+        file.Value.EnvNames?.GetValueOrDefault(env.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     sealed record BaseFile([property: JsonPropertyName("bases")] Dictionary<string, int> Bases);
 
