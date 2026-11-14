@@ -2,18 +2,31 @@ namespace Aion.World;
 
 public sealed partial class GameSession
 {
-    internal List<byte[]> BreakNpcStagger(Target target, long now)
+    readonly List<Target> brokenGuards = [];
+
+    /// <summary>
+    /// A hit's drain of a guarded NPC's groggy guard (Stagger.cs): per drain row the 0x3804 switch 00 with its effect id and hit
+    /// seq, then 0xe005 with the energy left, or the broken state at 0 (order OBSERVED in the fork's recording 20261019-231752
+    /// #31013-#31016: after the damage hit and before the NPC's HP). A broken guard refills GroggyTime later (GuardRefills).
+    /// </summary>
+    List<byte[]> DrainGuard(int skill, Target target, byte uid, long now, IReadOnlyList<Stagger.DrainRow>? rows = null)
     {
-        target.StaggerUntil = now + StaggerGaugeCombat.StaggerDurationMs;
-        var replies = new List<byte[]>();
-        ApplyNpcDebuff(target, StaggerGaugeCombat.StaggerAbnormalId, StaggerGaugeCombat.StaggerDurationMs, now, replies, held: true);
+        var replies = Stagger.Drain(target, skill, playerKey, uid, now, rows);
+        if (target.GroggyEnergy == 0 && !brokenGuards.Contains(target)) brokenGuards.Add(target);
         return replies;
     }
 
-    internal List<byte[]> ApplyStaggerGaugeOnNpcHit(Target target, int skillId, int row, long now)
+    /// <summary>The guards this session broke that refill now (Stagger.Refill), for everyone nearby.</summary>
+    List<byte[]> GuardRefills(long now)
     {
-        var gauge = StaggerGaugeCombat.GaugeDamage(data, skillId);
-        return StaggerGaugeCombat.AddGaugeDamage(target, gauge, playerKey, now, this, row == 0);
+        if (brokenGuards.Count == 0) return [];
+        var replies = new List<byte[]>();
+        foreach (var t in brokenGuards.ToList())
+        {
+            if (t.GroggyEnergy != 0 || t.Dead) { brokenGuards.Remove(t); continue; }
+            if (Stagger.Refill(t, now) is { } refilled) { replies.Add(refilled); brokenGuards.Remove(t); }
+        }
+        return replies;
     }
 
     bool NpcTargetHasAbnormalEffect(int targetKey, string effectType, long now)

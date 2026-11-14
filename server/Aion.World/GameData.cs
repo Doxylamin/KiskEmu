@@ -83,9 +83,7 @@ public sealed record SkillDefinition(
     [property: JsonPropertyName("skill_cond")] SkillCondNeed? SkillCond = null,
     [property: JsonPropertyName("skill_cond_source")] string? SkillCondSource = null,
     [property: JsonPropertyName("skill_cond_grant")] SkillCondGrant? SkillCondGrant = null,
-    [property: JsonPropertyName("skill_cond_grant_source")] string? SkillCondGrantSource = null,
-    [property: JsonPropertyName("stagger_gauge")] int StaggerGauge = 0,
-    [property: JsonPropertyName("stagger_gauge_source")] string? StaggerGaugeSource = null);
+    [property: JsonPropertyName("skill_cond_grant_source")] string? SkillCondGrantSource = null);
 
 public sealed record WeaponStats(
     [property: JsonPropertyName("min")] int Min,

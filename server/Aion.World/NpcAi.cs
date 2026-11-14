@@ -649,7 +649,6 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
             target.Hp = target.HpMax;
             replies.Add(GamePackets.NpcHp(target.Key, target.Hp));
         }
-        ResetGroggy(target);
         brain.Mode = Mode.Idle;
         brain.VictimKey = 0;
         brain.Hate.Clear();

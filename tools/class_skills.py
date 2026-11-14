@@ -21,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_json import write_data_json
 import skill_use_conditions
 import skill_cond
-import stagger_gauge
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'tools/data/class-skills.json'
@@ -587,7 +586,6 @@ def refresh_e_stacks():
         add_condition_entries(filled, ours, doc)
         skill_use_conditions.patch(doc)[0]
         skill_cond.patch(doc)
-        stagger_gauge.patch(doc)
         stacks_doc['e_slot_by_class'] = filled
         stacks_doc['ours'] = ours
         write_data_json(PC_CONTEXT_STACKS, stacks_doc)
@@ -634,7 +632,6 @@ def improvise_missing_damage(result):
         import skill_damage_overrides
     skill_use_conditions.patch(result)[0]
     skill_cond.patch(result)
-    stagger_gauge.patch(result)
     overrides = skill_damage_overrides.patch(result)
     skill_damage_overrides.OUT.write_text(skill_damage_overrides.render(overrides), encoding='utf-8')
     return len(overrides['skills'])

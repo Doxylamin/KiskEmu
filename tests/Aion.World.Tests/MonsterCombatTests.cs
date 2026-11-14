@@ -29,7 +29,7 @@ public sealed class MonsterCombatTests
     [Fact]
     public void Update_groggy_and_group_request_opcodes()
     {
-        Assert.Equal(0xe005, Op(GamePackets.UpdateGroggyInfo(2001, 50, 50)));
+        Assert.Equal(0xe005, Op(GamePackets.UpdateGroggyInfo(2001, 1, 50, 50)));
         Assert.Equal(0xe002, Op(GamePackets.GroupRequestProgressed(7, 1)));
         Assert.Equal(0xe004, Op(GamePackets.GroupRequestComplete(7)));
     }

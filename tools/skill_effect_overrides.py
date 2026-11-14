@@ -66,7 +66,8 @@ ABNORMALS = {
     153100001: ([['StatChange', 'MPUseDecrease', '3000']], 'Wish of Concentration (Sorcerer, 10 s): 30 % cheaper skills.'),
     100200001: ([['ImmuneAbnormal', '0', '0', '0', '0', '0', 'Stun,Hold,Sleep,Frozen,Knockdown,Aerial,Silence,Slow,Snare,Taunt', 'None']],
                 'Defiance (every class, 5 s): immune to crowd control.'),
-    100000401: ([['Stagger']], 'Stagger break state (4 s): mastery scattershot/rampage skills require HasAbnormalEffectType Stagger on the target.'),
+    10000002: ([['Stagger']], 'The groggy abnormal of a broken groggy guard (Stagger.cs; OBSERVED id and GroggyTime duration in the fork recordings): '
+              'mastery scattershot/rampage skills require HasAbnormalEffectType Stagger on the target. CANDIDATE type.'),
 }
 
 SKILLS = {

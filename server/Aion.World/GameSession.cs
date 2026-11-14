@@ -2056,8 +2056,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             // In a scripted layer or dungeon the dead stay dead for the run (official dungeon mobs do not respawn).
             if (RunsMapEvents) continue;
             target.Hp = target.HpMax;
+            Stagger.Restore(target);   // a respawn brings its groggy guard back full (OURS)
             target.CorpseRemoved = false;
-            replies.Add(GamePackets.NpcAppear(target.Appearance()));
+            replies.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(target.Appearance()), target));
         }
         return replies;
     }
@@ -2892,6 +2893,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.AddRange(Achieve("ElapsedTime", 1, e => e.Values.Length == 0, now: now));
         }
         var respawned = RespawnTargets(now);
+        respawned.AddRange(GuardRefills(now));   // broken groggy guards refill after GroggyTime (Stagger.cs)
         worldPlayer?.Map?.BroadcastAll(respawned, worldPlayer);
         replies.AddRange(Visible(respawned));
         replies.AddRange(NpcVisibilityTick(now));
@@ -2938,8 +2940,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.AddRange(NpcKillsByNpcs(ai, now));
         }
         PartyTick(now);
-        StaggerGaugeCombat.StaggerTick(targets, now);
-        ClearPlayerStaggerIfExpired(now);
+        Stagger.Tick(targets, now);
         PartyLootTick(now);
         DuelTick(now);
         ArenaTick(now);

@@ -12060,9 +12060,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16040000,
-      "stagger_gauge": 3,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16040000
     },
     "16070000": {
       "name": "Soul's Cry",
@@ -12108,9 +12106,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16070000,
-      "stagger_gauge": 15,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16070000
     },
     "16100000": {
       "name": "Summon: Fire Spirit",
@@ -12133,9 +12129,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16100000,
-      "stagger_gauge": 7,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16100000
     },
     "16110000": {
       "name": "Summon: Water Spirit",
@@ -12158,9 +12152,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16110000,
-      "stagger_gauge": 7,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16110000
     },
     "16120000": {
       "name": "Summon: Wind Spirit",
@@ -12183,9 +12175,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16120000,
-      "stagger_gauge": 7,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16120000
     },
     "16130000": {
       "name": "Summon: Earth Spirit",
@@ -12208,9 +12198,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16130000,
-      "stagger_gauge": 7,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16130000
     },
     "16140000": {
       "name": "Jointstrike: Curse",
@@ -12286,9 +12274,7 @@
         "Earth",
         "Ancient"
       ],
-      "use_condition_source": "override",
-      "stagger_gauge": 10,
-      "stagger_gauge_source": "override"
+      "use_condition_source": "override"
     },
     "16200000": {
       "name": "Defiance",
@@ -12472,9 +12458,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16300000,
-      "stagger_gauge": 10,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16300000
     },
     "16300001": {
       "name": "Elemental Fusion",
@@ -12543,9 +12527,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16330000,
-      "stagger_gauge": 5,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16330000
     },
     "16340000": {
       "name": "Rapid Scattershot",
@@ -119029,7 +119011,6 @@
     ]
   },
   "meta": {
-    "stagger_gauge": "Stagger gauge damage per skill (global client tooltip bands). OURS when SkillEffect stagger rows are not exported; tools/stagger_gauge.py patches class-skills.json stagger_gauge. Evidence: The Games Wiki spiritmaster-skills and stagger-gauge pages (Oct 2026).",
     "ap_costs": "Skill.dat NeedCostAp; skill-ap-cost-overrides.json when export missing."
   },
   "bar_context_by_default_skill": {

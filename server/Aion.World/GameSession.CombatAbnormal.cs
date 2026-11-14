@@ -207,7 +207,7 @@ public sealed partial class GameSession
         }
         (npcBuffs.TryGetValue(target.Key, out var list) ? list : npcBuffs[target.Key] = []).Add(buff);
         RefreshNpcFlags(target);
-        if (abnormalId == StaggerGaugeCombat.StaggerAbnormalId) target.StaggerUntil = now + durationMs;
+        if (abnormalId == Stagger.GroggyAbnormal) target.StaggerUntil = now + durationMs;
         replies.Add(PlayerPackets.AbnormalAdd(target.Key, [new AbnormalWire(buff.Uid, abnormalId, durationMs, now + durationMs,
             CasterKey: playerKey, Level: 1, SkillId: 0, RangeBase: target.Position)]));
         foreach (var dot in buff.Dots) replies.Add(RidePackets.AbnormalEffect(target.Key, playerKey, buff.Uid, dot.EffectId, dot.Remaining, null, skillId));
