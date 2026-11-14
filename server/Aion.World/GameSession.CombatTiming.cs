@@ -304,15 +304,28 @@ partial class GameSession
         killedLevels.Add(target.Level);
         replies.AddRange(DropLoot(target, now));
         replies.Add(GamePackets.TargetUpdate(target.Key));
-        // OBSERVED: a player killer's legion name and emblem u16 follow its name (e.g. "WHITEOUT", emblem 1).
-        replies.Add(GamePackets.Kill(target.Key, skillId, killerKey, ServerId, StoredName, reason: (byte)(skillId == 0 ? 3 : 1),
-            killerGuild: guild?.Name ?? "", killerEmblem: guild?.Emblem ?? 0));
+        replies.Add(NpcKilled(target.Key, skillId, killerKey));
         replies.AddRange(ai.Killed(target));
         // The map event last: its kill step can move the player to another map (the lake cave boss -> Ascension Subspace).
         // Live 2026-10-30: the 0x8d04 for key 2000 went out after 0x3621 PrepareEnterMap, the client applied the death to
         // the next map's key 2000 (Ashar) and never showed him; the old map's kill packets must precede the move.
         replies.AddRange(MapEventKilled(target, now));
         return replies;
+    }
+
+    /// <summary>
+    /// 0x8d04 for an NPC this player (or its summon <paramref name="killerKey"/>) killed. In the open world it names the
+    /// killer; OBSERVED: a player killer's legion name and emblem u16 follow its name (e.g. "WHITEOUT", emblem 1). Inside a
+    /// dungeon copy it names no killer and has die type 02 (OBSERVED by the community fork: 65 kills in eight dungeon runs,
+    /// recordings 2026-11-04 to 06, no exception). The reason stays ours (1 a hit, 3 damage over time).
+    /// </summary>
+    internal byte[] NpcKilled(int victimKey, int skillId, int killerKey)
+    {
+        var reason = (byte)(skillId == 0 ? 3 : 1);
+        return copy is not null
+            ? GamePackets.Kill(victimKey, skillId, 0, 0, "", dieType: 2, reason: reason)
+            : GamePackets.Kill(victimKey, skillId, killerKey, ServerId, StoredName, reason: reason,
+                killerGuild: guild?.Name ?? "", killerEmblem: guild?.Emblem ?? 0);
     }
 
     List<byte[]> ApplyScheduledDuelHit(ScheduledCombatHit scheduled, long now)

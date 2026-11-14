@@ -133,6 +133,35 @@ public class DeathResurrectTests
     }
 
     [Fact]
+    public async Task Buffs_end_at_death_with_expire_reason_0x13()
+    {
+        const long t = Now + 500_000;
+        var session = await EnterAscendedAsync(new FakeCharacterStore(), t);
+        session.ReceiveBuffs([(170900001, 8000, 8000, false)], 17090000, t);
+        var death = session.NpcHitsPlayer(session.Resource.HpMax * 10, t + 1000, killerKey: 2001);
+        var removed = death.First(p => GameSessionTestHelpers.Op(p) == 0x382c);
+        Assert.Equal(0x13, removed[^1]);
+        Assert.DoesNotContain(170900001, session.ActiveBuffs);
+    }
+
+    [Fact]
+    public async Task An_npc_kill_names_the_player_outside_a_copy_and_nobody_inside()
+    {
+        const long t = Now + 600_000;
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, t, level: 55);
+        var open = session.NpcKilled(2001, 11010000, session.PlayerKey);
+        Assert.Equal(0, open[^1]);   // die type 0
+        session.Store = null;
+        session.EnterDungeonById(600004, t + 50);
+        session.Store = store;
+        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 60);
+        Assert.NotNull(session.Copy);
+        var inside = session.NpcKilled(2001, 11010000, session.PlayerKey);
+        Assert.Equal(GamePackets.Kill(2001, 11010000, 0, 0, "", dieType: 2, reason: 1), inside);
+    }
+
+    [Fact]
     public async Task Load_complete_after_revive_restores_hp()
     {
         const long t = Now + 300_000;

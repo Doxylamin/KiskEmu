@@ -314,8 +314,12 @@ public sealed partial class GameSession
     List<byte[]> ClearBuffs()
     {
         var speedBefore = BuffStat("MoveSpeed");
-        return [.. RemoveBuffs(buffs.Where(b => !b.Rebirth).ToList(), ExpireEtc), .. BuffStatsChanged(speedBefore)];
+        return [.. RemoveBuffs(buffs.Where(b => !b.Rebirth).ToList(), ExpireDeath), .. BuffStatsChanged(speedBefore)];
     }
+
+    /// <summary>The expire reason of every buff removed at a death (OBSERVED 0x13, players and NPCs, community recording
+    /// 2026-11-06 090856 #96385).</summary>
+    const byte ExpireDeath = 0x13;
 
     public bool CanRebirth => buffs.Any(b => b.Rebirth);
 
