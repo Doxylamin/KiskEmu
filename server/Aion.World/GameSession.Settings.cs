@@ -59,6 +59,7 @@ public sealed partial class GameSession
         autoUseItems.UnionWith(Read<int[]>("item_auto_use") ?? []);
         presets = Read<PresetSetting>("presets") ?? new([], []);
         restoreCounts = Read<Dictionary<int, RestoreCount>>("item_restores") ?? [];
+        LoadSlotExtends(Read<int[]>(SlotExtendsSetting));
     }
 
     async Task SaveSettingAsync(string name, object value, CancellationToken ct)
