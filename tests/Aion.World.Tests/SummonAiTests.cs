@@ -48,6 +48,12 @@ public sealed class SummonAiTests
         var skill = r.I32(); r.U8();
         return (caster, target, skill, (int)r.Varint());
     }
+    static byte Uid(byte[] fire)
+    {
+        var r = Body(fire);
+        r.Varint(); r.U8(); r.Varint(); r.I32();
+        return r.U8();
+    }
     static (int Target, byte Switch, int Caster, int Skill) Hit(byte[] p)
     {
         var r = Body(p);
@@ -82,7 +88,10 @@ public sealed class SummonAiTests
     {
         var spirit = Spirit(2920141);
         var packets = Fight(spirit, [Dummy(2000, 1500, 0), Dummy(2001, 1700, 0), Dummy(2002, 1500, 250), Dummy(2003, 3000, 0)], 8000);
-        var shots = packets.Where(p => Op(p) == 0x3803).Select(Fire).Where(s => s.Skill == 16120001).ToList();
+        // One cast's four shots (its 500 ms Splash_FixTime flight lets a second cast start within the 8 s).
+        var fired = packets.Where(p => Op(p) == 0x3803 && Fire(p).Skill == 16120001).ToList();
+        var firstCast = Uid(fired[0]);
+        var shots = fired.Where(p => Uid(p) == firstCast).Select(Fire).ToList();
         Assert.Equal(4, shots.Count);
         Assert.All(shots, s => Assert.Equal((SpiritKey, 2000, 161200011), (s.Caster, s.Target, s.Projectile)));
         var hit = packets.Where(p => Op(p) == 0x3804).Select(Hit).Where(h => h.Skill == 16120001).Select(h => h.Target).ToHashSet();

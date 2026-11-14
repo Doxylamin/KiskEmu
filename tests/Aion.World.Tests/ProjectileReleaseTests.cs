@@ -47,11 +47,12 @@ public sealed class ProjectileReleaseTests
         Assert.Equal(Snipe, reader.I32());
         reader.Offset += 1 + 4 + 12;
         var flight = (int)reader.Varint();
-        Assert.InRange(flight, 130, 150);   // 7 m at SkillProjectile.dat Speed 5000
+        Assert.Equal(100, flight);   // 7 m at SkillProjectile.dat Speed 5000 (140 ms), announced in 50 ms steps
 
-        var before = await session.TickAsync(castAt + SkillTiming.ProjectileReleaseMs + flight - 1);
+        // The hit lands one tick (50 ms) after the announced flight.
+        var before = await session.TickAsync(castAt + SkillTiming.ProjectileReleaseMs + flight + Projectiles.TickMs - 1);
         Assert.DoesNotContain(before, p => GameSessionTestHelpers.Op(p) == 0x3804);
-        var landed = await session.TickAsync(castAt + SkillTiming.ProjectileReleaseMs + flight);
+        var landed = await session.TickAsync(castAt + SkillTiming.ProjectileReleaseMs + flight + Projectiles.TickMs);
         Assert.Contains(landed, p => GameSessionTestHelpers.Op(p) == 0x3804);
     }
 
