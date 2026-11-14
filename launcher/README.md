@@ -52,8 +52,10 @@ next one itself; the player only confirms and answers Windows prompts.
    and the manifest request code of depot 3393111 manifest 1699273097574069541 and fetches every
    chunk from Steam's content servers into the private folder (16 chunks in parallel, each checked
    against its SHA-1 id; a bad chunk is fetched again from another server). The folder is
-   `%LOCALAPPDATA%\KiskPrivate\AION2` when the system drive has room, else `<drive>:\KiskPrivate\AION2`
-   on the fixed drive with the most free space. Pausing or closing keeps the download: finished
+   `%LOCALAPPDATA%\KiskPrivate\AION2` (`AION2-<game version>` for a version other than the embedded 3527) when the
+   system drive has room, else `<drive>:\KiskPrivate\...` on the fixed drive with the most free space. Before the
+   download starts, "Choose another download folder" picks the place (a folder named for the version is made inside
+   the chosen one unless it is empty). The page names the game version the server runs. Pausing or closing keeps the download: finished
    files are listed in `.download-state`, other existing chunks are kept when their SHA-1 matches,
    and the Steam refresh token is kept (DPAPI, current Windows user) so resuming needs no new scan;
    it is deleted when the game is installed. "I already have this version in another folder" uses an
