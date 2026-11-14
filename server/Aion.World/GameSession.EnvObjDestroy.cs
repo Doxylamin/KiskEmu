@@ -45,7 +45,7 @@ partial class GameSession
     {
         if (DestructibleEnvObjIndex(request.TargetKey) is not { } index) return false;
         var o = WorldObjects.ObjectsOn(worldMap)[index];
-        var flight = CastArea(skill)?.FlightMs(Math.Sqrt(o.At.DistanceSquared(position ?? request.Location))) ?? 0;
+        var flight = CastArea(skill)?.Flight(Math.Sqrt(o.At.DistanceSquared(position ?? request.Location)), rng).Arrival ?? 0;
         var hits = PlayerSkillHits(skill, 0);
         for (var i = 0; i < hits.Count; i++)
             pendingCombatHits.Add(new(skill, request, actionUid, request.TargetKey, hits[i], i + 1,

@@ -745,10 +745,10 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         if (!hit.Fired && SkillAreas.For(hit.SkillId) is { Projectile: > 0 } shot)
         {
             var aim = brain.VictimIsNpc && current?.GetValueOrDefault(victim) is { } npc ? npc.Position : p;
-            var flight = shot.FlightMs(Math.Sqrt(target.Position.DistanceSquared(aim)));
-            brain.Pending = hit with { DueMs = now + flight, Fired = true };
-            brain.NextAttackMs = Math.Max(brain.NextAttackMs, now + flight);
-            return [PlayerPackets.SkillFireProjectile(target.Key, victim, hit.SkillId, (byte)hit.ActionSeq, shot.ProjectileFor(0), aim, flight, 1)];
+            var flight = shot.Flight(Math.Sqrt(target.Position.DistanceSquared(aim)), rng);
+            brain.Pending = hit with { DueMs = now + flight.Arrival, Fired = true };
+            brain.NextAttackMs = Math.Max(brain.NextAttackMs, now + flight.Arrival);
+            return [PlayerPackets.SkillFireProjectile(target.Key, victim, hit.SkillId, (byte)hit.ActionSeq, shot.ProjectileFor(0), aim, flight.Announced, 1)];
         }
         // The victim's defense reduces the hit (the CANDIDATE 1000/(1000+defense) used for players' hits).
         var defense = brain.VictimIsNpc && current?.GetValueOrDefault(victim) is { } prey ? prey.Defense : DefenseOf?.Invoke(victim) ?? 0;

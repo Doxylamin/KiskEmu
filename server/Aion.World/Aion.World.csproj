@@ -23,6 +23,7 @@
     <EmbeddedResource Include="../../tools/data/pc-traps.json" LogicalName="pc-traps.json" />
     <EmbeddedResource Include="../../tools/data/pc-zones.json" LogicalName="pc-zones.json" />
     <EmbeddedResource Include="../../tools/data/skill-areas.json" LogicalName="skill-areas.json" />
+    <EmbeddedResource Include="../../tools/data/projectiles.json" LogicalName="projectiles.json" />
     <EmbeddedResource Include="../../tools/data/skill-cast-ranges.json" LogicalName="skill-cast-ranges.json" />
     <EmbeddedResource Include="../../tools/data/wings.json" LogicalName="wings.json" />
     <EmbeddedResource Include="../../tools/data/items.json" LogicalName="items.json" />

@@ -55,8 +55,8 @@ partial class GameSession
         // A target-centred area (bEffectRangeNeedTarget) is one shot at the main target that splashes the others with it;
         // a ground area is one shot at the ground point that hits everyone in it when it lands there.
         var shotAt = hitTargets.FirstOrDefault();
-        var mainFlight = ground ? area!.FlightMs(Math.Sqrt(request.Location.DistanceSquared(caster)))
-            : shotAt is null ? 0 : area?.FlightMs(Math.Sqrt(shotAt.Position.DistanceSquared(caster))) ?? 0;
+        (int Announced, int Arrival) mainFlight = ground ? area!.Flight(Math.Sqrt(request.Location.DistanceSquared(caster)), rng)
+            : shotAt is null ? (0, 0) : area?.Flight(Math.Sqrt(shotAt.Position.DistanceSquared(caster)), rng) ?? (0, 0);
         foreach (var target in hitTargets)
         {
             if (target.Dead) continue;
@@ -69,10 +69,10 @@ partial class GameSession
             if (target.Immune && !openQuestOrEventKill && !questKill && !mapEventKill)
                 hits = hits.Select(h => h with { Amount = 0 }).ToList();
             else if (SealStone()) hits = SealStoneBoost(hits);
-            // SkillProjectile.dat Speed: an arrow / bolt lands after its flight, not at the release frame.
-            var flight = ground ? mainFlight : area?.FlightMs(Math.Sqrt(target.Position.DistanceSquared(caster))) ?? 0;
+            // SkillProjectile.dat (Projectiles.Flight): an arrow / bolt lands after its flight, not at the release frame.
+            (int Announced, int Arrival) flight = ground || target == shotAt ? mainFlight : area?.Flight(Math.Sqrt(target.Position.DistanceSquared(caster)), rng) ?? (0, 0);
             // The client flies an arrow for the 0x3803's remaining time from when it arrives, so it goes out at the release and its
-            // 0x3804 lands at the end of that flight. A ground shot's arrow flies to the 0x3802 location: no 0x3803 at a monster.
+            // 0x3804 lands one tick after that flight. A ground shot's arrow flies to the 0x3802 location: no 0x3803 at a monster.
             var splash = ground || (area is { OnTarget: true, IsArea: true } && target != shotAt);
             for (var i = 0; i < hits.Count; i++)
             {
@@ -82,15 +82,15 @@ partial class GameSession
                     var row = timedRows[Math.Min(i, timedRows.Length - 1)];
                     var release = now + SkillTiming.ProjectileReleaseAtMs(definition, row);
                     var projectile = area.ProjectileFor(row);
-                    var landsAfter = projectile == 0 ? 0 : splash ? mainFlight : flight;
+                    var landsAfter = projectile == 0 ? 0 : splash ? mainFlight.Arrival : flight.Arrival;
                     if (projectile > 0 && !splash && (i == 0 || timedRows[i - 1] != row))
-                        pendingProjectiles.Add(new(release, skill, actionUid, target.Key, projectile, flight, row + 1));
+                        pendingProjectiles.Add(new(release, skill, actionUid, target.Key, projectile, flight.Announced, row + 1));
                     pendingCombatHits.Add(new(skill, request, actionUid, target.Key, hits[i], row + 1, release + landsAfter, CombatHitKind.Npc,
                         questKill, mapEventKill, i));
                 }
                 else
                     pendingCombatHits.Add(new(skill, request, actionUid, target.Key, hits[i], i + 1,
-                        now + SkillTiming.HitLandMs(definition, i) + flight, CombatHitKind.Npc, questKill, mapEventKill, i));
+                        now + SkillTiming.HitLandMs(definition, i) + flight.Arrival, CombatHitKind.Npc, questKill, mapEventKill, i));
             }
         }
         pendingCombatHits.Sort((a, b) => a.DueMs.CompareTo(b.DueMs));
