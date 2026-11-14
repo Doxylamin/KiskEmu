@@ -15,10 +15,8 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
     /// <summary>The name authenticator apps show for this server (Aion:Web:SiteName); new enrollments only.</summary>
     public string TotpIssuer { get; set; } = "Aion Local";
 
-    public void ConfigureTotp(string? encryptionKeyBase64)
-    {
-        if (encryptionKeyBase64 is { Length: > 0 }) totpKeys = new TotpSecretProtection(encryptionKeyBase64);
-    }
+    /// <summary>The key for stored secrets (Aion:Totp:EncryptionKey; see TotpSecretProtection.FromConfiguration).</summary>
+    public void ConfigureTotp(TotpSecretProtection? keys) => totpKeys = keys;
 
     TotpSecretProtection Keys => totpKeys ?? throw new InvalidOperationException("Aion:Totp:EncryptionKey is not configured.");
 
@@ -34,7 +32,12 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
         return new(true, reader.GetInt32(1));
     }
 
-    public async Task<TotpEnrollment?> BeginEnrollmentAsync(Guid accountId, string accountLabel, CancellationToken ct)
+    /// <summary>Account page: setting up an authenticator needs the password (a stolen session alone cannot add one).</summary>
+    public async Task<TotpEnrollment?> BeginEnrollmentAsync(Guid accountId, string accountLabel, string password, CancellationToken ct) =>
+        await VerifyPasswordAsync(accountId, password, ct) ? await BeginEnrollmentAsync(accountId, accountLabel, ct) : null;
+
+    /// <summary>The enrollment itself; the staff sign-in calls it after its own password step (purpose 'staff_enroll').</summary>
+    async Task<TotpEnrollment?> BeginEnrollmentAsync(Guid accountId, string accountLabel, CancellationToken ct)
     {
         if (await IsEnabledAsync(accountId, ct)) return null;
         var secret = Totp.GenerateSecret();
@@ -67,13 +70,15 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
             if (!await reader.ReadAsync(ct)) return (false, null);
             secret = Keys.Decrypt(reader.GetFieldValue<byte[]>(0), reader.GetFieldValue<byte[]>(1));
         }
-        if (secret is null || !Totp.Verify(secret, code)) return (false, null);
-        var recovery = GenerateRecoveryCodes();
+        if (secret is null || Totp.Match(secret, code, DateTimeOffset.UtcNow) is not { } step) return (false, null);
+        var recovery = RecoveryCodes.GenerateSet();
+        // The confirming code's step counts as used: the same code cannot then sign in.
         await using (var upsert = new NpgsqlCommand("""
-            INSERT INTO auth.account_totp(account_id,secret_ciphertext,secret_nonce,recovery_code_hashes)
-            VALUES($1,$2,$3,$4)
+            INSERT INTO auth.account_totp(account_id,secret_ciphertext,secret_nonce,recovery_code_hashes,last_step)
+            VALUES($1,$2,$3,$4,$5)
             ON CONFLICT (account_id) DO UPDATE SET secret_ciphertext=EXCLUDED.secret_ciphertext,
-              secret_nonce=EXCLUDED.secret_nonce, enabled_at=now(), recovery_code_hashes=EXCLUDED.recovery_code_hashes
+              secret_nonce=EXCLUDED.secret_nonce, enabled_at=now(), recovery_code_hashes=EXCLUDED.recovery_code_hashes,
+              last_step=EXCLUDED.last_step
             """, connection, transaction))
         {
             var (cipher, nonce) = Keys.Encrypt(secret);
@@ -81,6 +86,7 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
             upsert.Parameters.AddWithValue(cipher);
             upsert.Parameters.AddWithValue(nonce);
             upsert.Parameters.AddWithValue(recovery.Hashed);
+            upsert.Parameters.AddWithValue(step);
             await upsert.ExecuteNonQueryAsync(ct);
         }
         await using (var clear = new NpgsqlCommand("DELETE FROM auth.totp_enrollment WHERE account_id=$1", connection, transaction))
@@ -95,7 +101,7 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
     public async Task<(bool Ok, string[]? RecoveryCodes)> RegenerateRecoveryCodesAsync(Guid accountId, string password, CancellationToken ct)
     {
         if (!await VerifyPasswordAsync(accountId, password, ct)) return (false, null);
-        var recovery = GenerateRecoveryCodes();
+        var recovery = RecoveryCodes.GenerateSet();
         await using var command = source.CreateCommand("""
             UPDATE auth.account_totp SET recovery_code_hashes=$2 WHERE account_id=$1 RETURNING 1
             """);
@@ -119,18 +125,39 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
         await using var transaction = await connection.BeginTransactionAsync(ct);
         string? secret;
         string[] hashes;
+        long? lastStep;
+        bool legacyKey;
         await using (var query = new NpgsqlCommand("""
-            SELECT secret_ciphertext, secret_nonce, recovery_code_hashes FROM auth.account_totp WHERE account_id=$1 FOR UPDATE
+            SELECT secret_ciphertext, secret_nonce, recovery_code_hashes, last_step FROM auth.account_totp WHERE account_id=$1 FOR UPDATE
             """, connection, transaction))
         {
             query.Parameters.AddWithValue(accountId);
             await using var reader = await query.ExecuteReaderAsync(ct);
             if (!await reader.ReadAsync(ct)) return false;
-            secret = Keys.Decrypt(reader.GetFieldValue<byte[]>(0), reader.GetFieldValue<byte[]>(1));
+            secret = Keys.Decrypt(reader.GetFieldValue<byte[]>(0), reader.GetFieldValue<byte[]>(1), out legacyKey);
             hashes = reader.GetFieldValue<string[]>(2);
+            lastStep = reader.IsDBNull(3) ? null : reader.GetInt64(3);
         }
-        if (secret is not null && code is not null && Totp.Verify(secret, code))
+        // A code is accepted once: only for a step after the last accepted one (migration 109), under the row lock.
+        if (secret is not null && Totp.Match(secret, code, DateTimeOffset.UtcNow, afterStep: lastStep ?? long.MinValue) is { } step)
         {
+            await using (var accept = new NpgsqlCommand("UPDATE auth.account_totp SET last_step=$2 WHERE account_id=$1", connection, transaction))
+            {
+                accept.Parameters.AddWithValue(accountId);
+                accept.Parameters.AddWithValue(step);
+                await accept.ExecuteNonQueryAsync(ct);
+            }
+            if (legacyKey)
+            {
+                // Stored under the key derived from Aion:BridgeSecret: move it to the dedicated Aion:Totp:EncryptionKey.
+                var (cipher, nonce) = Keys.Encrypt(secret);
+                await using var rekey = new NpgsqlCommand(
+                    "UPDATE auth.account_totp SET secret_ciphertext=$2, secret_nonce=$3 WHERE account_id=$1", connection, transaction);
+                rekey.Parameters.AddWithValue(accountId);
+                rekey.Parameters.AddWithValue(cipher);
+                rekey.Parameters.AddWithValue(nonce);
+                await rekey.ExecuteNonQueryAsync(ct);
+            }
             await transaction.CommitAsync(ct);
             return true;
         }
@@ -413,23 +440,13 @@ public sealed partial class PostgresAccountAuthentication : ITotpAuthentication,
         return hash is not null && hasher.VerifyHashedPassword(new(accountId), hash, password) != PasswordVerificationResult.Failed;
     }
 
-    static (string[] Plain, string[] Hashed) GenerateRecoveryCodes()
-    {
-        var plain = Enumerable.Range(0, 8).Select(_ => Convert.ToHexString(RandomNumberGenerator.GetBytes(5))).ToArray();
-        var hashed = plain.Select(c => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(c)))).ToArray();
-        return (plain, hashed);
-    }
-
     static IPAddress NormalizeAddress(IPAddress address) => address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
 
+    /// <summary>Consumes a recovery code typed in any case, with spaces or dashes anywhere (RecoveryCodes.Normalize).</summary>
     static bool TryConsumeRecovery(string[] stored, string code, out string[] updated)
     {
         updated = stored;
-        if (code.Length is < 8 or > 32) return false;
-        // Codes are issued as upper-case hex; accept them typed in any case.
-        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim().ToUpperInvariant())));
-        var index = Array.FindIndex(stored, h => CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(h), Encoding.UTF8.GetBytes(digest)));
+        var index = RecoveryCodes.Find(stored, code);
         if (index < 0) return false;
         updated = stored.Where((_, i) => i != index).ToArray();
         return true;

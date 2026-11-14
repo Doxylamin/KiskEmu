@@ -259,6 +259,23 @@ apps is `Aion__Web__SiteName` (default `KiskEmu`). Put it in `/etc/aion/local.en
 that file) and restart `aion-host`; no new build is needed. Authenticators set up earlier keep the
 name they were set up with.
 
+Two-step sign-in (authenticator codes on the account site and the staff dashboard) stores each account's
+secret encrypted with `Aion__Totp__EncryptionKey`, base64 of 32 random bytes. Make one once and put it in
+`/etc/aion/local.env`, then restart `aion-host`:
+
+```bash
+echo "Aion__Totp__EncryptionKey=$(openssl rand -base64 32)" | sudo tee -a /etc/aion/local.env
+sudo chmod 640 /etc/aion/local.env && sudo chown root:aion /etc/aion/local.env
+```
+
+Keep the key with your backups: without it, no stored authenticator can be read (players then sign in with
+a recovery code, or an admin resets their two-step sign-in). Older versions derived this key from
+`Aion__BridgeSecret`, which world servers also hold. While the dedicated key is not set the host keeps using
+that derived key and logs a warning at startup; once it is set, secrets stored under the old key are still
+read and move to the new key the next time their owner signs in with a code. Leave `Aion__BridgeSecret` in
+place until every account with two-step sign-in has signed in once. A key that is not base64 of 32 bytes
+stops the host at startup.
+
 ## Auth host and world servers
 
 As with an authserver and its worldservers, the `aion-host` service is the **auth host**: login port,

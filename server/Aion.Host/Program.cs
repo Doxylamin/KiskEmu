@@ -99,13 +99,19 @@ if (!string.IsNullOrWhiteSpace(connectionString))
 var accountsReady = !string.IsNullOrWhiteSpace(connectionString) && (!string.IsNullOrWhiteSpace(authConnectionString) || realmLink is not null);
 if (accountsReady && worldProcess is null)
 {
+    // Two-step sign-in secrets use their own key, Aion:Totp:EncryptionKey (base64 of 32 random bytes). Older servers
+    // derived it from Aion:BridgeSecret: that key still opens secrets stored under it, which move to the dedicated key as
+    // they are used; without a dedicated key it stays the only key, with a warning (deploy/linux/README.md). A malformed
+    // dedicated key stops the host here.
+    var totpKeys = Aion.Core.Security.TotpSecretProtection.FromConfiguration(
+        builder.Configuration["Aion:Totp:EncryptionKey"], builder.Configuration["Aion:BridgeSecret"], out var totpWarning);
     builder.Services.AddSingleton<PostgresAccountAuthentication>(provider =>
     {
         var auth = new PostgresAccountAuthentication(authConnectionString!) { TotpIssuer = SiteName(builder.Configuration) };
-        var totpKey = builder.Configuration["Aion:Totp:EncryptionKey"];
-        if (string.IsNullOrWhiteSpace(totpKey) && builder.Configuration["Aion:BridgeSecret"] is { Length: >= 32 } bridge)
-            totpKey = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(bridge)));
-        if (!string.IsNullOrWhiteSpace(totpKey)) auth.ConfigureTotp(totpKey);
+        auth.ConfigureTotp(totpKeys);
+        var accountLog = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Aion.Accounts");
+        if (totpWarning is not null) accountLog.LogWarning("{Warning}", totpWarning);
+        else if (totpKeys is null) accountLog.LogWarning("Two-step sign-in is unavailable: Aion:Totp:EncryptionKey is not set.");
         return auth;
     });
     builder.Services.AddSingleton<IAccountAuthentication>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
