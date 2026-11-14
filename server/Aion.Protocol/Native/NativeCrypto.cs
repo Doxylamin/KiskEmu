@@ -92,7 +92,9 @@ public sealed record RsaPublicKey(BigInteger Modulus, BigInteger Exponent)
 
 /// <summary>
 /// Opening exchange of both native ports. The client greets in plaintext (login 0x3900, game
-/// 0x3610): u16 tag, varint DER length, DER RSAPublicKey, then a short trailer. The server
+/// 0x3610): u16 tag, varint DER length, DER RSAPublicKey, then a short trailer whose first u32 on the game
+/// port is the client's game version (OBSERVED: 3533 in the official 2026-11-04 greetings, `cd0d0000`;
+/// 2.0.6 sends 3527). The server
 /// answers with a self-generated 32-byte RC4 key, RSA-OAEP encrypted to that key (login
 /// 0x3901, game 0x3611); afterwards client bodies are RC4 and server bodies plaintext.
 /// </summary>
@@ -100,7 +102,10 @@ public static class NativeHandshake
 {
     public const ushort LoginGreeting = 0x3900, GameGreeting = 0x3610;
 
-    public static RsaPublicKey ReadGreeting(byte[] body, ushort expectedTag)
+    public static RsaPublicKey ReadGreeting(byte[] body, ushort expectedTag) => ReadGreeting(body, expectedTag, out _);
+
+    /// <summary>The client's key; <paramref name="version"/>: the u32 after it (the game version on the game port), 0 when absent.</summary>
+    public static RsaPublicKey ReadGreeting(byte[] body, ushort expectedTag, out int version)
     {
         var reader = new PacketReader(body);
         if (reader.U16() != expectedTag) throw new ProtocolException($"First frame is not a 0x{expectedTag:x4} greeting");
@@ -116,6 +121,7 @@ public static class NativeHandshake
         }
         if (values.Count != 2) throw new ProtocolException("Expected modulus and exponent");
         if (values[0].GetBitLength() is < 1024 or > 8192 || values[1] < 3) throw new ProtocolException("Unsupported RSA public key");
+        version = reader.Remaining >= 4 ? reader.I32() : 0;
         return new RsaPublicKey(values[0], values[1]);
     }
 

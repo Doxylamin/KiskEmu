@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Reference of the supported client build (tools/launcher_build.py). -->
-    <EmbeddedResource Include="../supported-build.json" LogicalName="supported-build.json" />
+    <EmbeddedResource Include="../builds/3527.json" LogicalName="supported-build.json" />
     <!-- No server is built in: a launcher.json next to the exe (a server's download ZIP) adds one, else the player does. -->
   </ItemGroup>
   <ItemGroup>
