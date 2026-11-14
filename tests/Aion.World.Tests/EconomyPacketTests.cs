@@ -118,27 +118,50 @@ public sealed class EconomyPacketTests
         storeB.Items.Add(FakeCharacterStore.BagItem(GameSession.KinaItemId, 5000, 90));
         await seller.InventoryChangesAsync(default);
         var wire = storeS.Items.Single(i => i.TemplateId == LifePotion).WireId;
-        var list = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeSellRq).I64(wire).I64(1).I32(GameSession.KinaItemId).I64(200)
-            .I32(500).I32(10).I32(TradeServer).ToArray(), Now + 20);
-        Assert.Equal(0, BitConverter.ToUInt16(list[0], 2));
+        // usmap layout: item key i64, count i64, ECurrencyCategory u8, price i64, fee rate i64, fee min i64, trade server (u16 here).
+        var list = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeSellRq).I64(wire).I64(1).U8(93).I64(200)
+            .I64(500).I64(10).U16(TradeServer).ToArray(), Now + 20);
+        Assert.Equal(GameSession.TradeSellRs, GameSessionTestHelpers.Op(list[0]));
         var saleId = storeS.TradeListings.Single().SaleId;
+        var saleText = GameSession.TradeIdText(saleId);
+        // OBSERVED shape: 0000 | GUID (36 chars) | 41 zero bytes | trade server u16.
+        Assert.Equal(new PacketWriter().U16(GameSession.TradeSellRs).U16(0).String(saleText).Zeros(41).U16(TradeServer).ToArray(), list[0]);
+        Assert.Equal(36, saleText.Length);
+        Assert.Equal(saleId, GameSession.ParseSaleId(saleText));
         Assert.DoesNotContain(storeS.Items, i => i.Location == "bag" && i.TemplateId == LifePotion);
-        var buy = await buyer.HandleAsync(new PacketWriter().U16(GameSession.TradePurchaseRq).String(saleId.ToString()).I32(LifePotion).I64(1).I32(TradeServer).ToArray(), Now + 21);
-        Assert.Equal(0, BitConverter.ToUInt16(buy[0], 2));
+        // The trade server as i32 is read too.
+        var buy = await buyer.HandleAsync(new PacketWriter().U16(GameSession.TradePurchaseRq).String(saleText).I32(LifePotion).I64(1).I32(TradeServer).ToArray(), Now + 21);
+        Assert.Equal(new PacketWriter().U16(GameSession.TradePurchaseRs).U16(0).String(saleText).Zeros(12).U16(TradeServer).ToArray(), buy[0]);
         Assert.Single(storeB.Items, i => i.TemplateId == LifePotion && i.Location == "bag");
         Assert.Equal(4800, Kina(storeB));
-        var payout = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeDeliveryCompleteRq).String(storeS.TradeDeliveries.Single().DeliveryId.ToString())
-            .I32(LifePotion).I32(TradeServer).ToArray(), Now + 22);
-        Assert.Equal(0, BitConverter.ToUInt16(payout[0], 2));
+        var deliveryText = GameSession.TradeIdText(storeS.TradeDeliveries.Single().DeliveryId);
+        var payout = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeDeliveryCompleteRq).String(deliveryText)
+            .I32(LifePotion).U16(TradeServer).ToArray(), Now + 22);
+        Assert.Equal(new PacketWriter().U16(GameSession.TradeDeliveryCompleteRs).U16(0).String(deliveryText).U16(TradeServer).ToArray(), payout[0]);
         Assert.True(Kina(storeS) > 9900);
         storeS.Items.Add(FakeCharacterStore.BagItem(LifePotion, 1, 82));
         await seller.InventoryChangesAsync(default);
         var wire2 = storeS.Items.Single(i => i.WireId == 82).WireId;
-        await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeSellRq).I64(wire2).I64(1).I32(GameSession.KinaItemId).I64(100).I32(500).I32(10).I32(TradeServer).ToArray(), Now + 30);
-        var sale2 = storeS.TradeListings.Last().SaleId;
-        var cancel = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeCancelSaleRq).String(sale2.ToString()).I32(LifePotion).I64(1).I32(TradeServer).ToArray(), Now + 31);
-        Assert.Equal(0, BitConverter.ToUInt16(cancel[0], 2));
+        await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeSellRq).I64(wire2).I64(1).U8(93).I64(100).I64(500).I64(10).U16(TradeServer).ToArray(), Now + 30);
+        var sale2 = GameSession.TradeIdText(storeS.TradeListings.Last().SaleId);
+        var cancel = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeCancelSaleRq).String(sale2).I32(LifePotion).I64(1).U16(TradeServer).ToArray(), Now + 31);
+        // OBSERVED r2 shape: 0000 | GUID | 20 zero bytes | trade server u16.
+        Assert.Equal(new PacketWriter().U16(GameSession.TradeCancelSaleRs).U16(0).String(sale2).Zeros(20).U16(TradeServer).ToArray(), cancel[0]);
         Assert.Single(storeS.Items, i => i.TemplateId == LifePotion && i.Location == "bag");
+    }
+
+    [Fact]
+    public void Broker_and_godstone_opcodes_are_the_live_runs()
+    {
+        // #74: the usmap numbers + 0xa6fb (broker; 0xe267/69/6b/6d OBSERVED in our r2 capture) and + 0x1ebe (godstones, beside 0x5633).
+        Assert.Equal(0xe264, GameSession.TradeSellRq);
+        Assert.Equal(0xe26b, GameSession.TradeExpireSaleRs);
+        Assert.Equal(0xe272, GameSession.TradeGetSummaryRs);
+        Assert.Equal(0x5635, GameSession.ItemEnchantGodstoneRq);
+        Assert.Equal(0x5637, GameSession.ItemEnchantGodstoneNt);
+        Assert.Equal(0x5639, GameSession.CombineGodstoneRs);
+        Assert.Equal(17, GameSession.ParseSaleId("17"));
+        Assert.Equal(0, GameSession.ParseSaleId("not an id"));
     }
 
     [Fact]
