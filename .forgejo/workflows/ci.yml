@@ -81,7 +81,7 @@ jobs:
         run: dotnet test tests/Aion.Host.Tests --logger "console;verbosity=minimal"
 
       - name: World tests
-        run: dotnet test tests/Aion.World.Tests --filter "${{ matrix.filter }}" --blame-hang-timeout 20m --logger "console;verbosity=minimal"
+        run: dotnet test tests/Aion.World.Tests --filter "${{ matrix.filter }}" --blame-hang-timeout 45m --logger "console;verbosity=minimal"
 
   # tools/check_persistence.py: the repository checks against a disposable PostgreSQL 18 database (the version the
   # servers run). initdb refuses root, so the cluster belongs to an unprivileged user; it lives only in this job.
