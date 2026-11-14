@@ -239,6 +239,11 @@ def objects(data, rows, wanted, gathers=None, everything=False, portals=None, ev
                 if row.get('not_have_abnormal_group'):
                     found[-1]['carry'] = {'group': row['not_have_abnormal_group'], 'despawn': row['despawn'],
                                           'finish_duration': row['finish_duration']}
+                # EnvObjData FinishDuration (ms) of an object that dies after use (bDespawn): it times EnvObjDie and the despawn
+                # (OBSERVED in the community fork's recordings: EnvObjDie 50 ms after the use with none, about 650 / 1150 ms
+                # with 500 / 1000; addiboii's fork).
+                if row['despawn'] and row['finish_duration']:
+                    found[-1]['finish_ms'] = row['finish_duration']
                 if row.get('required_combat_power'):
                     found[-1]['required_combat_power'] = row['required_combat_power']
                 if monolith:

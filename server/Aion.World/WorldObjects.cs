@@ -28,7 +28,9 @@ public sealed record WorldObject(
     [property: JsonPropertyName("required_combat_power")] int RequiredCombatPower = 0,
     [property: JsonPropertyName("monolith")] bool Monolith = false,
     // An Empyrean Trace: its spawn's UseEnvObjSpawnerName achievement (OBSERVED in its 0x3634; GameSession.EmpyreanTraces.cs).
-    [property: JsonPropertyName("achievement")] int Achievement = 0)
+    [property: JsonPropertyName("achievement")] int Achievement = 0,
+    // EnvObjData FinishDuration (ms) of an object that dies after use (bDespawn); 0: none (tools/world_objects.py).
+    [property: JsonPropertyName("finish_ms")] int FinishMs = 0)
 {
     public Vector3d At => new(Position[0], Position[1], Position[2]);
 
