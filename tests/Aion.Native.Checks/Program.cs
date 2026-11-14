@@ -2294,11 +2294,11 @@ eventHost.Abnormal(10000017, -1, "N_L0_Starter_HQ001_Elvan_01", false);
 eventHost.ShowNote("Note_D2_DQ2203030_01");
 eventHost.Abnormal(44000501, -1, "", false);
 var scripted = await eve.TickAsync(Now + 91_000);
-Check(scripted.Any(b => b.SequenceEqual(GamePackets.RelationshipUpdate(elvan.Key, 6))) && elvan.Relationship == 6 && elvan.Hostile, "ChangeRelationshipEntity Monster: Elvan turns hostile (0x39cd)");
+Check(scripted.Any(b => b.SequenceEqual(GamePackets.RelationshipUpdate(elvan.Key, 6))) && elvan.Relationship == 6 && elvan.Hostile, "ChangeRelationshipEntity Monster: Elvan turns hostile (0x8d92)");
 Check(scripted.Any(b => Op(b) == 0x382a && KeyOf(b) == elvan.Key) && elvan.Held && elvan.Immune, "AddAbnormal 10000017 (stun and immunity) on Elvan: 0x382a on his key; held and immune");
 Check(scripted.Any(b => Op(b) == 0x8d15 && b[3] == 15 && Encoding.ASCII.GetString(b, 5, 20) == "Note_D2_DQ2203030_01"), "ShowNote: 0x8d15 EventFuncAction ShowNote (15) with the note's name");
 Check(scripted.Any(b => Op(b) == 0x382a && KeyOf(b) == eve.PlayerKey) && scripted.Any(b => Op(b) == 0x3655) && scripted.Any(b => b.SequenceEqual(GamePackets.RelationshipUpdate(eve.PlayerKey, 23)))
-      && eve.ActiveBuffs.Contains(44000501) && eve.FriendlyToAll, "AddAbnormal 44000501 on the player: the Krall transformation (0x382a, polymorph 0x3655) and PC_FriendlyToAll (0x39cd 23)");
+      && eve.ActiveBuffs.Contains(44000501) && eve.FriendlyToAll, "AddAbnormal 44000501 on the player: the Krall transformation (0x382a, polymorph 0x3655) and PC_FriendlyToAll (0x8d92 23)");
 eve.Teleport(100010, elvan.Position with { X = elvan.Position.X + 120 }, Now + 96_000);
 await eve.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 96_050);
 var immuneCast = Now + 96_100;
@@ -2310,7 +2310,7 @@ eventHost.Abnormal(44000501, 0, "", true);
 var released = await eve.TickAsync(Now + 97_000);
 Check(released.Any(b => Op(b) == 0x382c && KeyOf(b) == elvan.Key) && !elvan.Held && !elvan.Immune, "RemoveAbnormal on Elvan: 0x382c; released");
 Check(released.Any(b => Op(b) == 0x382c && KeyOf(b) == eve.PlayerKey) && released.Any(b => b.SequenceEqual(GamePackets.RelationshipUpdate(eve.PlayerKey, 1))) && !eve.ActiveBuffs.Contains(44000501),
-      "RemoveAbnormal on the player: the transformation ends (0x382c, 0x3655 own form, 0x39cd own relationship)");
+      "RemoveAbnormal on the player: the transformation ends (0x382c, 0x3655 own form, 0x8d92 own relationship)");
 eve.ExitSharedWorld();
 MapEventChecks.Run(Check);
 var mpFar = GamePackets.SpawnPosition with { X = GamePackets.SpawnPosition.X + SharedWorld.VisibleRange + 1000 };
@@ -2492,10 +2492,10 @@ var hildeDown = await hilde.TickAsync(killingCast + SkillTiming.HitLandMs(data.S
 Check(hilde.Dead && hildeDown.Any(b => Op(b) == 0x8d04), "a lethal hit kills the enemy (0x8d04 with the killer)");
 var abyssKillPackets = peace.Concat(killing);
 Check(abyssKillPackets.Any(b => Op(b) == GameSession.AbyssPointUpdateNt) && abyssKillPackets.Any(b => Op(b) == GameSession.RankingPointUpdateNt),
-      "an Abyss kill updates weekly AP acc and ranking points (0x3C06, 0x3B78)");
+      "an Abyss kill updates weekly AP acc and ranking points (0xffab, 0xe273)");
 Check(AbyssTables.Embedded.KillAp(hilde.AbyssRankingGrade) > 0, "kill AP comes from the victim's rank in abyss.json");
-var ranker = await gunnar.HandleAsync([0x17, 0x3a], Now + 80_220);
-Check(ranker.Single().Length >= 4 && Op(ranker[0]) == GameSession.WorldMapAbyssRankerInfoRs, "WorldMapAbyssRankerInfo_RQ gets an empty ranker list (0x3A18)");
+var ranker = await gunnar.HandleAsync([0xdc, 0x8d], Now + 80_220);
+Check(ranker.Single().Length >= 4 && Op(ranker[0]) == GameSession.WorldMapAbyssRankerInfoRs, "WorldMapAbyssRankerInfo_RQ gets an empty ranker list (0x8ddd)");
 var siege = await gunnar.HandleAsync([0x2c, 0x37], Now + 80_225);
 Check(siege.Any(b => Op(b) == GameSession.AirspaceBattleNt) && siege.Any(b => b.Length > 4), "AirspaceBattle_RQ gets the fortress schedule (0x372D)");
 var field = await WorldSession("Ivar", darkCreation);

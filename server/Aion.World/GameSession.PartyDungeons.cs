@@ -11,7 +11,7 @@ namespace Aion.World;
 // (OBSERVED, AVION2: the mid bosses whose shares are in the cube), OdEnergyCubeReward_RQ/RS 0x5714/0x5715 (RS OBSERVED,
 // RQ between them CANDIDATE). The dungeon state family is OBSERVED at 0x6100-0x610b (catalogue 573-584 at
 // 0x5ec3 + index): DungeonState_NT 0x6100, DungeonCompleteResult_NT 0x6101, DungeonClearKillNpc_NT 0x6108, DungeonDeathLimit_NT 0x6109.
-// Their bodies are the usmap fields (CANDIDATE: none observed). PartyDungeonClear_NT 0x3A69 and middle-boss 0x3829 on
+// Their bodies are the usmap fields (CANDIDATE: none observed). PartyDungeonClear_NT 0x9333 (CANDIDATE) and middle-boss 0x3829 on
 // clear/kill; ContentsTicket weekly cap via tools/data/expedition.json (stub until ContentsTicket.dat export); death
 // count on 0x6109 after each fall. Frenzy on pin: MapEvent SetMapEnvState (boss phases), not the Oct 21 Hard timer.
 // Not modelled: cube ceiling, DungeonCoolTimes (0 in dat), formal DeathLimit rows (0 in dat).

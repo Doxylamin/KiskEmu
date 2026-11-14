@@ -827,7 +827,7 @@ public sealed partial class GameSession : IMapEventHost
             mapEventOut.Add(GamePackets.MapEventJoin(run.Id, run.Name, (byte)run.Status, run.StageOrder, run.WireStep, run.Goals, run.StartedMs, run.Variables));
             mapEventOut.Add(GamePackets.MapEventProgress(run.Id, (byte)run.Status, run.StageOrder, run.WireStep, run.Goals, run.Variables));
             ((IMapEventHost)this).ScriptBeat(run, "talk-ready", $"{objective.Type} {objective.Value(0)} key={t.Key} talk={talk}", mapEventNow);
-            Note($"wire AskNpc run={run.Id} step={run.StepOrder} goals=[{string.Join(',', run.Goals)}] sent 0x922e+0x922d 0x39cd rel={questRelation} 0x3641 key={t.Key} npc={t.NpcId} talk={talk}");
+            Note($"wire AskNpc run={run.Id} step={run.StepOrder} goals=[{string.Join(',', run.Goals)}] sent 0x922e+0x922d 0x8d92 rel={questRelation} 0x3641 key={t.Key} npc={t.NpcId} talk={talk}");
         }
         DebugMapEvent($"AskNpc ready {t.Name} ({t.NpcId}) talk={talk} rel={questRelation} appearAggressive=false");
         PlaytestDebug.Action("map_event_ask_npc_prepare",
@@ -1190,7 +1190,7 @@ public sealed partial class GameSession : IMapEventHost
 
     /// <summary>
     /// ChangeRelationshipEntity: the spawner's NPCs take the relationship (Monster: attackable, and fighting when aggressive;
-    /// NPC_Companion / NPC_Neutral: at peace), 0x39cd per visible NPC. Dormant ones spawn with it.
+    /// NPC_Companion / NPC_Neutral: at peace), 0x8d92 per visible NPC. Dormant ones spawn with it.
     /// </summary>
     void IMapEventHost.SetRelationship(string spawner, string relationship)
     {

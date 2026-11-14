@@ -4,7 +4,7 @@ namespace Aion.World;
 
 // Destructible environment objects (EnvObjData RelationshipEntity EnvObj_Destroy, 2752 placements: boxes, seals, Dredgion
 // remains). The client targets them as enemies and casts / auto-attacks them (0x3833, 0x3830, 0x3800) instead of sending
-// InteractEnvObj_RQ; each landed hit counts towards EnvObjData HitLimit (0x39ce), the last one kills it (0x3940, then 0x3635
+// InteractEnvObj_RQ; each landed hit counts towards EnvObjData HitLimit (0x8d93), the last one kills it (0x8d05, then 0x3635
 // state Dead reason Dead) and pays what using it pays: UseEnvObj quest objectives, map events, achievements.
 partial class GameSession
 {
@@ -69,7 +69,7 @@ partial class GameSession
         return [GamePackets.EnvObjHitCount(key, taken), .. BreakEnvObj(index, o, now), .. dropped];
     }
 
-    /// <summary>The object breaks: gone for <see cref="BrokenEnvObjRespawnMs"/>, its use credit still to be paid (QuestKillsAsync); 0x3940 and 0x3635 state Dead.</summary>
+    /// <summary>The object breaks: gone for <see cref="BrokenEnvObjRespawnMs"/>, its use credit still to be paid (QuestKillsAsync); 0x8d05 and 0x3635 state Dead.</summary>
     List<byte[]> BreakEnvObj(int index, WorldObject o, long now)
     {
         var key = WorldObjects.FirstKey + index;

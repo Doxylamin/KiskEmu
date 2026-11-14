@@ -152,10 +152,10 @@ public sealed class ExpeditionParityTests
         await GameSessionTestHelpers.LoadInventoryAsync(session, Now + 10);
         var create = await session.HandleAsync(new PacketWriter().U16(GameSession.DungeonRoomCreateRq).I32(600002).U8(0).ToArray(), Now + 20);
         Assert.True(GameSessionTestHelpers.HasOpcode(create, GameSession.DungeonRoomCreateRs));
-        Assert.Equal(0, BitConverter.ToInt32(create.First(b => GameSessionTestHelpers.Op(b) == GameSession.DungeonRoomCreateRs), 2));
+        Assert.Equal(0, BitConverter.ToUInt16(create.First(b => GameSessionTestHelpers.Op(b) == GameSession.DungeonRoomCreateRs), 2));
         var enter = await session.HandleAsync(new PacketWriter().U16(GameSession.PartyDungeonEnterRq).ToArray(), Now + 30);
         Assert.True(GameSessionTestHelpers.HasOpcode(enter, GameSession.PartyDungeonEnterRs));
-        Assert.Equal(0, BitConverter.ToInt32(enter.First(b => GameSessionTestHelpers.Op(b) == GameSession.PartyDungeonEnterRs), 2));
+        Assert.Equal(0, BitConverter.ToUInt16(enter.First(b => GameSessionTestHelpers.Op(b) == GameSession.PartyDungeonEnterRs), 2));
         Assert.NotEqual(0, session.InstanceKey);
     }
 

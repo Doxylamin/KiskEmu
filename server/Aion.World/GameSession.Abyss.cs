@@ -83,21 +83,22 @@ public sealed class AbyssTables
 
 // The Abyss (Reshanta: Dungeon.dat type Abyss, maps 20/22/23 — shared zones). PvP between races, Abyss Points (currency item),
 // ranking points/grades, a banked entry-time pool (weekly grant + cap from abyss.json), and active SeasonMission achievements
-// (Group_Season_G1_*_Abyss on the Oct 7 Global pin). AbyssPointUpdate_NT 0x3C06, RankingPointUpdate_NT 0x3B78 (type 1 Abyss,
-// CANDIDATE), WorldMapAbyssRankerInfo 0x3A17/0x3A18 (empty list). AirspaceBattle (fortress siege) 0x372C–0x373B: weekly wait/apply/battle/end
+// (Group_Season_G1_*_Abyss on the Oct 7 Global pin). AbyssPointUpdate_NT 0xffab {ap_acc i64, ap_acc_max i64} (OBSERVED at
+// every official entry, #74), RankingPointUpdate_NT 0xe273 {ERankingPointType u8 (Abyss 0), point i64} (usmap fields, CANDIDATE number
+// from the community fork), WorldMapAbyssRankerInfo 0x8ddc/0x8ddd (CANDIDATE number, fork; empty list). AirspaceBattle (fortress siege) 0x372C–0x373B: weekly wait/apply/battle/end
 // schedule, legion apply (persisted), presence + PvP siege scoring, CharAirspacePoint_NT, owner ProgressResult NT, siege AP (online + pending offline).
 public sealed partial class GameSession
 {
     public const int AbyssPointItemId = 930100003;
     public const int AbyssEntryStoneItemId = 930100019;
-    public const ushort AbyssPointUpdateNt = 0x3C06, RankingPointUpdateNt = 0x3B78, WorldMapAbyssRankerInfoRq = 0x3A17, WorldMapAbyssRankerInfoRs = 0x3A18,
+    public const ushort AbyssPointUpdateNt = 0xffab, RankingPointUpdateNt = 0xe273, WorldMapAbyssRankerInfoRq = 0x8ddc, WorldMapAbyssRankerInfoRs = 0x8ddd,
         PrevSeasonMissionInfoNt = 0x5682,
         AirspaceBattleRq = 0x372C, AirspaceBattleNt = 0x372D, AirspaceBattleUpdateNt = 0x372E, AirspaceBattleProgressResultNt = 0x372F,
         AirspaceBattleApplyRq = 0x3731, AirspaceBattleApplyRs = 0x3732, AirspaceBattleApplyNt = 0x3733,
         AirspaceBattleApplyCancelRq = 0x3734, AirspaceBattleApplyCancelRs = 0x3735, AirspaceBattleApplyCancelNt = 0x3736,
         AirspaceBattleApplyGuildListNt = 0x3737, CharAirspacePointNt = 0x3738, AirspaceBattleRankingRq = 0x3739, AirspaceBattleRankingRs = 0x373A,
         RiftOptionUpdateRq = 0x3652, RiftOptionUpdateRs = 0x3653, RiftOptionCharUpdateNt = 0x3654;
-    const int RankingTypeAbyss = 1;
+    const byte RankingTypeAbyss = 0;
 
     static AbyssTables Abyss => AbyssTables.Embedded;
 
@@ -186,8 +187,8 @@ public sealed partial class GameSession
         return entryRemainingMs;
     }
 
-    byte[] AbyssPointUpdate() => PacketWriter.Opcode(AbyssPointUpdateNt).I32((int)Math.Min(apAcc, int.MaxValue)).I32((int)Math.Min(Abyss.ApWeeklyCap, int.MaxValue)).ToArray();
-    byte[] RankingPointUpdate() => PacketWriter.Opcode(RankingPointUpdateNt).I32(RankingTypeAbyss).I32(abyssRankingPoint).ToArray();
+    byte[] AbyssPointUpdate() => PacketWriter.Opcode(AbyssPointUpdateNt).I64(apAcc).I64(Abyss.ApWeeklyCap).ToArray();
+    byte[] RankingPointUpdate() => PacketWriter.Opcode(RankingPointUpdateNt).U8(RankingTypeAbyss).I64(abyssRankingPoint).ToArray();
 
     byte[] PrevSeasonMissionInfo(long now)
     {
@@ -202,7 +203,7 @@ public sealed partial class GameSession
         return [PrevSeasonMissionInfo(now), AbyssPointUpdate(), RankingPointUpdate()];
     }
 
-    /// <summary>0x3A17 WorldMapAbyssRankerInfo_RQ: no rankers on the dev server yet.</summary>
+    /// <summary>0x8ddc WorldMapAbyssRankerInfo_RQ: no rankers on the dev server yet.</summary>
     List<byte[]> WorldMapAbyssRankerInfo(byte[] plain)
     {
         if (plain.Length < 2) return [];

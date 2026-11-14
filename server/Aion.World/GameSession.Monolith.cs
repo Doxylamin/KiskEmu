@@ -15,12 +15,10 @@ public sealed partial class GameSession
     readonly Dictionary<int, int> monolithResonateCounts = [];
     /// <summary>Monolith ids the client has been sent MonolithUnlock_NT for.</summary>
     readonly HashSet<int> monolithUnlocked = [];
-    /// <summary>Monolith env-object indexes spawned before LoadPost tab 2; flushed with 0x3baa/0x3bdf after.</summary>
+    /// <summary>Monolith env-object indexes spawned before LoadPost tab 2; flushed with 0xe30c/0xe341 after.</summary>
     readonly HashSet<int> pendingMonolithNoticeIndexes = [];
     /// <summary>After MonolithList_NT at entry the client accepts Monolith.dat ids in Info/Unlock (LoadPost tab 2 still re-flushes).</summary>
     bool monolithNoticesEnabled;
-    /// <summary>Monolith ids auto-resonated this session via proximity fallback (client never sent 0x3bab).</summary>
-    readonly HashSet<int> monolithProximityAutoResonated = [];
 
     static int MonolithTokenForRace(string? race) =>
         string.Equals(race, "Dark", StringComparison.OrdinalIgnoreCase) ? MonolithTokenDark : MonolithTokenLight;
@@ -35,18 +33,10 @@ public sealed partial class GameSession
     {
         monolithNoticesEnabled = false;
         pendingMonolithNoticeIndexes.Clear();
-        monolithProximityAutoResonated.Clear();
     }
 
-    /// <summary>Call after MonolithList_NT on world entry so the first 0x3634 can carry 0x3baa/0x3bdf (OBSERVED: before list, wrong env ids).</summary>
+    /// <summary>Call after MonolithList_NT on world entry so the first 0x3634 can carry 0xe30c/0xe341 (OBSERVED: before list, wrong env ids).</summary>
     void EnableMonolithNoticesAfterList() => monolithNoticesEnabled = true;
-
-    static bool PlayerWithinMonolithMarkerRange(Vector3d at, WorldObject monolith)
-    {
-        var dx = monolith.At.X - at.X;
-        var dy = monolith.At.Y - at.Y;
-        return dx * dx + dy * dy <= MonolithMarkerRange * MonolithMarkerRange;
-    }
 
     List<(int MonolithId, int ResonateCount)> MonolithListEntries()
     {
@@ -174,7 +164,8 @@ public sealed partial class GameSession
         });
         if (granted.Count == 0)
             return new(false, monolithId, tokenId, tokenCount, rewardId, prev, prev, []);
-        var next = prev + 1;
+        // OBSERVED 2026-11-12: six tokens took the count from 264 to 270 (one per token, not one per resonance).
+        var next = prev + tokenCount;
         SetMonolithResonateCount(monolithId, next);
         var replies = await InventoryChangesAsync(ct, IncreaseEnvObjReward, 0);
         var held = inventory.Values.Where(i => i.ItemId == rewardId).Sum(i => i.Count);
@@ -198,45 +189,14 @@ public sealed partial class GameSession
         if (!TryResolveMonolith(envObjKey, out _, out var monolith) || MonolithId(monolith) != monolithId)
             return [GamePackets.MonolithResonateReply(1, monolithId, 0, itemCount, MonolithResonateCount(monolithId), MonolithResonateCount(monolithId), [])];
         var result = await MonolithResonateCoreAsync(monolith, itemCount, ct);
-        var rewards = result.Ok ? [(result.RewardId, 1)] : Array.Empty<(int, int)>();
+        // OBSERVED: the reply's reward list is empty; the reward arrives as the bag change that follows.
         return
         [
-            GamePackets.MonolithResonateReply(result.Ok ? 0 : 1, result.MonolithId, result.TokenId, result.TokenCount, result.PrevCount, result.NewCount, rewards),
+            GamePackets.MonolithResonateReply(result.Ok ? 0 : 1, result.MonolithId, result.TokenId, result.TokenCount, result.PrevCount, result.NewCount, []),
             .. result.SideEffects,
         ];
     }
 
     Task<List<byte[]>> SyncMonolithAccountAchievementsAsync(byte[] plain) =>
         Task.FromResult<List<byte[]>>([GamePackets.SyncMonolithAccountAchievementsReply()]);
-
-    /// <summary>
-    /// When the client never offers MonolithResonate (LoadPost/Info timing or Usage=Monolith UI), complete HQ1102125 step 4 /
-    /// HQ2102105 step 5 if the player is at the stone with the race token.
-    /// </summary>
-    async Task<List<byte[]>> TryMonolithProximityResonateAsync(Vector3d at, CancellationToken ct)
-    {
-        if (questLog is null || Store is null || CharacterId is null || shownObjects.Count == 0) return [];
-        var objects = WorldObjects.ObjectsOn(worldMap);
-        var replies = new List<byte[]>();
-        foreach (var index in shownObjects)
-        {
-            if (index >= objects.Count) continue;
-            var monolith = objects[index];
-            if (!monolith.Monolith || FindMonolithCollectObjective(monolith) is not { Record: var record, Objective: var objective }) continue;
-            if (!PlayerWithinMonolithMarkerRange(at, monolith)) continue;
-            var monolithId = MonolithId(monolith);
-            if (monolithProximityAutoResonated.Contains(monolithId)) continue;
-            var book = questLog.Book.Find(record.Code)!;
-            var tokenId = MonolithTokenForRace(book.Race);
-            if (!storedItems.Values.Any(i => i.Location == "bag" && i.Quantity > 0 && i.TemplateId == tokenId)) continue;
-            var result = await MonolithResonateCoreAsync(monolith, 1, ct);
-            if (!result.Ok) continue;
-            monolithProximityAutoResonated.Add(monolithId);
-            IReadOnlyList<(int ItemId, int Count)> rewards = [(result.RewardId, 1)];
-            replies.Add(GamePackets.MonolithResonateReply(0, result.MonolithId, result.TokenId, result.TokenCount, result.PrevCount, result.NewCount, rewards));
-            replies.AddRange(result.SideEffects);
-            Note($"MonolithProximityResonate quest={record.Code} step={record.Step} monolith={monolithId} reward={objective.Item}");
-        }
-        return replies;
-    }
 }

@@ -96,7 +96,7 @@ public sealed class ExpeditionRoomMatchmakingTests
 
         var joined = await player.HandleAsync(new PacketWriter().U16(GameSession.DungeonRoomInstantJoinRq).I32(600002).Varint(0).U8(0).U8(0).ToArray(), Now + 1);
         Assert.True(GameSessionTestHelpers.HasOpcode(joined, GameSession.DungeonRoomInstantJoinRs));
-        Assert.Equal(0, BitConverter.ToInt32(joined.First(b => GameSessionTestHelpers.Op(b) == GameSession.DungeonRoomInstantJoinRs), 2));
+        Assert.Equal(0, BitConverter.ToUInt16(joined.First(b => GameSessionTestHelpers.Op(b) == GameSession.DungeonRoomInstantJoinRs), 2));
         Assert.NotNull(world.Social.DungeonRoomOf(player.WorldPlayer!));
     }
 

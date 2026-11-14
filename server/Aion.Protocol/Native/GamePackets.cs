@@ -1279,8 +1279,8 @@ public static class GamePackets
     /// <summary>A message by string key (ShowMessage / BroadCastingMessage directives). CANDIDATE: the caption's layout with ShowMessage.</summary>
     public static byte[] Message(string key) => EventFunc(FuncShowMessage, key, 1);
 
-    /// <summary>0x39cd RelationshipEntityUpdate_NT: key | ERelationshipEntity u8 (usmap fields; the enum byte as in the appears). CANDIDATE: no official sample.</summary>
-    public static byte[] RelationshipUpdate(int key, int relationship) => PacketWriter.Opcode(0x39cd).Varint(key).U8((byte)relationship).ToArray();
+    /// <summary>0x8d92 RelationshipEntityUpdate_NT: key | ERelationshipEntity u8. OBSERVED 2026-11-04 (x10, `928d f4f401 03`); the usmap number 0x39cd never occurs (#74).</summary>
+    public static byte[] RelationshipUpdate(int key, int relationship) => PacketWriter.Opcode(0x8d92).Varint(key).U8((byte)relationship).ToArray();
 
     /// <summary>0x9507 SocialActionStart_NT / 0x9508 SocialActionEnd_NT: NPC key, social action id, 1 start / 2 end, i32 0 (OBSERVED #10524/#10811).</summary>
     public static byte[] SocialAction(int key, int action, bool stop) =>
@@ -1344,10 +1344,10 @@ public static class GamePackets
 
     /// <summary>0x3635 EnvObjDespawn_NT: key, state, reason, despawn act (official sample e4ec03 01 01 00; widths CANDIDATE).</summary>
     public static byte[] EnvObjDespawn(int key, byte state = 1, byte reason = 1) => PacketWriter.Opcode(0x3635).Varint(key).U8(state).U8(reason).Varint(0).ToArray();
-    /// <summary>0x39ce UpdateEnvObjHitCount_NT: object key, the hits it has taken (usmap _key, _hit_count i32). CANDIDATE: no official sample.</summary>
-    public static byte[] EnvObjHitCount(int key, int hitCount) => PacketWriter.Opcode(0x39ce).Varint(key).I32(hitCount).ToArray();
-    /// <summary>0x3940 EnvObjDie_NT: object key (usmap: _key only). CANDIDATE: no official sample.</summary>
-    public static byte[] EnvObjDie(int key) => PacketWriter.Opcode(0x3940).Varint(key).ToArray();
+    /// <summary>0x8d93 UpdateEnvObjHitCount_NT: object key, the hits it has taken (i32). OBSERVED 2026-11-04 (x11, `938d bcd801 01000000`); was the usmap number 0x39ce (#74).</summary>
+    public static byte[] EnvObjHitCount(int key, int hitCount) => PacketWriter.Opcode(0x8d93).Varint(key).I32(hitCount).ToArray();
+    /// <summary>0x8d05 EnvObjDie_NT: object key. OBSERVED in all our captures (66x, `058d 8fd701`); was the usmap number 0x3940 (#74).</summary>
+    public static byte[] EnvObjDie(int key) => PacketWriter.Opcode(0x8d05).Varint(key).ToArray();
     /// <summary>0x363e InteractEnvObjStop_RS: result, object key (usmap; answering 0x363d). CANDIDATE.</summary>
     public static byte[] InteractEnvObjStopReply(int key, int result = 0) => PacketWriter.Opcode(0x363e).U16(result).Varint(key).ToArray();
     /// <summary>EnvObjSpawn for a quest object: relationship from EnvObjData (Kibelisks: 8 EnvObj_Light).</summary>
@@ -1391,11 +1391,15 @@ public static class GamePackets
 
     /// <summary>0x3637 InteractEnvObj_RS: result, a zero byte, object key, item key (official sample; field split CANDIDATE).</summary>
     public static byte[] InteractEnvObjReply(int key, int result = 0) => PacketWriter.Opcode(0x3637).U16(result).U8(0).Varint(key).Zeros(8).ToArray();
-    /// <summary>Empyrean Monolith UI (usmap DevPacketData_GameServer_Monolith*).</summary>
-    public const ushort MonolithListNt = 0x3ba9, MonolithInfoNt = 0x3baa, MonolithResonateRq = 0x3bab, MonolithResonateRs = 0x3bac,
-        MonolithUnlockNt = 0x3bdf, SyncMonolithAccountAchievementsRq = 0x3c07, SyncMonolithAccountAchievementsRs = 0x3c08;
+    /// <summary>
+    /// Empyrean Monolith UI (usmap DevPacketData_GameServer_Monolith*). Live opcodes: the usmap's 0x3ba9-0x3bdf and 0x3c07/0x3c08
+    /// + 0xa762 (#74). OBSERVED in our 2026-11-04 and 2026-11-12 captures: 0xe30b MonolithList_NT and 0xe30e MonolithResonate_RS;
+    /// the others are the same run (CANDIDATE, as in zaraza87/A2Core MonolithPackets.cs).
+    /// </summary>
+    public const ushort MonolithListNt = 0xe30b, MonolithInfoNt = 0xe30c, MonolithResonateRq = 0xe30d, MonolithResonateRs = 0xe30e,
+        MonolithUnlockNt = 0xe341, SyncMonolithAccountAchievementsRq = 0xe369, SyncMonolithAccountAchievementsRs = 0xe36a;
 
-    /// <summary>0x3ba9 MonolithList_NT: {monolith_id, resonate_count}[] (Common_MonolithStatus).</summary>
+    /// <summary>0xe30b MonolithList_NT: {monolith_id, resonate_count}[] (Common_MonolithStatus). OBSERVED: `03 e9030000 08010000 …`.</summary>
     public static byte[] MonolithList(IReadOnlyList<(int MonolithId, int ResonateCount)> entries)
     {
         var w = PacketWriter.Opcode(MonolithListNt).Varint(entries.Count);
@@ -1403,27 +1407,31 @@ public static class GamePackets
         return w.ToArray();
     }
 
-    /// <summary>0x3baa MonolithInfo_NT: monolith status + env object wire key.</summary>
+    /// <summary>0xe30c MonolithInfo_NT: monolith status + env object wire key.</summary>
     public static byte[] MonolithInfo(int monolithId, int resonateCount, int envObjKey) =>
         PacketWriter.Opcode(MonolithInfoNt).I32(monolithId).I32(resonateCount).I32(envObjKey).ToArray();
 
-    /// <summary>0x3bdf MonolithUnlock_NT: first sight of a monolith (Common_MonolithStatus).</summary>
+    /// <summary>0xe341 MonolithUnlock_NT: first sight of a monolith (Common_MonolithStatus).</summary>
     public static byte[] MonolithUnlock(int monolithId, int resonateCount) =>
         PacketWriter.Opcode(MonolithUnlockNt).I32(monolithId).I32(resonateCount).ToArray();
 
-    /// <summary>0x3bac MonolithResonate_RS (reward_items: item id, enchant u8, count i32).</summary>
+    /// <summary>
+    /// 0xe30e MonolithResonate_RS: u16 result, monolith i32, token item i32, tokens spent i32, count before i32, count after i32,
+    /// reward_items (item id, enchant u8, count i32). OBSERVED 2026-11-12: `0000 e9030000 6107aa25 06000000 08010000 0e010000 00`
+    /// (six tokens: 264 → 270, no reward items).
+    /// </summary>
     public static byte[] MonolithResonateReply(int result, int monolithId, int itemId, int itemCount, int prevResonateCount, int resonateCount,
         IReadOnlyList<(int ItemId, int Count)> rewardItems)
     {
-        var w = PacketWriter.Opcode(MonolithResonateRs).I32(result).I32(monolithId).I32(itemId).I32(itemCount).I32(prevResonateCount)
+        var w = PacketWriter.Opcode(MonolithResonateRs).U16(result).I32(monolithId).I32(itemId).I32(itemCount).I32(prevResonateCount)
             .I32(resonateCount).Varint(rewardItems.Count);
         foreach (var (id, count) in rewardItems) w.I32(id).U8(0).I32(count);
         return w.ToArray();
     }
 
-    /// <summary>0x3c08 SyncMonolithAccountAchievements_RS: result + reward item list (Common_RewardItem).</summary>
+    /// <summary>0xe36a SyncMonolithAccountAchievements_RS: u16 result + reward item list (Common_RewardItem).</summary>
     public static byte[] SyncMonolithAccountAchievementsReply(int result = 0) =>
-        PacketWriter.Opcode(SyncMonolithAccountAchievementsRs).I32(result).Varint(0).ToArray();
+        PacketWriter.Opcode(SyncMonolithAccountAchievementsRs).U16(result).Varint(0).ToArray();
 
     /// <summary>0x9232 EngravedTeleportArtifactList_NT: the Kibelisks the character has bound to.</summary>
     public static byte[] EngravedTeleportArtifacts(IReadOnlyList<int> ids)
