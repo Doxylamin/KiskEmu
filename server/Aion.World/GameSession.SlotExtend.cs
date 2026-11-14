@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Aion.Protocol.Native;
 
 namespace Aion.World;
@@ -17,7 +18,9 @@ namespace Aion.World;
 // / storage_slot_count_per_line). The bag starts with 8 lines (inventory_default_slot_line_count), both warehouses with 5;
 // each goes up to 80 lines. Kina per expansion: the bag's n-th from InventorySlot SlotExtensionCostList (10 steps); a
 // warehouse's next line from StorageExtensionCost (SlotLineNum 1-36; lines 1-5 are the free default ones). The counts persist
-// in the character setting "slot_extends" and go out as ItemDepotList_RS's six trailing counts.
+// in the character setting "slot_extends", except the account warehouse's (container 2, kStorage), which every character of
+// the account shares: those are the account setting "account_storage_extends" [by item, by Kina]. All six go out as
+// ItemDepotList_RS's trailing counts.
 public sealed partial class GameSession
 {
     public const ushort SlotExtendRq = 0x8d4f, SlotExtendRs = 0x8d50, SlotExtendNt = 0x8d51;
@@ -39,15 +42,15 @@ public sealed partial class GameSession
         20_000, 25_000, 35_000, 45_000, 60_000, 80_000, 150_000, 150_000, 200_000, 300_000, 400_000, 550_000, 700_000, 950_000,
         1_300_000, 1_800_000, 2_500_000, 3_300_000, 4_500_000, 6_200_000, 8_400_000];
 
-    const string SlotExtendsSetting = "slot_extends";
+    const string SlotExtendsSetting = "slot_extends", AccountStorageExtendsSetting = "account_storage_extends";
 
     /// <summary>ItemDepotList_RS order: bag by item, bag by Kina, storage by Kina, storage by item, character storage by Kina,
     /// character storage by item.</summary>
     int[] slotExtends = new int[6];
     public IReadOnlyList<int> SlotExtends => slotExtends;
 
-    /// <summary>The (by item, by Kina) indexes into slotExtends for an EItemContainerType (kInventory 1, kStorage 2,
-    /// kCharacterStorage 15); null: not expandable.</summary>
+    /// <summary>The (by item, by Kina) indexes into slotExtends for an EItemContainerType (kInventory 1, kStorage 2 = the
+    /// account warehouse, kCharacterStorage 15 = the character's); null: not expandable.</summary>
     static (int Item, int Kina)? SlotExtendIndex(byte container) => container switch
     {
         1 => (0, 1),
@@ -78,6 +81,19 @@ public sealed partial class GameSession
     }
 
     void LoadSlotExtends(int[]? stored) => slotExtends = stored is { Length: 6 } ? stored : new int[6];
+
+    /// <summary>The account warehouse's counts (by item, by Kina), shared by the account's characters.</summary>
+    void LoadAccountStorageExtends(int[]? stored) => (slotExtends[3], slotExtends[2]) = stored is [var byItem, var byKina] ? (byItem, byKina) : (0, 0);
+
+    async Task<bool> LoadAccountSettingsAsync(INativeCharacterStore store, CancellationToken ct)
+    {
+        var settings = await store.AccountSettingsAsync(ct);
+        int[]? extends = null;
+        try { extends = settings.TryGetValue(AccountStorageExtendsSetting, out var v) ? v.Deserialize<int[]>() : null; }
+        catch (JsonException) { }
+        LoadAccountStorageExtends(extends);
+        return true;
+    }
 
     async Task<List<byte[]>> SlotExtendAsync(byte[] plain, CancellationToken ct)
     {
@@ -117,7 +133,9 @@ public sealed partial class GameSession
         if (paid.Count == 0) return [Reply(SlotExtendFail), .. await InventoryChangesAsync(ct, 0, 0)];
 
         slotExtends[uid != 0 ? at.Item : at.Kina]++;
-        await SaveSettingAsync(SlotExtendsSetting, slotExtends, ct);
+        if (container == InventoryItem.AccountStorage)
+            await Stored(async () => { await store.SaveAccountSettingAsync(AccountStorageExtendsSetting, JsonSerializer.SerializeToElement(new[] { slotExtends[at.Item], slotExtends[at.Kina] }), ct); return []; });
+        else await SaveSettingAsync(SlotExtendsSetting, slotExtends, ct);
         var nt = PacketWriter.Opcode(SlotExtendNt).U8(container).I64(uid)
             .U8((byte)slotExtends[at.Item]).U8((byte)slotExtends[at.Kina]).ToArray();
         var reason = container == InventoryItem.Bag ? DecreaseExtendInventory : DecreaseExtendStorage;

@@ -237,7 +237,7 @@ public sealed class EconomyPacketTests
         Assert.Equal(6, store.Items.Single(i => i.WireId == key).Quantity);
         Assert.Contains(store.Items, i => i.Location == "bag" && i.TemplateId == LifePotion && i.Quantity == 4);
 
-        // The rest comes back to the bag, then the whole stack is deposited into account storage (container 0x0f).
+        // The rest comes back to the bag, then the whole stack is deposited into account storage (container 2).
         var rest = await session.HandleAsync(ItemStore(GameSession.ItemTakeOutRq, 0, InventoryItem.Storage, (key, 6)), Now + 2);
         Assert.Equal(0, rest[0][7]);
         Assert.Equal("bag", store.Items.Single(i => i.WireId == key).Location);

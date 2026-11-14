@@ -1698,6 +1698,26 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await t.CommitAsync(ct); return true;
     }
 
+    public async Task<IReadOnlyDictionary<string, JsonElement>?> AccountSettingsAsync(VerifiedAccount account, CancellationToken ct=default)
+    {
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        var settings=new Dictionary<string, JsonElement>();
+        await using(var q=Query(c,t,"SELECT name,value::text FROM game.account_settings WHERE account_id=$1",account.AccountId))
+        {
+            await using var r=await q.ExecuteReaderAsync(ct);
+            while(await r.ReadAsync(ct)) settings[r.GetString(0)]=JsonDocument.Parse(r.GetString(1)).RootElement.Clone();
+        }
+        await t.CommitAsync(ct); return settings;
+    }
+
+    public async Task<bool> SaveAccountSettingAsync(VerifiedAccount account, string name, JsonElement value, CancellationToken ct=default)
+    {
+        if(name.Length is 0 or >32 || name.Any(ch=>ch is not (>= 'a' and <= 'z' or '_')) || value.GetRawText().Length>16384) throw new GameplayException("invalid_setting");
+        await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
+        await Execute(c,t,"INSERT INTO game.account_settings VALUES($1,$2,$3) ON CONFLICT(account_id,name) DO UPDATE SET value=$3",ct,account.AccountId,name,value);
+        await t.CommitAsync(ct); return true;
+    }
+
     public async Task<bool> SaveQuickSlotAsync(VerifiedAccount account, Guid character, int number, QuickSlotRecord? slot, CancellationToken ct=default)
     {
         if(number is <0 or >255 || slot is { Type: <0 or >4 }) throw new GameplayException("invalid_quick_slot");

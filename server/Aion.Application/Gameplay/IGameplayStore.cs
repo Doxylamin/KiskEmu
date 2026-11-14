@@ -372,6 +372,10 @@ public interface IGameplayStore
     Task<IReadOnlyDictionary<string, JsonElement>?> CharacterSettingsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<string, JsonElement>?>(new Dictionary<string, JsonElement>());
     Task<bool> SaveCharacterSettingAsync(VerifiedAccount account, Guid character, string name, JsonElement value, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>Per-account settings by name (game.account_settings), shared by the account's characters on this world.</summary>
+    Task<IReadOnlyDictionary<string, JsonElement>?> AccountSettingsAsync(VerifiedAccount account, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<string, JsonElement>?>(new Dictionary<string, JsonElement>());
+    Task<bool> SaveAccountSettingAsync(VerifiedAccount account, string name, JsonElement value, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>Stores a hotbar slot (replacing it), or clears it when <paramref name="slot"/> is null for that number.</summary>
     Task<bool> SaveQuickSlotAsync(VerifiedAccount account, Guid character, int number, QuickSlotRecord? slot, CancellationToken ct = default);
     /// <summary>Grants looted items (the latest catalogue build; unknown templates are skipped). False when the character is not the account's.</summary>

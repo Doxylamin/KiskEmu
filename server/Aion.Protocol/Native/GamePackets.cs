@@ -52,10 +52,11 @@ public enum CharPoint : byte { Hp, Mp, Ap, Sp, Dp, Op, Fp, MaxHp, MaxMp, MaxAp, 
 public sealed record InventoryItem(long Key, int ItemId, long Count, byte Container, int Slot, EquipDetail? Detail = null,
     bool Locked = false, string Maker = "", long ExpireTime = 0, bool ExpireFixed = false)
 {
-    // EItemContainerType. Official round 1 (2026-11-12) stored into containers 0x02 and 0x0f; which is the personal
-    // warehouse and which the account warehouse is INFERRED (2 = personal, as our login inventory already uses, so
-    // 0x0f = account storage), not shown by the trace. An official warehouse-deposit capture will settle it (forge issue #2).
-    public const byte Bag = 1, Storage = 2, AccountStorage = 0x0f, Equipped = 11;
+    // EItemContainerType (usmap): kInventory 1, kStorage 2, kEquipInventory 11, kCharacterStorage 15. OBSERVED live
+    // 2026-11-14 (game version 3533, our server's trace): the client's "server storage" tab deposits and takes out with
+    // container 2, so 2 is the account warehouse (location 'account_storage', shared by the account's characters) and
+    // 15 the character's own warehouse (location 'storage'), as the usmap names them (forge issue #2).
+    public const byte Bag = 1, Storage = 0x0f, AccountStorage = 2, Equipped = 11;
 
     /// <summary>Whether two wire snapshots are the same for 0x561b diffing (ignores reference identity on Detail lists).</summary>
     public bool WireSameAs(InventoryItem other) =>

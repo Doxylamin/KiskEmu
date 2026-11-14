@@ -118,8 +118,8 @@ public sealed partial class GameSession
     }
 
     /// <summary>
-    /// 0x5642 ItemStore_RQ: bag stacks (item uid -> count) are deposited into the personal warehouse (container 2) or the
-    /// account warehouse (container 0x0f, shared across the account). Answered 0x5643, after the item changes (0x561b).
+    /// 0x5642 ItemStore_RQ: bag stacks (item uid -> count) are deposited into the personal warehouse (container 15) or the
+    /// account warehouse (container 2, shared across the account). Answered 0x5643, after the item changes (0x561b).
     /// </summary>
     async Task<List<byte[]>> StoreItemsAsync(byte[] plain, CancellationToken ct)
     {

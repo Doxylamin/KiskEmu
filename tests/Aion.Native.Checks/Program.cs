@@ -1890,7 +1890,7 @@ Check(Op(takeDepot[0]) == GameSession.ItemTakeOutRs && takeDepot[0][2] == 0x10 &
       && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag" }, "0x5644 ItemTakeOut returns the stack to the bag (flag 0x10)");
 var storeAccount = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.AccountStorage).ToArray(), Now + 7540);
 Check(storeAccount[0][7] == 0 && storeAccount[0][^1] == InventoryItem.AccountStorage && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "account_storage" },
-      "0x5642 ItemStore deposits into account storage (container 0x0f)");
+      "0x5642 ItemStore deposits into account storage (container 2)");
 // Mail: staff mail (the builder's Mail command) stores a post for a character by name; LoadPost lists it, TakePost grants
 // the attachment once, DeletePost removes it afterwards.
 var mailed = await staffSession.SendMailAsync(staffSession.CharacterName!, "Welcome aboard", "Welcome aboard", [(530126003, 2)], CancellationToken.None);

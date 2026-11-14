@@ -99,6 +99,32 @@ public sealed class SlotExtendTests
     }
 
     [Fact]
+    public async Task Account_warehouse_expansion_is_shared_by_the_account()
+    {
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
+        store.Items.Add(FakeCharacterStore.BagItem(GameSession.KinaItemId, 10_000, 941));
+        await session.InventoryChangesAsync(default);
+
+        var replies = await session.HandleAsync(Request(InventoryItem.AccountStorage), Now);
+
+        Assert.Equal(GameSession.SlotExtendSuccess, Result(replies[0]));
+        Assert.Equal(new[] { 0, 1 }, store.AccountSettings["account_storage_extends"].Deserialize<int[]>()!);
+        Assert.False(store.Settings.ContainsKey("slot_extends"));
+        // Another character of the account (a new session on the same account's settings) sees the extra line.
+        var other = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
+        Assert.Equal(1, other.SlotExtends[2]);
+        Assert.Equal((GameSession.StorageDefaultLines + 1) * GameSession.SlotsPerLine, other.SlotCapacity(InventoryItem.AccountStorage));
+    }
+
+    [Fact]
+    public void Containers_follow_the_client_server_storage_tab_is_2()
+    {
+        Assert.Equal(2, InventoryItem.AccountStorage);
+        Assert.Equal(15, InventoryItem.Storage);
+    }
+
+    [Fact]
     public void Depot_list_carries_the_six_counts()
     {
         var packet = GamePackets.ItemDepotList([], [1, 2, 3, 4, 5, 6]);

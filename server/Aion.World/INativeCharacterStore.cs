@@ -159,6 +159,10 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<IReadOnlyDictionary<string, JsonElement>> CharacterSettingsAsync(Guid character, CancellationToken ct) =>
         Task.FromResult<IReadOnlyDictionary<string, JsonElement>>(new Dictionary<string, JsonElement>());
     Task<bool> SaveCharacterSettingAsync(Guid character, string name, JsonElement value, CancellationToken ct) => Task.FromResult(false);
+    /// <summary>Per-account settings by name, shared by the signed-in account's characters (the account warehouse's expansions).</summary>
+    Task<IReadOnlyDictionary<string, JsonElement>> AccountSettingsAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<string, JsonElement>>(new Dictionary<string, JsonElement>());
+    Task<bool> SaveAccountSettingAsync(string name, JsonElement value, CancellationToken ct) => Task.FromResult(false);
     /// <summary>Grants looted items.</summary>
     Task<bool> GrantLootAsync(Guid character, IReadOnlyList<(int TemplateId, long Count)> items, CancellationToken ct) => Task.FromResult(false);
     /// <summary>Stores level and experience (per level).</summary>

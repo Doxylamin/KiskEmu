@@ -1071,6 +1071,17 @@ public sealed partial class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
+    public Dictionary<string, JsonElement> AccountSettings { get; } = [];
+
+    public Task<IReadOnlyDictionary<string, JsonElement>> AccountSettingsAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<string, JsonElement>>(AccountSettings);
+
+    public Task<bool> SaveAccountSettingAsync(string name, JsonElement value, CancellationToken ct)
+    {
+        AccountSettings[name] = value.Clone();
+        return Task.FromResult(true);
+    }
+
     public Task<bool> MoveItemToContainerAsync(Guid character, Guid item, long revision, string location, int slot, CancellationToken ct)
     {
         var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location is "bag" or "storage" or "account_storage");

@@ -959,7 +959,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         IReadOnlyDictionary<long, InventoryItem>? shown = null, IReadOnlyDictionary<long, int>? hints = null)
     {
         var result = new List<InventoryItem>();
-        // Free slots are laid out per container: the bag (1) and the warehouse (2, location 'storage').
+        // Free slots are laid out per container: the bag (1) and the character warehouse (15, location 'storage').
         var used = new Dictionary<string, HashSet<int>> { ["bag"] = [], ["storage"] = [], ["account_storage"] = [] };
         foreach (var i in items.Where(i => i.Location is "bag" or "storage" && i.Slot is not null)) used[i.Location].Add(i.Slot!.Value);
         var kept = new Dictionary<long, int>();
@@ -1410,6 +1410,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 await LoadQuickSlotsAsync(store, state.Summary.CharacterId, ct);
                 var settings = await store.CharacterSettingsAsync(state.Summary.CharacterId, ct);
                 LoadSettings(settings);
+                await LoadAccountSettingsAsync(store, ct);
                 LoadSkillItemPoints(settings);
                 LoadCustomNpcFlags(settings);
                 LoadBuffSettings(settings, now);

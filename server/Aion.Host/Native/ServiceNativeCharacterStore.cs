@@ -905,6 +905,18 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.SaveCharacterSettingAsync(identity.Account, character, name, value, ct);
     }
 
+    public async Task<IReadOnlyDictionary<string, JsonElement>> AccountSettingsAsync(CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.AccountSettingsAsync(identity.Account, ct) ?? new Dictionary<string, JsonElement>();
+    }
+
+    public async Task<bool> SaveAccountSettingAsync(string name, JsonElement value, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.SaveAccountSettingAsync(identity.Account, name, value, ct);
+    }
+
     public async Task<bool> SaveQuickSlotAsync(Guid character, int number, QuickSlotRecord? slot, CancellationToken ct)
     {
         await ValidateAsync(ct);
