@@ -172,14 +172,14 @@ public sealed partial class GameSession
         return w.U8(reason).ToArray();
     }
 
-    static int TicketFailId(DungeonInfo room) => Expeditions.TicketFor(room)?.Id ?? 0;
+    int TicketFailId(DungeonInfo room, long now) => MissingContentTicket(MapEventData.DungeonIdOfMap(room.Map), now);
 
     bool RoomEntryAllowed(DungeonInfo room, long now, out int ticketId, bool allowInCopy = false)
     {
         ticketId = 0;
         if ((!allowInCopy && instanceKey != 0) || resources is null || reloading || dead) return false;
         if (MapEventData.Dungeon(room.Map) is null || room.Type != "Party") return false;
-        if (!IsAdmin && !MeetsEntry(room, now, out _)) { ticketId = TicketFailId(room); return false; }
+        if (!IsAdmin && !MeetsEntry(room, now, out _)) { ticketId = TicketFailId(room, now); return false; }
         return true;
     }
 

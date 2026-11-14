@@ -75,6 +75,8 @@ public sealed record AirspaceWorldRecord(IReadOnlyList<AirspaceOwnerRecord> Owne
 public sealed record WorldResetCursorRecord(long DailyBoundaryMs, long WeeklyBoundaryMs);
 /// <summary>ContentsReset reward limit counter (migration 081).</summary>
 public sealed record RewardLimitRecord(int LimitType, string Period, int Count);
+/// <summary>A content ticket's count and when it held, Unix ms; recharges since are added on read (migration 110).</summary>
+public sealed record ContentTicketRecord(int TicketId, int Remaining, long UpdatedMs);
 /// <summary>Instance lockout until Unix ms (migration 082).</summary>
 public sealed record DungeonCooltimeRecord(int DungeonId, long UntilMs);
 /// <summary>Craft recipe periodic limit (migration 083): target 1 char, 2 account, 3 world.</summary>
@@ -333,11 +335,11 @@ public interface IGameplayStore
     Task<bool> SaveDaevanionAsync(VerifiedAccount account, Guid character, DaevanionProgress progress, CancellationToken ct = default) => Task.FromResult(false);
     Task<IReadOnlyList<BossChallengeRecord>> BossChallengesAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<BossChallengeRecord>>([]);
     Task<bool> SaveBossChallengeAsync(VerifiedAccount account, Guid character, BossChallengeRecord record, CancellationToken ct = default) => Task.FromResult(false);
-    /// <summary>Expedition contents tickets consumed this period (ticket id, period key, count used).</summary>
-    Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<(int, string, int)>>([]);
-    /// <summary>Replaces the character's stored expedition ticket rows (in-memory flush from the world session).</summary>
-    Task<bool> SaveExpeditionTicketsAsync(VerifiedAccount account, Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct = default) =>
+    /// <summary>The character's content ticket counts (ContentsTicket.dat Count tickets).</summary>
+    Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ContentTicketRecord>>([]);
+    /// <summary>Stores these content ticket rows (insert or replace by ticket id; other rows are kept).</summary>
+    Task<bool> SaveContentTicketsAsync(VerifiedAccount account, Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct = default) =>
         Task.FromResult(false);
     Task<AbyssRecord?> AbyssAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<AbyssRecord?>(null);
     Task<bool> SaveAbyssAsync(VerifiedAccount account, Guid character, AbyssRecord record, CancellationToken ct = default) => Task.FromResult(false);

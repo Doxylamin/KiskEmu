@@ -759,16 +759,16 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.SaveBossChallengeAsync(identity.Account, character, record, ct);
     }
 
-    public async Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(Guid character, CancellationToken ct)
+    public async Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(Guid character, CancellationToken ct)
     {
         await ValidateAsync(ct);
-        return await game.ExpeditionTicketsAsync(identity.Account, character, ct);
+        return await game.ContentTicketsAsync(identity.Account, character, ct);
     }
 
-    public async Task<bool> SaveExpeditionTicketsAsync(Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct)
+    public async Task<bool> SaveContentTicketsAsync(Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct)
     {
         await ValidateAsync(ct);
-        return await game.SaveExpeditionTicketsAsync(identity.Account, character, rows, ct);
+        return await game.SaveContentTicketsAsync(identity.Account, character, rows, ct);
     }
 
     public async Task<AbyssRecord?> AbyssAsync(Guid character, CancellationToken ct)

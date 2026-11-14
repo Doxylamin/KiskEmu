@@ -12,7 +12,7 @@ namespace Aion.World;
 // RQ between them CANDIDATE). The dungeon state family is OBSERVED at 0x6100-0x610b (catalogue 573-584 at
 // 0x5ec3 + index): DungeonState_NT 0x6100, DungeonCompleteResult_NT 0x6101, DungeonClearKillNpc_NT 0x6108, DungeonDeathLimit_NT 0x6109.
 // Their bodies are the usmap fields (CANDIDATE: none observed). PartyDungeonClear_NT 0x9333 (CANDIDATE) and middle-boss 0x3829 on
-// clear/kill; ContentsTicket weekly cap via tools/data/expedition.json (stub until ContentsTicket.dat export); death
+// clear/kill; the entry tickets and the cube's energy cost in GameSession.ContentTickets.cs; death
 // count on 0x6109 after each fall. Frenzy on pin: MapEvent SetMapEnvState (boss phases), not the Oct 21 Hard timer.
 // Not modelled: cube ceiling, DungeonCoolTimes (0 in dat), formal DeathLimit rows (0 in dat).
 
@@ -101,8 +101,8 @@ public sealed partial class GameSession
             if (room.MaxLevel > 0 && level > room.MaxLevel) { why = $"level {level} > {room.MaxLevel}"; return false; }
             var gate = Patch20261028.EntryItemLevel(room);
             if (gate > 0 && EquipItemLevel() < gate) { why = $"item level {EquipItemLevel()} < {gate}"; return false; }
-            if (!HasExpeditionTicket(room, now, out var ticket)) { why = $"no {ticket?.Name ?? "expedition"} entries left"; return false; }
         }
+        if (!ContentTicketsAllowEntry(room, now, out why)) return false;
         if (room.QuestGate is { Length: > 0 } gates)
         {
             if (questLog is null && room.Type == "InstanceLayer") { why = "quest gate (no journal)"; return false; }
@@ -245,7 +245,8 @@ public sealed partial class GameSession
 
     /// <summary>
     /// The final boss's cube reward: on the cube object's use, or on OdEnergyCubeReward_RQ {reward count u8}; once per
-    /// player per run (RewardOdEnergyCube ConsumeMaxCount 1; the 20 common tickets it consumes are not modelled). The
+    /// player per run (RewardOdEnergyCube ConsumeMaxCount 1; its ConsumeTicketCount of ticket 60000001 is taken first, result 1
+    /// when not enough is left: GameSession.ContentTickets.cs). The
     /// request gets OdEnergyCubeReward_RS {result, count, [{item, count}]} with the items (the same ones again when the
     /// object use already paid them); result 1 when the boss is still alive or there is no cube here.
     /// </summary>
@@ -259,11 +260,15 @@ public sealed partial class GameSession
             return plain is null ? [] : [PacketWriter.Opcode(CubeRewardRs).U16(1).U8(0).Varint(0).ToArray()];
         if (!c.CubeTaken.TryGetValue(playerKey, out var items))
         {
+            if (!PayCubeTicket(c.DungeonId, now))
+                return plain is null ? [] : [PacketWriter.Opcode(CubeRewardRs).U16(1).U8(0).Varint(0).ToArray()];
             items = RollRewards(table, rng);
             c.CubeTaken[playerKey] = items;
             pendingRewards.Add(items);
         }
-        var replies = await GrantPendingRewardsAsync(now, ct);
+        // The energy first (OBSERVED in the community fork's recordings: 0x610c before the items).
+        var replies = ContentTicketUpdates();
+        replies.AddRange(await GrantPendingRewardsAsync(now, ct));
         if (plain is null) return replies;
         // _reward_count echoes the request's (OBSERVED 2 in all 9 official replies, 2026-11-02..05; 1 when the object was used).
         var rewardCount = plain is { Length: >= 3 } ? plain[2] : (byte)1;
