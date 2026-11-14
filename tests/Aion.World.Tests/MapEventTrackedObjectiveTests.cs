@@ -101,6 +101,51 @@ public sealed class MapEventTrackedObjectiveTests
         Assert.Equal(99, run.StepOrder);
     }
 
+    const string Wave = "DungeonWave_0001_Wave_L_B_03";
+
+    [Fact]
+    public void Wave_spawns_its_orders_in_turn_and_clears()
+    {
+        var orders = MapEventTables.Embedded.Wave(Wave)!;
+        Assert.Equal(10, orders.Length);
+        var host = new Host();
+        var step = new MapEventStep(1, [new MapEventDirective(1, "StartWave", [Wave])], [O(1, "ClearWave", Wave)], []);
+        var run = Run(host, step);
+        Assert.Equal([$"Spawn {orders[0][0]}"], host.Calls);
+        // The first order alive: nothing more spawns, and no fallback ends the wave.
+        TickTo(run, 500, 40_000);
+        Assert.Single(host.Calls);
+        Assert.Equal(1, run.StepOrder);
+        long t = 40_000;
+        for (var i = 0; i < orders.Length; i++)
+        {
+            Assert.Equal(orders[i], run.WaveSpawners(Wave));
+            host.Alive.ExceptWith(orders[i]);
+            run.Tick(t += 500);
+            if (i + 1 < orders.Length) Assert.Contains($"Spawn {orders[i + 1][0]}", host.Calls);
+        }
+        TickTo(run, t, t + 2_000);
+        Assert.Equal(99, run.StepOrder);
+    }
+
+    [Fact]
+    public void Clear_wave_nobody_starts_runs_from_its_step()
+    {
+        var host = new Host();
+        var run = Run(host, new MapEventStep(1, [], [O(1, "ClearWave", Wave)], []));
+        Assert.Equal([$"Spawn {MapEventTables.Embedded.Wave(Wave)![0][0]}"], host.Calls);
+        Assert.Equal(1, run.StepOrder);
+    }
+
+    [Fact]
+    public void Unknown_wave_keeps_the_fallback()
+    {
+        var host = new Host();
+        var run = Run(host, new MapEventStep(1, [], [O(1, "ClearWave", "ReforgedAbyss_Hard_01_Wave_01")], []));
+        TickTo(run, 500, 31_000);
+        Assert.Equal(99, run.StepOrder);
+    }
+
     [Fact]
     public void Score_steps_carry_their_unified_lists()
     {

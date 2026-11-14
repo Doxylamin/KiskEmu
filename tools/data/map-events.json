@@ -490826,14 +490826,50 @@
       "FE_SA_D_A_2_Envobj_Portal_02_Boss",
       "FE_SA_D_A_2_Envobj_Rift_01_Wave1",
       "FE_SA_D_A_2_Envobj_Rift_01_Wave2",
-      "FE_SA_D_A_2_Envobj_Rift_01_Wave3"
+      "FE_SA_D_A_2_Envobj_Rift_01_Wave3",
+      "FE_SA_D_A_2_Wave1_1_1",
+      "FE_SA_D_A_2_Wave1_1_2",
+      "FE_SA_D_A_2_Wave1_2",
+      "FE_SA_D_A_2_Wave1_3_1",
+      "FE_SA_D_A_2_Wave1_3_2",
+      "FE_SA_D_A_2_Wave1_4",
+      "FE_SA_D_A_2_Wave2_1_1",
+      "FE_SA_D_A_2_Wave2_1_2",
+      "FE_SA_D_A_2_Wave2_2",
+      "FE_SA_D_A_2_Wave2_3_1",
+      "FE_SA_D_A_2_Wave2_3_2",
+      "FE_SA_D_A_2_Wave2_4",
+      "FE_SA_D_A_2_Wave3_1_1",
+      "FE_SA_D_A_2_Wave3_1_2",
+      "FE_SA_D_A_2_Wave3_2",
+      "FE_SA_D_A_2_Wave3_3_1",
+      "FE_SA_D_A_2_Wave3_3_2",
+      "FE_SA_D_A_2_Wave3_4"
     ],
     "111003": [
       "FE_SA_D_A_3_Boss",
       "FE_SA_D_A_3_Envobj_Portal_02_Boss",
       "FE_SA_D_A_3_Envobj_Rift_01_Wave1",
       "FE_SA_D_A_3_Envobj_Rift_01_Wave2",
-      "FE_SA_D_A_3_Envobj_Rift_01_Wave3"
+      "FE_SA_D_A_3_Envobj_Rift_01_Wave3",
+      "FE_SA_D_A_3_Wave1_1_1",
+      "FE_SA_D_A_3_Wave1_1_2",
+      "FE_SA_D_A_3_Wave1_2",
+      "FE_SA_D_A_3_Wave1_3_1",
+      "FE_SA_D_A_3_Wave1_3_2",
+      "FE_SA_D_A_3_Wave1_4",
+      "FE_SA_D_A_3_Wave2_1_1",
+      "FE_SA_D_A_3_Wave2_1_2",
+      "FE_SA_D_A_3_Wave2_2",
+      "FE_SA_D_A_3_Wave2_3_1",
+      "FE_SA_D_A_3_Wave2_3_2",
+      "FE_SA_D_A_3_Wave2_4",
+      "FE_SA_D_A_3_Wave3_1_1",
+      "FE_SA_D_A_3_Wave3_1_2",
+      "FE_SA_D_A_3_Wave3_2",
+      "FE_SA_D_A_3_Wave3_3_1",
+      "FE_SA_D_A_3_Wave3_3_2",
+      "FE_SA_D_A_3_Wave3_4"
     ],
     "111004": [
       "E_D1_FQ_BrokenWoodenBarrel_04",
@@ -490856,7 +490892,35 @@
       "N_D1_Q_Popokiki_03"
     ],
     "111005": [
-      "World_D_A_Defence_01_SupplyBox_1"
+      "World_D_A_Defence_01_SupplyBox_1",
+      "World_D_A_Defence_01_SupplyBox_2",
+      "World_D_A_Defence_01_SupplyBox_3",
+      "World_D_A_Defence_01_SupplyBox_4",
+      "World_D_A_Defence_01_Wave1_1",
+      "World_D_A_Defence_01_Wave1_2",
+      "World_D_A_Defence_01_Wave2_1",
+      "World_D_A_Defence_01_Wave2_2",
+      "World_D_A_Defence_01_Wave4_1",
+      "World_D_A_Defence_01_Wave4_2",
+      "World_D_A_Defence_01_Wave4_3",
+      "World_D_A_Defence_01_Wave4_4",
+      "World_D_A_Defence_01_Wave5_1",
+      "World_D_A_Defence_01_Wave5_2",
+      "World_D_A_Defence_01_Wave5_3",
+      "World_D_A_Defence_01_Wave5_4",
+      "World_D_A_Defence_01_Wave6_1",
+      "World_D_A_Defence_01_Wave6_2",
+      "World_D_A_Defence_01_Wave6_3",
+      "World_D_A_Defence_01_Wave6_4",
+      "World_D_A_Defence_01_Wave9_1",
+      "World_D_A_Defence_01_WaveA1_1",
+      "World_D_A_Defence_01_WaveA1_2",
+      "World_D_A_Defence_01_WaveB1_1",
+      "World_D_A_Defence_01_WaveB1_2",
+      "World_D_A_Defence_01_WaveB2_1",
+      "World_D_A_Defence_01_WaveB2_2",
+      "World_D_A_Defence_01_WaveB3_1",
+      "World_D_A_Defence_01_WaveB4_1"
     ],
     "111006": [
       "M_D1_WGC_AltKnife_03_02_1",
@@ -492815,21 +492879,75 @@
     "400001": [
       "Boss_1_SealAdvanced_0001",
       "R1_EliteMonster_1_SealAdvanced_0001",
+      "R2_Multi_Wave_1_1_SealAdvanced_0001",
+      "R2_Multi_Wave_1_2_SealAdvanced_0001",
+      "R2_Multi_Wave_1_3_SealAdvanced_0001",
       "R3_EliteMonster_1_SealAdvanced_0001"
     ],
     "400002": [
       "Boss_1_SealAdvanced_0001",
       "R1_EliteMonster_1_SealAdvanced_0001",
+      "R2_Multi_Wave_1_1_SealAdvanced_0001",
+      "R2_Multi_Wave_1_2_SealAdvanced_0001",
+      "R2_Multi_Wave_1_3_SealAdvanced_0001",
       "R3_EliteMonster_1_SealAdvanced_0001"
     ],
     "500001": [
       "Beritra_Boss",
-      "Beritra_Dreadgion"
+      "Beritra_Dreadgion",
+      "Beritra_EliteEgia_P2_1_1",
+      "Beritra_EliteEgia_P2_1_2",
+      "Beritra_EliteEgia_P2_2_1",
+      "Beritra_EliteEgia_P2_2_2",
+      "Beritra_Wave_P1_1_1",
+      "Beritra_Wave_P1_1_2",
+      "Beritra_Wave_P1_1_3",
+      "Beritra_Wave_P1_1_4",
+      "Beritra_Wave_P1_2_1",
+      "Beritra_Wave_P1_2_2",
+      "Beritra_Wave_P1_2_3",
+      "Beritra_Wave_P1_2_4"
     ],
     "500002": [
       "FE_BS_Normal_Mob_01_1",
       "FE_BS_Normal_Mob_02_1",
       "FE_BS_Normal_Mob_03_1",
+      "FE_BS_Normal_Wave_01_1",
+      "FE_BS_Normal_Wave_01_10",
+      "FE_BS_Normal_Wave_01_11",
+      "FE_BS_Normal_Wave_01_12",
+      "FE_BS_Normal_Wave_01_2",
+      "FE_BS_Normal_Wave_01_3",
+      "FE_BS_Normal_Wave_01_4",
+      "FE_BS_Normal_Wave_01_5",
+      "FE_BS_Normal_Wave_01_6",
+      "FE_BS_Normal_Wave_01_7",
+      "FE_BS_Normal_Wave_01_8",
+      "FE_BS_Normal_Wave_01_9",
+      "FE_BS_Normal_Wave_02_1",
+      "FE_BS_Normal_Wave_02_10",
+      "FE_BS_Normal_Wave_02_11",
+      "FE_BS_Normal_Wave_02_12",
+      "FE_BS_Normal_Wave_02_2",
+      "FE_BS_Normal_Wave_02_3",
+      "FE_BS_Normal_Wave_02_4",
+      "FE_BS_Normal_Wave_02_5",
+      "FE_BS_Normal_Wave_02_6",
+      "FE_BS_Normal_Wave_02_7",
+      "FE_BS_Normal_Wave_02_8",
+      "FE_BS_Normal_Wave_02_9",
+      "FE_BS_Normal_Wave_03_1",
+      "FE_BS_Normal_Wave_03_10",
+      "FE_BS_Normal_Wave_03_11",
+      "FE_BS_Normal_Wave_03_12",
+      "FE_BS_Normal_Wave_03_2",
+      "FE_BS_Normal_Wave_03_3",
+      "FE_BS_Normal_Wave_03_4",
+      "FE_BS_Normal_Wave_03_5",
+      "FE_BS_Normal_Wave_03_6",
+      "FE_BS_Normal_Wave_03_7",
+      "FE_BS_Normal_Wave_03_8",
+      "FE_BS_Normal_Wave_03_9",
       "Mob_M_FE_BS_01_Elite_001_1",
       "Mob_M_FE_BS_01_Elite_001_2",
       "Mob_M_FE_BS_01_Elite_001_3",
@@ -492866,17 +492984,81 @@
       "FE_SA_L_A_3_Envobj_Portal_02_Boss",
       "FE_SA_L_A_3_Envobj_Rift_01_Wave1",
       "FE_SA_L_A_3_Envobj_Rift_01_Wave2",
-      "FE_SA_L_A_3_Envobj_Rift_01_Wave3"
+      "FE_SA_L_A_3_Envobj_Rift_01_Wave3",
+      "FE_SA_L_A_3_Wave1_1_1",
+      "FE_SA_L_A_3_Wave1_1_2",
+      "FE_SA_L_A_3_Wave1_2",
+      "FE_SA_L_A_3_Wave1_3_1",
+      "FE_SA_L_A_3_Wave1_3_2",
+      "FE_SA_L_A_3_Wave1_4",
+      "FE_SA_L_A_3_Wave2_1_1",
+      "FE_SA_L_A_3_Wave2_1_2",
+      "FE_SA_L_A_3_Wave2_2",
+      "FE_SA_L_A_3_Wave2_3_1",
+      "FE_SA_L_A_3_Wave2_3_2",
+      "FE_SA_L_A_3_Wave2_4",
+      "FE_SA_L_A_3_Wave3_1_1",
+      "FE_SA_L_A_3_Wave3_1_2",
+      "FE_SA_L_A_3_Wave3_2",
+      "FE_SA_L_A_3_Wave3_3_1",
+      "FE_SA_L_A_3_Wave3_3_2",
+      "FE_SA_L_A_3_Wave3_4"
     ],
     "500006": [
       "FE_SA_L_A_Boss_1",
       "FE_SA_L_A_Envobj_Portal_02_Boss",
       "FE_SA_L_A_Envobj_Rift_01_Wave1",
       "FE_SA_L_A_Envobj_Rift_01_Wave2",
-      "FE_SA_L_A_Envobj_Rift_01_Wave3"
+      "FE_SA_L_A_Envobj_Rift_01_Wave3",
+      "FE_SA_L_A_Wave1_1_1",
+      "FE_SA_L_A_Wave1_1_2",
+      "FE_SA_L_A_Wave1_2",
+      "FE_SA_L_A_Wave1_3_1",
+      "FE_SA_L_A_Wave1_3_2",
+      "FE_SA_L_A_Wave1_4",
+      "FE_SA_L_A_Wave2_1_1",
+      "FE_SA_L_A_Wave2_1_2",
+      "FE_SA_L_A_Wave2_2",
+      "FE_SA_L_A_Wave2_3_1",
+      "FE_SA_L_A_Wave2_3_2",
+      "FE_SA_L_A_Wave2_4",
+      "FE_SA_L_A_Wave3_1_1",
+      "FE_SA_L_A_Wave3_1_2",
+      "FE_SA_L_A_Wave3_2",
+      "FE_SA_L_A_Wave3_3_1",
+      "FE_SA_L_A_Wave3_3_2",
+      "FE_SA_L_A_Wave3_4"
     ],
     "500007": [
-      "World_L_A_Defence_01_SupplyBox_1"
+      "World_L_A_Defence_01_SupplyBox_1",
+      "World_L_A_Defence_01_SupplyBox_2",
+      "World_L_A_Defence_01_SupplyBox_3",
+      "World_L_A_Defence_01_SupplyBox_4",
+      "World_L_A_Defence_01_Wave1_1",
+      "World_L_A_Defence_01_Wave1_2",
+      "World_L_A_Defence_01_Wave2_1",
+      "World_L_A_Defence_01_Wave2_2",
+      "World_L_A_Defence_01_Wave4_1",
+      "World_L_A_Defence_01_Wave4_2",
+      "World_L_A_Defence_01_Wave4_3",
+      "World_L_A_Defence_01_Wave4_4",
+      "World_L_A_Defence_01_Wave5_1",
+      "World_L_A_Defence_01_Wave5_2",
+      "World_L_A_Defence_01_Wave5_3",
+      "World_L_A_Defence_01_Wave5_4",
+      "World_L_A_Defence_01_Wave6_1",
+      "World_L_A_Defence_01_Wave6_2",
+      "World_L_A_Defence_01_Wave6_3",
+      "World_L_A_Defence_01_Wave6_4",
+      "World_L_A_Defence_01_Wave9_1",
+      "World_L_A_Defence_01_WaveA1_1",
+      "World_L_A_Defence_01_WaveA1_2",
+      "World_L_A_Defence_01_WaveB1_1",
+      "World_L_A_Defence_01_WaveB1_2",
+      "World_L_A_Defence_01_WaveB2_1",
+      "World_L_A_Defence_01_WaveB2_2",
+      "World_L_A_Defence_01_WaveB3_1",
+      "World_L_A_Defence_01_WaveB4_1"
     ],
     "500009": [
       "EnvObj_L1_FE_OdBubble_02_Multi_P1_1",
@@ -492954,16 +493136,76 @@
     ],
     "500017": [
       "Beritra_02_Boss",
-      "Beritra_02_Dreadgion"
+      "Beritra_02_Dreadgion",
+      "Beritra_02_EliteEgia_P2_1_1",
+      "Beritra_02_EliteEgia_P2_1_2",
+      "Beritra_02_EliteEgia_P2_2_1",
+      "Beritra_02_EliteEgia_P2_2_2",
+      "Beritra_02_Wave_P1_1_1",
+      "Beritra_02_Wave_P1_1_2",
+      "Beritra_02_Wave_P1_1_3",
+      "Beritra_02_Wave_P1_1_4",
+      "Beritra_02_Wave_P1_2_1",
+      "Beritra_02_Wave_P1_2_2",
+      "Beritra_02_Wave_P1_2_3",
+      "Beritra_02_Wave_P1_2_4"
     ],
     "500018": [
       "Beritra_03_Boss",
-      "Beritra_03_Dreadgion"
+      "Beritra_03_Dreadgion",
+      "Beritra_03_EliteEgia_P2_1_1",
+      "Beritra_03_EliteEgia_P2_1_2",
+      "Beritra_03_EliteEgia_P2_2_1",
+      "Beritra_03_EliteEgia_P2_2_2",
+      "Beritra_03_Wave_P1_1_1",
+      "Beritra_03_Wave_P1_1_2",
+      "Beritra_03_Wave_P1_1_3",
+      "Beritra_03_Wave_P1_1_4",
+      "Beritra_03_Wave_P1_2_1",
+      "Beritra_03_Wave_P1_2_2",
+      "Beritra_03_Wave_P1_2_3",
+      "Beritra_03_Wave_P1_2_4"
     ],
     "500019": [
       "FE_BS_02_Normal_Mob_01_1",
       "FE_BS_02_Normal_Mob_02_1",
       "FE_BS_02_Normal_Mob_03_1",
+      "FE_BS_02_Normal_Wave_01_1",
+      "FE_BS_02_Normal_Wave_01_10",
+      "FE_BS_02_Normal_Wave_01_11",
+      "FE_BS_02_Normal_Wave_01_12",
+      "FE_BS_02_Normal_Wave_01_2",
+      "FE_BS_02_Normal_Wave_01_3",
+      "FE_BS_02_Normal_Wave_01_4",
+      "FE_BS_02_Normal_Wave_01_5",
+      "FE_BS_02_Normal_Wave_01_6",
+      "FE_BS_02_Normal_Wave_01_7",
+      "FE_BS_02_Normal_Wave_01_8",
+      "FE_BS_02_Normal_Wave_01_9",
+      "FE_BS_02_Normal_Wave_02_1",
+      "FE_BS_02_Normal_Wave_02_10",
+      "FE_BS_02_Normal_Wave_02_11",
+      "FE_BS_02_Normal_Wave_02_12",
+      "FE_BS_02_Normal_Wave_02_2",
+      "FE_BS_02_Normal_Wave_02_3",
+      "FE_BS_02_Normal_Wave_02_4",
+      "FE_BS_02_Normal_Wave_02_5",
+      "FE_BS_02_Normal_Wave_02_6",
+      "FE_BS_02_Normal_Wave_02_7",
+      "FE_BS_02_Normal_Wave_02_8",
+      "FE_BS_02_Normal_Wave_02_9",
+      "FE_BS_02_Normal_Wave_03_1",
+      "FE_BS_02_Normal_Wave_03_10",
+      "FE_BS_02_Normal_Wave_03_11",
+      "FE_BS_02_Normal_Wave_03_12",
+      "FE_BS_02_Normal_Wave_03_2",
+      "FE_BS_02_Normal_Wave_03_3",
+      "FE_BS_02_Normal_Wave_03_4",
+      "FE_BS_02_Normal_Wave_03_5",
+      "FE_BS_02_Normal_Wave_03_6",
+      "FE_BS_02_Normal_Wave_03_7",
+      "FE_BS_02_Normal_Wave_03_8",
+      "FE_BS_02_Normal_Wave_03_9",
       "Mob_M_FE_BS_02_Elite_001_1",
       "Mob_M_FE_BS_02_Elite_001_2",
       "Mob_M_FE_BS_02_Elite_001_3",
@@ -492973,6 +493215,42 @@
       "FE_BS_03_Normal_Mob_01_1",
       "FE_BS_03_Normal_Mob_02_1",
       "FE_BS_03_Normal_Mob_03_1",
+      "FE_BS_03_Normal_Wave_01_1",
+      "FE_BS_03_Normal_Wave_01_10",
+      "FE_BS_03_Normal_Wave_01_11",
+      "FE_BS_03_Normal_Wave_01_12",
+      "FE_BS_03_Normal_Wave_01_2",
+      "FE_BS_03_Normal_Wave_01_3",
+      "FE_BS_03_Normal_Wave_01_4",
+      "FE_BS_03_Normal_Wave_01_5",
+      "FE_BS_03_Normal_Wave_01_6",
+      "FE_BS_03_Normal_Wave_01_7",
+      "FE_BS_03_Normal_Wave_01_8",
+      "FE_BS_03_Normal_Wave_01_9",
+      "FE_BS_03_Normal_Wave_02_1",
+      "FE_BS_03_Normal_Wave_02_10",
+      "FE_BS_03_Normal_Wave_02_11",
+      "FE_BS_03_Normal_Wave_02_12",
+      "FE_BS_03_Normal_Wave_02_2",
+      "FE_BS_03_Normal_Wave_02_3",
+      "FE_BS_03_Normal_Wave_02_4",
+      "FE_BS_03_Normal_Wave_02_5",
+      "FE_BS_03_Normal_Wave_02_6",
+      "FE_BS_03_Normal_Wave_02_7",
+      "FE_BS_03_Normal_Wave_02_8",
+      "FE_BS_03_Normal_Wave_02_9",
+      "FE_BS_03_Normal_Wave_03_1",
+      "FE_BS_03_Normal_Wave_03_10",
+      "FE_BS_03_Normal_Wave_03_11",
+      "FE_BS_03_Normal_Wave_03_12",
+      "FE_BS_03_Normal_Wave_03_2",
+      "FE_BS_03_Normal_Wave_03_3",
+      "FE_BS_03_Normal_Wave_03_4",
+      "FE_BS_03_Normal_Wave_03_5",
+      "FE_BS_03_Normal_Wave_03_6",
+      "FE_BS_03_Normal_Wave_03_7",
+      "FE_BS_03_Normal_Wave_03_8",
+      "FE_BS_03_Normal_Wave_03_9",
       "Mob_M_FE_BS_03_Elite_001_1",
       "Mob_M_FE_BS_03_Elite_001_2",
       "Mob_M_FE_BS_03_Elite_001_3",
@@ -492983,7 +493261,25 @@
       "FE_SA_L_A_2_Envobj_Portal_02_Boss",
       "FE_SA_L_A_2_Envobj_Rift_01_Wave1",
       "FE_SA_L_A_2_Envobj_Rift_01_Wave2",
-      "FE_SA_L_A_2_Envobj_Rift_01_Wave3"
+      "FE_SA_L_A_2_Envobj_Rift_01_Wave3",
+      "FE_SA_L_A_2_Wave1_1_1",
+      "FE_SA_L_A_2_Wave1_1_2",
+      "FE_SA_L_A_2_Wave1_2",
+      "FE_SA_L_A_2_Wave1_3_1",
+      "FE_SA_L_A_2_Wave1_3_2",
+      "FE_SA_L_A_2_Wave1_4",
+      "FE_SA_L_A_2_Wave2_1_1",
+      "FE_SA_L_A_2_Wave2_1_2",
+      "FE_SA_L_A_2_Wave2_2",
+      "FE_SA_L_A_2_Wave2_3_1",
+      "FE_SA_L_A_2_Wave2_3_2",
+      "FE_SA_L_A_2_Wave2_4",
+      "FE_SA_L_A_2_Wave3_1_1",
+      "FE_SA_L_A_2_Wave3_1_2",
+      "FE_SA_L_A_2_Wave3_2",
+      "FE_SA_L_A_2_Wave3_3_1",
+      "FE_SA_L_A_2_Wave3_3_2",
+      "FE_SA_L_A_2_Wave3_4"
     ],
     "500022": [
       "FE_Racing_02_L_A_Lap2_Electrosphere_1",
@@ -493030,18 +493326,84 @@
       "IN_BS_L_1_M_EvSpirit_002_1",
       "IN_BS_L_1_Mob_1",
       "IN_BS_L_1_Mob_2",
-      "IN_BS_L_1_Mob_3"
+      "IN_BS_L_1_Mob_3",
+      "IN_BS_L_1_Wave_1_1",
+      "IN_BS_L_1_Wave_1_10",
+      "IN_BS_L_1_Wave_1_11",
+      "IN_BS_L_1_Wave_1_12",
+      "IN_BS_L_1_Wave_1_2",
+      "IN_BS_L_1_Wave_1_3",
+      "IN_BS_L_1_Wave_1_4",
+      "IN_BS_L_1_Wave_1_5",
+      "IN_BS_L_1_Wave_1_6",
+      "IN_BS_L_1_Wave_1_7",
+      "IN_BS_L_1_Wave_1_8",
+      "IN_BS_L_1_Wave_1_9",
+      "IN_BS_L_1_Wave_2_1",
+      "IN_BS_L_1_Wave_2_10",
+      "IN_BS_L_1_Wave_2_11",
+      "IN_BS_L_1_Wave_2_12",
+      "IN_BS_L_1_Wave_2_2",
+      "IN_BS_L_1_Wave_2_3",
+      "IN_BS_L_1_Wave_2_4",
+      "IN_BS_L_1_Wave_2_5",
+      "IN_BS_L_1_Wave_2_6",
+      "IN_BS_L_1_Wave_2_7",
+      "IN_BS_L_1_Wave_2_8",
+      "IN_BS_L_1_Wave_2_9",
+      "IN_BS_L_1_Wave_3_1",
+      "IN_BS_L_1_Wave_3_10",
+      "IN_BS_L_1_Wave_3_11",
+      "IN_BS_L_1_Wave_3_12",
+      "IN_BS_L_1_Wave_3_2",
+      "IN_BS_L_1_Wave_3_3",
+      "IN_BS_L_1_Wave_3_4",
+      "IN_BS_L_1_Wave_3_5",
+      "IN_BS_L_1_Wave_3_6",
+      "IN_BS_L_1_Wave_3_7",
+      "IN_BS_L_1_Wave_3_8",
+      "IN_BS_L_1_Wave_3_9"
     ],
     "500032": [
       "IN_Beritra_L_1_Boss",
-      "IN_Beritra_L_1_Dreadgion"
+      "IN_Beritra_L_1_Dreadgion",
+      "IN_Beritra_L_1_Wave_1_1_1",
+      "IN_Beritra_L_1_Wave_1_1_2",
+      "IN_Beritra_L_1_Wave_1_1_3",
+      "IN_Beritra_L_1_Wave_1_1_4",
+      "IN_Beritra_L_1_Wave_1_2_1",
+      "IN_Beritra_L_1_Wave_1_2_2",
+      "IN_Beritra_L_1_Wave_1_2_3",
+      "IN_Beritra_L_1_Wave_1_2_4",
+      "IN_Beritra_L_1_Wave_2_1_1",
+      "IN_Beritra_L_1_Wave_2_1_2",
+      "IN_Beritra_L_1_Wave_2_2_1",
+      "IN_Beritra_L_1_Wave_2_2_2"
     ],
     "500033": [
       "IN_SA_L_1_Boss",
       "IN_SA_L_1_Envobj_Portal_02_Boss",
       "IN_SA_L_1_Envobj_Rift_01_Wave1",
       "IN_SA_L_1_Envobj_Rift_01_Wave2",
-      "IN_SA_L_1_Envobj_Rift_01_Wave3"
+      "IN_SA_L_1_Envobj_Rift_01_Wave3",
+      "IN_SA_L_1_Wave1_1_1",
+      "IN_SA_L_1_Wave1_1_2",
+      "IN_SA_L_1_Wave1_2",
+      "IN_SA_L_1_Wave1_3_1",
+      "IN_SA_L_1_Wave1_3_2",
+      "IN_SA_L_1_Wave1_4",
+      "IN_SA_L_1_Wave2_1_1",
+      "IN_SA_L_1_Wave2_1_2",
+      "IN_SA_L_1_Wave2_2",
+      "IN_SA_L_1_Wave2_3_1",
+      "IN_SA_L_1_Wave2_3_2",
+      "IN_SA_L_1_Wave2_4",
+      "IN_SA_L_1_Wave3_1_1",
+      "IN_SA_L_1_Wave3_1_2",
+      "IN_SA_L_1_Wave3_2",
+      "IN_SA_L_1_Wave3_3_1",
+      "IN_SA_L_1_Wave3_3_2",
+      "IN_SA_L_1_Wave3_4"
     ],
     "500034": [
       "FE_Dilemma_L_01_N_ShugoM_02_2"
@@ -493140,6 +493502,42 @@
       "FE_BS_Normal_Mob_01_1",
       "FE_BS_Normal_Mob_02_1",
       "FE_BS_Normal_Mob_03_1",
+      "FE_BS_Normal_Wave_01_1",
+      "FE_BS_Normal_Wave_01_10",
+      "FE_BS_Normal_Wave_01_11",
+      "FE_BS_Normal_Wave_01_12",
+      "FE_BS_Normal_Wave_01_2",
+      "FE_BS_Normal_Wave_01_3",
+      "FE_BS_Normal_Wave_01_4",
+      "FE_BS_Normal_Wave_01_5",
+      "FE_BS_Normal_Wave_01_6",
+      "FE_BS_Normal_Wave_01_7",
+      "FE_BS_Normal_Wave_01_8",
+      "FE_BS_Normal_Wave_01_9",
+      "FE_BS_Normal_Wave_02_1",
+      "FE_BS_Normal_Wave_02_10",
+      "FE_BS_Normal_Wave_02_11",
+      "FE_BS_Normal_Wave_02_12",
+      "FE_BS_Normal_Wave_02_2",
+      "FE_BS_Normal_Wave_02_3",
+      "FE_BS_Normal_Wave_02_4",
+      "FE_BS_Normal_Wave_02_5",
+      "FE_BS_Normal_Wave_02_6",
+      "FE_BS_Normal_Wave_02_7",
+      "FE_BS_Normal_Wave_02_8",
+      "FE_BS_Normal_Wave_02_9",
+      "FE_BS_Normal_Wave_03_1",
+      "FE_BS_Normal_Wave_03_10",
+      "FE_BS_Normal_Wave_03_11",
+      "FE_BS_Normal_Wave_03_12",
+      "FE_BS_Normal_Wave_03_2",
+      "FE_BS_Normal_Wave_03_3",
+      "FE_BS_Normal_Wave_03_4",
+      "FE_BS_Normal_Wave_03_5",
+      "FE_BS_Normal_Wave_03_6",
+      "FE_BS_Normal_Wave_03_7",
+      "FE_BS_Normal_Wave_03_8",
+      "FE_BS_Normal_Wave_03_9",
       "Mob_M_FE_BS_01_Elite_001_1",
       "Mob_M_FE_BS_01_Elite_001_2",
       "Mob_M_FE_BS_01_Elite_001_3",
@@ -493173,7 +493571,19 @@
     ],
     "510002": [
       "Beritra_Boss",
-      "Beritra_Dreadgion"
+      "Beritra_Dreadgion",
+      "D_Beritra_EliteEgia_P2_1_1",
+      "D_Beritra_EliteEgia_P2_1_2",
+      "D_Beritra_EliteEgia_P2_2_1",
+      "D_Beritra_EliteEgia_P2_2_2",
+      "D_Beritra_Wave_P1_1_1",
+      "D_Beritra_Wave_P1_1_2",
+      "D_Beritra_Wave_P1_1_3",
+      "D_Beritra_Wave_P1_1_4",
+      "D_Beritra_Wave_P1_2_1",
+      "D_Beritra_Wave_P1_2_2",
+      "D_Beritra_Wave_P1_2_3",
+      "D_Beritra_Wave_P1_2_4"
     ],
     "510003": [
       "FE_JumpJump_D_A_Guide"
@@ -493206,11 +493616,35 @@
     ],
     "510008": [
       "Beritra_02_Boss",
-      "Beritra_02_Dreadgion"
+      "Beritra_02_Dreadgion",
+      "D_Beritra_02_EliteEgia_P2_1_1",
+      "D_Beritra_02_EliteEgia_P2_1_2",
+      "D_Beritra_02_EliteEgia_P2_2_1",
+      "D_Beritra_02_EliteEgia_P2_2_2",
+      "D_Beritra_02_Wave_P1_1_1",
+      "D_Beritra_02_Wave_P1_1_2",
+      "D_Beritra_02_Wave_P1_1_3",
+      "D_Beritra_02_Wave_P1_1_4",
+      "D_Beritra_02_Wave_P1_2_1",
+      "D_Beritra_02_Wave_P1_2_2",
+      "D_Beritra_02_Wave_P1_2_3",
+      "D_Beritra_02_Wave_P1_2_4"
     ],
     "510009": [
       "Beritra_03_Boss",
-      "Beritra_03_Dreadgion"
+      "Beritra_03_Dreadgion",
+      "D_Beritra_03_EliteEgia_P2_1_1",
+      "D_Beritra_03_EliteEgia_P2_1_2",
+      "D_Beritra_03_EliteEgia_P2_2_1",
+      "D_Beritra_03_EliteEgia_P2_2_2",
+      "D_Beritra_03_Wave_P1_1_1",
+      "D_Beritra_03_Wave_P1_1_2",
+      "D_Beritra_03_Wave_P1_1_3",
+      "D_Beritra_03_Wave_P1_1_4",
+      "D_Beritra_03_Wave_P1_2_1",
+      "D_Beritra_03_Wave_P1_2_2",
+      "D_Beritra_03_Wave_P1_2_3",
+      "D_Beritra_03_Wave_P1_2_4"
     ],
     "510010": [
       "FE_HighHigh_D_A_Enter_in_process"
@@ -493219,6 +493653,42 @@
       "FE_BS_02_Normal_Mob_01_1",
       "FE_BS_02_Normal_Mob_02_1",
       "FE_BS_02_Normal_Mob_03_1",
+      "FE_BS_02_Normal_Wave_01_1",
+      "FE_BS_02_Normal_Wave_01_10",
+      "FE_BS_02_Normal_Wave_01_11",
+      "FE_BS_02_Normal_Wave_01_12",
+      "FE_BS_02_Normal_Wave_01_2",
+      "FE_BS_02_Normal_Wave_01_3",
+      "FE_BS_02_Normal_Wave_01_4",
+      "FE_BS_02_Normal_Wave_01_5",
+      "FE_BS_02_Normal_Wave_01_6",
+      "FE_BS_02_Normal_Wave_01_7",
+      "FE_BS_02_Normal_Wave_01_8",
+      "FE_BS_02_Normal_Wave_01_9",
+      "FE_BS_02_Normal_Wave_02_1",
+      "FE_BS_02_Normal_Wave_02_10",
+      "FE_BS_02_Normal_Wave_02_11",
+      "FE_BS_02_Normal_Wave_02_12",
+      "FE_BS_02_Normal_Wave_02_2",
+      "FE_BS_02_Normal_Wave_02_3",
+      "FE_BS_02_Normal_Wave_02_4",
+      "FE_BS_02_Normal_Wave_02_5",
+      "FE_BS_02_Normal_Wave_02_6",
+      "FE_BS_02_Normal_Wave_02_7",
+      "FE_BS_02_Normal_Wave_02_8",
+      "FE_BS_02_Normal_Wave_02_9",
+      "FE_BS_02_Normal_Wave_03_1",
+      "FE_BS_02_Normal_Wave_03_10",
+      "FE_BS_02_Normal_Wave_03_11",
+      "FE_BS_02_Normal_Wave_03_12",
+      "FE_BS_02_Normal_Wave_03_2",
+      "FE_BS_02_Normal_Wave_03_3",
+      "FE_BS_02_Normal_Wave_03_4",
+      "FE_BS_02_Normal_Wave_03_5",
+      "FE_BS_02_Normal_Wave_03_6",
+      "FE_BS_02_Normal_Wave_03_7",
+      "FE_BS_02_Normal_Wave_03_8",
+      "FE_BS_02_Normal_Wave_03_9",
       "Mob_M_FE_BS_02_Elite_001_1",
       "Mob_M_FE_BS_02_Elite_001_2",
       "Mob_M_FE_BS_02_Elite_001_3",
@@ -493228,6 +493698,42 @@
       "FE_BS_03_Normal_Mob_01_1",
       "FE_BS_03_Normal_Mob_02_1",
       "FE_BS_03_Normal_Mob_03_1",
+      "FE_BS_03_Normal_Wave_01_1",
+      "FE_BS_03_Normal_Wave_01_10",
+      "FE_BS_03_Normal_Wave_01_11",
+      "FE_BS_03_Normal_Wave_01_12",
+      "FE_BS_03_Normal_Wave_01_2",
+      "FE_BS_03_Normal_Wave_01_3",
+      "FE_BS_03_Normal_Wave_01_4",
+      "FE_BS_03_Normal_Wave_01_5",
+      "FE_BS_03_Normal_Wave_01_6",
+      "FE_BS_03_Normal_Wave_01_7",
+      "FE_BS_03_Normal_Wave_01_8",
+      "FE_BS_03_Normal_Wave_01_9",
+      "FE_BS_03_Normal_Wave_02_1",
+      "FE_BS_03_Normal_Wave_02_10",
+      "FE_BS_03_Normal_Wave_02_11",
+      "FE_BS_03_Normal_Wave_02_12",
+      "FE_BS_03_Normal_Wave_02_2",
+      "FE_BS_03_Normal_Wave_02_3",
+      "FE_BS_03_Normal_Wave_02_4",
+      "FE_BS_03_Normal_Wave_02_5",
+      "FE_BS_03_Normal_Wave_02_6",
+      "FE_BS_03_Normal_Wave_02_7",
+      "FE_BS_03_Normal_Wave_02_8",
+      "FE_BS_03_Normal_Wave_02_9",
+      "FE_BS_03_Normal_Wave_03_1",
+      "FE_BS_03_Normal_Wave_03_10",
+      "FE_BS_03_Normal_Wave_03_11",
+      "FE_BS_03_Normal_Wave_03_12",
+      "FE_BS_03_Normal_Wave_03_2",
+      "FE_BS_03_Normal_Wave_03_3",
+      "FE_BS_03_Normal_Wave_03_4",
+      "FE_BS_03_Normal_Wave_03_5",
+      "FE_BS_03_Normal_Wave_03_6",
+      "FE_BS_03_Normal_Wave_03_7",
+      "FE_BS_03_Normal_Wave_03_8",
+      "FE_BS_03_Normal_Wave_03_9",
       "Mob_M_FE_BS_03_Elite_001_1",
       "Mob_M_FE_BS_03_Elite_001_2",
       "Mob_M_FE_BS_03_Elite_001_3",
@@ -493238,7 +493744,25 @@
       "FE_SA_D_A_1_Envobj_Portal_02_Boss",
       "FE_SA_D_A_1_Envobj_Rift_01_Wave1",
       "FE_SA_D_A_1_Envobj_Rift_01_Wave2",
-      "FE_SA_D_A_1_Envobj_Rift_01_Wave3"
+      "FE_SA_D_A_1_Envobj_Rift_01_Wave3",
+      "FE_SA_D_A_1_Wave1_1_1",
+      "FE_SA_D_A_1_Wave1_1_2",
+      "FE_SA_D_A_1_Wave1_2",
+      "FE_SA_D_A_1_Wave1_3_1",
+      "FE_SA_D_A_1_Wave1_3_2",
+      "FE_SA_D_A_1_Wave1_4",
+      "FE_SA_D_A_1_Wave2_1_1",
+      "FE_SA_D_A_1_Wave2_1_2",
+      "FE_SA_D_A_1_Wave2_2",
+      "FE_SA_D_A_1_Wave2_3_1",
+      "FE_SA_D_A_1_Wave2_3_2",
+      "FE_SA_D_A_1_Wave2_4",
+      "FE_SA_D_A_1_Wave3_1_1",
+      "FE_SA_D_A_1_Wave3_1_2",
+      "FE_SA_D_A_1_Wave3_2",
+      "FE_SA_D_A_1_Wave3_3_1",
+      "FE_SA_D_A_1_Wave3_3_2",
+      "FE_SA_D_A_1_Wave3_4"
     ],
     "510018": [
       "FE_HighHigh_D_A_02_Enter_in_process"
@@ -493285,18 +493809,84 @@
       "IN_BS_D_1_M_EvSpirit_002_1",
       "IN_BS_D_1_Mob_1",
       "IN_BS_D_1_Mob_2",
-      "IN_BS_D_1_Mob_3"
+      "IN_BS_D_1_Mob_3",
+      "IN_BS_D_1_Wave_1_1",
+      "IN_BS_D_1_Wave_1_10",
+      "IN_BS_D_1_Wave_1_11",
+      "IN_BS_D_1_Wave_1_12",
+      "IN_BS_D_1_Wave_1_2",
+      "IN_BS_D_1_Wave_1_3",
+      "IN_BS_D_1_Wave_1_4",
+      "IN_BS_D_1_Wave_1_5",
+      "IN_BS_D_1_Wave_1_6",
+      "IN_BS_D_1_Wave_1_7",
+      "IN_BS_D_1_Wave_1_8",
+      "IN_BS_D_1_Wave_1_9",
+      "IN_BS_D_1_Wave_2_1",
+      "IN_BS_D_1_Wave_2_10",
+      "IN_BS_D_1_Wave_2_11",
+      "IN_BS_D_1_Wave_2_12",
+      "IN_BS_D_1_Wave_2_2",
+      "IN_BS_D_1_Wave_2_3",
+      "IN_BS_D_1_Wave_2_4",
+      "IN_BS_D_1_Wave_2_5",
+      "IN_BS_D_1_Wave_2_6",
+      "IN_BS_D_1_Wave_2_7",
+      "IN_BS_D_1_Wave_2_8",
+      "IN_BS_D_1_Wave_2_9",
+      "IN_BS_D_1_Wave_3_1",
+      "IN_BS_D_1_Wave_3_10",
+      "IN_BS_D_1_Wave_3_11",
+      "IN_BS_D_1_Wave_3_12",
+      "IN_BS_D_1_Wave_3_2",
+      "IN_BS_D_1_Wave_3_3",
+      "IN_BS_D_1_Wave_3_4",
+      "IN_BS_D_1_Wave_3_5",
+      "IN_BS_D_1_Wave_3_6",
+      "IN_BS_D_1_Wave_3_7",
+      "IN_BS_D_1_Wave_3_8",
+      "IN_BS_D_1_Wave_3_9"
     ],
     "510027": [
       "IN_Beritra_D_1_Boss",
-      "IN_Beritra_D_1_Dreadgion"
+      "IN_Beritra_D_1_Dreadgion",
+      "IN_Beritra_D_1_Wave_1_1_1",
+      "IN_Beritra_D_1_Wave_1_1_2",
+      "IN_Beritra_D_1_Wave_1_1_3",
+      "IN_Beritra_D_1_Wave_1_1_4",
+      "IN_Beritra_D_1_Wave_1_2_1",
+      "IN_Beritra_D_1_Wave_1_2_2",
+      "IN_Beritra_D_1_Wave_1_2_3",
+      "IN_Beritra_D_1_Wave_1_2_4",
+      "IN_Beritra_D_1_Wave_2_1_1",
+      "IN_Beritra_D_1_Wave_2_1_2",
+      "IN_Beritra_D_1_Wave_2_2_1",
+      "IN_Beritra_D_1_Wave_2_2_2"
     ],
     "510028": [
       "IN_SA_D_1_Boss",
       "IN_SA_D_1_Envobj_Portal_02_Boss",
       "IN_SA_D_1_Envobj_Rift_01_Wave1",
       "IN_SA_D_1_Envobj_Rift_01_Wave2",
-      "IN_SA_D_1_Envobj_Rift_01_Wave3"
+      "IN_SA_D_1_Envobj_Rift_01_Wave3",
+      "IN_SA_D_1_Wave1_1_1",
+      "IN_SA_D_1_Wave1_1_2",
+      "IN_SA_D_1_Wave1_2",
+      "IN_SA_D_1_Wave1_3_1",
+      "IN_SA_D_1_Wave1_3_2",
+      "IN_SA_D_1_Wave1_4",
+      "IN_SA_D_1_Wave2_1_1",
+      "IN_SA_D_1_Wave2_1_2",
+      "IN_SA_D_1_Wave2_2",
+      "IN_SA_D_1_Wave2_3_1",
+      "IN_SA_D_1_Wave2_3_2",
+      "IN_SA_D_1_Wave2_4",
+      "IN_SA_D_1_Wave3_1_1",
+      "IN_SA_D_1_Wave3_1_2",
+      "IN_SA_D_1_Wave3_2",
+      "IN_SA_D_1_Wave3_3_1",
+      "IN_SA_D_1_Wave3_3_2",
+      "IN_SA_D_1_Wave3_4"
     ],
     "510029": [
       "FE_Dilemma_D_01_N_ShugoM_02_2"
@@ -493663,6 +494253,57 @@
       "M_PD_ReforgedAbyss_MOB_ExtractorA_01_001_1",
       "M_PD_ReforgedAbyss_MOB_ExtractorA_01_001_2",
       "M_PD_ReforgedAbyss_MOB_ExtractorA_01_001_3",
+      "ReforgedAbyss_01_Wave_01_1",
+      "ReforgedAbyss_01_Wave_01_2",
+      "ReforgedAbyss_01_Wave_01_3",
+      "ReforgedAbyss_01_Wave_02_1",
+      "ReforgedAbyss_01_Wave_02_2",
+      "ReforgedAbyss_01_Wave_02_3",
+      "ReforgedAbyss_01_Wave_03_1",
+      "ReforgedAbyss_01_Wave_03_2",
+      "ReforgedAbyss_01_Wave_03_3",
+      "ReforgedAbyss_1PartyWave_01_1",
+      "ReforgedAbyss_1PartyWave_01_2",
+      "ReforgedAbyss_1PartyWave_02_1",
+      "ReforgedAbyss_1PartyWave_02_2",
+      "ReforgedAbyss_1PartyWave_02_3",
+      "ReforgedAbyss_1PartyWave_03_1",
+      "ReforgedAbyss_1PartyWave_03_2",
+      "ReforgedAbyss_1PartyWave_04_1",
+      "ReforgedAbyss_1PartyWave_04_2",
+      "ReforgedAbyss_1PartyWave_05_1",
+      "ReforgedAbyss_1PartyWave_05_2",
+      "ReforgedAbyss_1PartyWave_05_3",
+      "ReforgedAbyss_1PartyWave_06_1",
+      "ReforgedAbyss_1PartyWave_06_2",
+      "ReforgedAbyss_1PartyWave_07_1",
+      "ReforgedAbyss_1PartyWave_07_2",
+      "ReforgedAbyss_1PartyWave_08_1",
+      "ReforgedAbyss_1PartyWave_08_2",
+      "ReforgedAbyss_1PartyWave_08_3",
+      "ReforgedAbyss_1PartyWave_09_1",
+      "ReforgedAbyss_1PartyWave_09_2",
+      "ReforgedAbyss_2PartyWave_01_1",
+      "ReforgedAbyss_2PartyWave_01_2",
+      "ReforgedAbyss_2PartyWave_02_1",
+      "ReforgedAbyss_2PartyWave_02_2",
+      "ReforgedAbyss_2PartyWave_02_3",
+      "ReforgedAbyss_2PartyWave_03_1",
+      "ReforgedAbyss_2PartyWave_03_2",
+      "ReforgedAbyss_2PartyWave_04_1",
+      "ReforgedAbyss_2PartyWave_04_2",
+      "ReforgedAbyss_2PartyWave_05_1",
+      "ReforgedAbyss_2PartyWave_05_2",
+      "ReforgedAbyss_2PartyWave_05_3",
+      "ReforgedAbyss_2PartyWave_06_1",
+      "ReforgedAbyss_2PartyWave_06_2",
+      "ReforgedAbyss_2PartyWave_07_1",
+      "ReforgedAbyss_2PartyWave_07_2",
+      "ReforgedAbyss_2PartyWave_08_1",
+      "ReforgedAbyss_2PartyWave_08_2",
+      "ReforgedAbyss_2PartyWave_08_3",
+      "ReforgedAbyss_2PartyWave_09_1",
+      "ReforgedAbyss_2PartyWave_09_2",
       "ReforgedAbyss_E_PD_Barrier_02_V01_1",
       "ReforgedAbyss_E_PD_Barrier_02_V01_2",
       "ReforgedAbyss_E_PD_Barrier_02_V01_3",
@@ -493682,6 +494323,9 @@
       "HornCave_Easy_Barrier_6",
       "HornCave_Easy_Barrier_8",
       "M_PD_FierceHornCave_Easy_Ferk_01_V01",
+      "M_PD_FierceHornCave_Wave_Stage2_1",
+      "M_PD_FierceHornCave_Wave_Stage2_2",
+      "M_PD_FierceHornCave_Wave_Stage2_3",
       "N_PD_Common_M_ShulackB_01_001"
     ],
     "600092": [
@@ -493696,7 +494340,13 @@
       "E_PD_HornCave_OdSmall",
       "HornCave_Normal_E_PD_Barrier_02_V01_2",
       "HornCave_Normal_E_PD_Barrier_02_V01_3",
-      "M_PD_FierceHornCave_Ferk_01_V01"
+      "M_PD_FierceHornCave_Duduka_01_001_Multi_1",
+      "M_PD_FierceHornCave_Duduka_01_001_Multi_2",
+      "M_PD_FierceHornCave_Duduka_01_001_Multi_3",
+      "M_PD_FierceHornCave_Ferk_01_V01",
+      "M_PD_FierceHornCave_Lycan_04_001_Multi_1",
+      "M_PD_FierceHornCave_Lycan_04_001_Multi_2",
+      "M_PD_FierceHornCave_Lycan_04_001_Multi_3"
     ],
     "600093": [
       "E_PD_FierceHornCave_BombBox_01_1",
@@ -493710,7 +494360,13 @@
       "E_PD_HornCave_OdSmall",
       "HornCave_Normal_E_PD_Barrier_02_V01_2",
       "HornCave_Normal_E_PD_Barrier_02_V01_3",
-      "M_PD_FierceHornCave_Ferk_01_V01"
+      "M_PD_FierceHornCave_Duduka_01_001_Multi_1",
+      "M_PD_FierceHornCave_Duduka_01_001_Multi_2",
+      "M_PD_FierceHornCave_Duduka_01_001_Multi_3",
+      "M_PD_FierceHornCave_Ferk_01_V01",
+      "M_PD_FierceHornCave_Lycan_04_001_Multi_1",
+      "M_PD_FierceHornCave_Lycan_04_001_Multi_2",
+      "M_PD_FierceHornCave_Lycan_04_001_Multi_3"
     ],
     "600121": [
       "CradleNihility_Barrier_Boss_1",
@@ -497700,5 +498356,1660 @@
     "Teleport_NoEffect_EnterInstanceLayer": 13,
     "Teleport_NoEffect_FadeOut": 10,
     "Teleport_PlaceOfOwlamus_001": 50
+  },
+  "waves": {
+    "DungeonWave_0001_Wave_L_B_03": [
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_21"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_22"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_23"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_24"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_25"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_26"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_27"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_28"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_29"
+      ],
+      [
+        "S1_DungeonWave_0001_Multi_Monster_Wave_L_30"
+      ]
+    ],
+    "Event_Beritra_02_Phase_1_Wave_01": [
+      [
+        "Beritra_02_Wave_P1_1_1"
+      ],
+      [
+        "Beritra_02_Wave_P1_1_2"
+      ],
+      [
+        "Beritra_02_Wave_P1_1_3"
+      ],
+      [
+        "Beritra_02_Wave_P1_1_4"
+      ]
+    ],
+    "Event_Beritra_02_Phase_1_Wave_02": [
+      [
+        "Beritra_02_Wave_P1_2_1",
+        "Beritra_02_Wave_P1_2_2"
+      ],
+      [
+        "Beritra_02_Wave_P1_2_3",
+        "Beritra_02_Wave_P1_2_4"
+      ]
+    ],
+    "Event_Beritra_02_Phase_2_Wave_01": [
+      [
+        "Beritra_02_EliteEgia_P2_1_1"
+      ],
+      [
+        "Beritra_02_EliteEgia_P2_1_2"
+      ]
+    ],
+    "Event_Beritra_02_Phase_2_Wave_02": [
+      [
+        "Beritra_02_EliteEgia_P2_2_1"
+      ],
+      [
+        "Beritra_02_EliteEgia_P2_2_2"
+      ]
+    ],
+    "Event_Beritra_03_Phase_1_Wave_01": [
+      [
+        "Beritra_03_Wave_P1_1_1"
+      ],
+      [
+        "Beritra_03_Wave_P1_1_2"
+      ],
+      [
+        "Beritra_03_Wave_P1_1_3"
+      ],
+      [
+        "Beritra_03_Wave_P1_1_4"
+      ]
+    ],
+    "Event_Beritra_03_Phase_1_Wave_02": [
+      [
+        "Beritra_03_Wave_P1_2_1",
+        "Beritra_03_Wave_P1_2_2"
+      ],
+      [
+        "Beritra_03_Wave_P1_2_3",
+        "Beritra_03_Wave_P1_2_4"
+      ]
+    ],
+    "Event_Beritra_03_Phase_2_Wave_01": [
+      [
+        "Beritra_03_EliteEgia_P2_1_1"
+      ],
+      [
+        "Beritra_03_EliteEgia_P2_1_2"
+      ]
+    ],
+    "Event_Beritra_03_Phase_2_Wave_02": [
+      [
+        "Beritra_03_EliteEgia_P2_2_1"
+      ],
+      [
+        "Beritra_03_EliteEgia_P2_2_2"
+      ]
+    ],
+    "Event_Beritra_D_02_Phase_1_Wave_01": [
+      [
+        "D_Beritra_02_Wave_P1_1_1"
+      ],
+      [
+        "D_Beritra_02_Wave_P1_1_2"
+      ],
+      [
+        "D_Beritra_02_Wave_P1_1_3"
+      ],
+      [
+        "D_Beritra_02_Wave_P1_1_4"
+      ]
+    ],
+    "Event_Beritra_D_02_Phase_1_Wave_02": [
+      [
+        "D_Beritra_02_Wave_P1_2_1",
+        "D_Beritra_02_Wave_P1_2_2"
+      ],
+      [
+        "D_Beritra_02_Wave_P1_2_3",
+        "D_Beritra_02_Wave_P1_2_4"
+      ]
+    ],
+    "Event_Beritra_D_02_Phase_2_Wave_01": [
+      [
+        "D_Beritra_02_EliteEgia_P2_1_1"
+      ],
+      [
+        "D_Beritra_02_EliteEgia_P2_1_2"
+      ]
+    ],
+    "Event_Beritra_D_02_Phase_2_Wave_02": [
+      [
+        "D_Beritra_02_EliteEgia_P2_2_1"
+      ],
+      [
+        "D_Beritra_02_EliteEgia_P2_2_2"
+      ]
+    ],
+    "Event_Beritra_D_03_Phase_1_Wave_01": [
+      [
+        "D_Beritra_03_Wave_P1_1_1"
+      ],
+      [
+        "D_Beritra_03_Wave_P1_1_2"
+      ],
+      [
+        "D_Beritra_03_Wave_P1_1_3"
+      ],
+      [
+        "D_Beritra_03_Wave_P1_1_4"
+      ]
+    ],
+    "Event_Beritra_D_03_Phase_1_Wave_02": [
+      [
+        "D_Beritra_03_Wave_P1_2_1",
+        "D_Beritra_03_Wave_P1_2_2"
+      ],
+      [
+        "D_Beritra_03_Wave_P1_2_3",
+        "D_Beritra_03_Wave_P1_2_4"
+      ]
+    ],
+    "Event_Beritra_D_03_Phase_2_Wave_01": [
+      [
+        "D_Beritra_03_EliteEgia_P2_1_1"
+      ],
+      [
+        "D_Beritra_03_EliteEgia_P2_1_2"
+      ]
+    ],
+    "Event_Beritra_D_03_Phase_2_Wave_02": [
+      [
+        "D_Beritra_03_EliteEgia_P2_2_1"
+      ],
+      [
+        "D_Beritra_03_EliteEgia_P2_2_2"
+      ]
+    ],
+    "Event_Beritra_Phase_1_Wave_01": [
+      [
+        "Beritra_Wave_P1_1_1"
+      ],
+      [
+        "Beritra_Wave_P1_1_2"
+      ],
+      [
+        "Beritra_Wave_P1_1_3"
+      ],
+      [
+        "Beritra_Wave_P1_1_4"
+      ]
+    ],
+    "Event_Beritra_Phase_1_Wave_02": [
+      [
+        "Beritra_Wave_P1_2_1",
+        "Beritra_Wave_P1_2_2"
+      ],
+      [
+        "Beritra_Wave_P1_2_3",
+        "Beritra_Wave_P1_2_4"
+      ]
+    ],
+    "Event_Beritra_Phase_2_Wave_01": [
+      [
+        "Beritra_EliteEgia_P2_1_1"
+      ],
+      [
+        "Beritra_EliteEgia_P2_1_2"
+      ]
+    ],
+    "Event_Beritra_Phase_2_Wave_02": [
+      [
+        "Beritra_EliteEgia_P2_2_1"
+      ],
+      [
+        "Beritra_EliteEgia_P2_2_2"
+      ]
+    ],
+    "Event_D_Beritra_Phase_1_Wave_01": [
+      [
+        "D_Beritra_Wave_P1_1_1"
+      ],
+      [
+        "D_Beritra_Wave_P1_1_2"
+      ],
+      [
+        "D_Beritra_Wave_P1_1_3"
+      ],
+      [
+        "D_Beritra_Wave_P1_1_4"
+      ]
+    ],
+    "Event_D_Beritra_Phase_1_Wave_02": [
+      [
+        "D_Beritra_Wave_P1_2_1",
+        "D_Beritra_Wave_P1_2_2"
+      ],
+      [
+        "D_Beritra_Wave_P1_2_3",
+        "D_Beritra_Wave_P1_2_4"
+      ]
+    ],
+    "Event_D_Beritra_Phase_2_Wave_01": [
+      [
+        "D_Beritra_EliteEgia_P2_1_1"
+      ],
+      [
+        "D_Beritra_EliteEgia_P2_1_2"
+      ]
+    ],
+    "Event_D_Beritra_Phase_2_Wave_02": [
+      [
+        "D_Beritra_EliteEgia_P2_2_1"
+      ],
+      [
+        "D_Beritra_EliteEgia_P2_2_2"
+      ]
+    ],
+    "FE_Broken_Sword_01_Wave_A_01": [
+      [
+        "FE_BS_Normal_Wave_01_1",
+        "FE_BS_Normal_Wave_01_2",
+        "FE_BS_Normal_Wave_01_3",
+        "FE_BS_Normal_Wave_01_4"
+      ],
+      [
+        "FE_BS_Normal_Wave_01_5",
+        "FE_BS_Normal_Wave_01_6",
+        "FE_BS_Normal_Wave_01_7",
+        "FE_BS_Normal_Wave_01_8"
+      ],
+      [
+        "FE_BS_Normal_Wave_01_9",
+        "FE_BS_Normal_Wave_01_10",
+        "FE_BS_Normal_Wave_01_11",
+        "FE_BS_Normal_Wave_01_12"
+      ]
+    ],
+    "FE_Broken_Sword_01_Wave_B_01": [
+      [
+        "FE_BS_Normal_Wave_02_1",
+        "FE_BS_Normal_Wave_02_2",
+        "FE_BS_Normal_Wave_02_3",
+        "FE_BS_Normal_Wave_02_4"
+      ],
+      [
+        "FE_BS_Normal_Wave_02_5",
+        "FE_BS_Normal_Wave_02_6",
+        "FE_BS_Normal_Wave_02_7",
+        "FE_BS_Normal_Wave_02_8"
+      ],
+      [
+        "FE_BS_Normal_Wave_02_9",
+        "FE_BS_Normal_Wave_02_10",
+        "FE_BS_Normal_Wave_02_11",
+        "FE_BS_Normal_Wave_02_12"
+      ]
+    ],
+    "FE_Broken_Sword_01_Wave_C_01": [
+      [
+        "FE_BS_Normal_Wave_03_1",
+        "FE_BS_Normal_Wave_03_2",
+        "FE_BS_Normal_Wave_03_3",
+        "FE_BS_Normal_Wave_03_4"
+      ],
+      [
+        "FE_BS_Normal_Wave_03_5",
+        "FE_BS_Normal_Wave_03_6",
+        "FE_BS_Normal_Wave_03_7",
+        "FE_BS_Normal_Wave_03_8"
+      ],
+      [
+        "FE_BS_Normal_Wave_03_9",
+        "FE_BS_Normal_Wave_03_10",
+        "FE_BS_Normal_Wave_03_11",
+        "FE_BS_Normal_Wave_03_12"
+      ]
+    ],
+    "FE_Broken_Sword_02_Wave_A_01": [
+      [
+        "FE_BS_02_Normal_Wave_01_1",
+        "FE_BS_02_Normal_Wave_01_2",
+        "FE_BS_02_Normal_Wave_01_3",
+        "FE_BS_02_Normal_Wave_01_4"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_01_5",
+        "FE_BS_02_Normal_Wave_01_6",
+        "FE_BS_02_Normal_Wave_01_7",
+        "FE_BS_02_Normal_Wave_01_8"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_01_9",
+        "FE_BS_02_Normal_Wave_01_10",
+        "FE_BS_02_Normal_Wave_01_11",
+        "FE_BS_02_Normal_Wave_01_12"
+      ]
+    ],
+    "FE_Broken_Sword_02_Wave_B_01": [
+      [
+        "FE_BS_02_Normal_Wave_02_1",
+        "FE_BS_02_Normal_Wave_02_2",
+        "FE_BS_02_Normal_Wave_02_3",
+        "FE_BS_02_Normal_Wave_02_4"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_02_5",
+        "FE_BS_02_Normal_Wave_02_6",
+        "FE_BS_02_Normal_Wave_02_7",
+        "FE_BS_02_Normal_Wave_02_8"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_02_9",
+        "FE_BS_02_Normal_Wave_02_10",
+        "FE_BS_02_Normal_Wave_02_11",
+        "FE_BS_02_Normal_Wave_02_12"
+      ]
+    ],
+    "FE_Broken_Sword_02_Wave_C_01": [
+      [
+        "FE_BS_02_Normal_Wave_03_1",
+        "FE_BS_02_Normal_Wave_03_2",
+        "FE_BS_02_Normal_Wave_03_3",
+        "FE_BS_02_Normal_Wave_03_4"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_03_5",
+        "FE_BS_02_Normal_Wave_03_6",
+        "FE_BS_02_Normal_Wave_03_7",
+        "FE_BS_02_Normal_Wave_03_8"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_03_9",
+        "FE_BS_02_Normal_Wave_03_10",
+        "FE_BS_02_Normal_Wave_03_11",
+        "FE_BS_02_Normal_Wave_03_12"
+      ]
+    ],
+    "FE_Broken_Sword_03_Wave_A_01": [
+      [
+        "FE_BS_03_Normal_Wave_01_1",
+        "FE_BS_03_Normal_Wave_01_2",
+        "FE_BS_03_Normal_Wave_01_3",
+        "FE_BS_03_Normal_Wave_01_4"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_01_5",
+        "FE_BS_03_Normal_Wave_01_6",
+        "FE_BS_03_Normal_Wave_01_7",
+        "FE_BS_03_Normal_Wave_01_8"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_01_9",
+        "FE_BS_03_Normal_Wave_01_10",
+        "FE_BS_03_Normal_Wave_01_11",
+        "FE_BS_03_Normal_Wave_01_12"
+      ]
+    ],
+    "FE_Broken_Sword_03_Wave_B_01": [
+      [
+        "FE_BS_03_Normal_Wave_02_1",
+        "FE_BS_03_Normal_Wave_02_2",
+        "FE_BS_03_Normal_Wave_02_3",
+        "FE_BS_03_Normal_Wave_02_4"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_02_5",
+        "FE_BS_03_Normal_Wave_02_6",
+        "FE_BS_03_Normal_Wave_02_7",
+        "FE_BS_03_Normal_Wave_02_8"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_02_9",
+        "FE_BS_03_Normal_Wave_02_10",
+        "FE_BS_03_Normal_Wave_02_11",
+        "FE_BS_03_Normal_Wave_02_12"
+      ]
+    ],
+    "FE_Broken_Sword_03_Wave_C_01": [
+      [
+        "FE_BS_03_Normal_Wave_03_1",
+        "FE_BS_03_Normal_Wave_03_2",
+        "FE_BS_03_Normal_Wave_03_3",
+        "FE_BS_03_Normal_Wave_03_4"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_03_5",
+        "FE_BS_03_Normal_Wave_03_6",
+        "FE_BS_03_Normal_Wave_03_7",
+        "FE_BS_03_Normal_Wave_03_8"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_03_9",
+        "FE_BS_03_Normal_Wave_03_10",
+        "FE_BS_03_Normal_Wave_03_11",
+        "FE_BS_03_Normal_Wave_03_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_02_Wave_A_01": [
+      [
+        "FE_BS_02_Normal_Wave_01_1",
+        "FE_BS_02_Normal_Wave_01_2",
+        "FE_BS_02_Normal_Wave_01_3",
+        "FE_BS_02_Normal_Wave_01_4"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_01_5",
+        "FE_BS_02_Normal_Wave_01_6",
+        "FE_BS_02_Normal_Wave_01_7",
+        "FE_BS_02_Normal_Wave_01_8"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_01_9",
+        "FE_BS_02_Normal_Wave_01_10",
+        "FE_BS_02_Normal_Wave_01_11",
+        "FE_BS_02_Normal_Wave_01_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_02_Wave_B_01": [
+      [
+        "FE_BS_02_Normal_Wave_02_1",
+        "FE_BS_02_Normal_Wave_02_2",
+        "FE_BS_02_Normal_Wave_02_3",
+        "FE_BS_02_Normal_Wave_02_4"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_02_5",
+        "FE_BS_02_Normal_Wave_02_6",
+        "FE_BS_02_Normal_Wave_02_7",
+        "FE_BS_02_Normal_Wave_02_8"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_02_9",
+        "FE_BS_02_Normal_Wave_02_10",
+        "FE_BS_02_Normal_Wave_02_11",
+        "FE_BS_02_Normal_Wave_02_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_02_Wave_C_01": [
+      [
+        "FE_BS_02_Normal_Wave_03_1",
+        "FE_BS_02_Normal_Wave_03_2",
+        "FE_BS_02_Normal_Wave_03_3",
+        "FE_BS_02_Normal_Wave_03_4"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_03_5",
+        "FE_BS_02_Normal_Wave_03_6",
+        "FE_BS_02_Normal_Wave_03_7",
+        "FE_BS_02_Normal_Wave_03_8"
+      ],
+      [
+        "FE_BS_02_Normal_Wave_03_9",
+        "FE_BS_02_Normal_Wave_03_10",
+        "FE_BS_02_Normal_Wave_03_11",
+        "FE_BS_02_Normal_Wave_03_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_03_Wave_A_01": [
+      [
+        "FE_BS_03_Normal_Wave_01_1",
+        "FE_BS_03_Normal_Wave_01_2",
+        "FE_BS_03_Normal_Wave_01_3",
+        "FE_BS_03_Normal_Wave_01_4"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_01_5",
+        "FE_BS_03_Normal_Wave_01_6",
+        "FE_BS_03_Normal_Wave_01_7",
+        "FE_BS_03_Normal_Wave_01_8"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_01_9",
+        "FE_BS_03_Normal_Wave_01_10",
+        "FE_BS_03_Normal_Wave_01_11",
+        "FE_BS_03_Normal_Wave_01_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_03_Wave_B_01": [
+      [
+        "FE_BS_03_Normal_Wave_02_1",
+        "FE_BS_03_Normal_Wave_02_2",
+        "FE_BS_03_Normal_Wave_02_3",
+        "FE_BS_03_Normal_Wave_02_4"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_02_5",
+        "FE_BS_03_Normal_Wave_02_6",
+        "FE_BS_03_Normal_Wave_02_7",
+        "FE_BS_03_Normal_Wave_02_8"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_02_9",
+        "FE_BS_03_Normal_Wave_02_10",
+        "FE_BS_03_Normal_Wave_02_11",
+        "FE_BS_03_Normal_Wave_02_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_03_Wave_C_01": [
+      [
+        "FE_BS_03_Normal_Wave_03_1",
+        "FE_BS_03_Normal_Wave_03_2",
+        "FE_BS_03_Normal_Wave_03_3",
+        "FE_BS_03_Normal_Wave_03_4"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_03_5",
+        "FE_BS_03_Normal_Wave_03_6",
+        "FE_BS_03_Normal_Wave_03_7",
+        "FE_BS_03_Normal_Wave_03_8"
+      ],
+      [
+        "FE_BS_03_Normal_Wave_03_9",
+        "FE_BS_03_Normal_Wave_03_10",
+        "FE_BS_03_Normal_Wave_03_11",
+        "FE_BS_03_Normal_Wave_03_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_A_01_Wave_A_01": [
+      [
+        "FE_BS_Normal_Wave_01_1",
+        "FE_BS_Normal_Wave_01_2",
+        "FE_BS_Normal_Wave_01_3",
+        "FE_BS_Normal_Wave_01_4"
+      ],
+      [
+        "FE_BS_Normal_Wave_01_5",
+        "FE_BS_Normal_Wave_01_6",
+        "FE_BS_Normal_Wave_01_7",
+        "FE_BS_Normal_Wave_01_8"
+      ],
+      [
+        "FE_BS_Normal_Wave_01_9",
+        "FE_BS_Normal_Wave_01_10",
+        "FE_BS_Normal_Wave_01_11",
+        "FE_BS_Normal_Wave_01_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_A_01_Wave_B_01": [
+      [
+        "FE_BS_Normal_Wave_02_1",
+        "FE_BS_Normal_Wave_02_2",
+        "FE_BS_Normal_Wave_02_3",
+        "FE_BS_Normal_Wave_02_4"
+      ],
+      [
+        "FE_BS_Normal_Wave_02_5",
+        "FE_BS_Normal_Wave_02_6",
+        "FE_BS_Normal_Wave_02_7",
+        "FE_BS_Normal_Wave_02_8"
+      ],
+      [
+        "FE_BS_Normal_Wave_02_9",
+        "FE_BS_Normal_Wave_02_10",
+        "FE_BS_Normal_Wave_02_11",
+        "FE_BS_Normal_Wave_02_12"
+      ]
+    ],
+    "FE_Broken_Sword_D_A_01_Wave_C_01": [
+      [
+        "FE_BS_Normal_Wave_03_1",
+        "FE_BS_Normal_Wave_03_2",
+        "FE_BS_Normal_Wave_03_3",
+        "FE_BS_Normal_Wave_03_4"
+      ],
+      [
+        "FE_BS_Normal_Wave_03_5",
+        "FE_BS_Normal_Wave_03_6",
+        "FE_BS_Normal_Wave_03_7",
+        "FE_BS_Normal_Wave_03_8"
+      ],
+      [
+        "FE_BS_Normal_Wave_03_9",
+        "FE_BS_Normal_Wave_03_10",
+        "FE_BS_Normal_Wave_03_11",
+        "FE_BS_Normal_Wave_03_12"
+      ]
+    ],
+    "FE_World_D_A_1_SpiritAttack_01": [
+      [
+        "FE_SA_D_A_1_Wave1_1_1",
+        "FE_SA_D_A_1_Wave1_1_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave1_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave1_3_1",
+        "FE_SA_D_A_1_Wave1_3_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave1_4"
+      ]
+    ],
+    "FE_World_D_A_1_SpiritAttack_02": [
+      [
+        "FE_SA_D_A_1_Wave2_1_1",
+        "FE_SA_D_A_1_Wave2_1_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave2_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave2_3_1",
+        "FE_SA_D_A_1_Wave2_3_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave2_4"
+      ]
+    ],
+    "FE_World_D_A_1_SpiritAttack_03": [
+      [
+        "FE_SA_D_A_1_Wave3_1_1",
+        "FE_SA_D_A_1_Wave3_1_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave3_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave3_3_1",
+        "FE_SA_D_A_1_Wave3_3_2"
+      ],
+      [
+        "FE_SA_D_A_1_Wave3_4"
+      ]
+    ],
+    "FE_World_D_A_2_SpiritAttack_01": [
+      [
+        "FE_SA_D_A_2_Wave1_1_1",
+        "FE_SA_D_A_2_Wave1_1_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave1_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave1_3_1",
+        "FE_SA_D_A_2_Wave1_3_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave1_4"
+      ]
+    ],
+    "FE_World_D_A_2_SpiritAttack_02": [
+      [
+        "FE_SA_D_A_2_Wave2_1_1",
+        "FE_SA_D_A_2_Wave2_1_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave2_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave2_3_1",
+        "FE_SA_D_A_2_Wave2_3_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave2_4"
+      ]
+    ],
+    "FE_World_D_A_2_SpiritAttack_03": [
+      [
+        "FE_SA_D_A_2_Wave3_1_1",
+        "FE_SA_D_A_2_Wave3_1_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave3_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave3_3_1",
+        "FE_SA_D_A_2_Wave3_3_2"
+      ],
+      [
+        "FE_SA_D_A_2_Wave3_4"
+      ]
+    ],
+    "FE_World_D_A_3_SpiritAttack_01": [
+      [
+        "FE_SA_D_A_3_Wave1_1_1",
+        "FE_SA_D_A_3_Wave1_1_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave1_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave1_3_1",
+        "FE_SA_D_A_3_Wave1_3_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave1_4"
+      ]
+    ],
+    "FE_World_D_A_3_SpiritAttack_02": [
+      [
+        "FE_SA_D_A_3_Wave2_1_1",
+        "FE_SA_D_A_3_Wave2_1_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave2_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave2_3_1",
+        "FE_SA_D_A_3_Wave2_3_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave2_4"
+      ]
+    ],
+    "FE_World_D_A_3_SpiritAttack_03": [
+      [
+        "FE_SA_D_A_3_Wave3_1_1",
+        "FE_SA_D_A_3_Wave3_1_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave3_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave3_3_1",
+        "FE_SA_D_A_3_Wave3_3_2"
+      ],
+      [
+        "FE_SA_D_A_3_Wave3_4"
+      ]
+    ],
+    "FE_World_D_A_Defence_01": [
+      [
+        "World_D_A_Defence_01_Wave1_1",
+        "World_D_A_Defence_01_Wave1_2"
+      ],
+      [
+        "World_D_A_Defence_01_Wave2_1",
+        "World_D_A_Defence_01_Wave2_2"
+      ],
+      [
+        "World_D_A_Defence_01_WaveA1_1",
+        "World_D_A_Defence_01_SupplyBox_2"
+      ],
+      [
+        "World_D_A_Defence_01_WaveA1_2"
+      ],
+      [
+        "World_D_A_Defence_01_Wave4_1"
+      ],
+      [
+        "World_D_A_Defence_01_Wave4_2"
+      ],
+      [
+        "World_D_A_Defence_01_Wave4_3"
+      ],
+      [
+        "World_D_A_Defence_01_Wave4_4"
+      ],
+      [
+        "World_D_A_Defence_01_WaveB1_1",
+        "World_D_A_Defence_01_WaveB2_1"
+      ],
+      [
+        "World_D_A_Defence_01_WaveB1_2",
+        "World_D_A_Defence_01_WaveB2_2"
+      ],
+      [
+        "World_D_A_Defence_01_Wave5_2",
+        "World_D_A_Defence_01_Wave6_2",
+        "World_D_A_Defence_01_SupplyBox_3"
+      ],
+      [
+        "World_D_A_Defence_01_Wave5_1",
+        "World_D_A_Defence_01_Wave6_1"
+      ],
+      [
+        "World_D_A_Defence_01_Wave5_3",
+        "World_D_A_Defence_01_Wave6_3"
+      ],
+      [
+        "World_D_A_Defence_01_WaveB3_1",
+        "World_D_A_Defence_01_WaveB4_1"
+      ],
+      [
+        "World_D_A_Defence_01_Wave5_4",
+        "World_D_A_Defence_01_Wave6_4"
+      ],
+      [
+        "World_D_A_Defence_01_Wave9_1",
+        "World_D_A_Defence_01_SupplyBox_4"
+      ]
+    ],
+    "FE_World_D_A_Defence_SupplyBox_01": [
+      [],
+      [],
+      []
+    ],
+    "FE_World_L_A_2_SpiritAttack_01": [
+      [
+        "FE_SA_L_A_2_Wave1_1_1",
+        "FE_SA_L_A_2_Wave1_1_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave1_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave1_3_1",
+        "FE_SA_L_A_2_Wave1_3_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave1_4"
+      ]
+    ],
+    "FE_World_L_A_2_SpiritAttack_02": [
+      [
+        "FE_SA_L_A_2_Wave2_1_1",
+        "FE_SA_L_A_2_Wave2_1_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave2_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave2_3_1",
+        "FE_SA_L_A_2_Wave2_3_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave2_4"
+      ]
+    ],
+    "FE_World_L_A_2_SpiritAttack_03": [
+      [
+        "FE_SA_L_A_2_Wave3_1_1",
+        "FE_SA_L_A_2_Wave3_1_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave3_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave3_3_1",
+        "FE_SA_L_A_2_Wave3_3_2"
+      ],
+      [
+        "FE_SA_L_A_2_Wave3_4"
+      ]
+    ],
+    "FE_World_L_A_3_SpiritAttack_01": [
+      [
+        "FE_SA_L_A_3_Wave1_1_1",
+        "FE_SA_L_A_3_Wave1_1_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave1_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave1_3_1",
+        "FE_SA_L_A_3_Wave1_3_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave1_4"
+      ]
+    ],
+    "FE_World_L_A_3_SpiritAttack_02": [
+      [
+        "FE_SA_L_A_3_Wave2_1_1",
+        "FE_SA_L_A_3_Wave2_1_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave2_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave2_3_1",
+        "FE_SA_L_A_3_Wave2_3_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave2_4"
+      ]
+    ],
+    "FE_World_L_A_3_SpiritAttack_03": [
+      [
+        "FE_SA_L_A_3_Wave3_1_1",
+        "FE_SA_L_A_3_Wave3_1_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave3_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave3_3_1",
+        "FE_SA_L_A_3_Wave3_3_2"
+      ],
+      [
+        "FE_SA_L_A_3_Wave3_4"
+      ]
+    ],
+    "FE_World_L_A_Defence_01": [
+      [
+        "World_L_A_Defence_01_Wave1_1",
+        "World_L_A_Defence_01_Wave1_2"
+      ],
+      [
+        "World_L_A_Defence_01_Wave2_1",
+        "World_L_A_Defence_01_Wave2_2"
+      ],
+      [
+        "World_L_A_Defence_01_WaveA1_1",
+        "World_L_A_Defence_01_SupplyBox_2"
+      ],
+      [
+        "World_L_A_Defence_01_WaveA1_2"
+      ],
+      [
+        "World_L_A_Defence_01_Wave4_1"
+      ],
+      [
+        "World_L_A_Defence_01_Wave4_2"
+      ],
+      [
+        "World_L_A_Defence_01_Wave4_3"
+      ],
+      [
+        "World_L_A_Defence_01_Wave4_4"
+      ],
+      [
+        "World_L_A_Defence_01_WaveB1_1",
+        "World_L_A_Defence_01_WaveB2_1"
+      ],
+      [
+        "World_L_A_Defence_01_WaveB1_2",
+        "World_L_A_Defence_01_WaveB2_2"
+      ],
+      [
+        "World_L_A_Defence_01_Wave5_2",
+        "World_L_A_Defence_01_Wave6_2",
+        "World_L_A_Defence_01_SupplyBox_3"
+      ],
+      [
+        "World_L_A_Defence_01_Wave5_1",
+        "World_L_A_Defence_01_Wave6_1"
+      ],
+      [
+        "World_L_A_Defence_01_Wave5_3",
+        "World_L_A_Defence_01_Wave6_3"
+      ],
+      [
+        "World_L_A_Defence_01_WaveB3_1",
+        "World_L_A_Defence_01_WaveB4_1"
+      ],
+      [
+        "World_L_A_Defence_01_Wave5_4",
+        "World_L_A_Defence_01_Wave6_4"
+      ],
+      [
+        "World_L_A_Defence_01_Wave9_1",
+        "World_L_A_Defence_01_SupplyBox_4"
+      ]
+    ],
+    "FE_World_L_A_Defence_SupplyBox_01": [
+      [],
+      [],
+      []
+    ],
+    "FE_World_L_A_SpiritAttack_01": [
+      [
+        "FE_SA_L_A_Wave1_1_1",
+        "FE_SA_L_A_Wave1_1_2"
+      ],
+      [
+        "FE_SA_L_A_Wave1_2"
+      ],
+      [
+        "FE_SA_L_A_Wave1_3_1",
+        "FE_SA_L_A_Wave1_3_2"
+      ],
+      [
+        "FE_SA_L_A_Wave1_4"
+      ]
+    ],
+    "FE_World_L_A_SpiritAttack_02": [
+      [
+        "FE_SA_L_A_Wave2_1_1",
+        "FE_SA_L_A_Wave2_1_2"
+      ],
+      [
+        "FE_SA_L_A_Wave2_2"
+      ],
+      [
+        "FE_SA_L_A_Wave2_3_1",
+        "FE_SA_L_A_Wave2_3_2"
+      ],
+      [
+        "FE_SA_L_A_Wave2_4"
+      ]
+    ],
+    "FE_World_L_A_SpiritAttack_03": [
+      [
+        "FE_SA_L_A_Wave3_1_1",
+        "FE_SA_L_A_Wave3_1_2"
+      ],
+      [
+        "FE_SA_L_A_Wave3_2"
+      ],
+      [
+        "FE_SA_L_A_Wave3_3_1",
+        "FE_SA_L_A_Wave3_3_2"
+      ],
+      [
+        "FE_SA_L_A_Wave3_4"
+      ]
+    ],
+    "FierceHornCave_Easy_Wave_01": [
+      [
+        "M_PD_FierceHornCave_Wave_Stage2_1"
+      ],
+      [
+        "M_PD_FierceHornCave_Wave_Stage2_2"
+      ],
+      [
+        "M_PD_FierceHornCave_Wave_Stage2_3"
+      ]
+    ],
+    "FierceHornCave_Hard_Wave_01": [
+      [
+        "M_PD_FierceHornCave_Lycan_04_001_Multi_1",
+        "M_PD_FierceHornCave_Duduka_01_001_Multi_1"
+      ],
+      [
+        "M_PD_FierceHornCave_Lycan_04_001_Multi_2",
+        "M_PD_FierceHornCave_Duduka_01_001_Multi_2"
+      ],
+      [
+        "M_PD_FierceHornCave_Lycan_04_001_Multi_3",
+        "M_PD_FierceHornCave_Duduka_01_001_Multi_3"
+      ]
+    ],
+    "FierceHornCave_Wave_01": [
+      [
+        "M_PD_FierceHornCave_Lycan_04_001_Multi_1",
+        "M_PD_FierceHornCave_Duduka_01_001_Multi_1"
+      ],
+      [
+        "M_PD_FierceHornCave_Lycan_04_001_Multi_2",
+        "M_PD_FierceHornCave_Duduka_01_001_Multi_2"
+      ],
+      [
+        "M_PD_FierceHornCave_Lycan_04_001_Multi_3",
+        "M_PD_FierceHornCave_Duduka_01_001_Multi_3"
+      ]
+    ],
+    "IN_D_1_Beritra_1_01": [
+      [
+        "IN_Beritra_D_1_Wave_1_1_1"
+      ],
+      [
+        "IN_Beritra_D_1_Wave_1_1_2"
+      ],
+      [
+        "IN_Beritra_D_1_Wave_1_1_3"
+      ],
+      [
+        "IN_Beritra_D_1_Wave_1_1_4"
+      ]
+    ],
+    "IN_D_1_Beritra_1_02": [
+      [
+        "IN_Beritra_D_1_Wave_1_2_1",
+        "IN_Beritra_D_1_Wave_1_2_2"
+      ],
+      [
+        "IN_Beritra_D_1_Wave_1_2_3",
+        "IN_Beritra_D_1_Wave_1_2_4"
+      ]
+    ],
+    "IN_D_1_Beritra_1_03": [
+      [
+        "IN_Beritra_D_1_Wave_2_1_1"
+      ],
+      [
+        "IN_Beritra_D_1_Wave_2_1_2"
+      ]
+    ],
+    "IN_D_1_Beritra_1_04": [
+      [
+        "IN_Beritra_D_1_Wave_2_2_1"
+      ],
+      [
+        "IN_Beritra_D_1_Wave_2_2_2"
+      ]
+    ],
+    "IN_D_1_Broken_Sword_01": [
+      [
+        "IN_BS_D_1_Wave_1_1",
+        "IN_BS_D_1_Wave_1_2",
+        "IN_BS_D_1_Wave_1_3",
+        "IN_BS_D_1_Wave_1_4"
+      ],
+      [
+        "IN_BS_D_1_Wave_1_5",
+        "IN_BS_D_1_Wave_1_6",
+        "IN_BS_D_1_Wave_1_7",
+        "IN_BS_D_1_Wave_1_8"
+      ],
+      [
+        "IN_BS_D_1_Wave_1_9",
+        "IN_BS_D_1_Wave_1_10",
+        "IN_BS_D_1_Wave_1_11",
+        "IN_BS_D_1_Wave_1_12"
+      ]
+    ],
+    "IN_D_1_Broken_Sword_02": [
+      [
+        "IN_BS_D_1_Wave_2_1",
+        "IN_BS_D_1_Wave_2_2",
+        "IN_BS_D_1_Wave_2_3",
+        "IN_BS_D_1_Wave_2_4"
+      ],
+      [
+        "IN_BS_D_1_Wave_2_5",
+        "IN_BS_D_1_Wave_2_6",
+        "IN_BS_D_1_Wave_2_7",
+        "IN_BS_D_1_Wave_2_8"
+      ],
+      [
+        "IN_BS_D_1_Wave_2_9",
+        "IN_BS_D_1_Wave_2_10",
+        "IN_BS_D_1_Wave_2_11",
+        "IN_BS_D_1_Wave_2_12"
+      ]
+    ],
+    "IN_D_1_Broken_Sword_03": [
+      [
+        "IN_BS_D_1_Wave_3_1",
+        "IN_BS_D_1_Wave_3_2",
+        "IN_BS_D_1_Wave_3_3",
+        "IN_BS_D_1_Wave_3_4"
+      ],
+      [
+        "IN_BS_D_1_Wave_3_5",
+        "IN_BS_D_1_Wave_3_6",
+        "IN_BS_D_1_Wave_3_7",
+        "IN_BS_D_1_Wave_3_8"
+      ],
+      [
+        "IN_BS_D_1_Wave_3_9",
+        "IN_BS_D_1_Wave_3_10",
+        "IN_BS_D_1_Wave_3_11",
+        "IN_BS_D_1_Wave_3_12"
+      ]
+    ],
+    "IN_D_1_SpiritAttack_01": [
+      [
+        "IN_SA_D_1_Wave1_1_1",
+        "IN_SA_D_1_Wave1_1_2"
+      ],
+      [
+        "IN_SA_D_1_Wave1_2"
+      ],
+      [
+        "IN_SA_D_1_Wave1_3_1",
+        "IN_SA_D_1_Wave1_3_2"
+      ],
+      [
+        "IN_SA_D_1_Wave1_4"
+      ]
+    ],
+    "IN_D_1_SpiritAttack_02": [
+      [
+        "IN_SA_D_1_Wave2_1_1",
+        "IN_SA_D_1_Wave2_1_2"
+      ],
+      [
+        "IN_SA_D_1_Wave2_2"
+      ],
+      [
+        "IN_SA_D_1_Wave2_3_1",
+        "IN_SA_D_1_Wave2_3_2"
+      ],
+      [
+        "IN_SA_D_1_Wave2_4"
+      ]
+    ],
+    "IN_D_1_SpiritAttack_03": [
+      [
+        "IN_SA_D_1_Wave3_1_1",
+        "IN_SA_D_1_Wave3_1_2"
+      ],
+      [
+        "IN_SA_D_1_Wave3_2"
+      ],
+      [
+        "IN_SA_D_1_Wave3_3_1",
+        "IN_SA_D_1_Wave3_3_2"
+      ],
+      [
+        "IN_SA_D_1_Wave3_4"
+      ]
+    ],
+    "IN_L_1_Beritra_1_01": [
+      [
+        "IN_Beritra_L_1_Wave_1_1_1"
+      ],
+      [
+        "IN_Beritra_L_1_Wave_1_1_2"
+      ],
+      [
+        "IN_Beritra_L_1_Wave_1_1_3"
+      ],
+      [
+        "IN_Beritra_L_1_Wave_1_1_4"
+      ]
+    ],
+    "IN_L_1_Beritra_1_02": [
+      [
+        "IN_Beritra_L_1_Wave_1_2_1",
+        "IN_Beritra_L_1_Wave_1_2_2"
+      ],
+      [
+        "IN_Beritra_L_1_Wave_1_2_3",
+        "IN_Beritra_L_1_Wave_1_2_4"
+      ]
+    ],
+    "IN_L_1_Beritra_1_03": [
+      [
+        "IN_Beritra_L_1_Wave_2_1_1"
+      ],
+      [
+        "IN_Beritra_L_1_Wave_2_1_2"
+      ]
+    ],
+    "IN_L_1_Beritra_1_04": [
+      [
+        "IN_Beritra_L_1_Wave_2_2_1"
+      ],
+      [
+        "IN_Beritra_L_1_Wave_2_2_2"
+      ]
+    ],
+    "IN_L_1_Broken_Sword_01": [
+      [
+        "IN_BS_L_1_Wave_1_1",
+        "IN_BS_L_1_Wave_1_2",
+        "IN_BS_L_1_Wave_1_3",
+        "IN_BS_L_1_Wave_1_4"
+      ],
+      [
+        "IN_BS_L_1_Wave_1_5",
+        "IN_BS_L_1_Wave_1_6",
+        "IN_BS_L_1_Wave_1_7",
+        "IN_BS_L_1_Wave_1_8"
+      ],
+      [
+        "IN_BS_L_1_Wave_1_9",
+        "IN_BS_L_1_Wave_1_10",
+        "IN_BS_L_1_Wave_1_11",
+        "IN_BS_L_1_Wave_1_12"
+      ]
+    ],
+    "IN_L_1_Broken_Sword_02": [
+      [
+        "IN_BS_L_1_Wave_2_1",
+        "IN_BS_L_1_Wave_2_2",
+        "IN_BS_L_1_Wave_2_3",
+        "IN_BS_L_1_Wave_2_4"
+      ],
+      [
+        "IN_BS_L_1_Wave_2_5",
+        "IN_BS_L_1_Wave_2_6",
+        "IN_BS_L_1_Wave_2_7",
+        "IN_BS_L_1_Wave_2_8"
+      ],
+      [
+        "IN_BS_L_1_Wave_2_9",
+        "IN_BS_L_1_Wave_2_10",
+        "IN_BS_L_1_Wave_2_11",
+        "IN_BS_L_1_Wave_2_12"
+      ]
+    ],
+    "IN_L_1_Broken_Sword_03": [
+      [
+        "IN_BS_L_1_Wave_3_1",
+        "IN_BS_L_1_Wave_3_2",
+        "IN_BS_L_1_Wave_3_3",
+        "IN_BS_L_1_Wave_3_4"
+      ],
+      [
+        "IN_BS_L_1_Wave_3_5",
+        "IN_BS_L_1_Wave_3_6",
+        "IN_BS_L_1_Wave_3_7",
+        "IN_BS_L_1_Wave_3_8"
+      ],
+      [
+        "IN_BS_L_1_Wave_3_9",
+        "IN_BS_L_1_Wave_3_10",
+        "IN_BS_L_1_Wave_3_11",
+        "IN_BS_L_1_Wave_3_12"
+      ]
+    ],
+    "IN_L_1_SpiritAttack_01": [
+      [
+        "IN_SA_L_1_Wave1_1_1",
+        "IN_SA_L_1_Wave1_1_2"
+      ],
+      [
+        "IN_SA_L_1_Wave1_2"
+      ],
+      [
+        "IN_SA_L_1_Wave1_3_1",
+        "IN_SA_L_1_Wave1_3_2"
+      ],
+      [
+        "IN_SA_L_1_Wave1_4"
+      ]
+    ],
+    "IN_L_1_SpiritAttack_02": [
+      [
+        "IN_SA_L_1_Wave2_1_1",
+        "IN_SA_L_1_Wave2_1_2"
+      ],
+      [
+        "IN_SA_L_1_Wave2_2"
+      ],
+      [
+        "IN_SA_L_1_Wave2_3_1",
+        "IN_SA_L_1_Wave2_3_2"
+      ],
+      [
+        "IN_SA_L_1_Wave2_4"
+      ]
+    ],
+    "IN_L_1_SpiritAttack_03": [
+      [
+        "IN_SA_L_1_Wave3_1_1",
+        "IN_SA_L_1_Wave3_1_2"
+      ],
+      [
+        "IN_SA_L_1_Wave3_2"
+      ],
+      [
+        "IN_SA_L_1_Wave3_3_1",
+        "IN_SA_L_1_Wave3_3_2"
+      ],
+      [
+        "IN_SA_L_1_Wave3_4"
+      ]
+    ],
+    "ReforgedAbyss_01_Wave_01": [
+      [
+        "ReforgedAbyss_01_Wave_01_1"
+      ],
+      [
+        "ReforgedAbyss_01_Wave_01_2"
+      ],
+      [
+        "ReforgedAbyss_01_Wave_01_3"
+      ]
+    ],
+    "ReforgedAbyss_01_Wave_02": [
+      [
+        "ReforgedAbyss_01_Wave_02_1"
+      ],
+      [
+        "ReforgedAbyss_01_Wave_02_2"
+      ],
+      [
+        "ReforgedAbyss_01_Wave_02_3"
+      ]
+    ],
+    "ReforgedAbyss_01_Wave_03": [
+      [
+        "ReforgedAbyss_01_Wave_03_1"
+      ],
+      [
+        "ReforgedAbyss_01_Wave_03_2"
+      ],
+      [
+        "ReforgedAbyss_01_Wave_03_3"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_01": [
+      [
+        "ReforgedAbyss_1PartyWave_01_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_01_2"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_02": [
+      [
+        "ReforgedAbyss_1PartyWave_02_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_02_2"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_02_3"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_03": [
+      [
+        "ReforgedAbyss_1PartyWave_03_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_03_2"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_04": [
+      [
+        "ReforgedAbyss_1PartyWave_04_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_04_2"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_05": [
+      [
+        "ReforgedAbyss_1PartyWave_05_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_05_2"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_05_3"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_06": [
+      [
+        "ReforgedAbyss_1PartyWave_06_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_06_2"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_07": [
+      [
+        "ReforgedAbyss_1PartyWave_07_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_07_2"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_08": [
+      [
+        "ReforgedAbyss_1PartyWave_08_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_08_2"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_08_3"
+      ]
+    ],
+    "ReforgedAbyss_1PartyWave_09": [
+      [
+        "ReforgedAbyss_1PartyWave_09_1"
+      ],
+      [
+        "ReforgedAbyss_1PartyWave_09_2"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_01": [
+      [
+        "ReforgedAbyss_2PartyWave_01_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_01_2"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_02": [
+      [
+        "ReforgedAbyss_2PartyWave_02_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_02_2"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_02_3"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_03": [
+      [
+        "ReforgedAbyss_2PartyWave_03_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_03_2"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_04": [
+      [
+        "ReforgedAbyss_2PartyWave_04_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_04_2"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_05": [
+      [
+        "ReforgedAbyss_2PartyWave_05_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_05_2"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_05_3"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_06": [
+      [
+        "ReforgedAbyss_2PartyWave_06_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_06_2"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_07": [
+      [
+        "ReforgedAbyss_2PartyWave_07_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_07_2"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_08": [
+      [
+        "ReforgedAbyss_2PartyWave_08_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_08_2"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_08_3"
+      ]
+    ],
+    "ReforgedAbyss_2PartyWave_09": [
+      [
+        "ReforgedAbyss_2PartyWave_09_1"
+      ],
+      [
+        "ReforgedAbyss_2PartyWave_09_2"
+      ]
+    ],
+    "SealAdvanced_D_0001_R2_Wave_01": [
+      [
+        "R2_Multi_Wave_1_1_SealAdvanced_0001"
+      ],
+      [
+        "R2_Multi_Wave_1_2_SealAdvanced_0001"
+      ],
+      [
+        "R2_Multi_Wave_1_3_SealAdvanced_0001"
+      ]
+    ],
+    "SealAdvanced_D_0001_R2_Wave_04": [
+      [
+        "R2_WaveElite_2_SealAdvanced_0001"
+      ]
+    ],
+    "SealAdvanced_L_0001_R2_Wave_01": [
+      [
+        "R2_Multi_Wave_1_1_SealAdvanced_0001"
+      ],
+      [
+        "R2_Multi_Wave_1_2_SealAdvanced_0001"
+      ],
+      [
+        "R2_Multi_Wave_1_3_SealAdvanced_0001"
+      ]
+    ],
+    "SealAdvanced_L_0001_R2_Wave_04": [
+      [
+        "R2_WaveElite_2_SealAdvanced_0001"
+      ]
+    ],
+    "Wave_Dungeon_Daily_0001": [
+      [
+        "Dungeon_Daily_0001_Single_OrcusGem"
+      ],
+      [
+        "Dungeon_Daily_0001_Multi_Point_1"
+      ],
+      [
+        "Dungeon_Daily_0001_Multi_Point_2"
+      ],
+      [
+        "Dungeon_Daily_0001_Multi_Point_3"
+      ],
+      [
+        "Dungeon_Daily_0001_Multi_Point_4"
+      ],
+      [
+        "Dungeon_Daily_0001_Multi_Point_5"
+      ]
+    ],
+    "Wave_Dungeon_Daily_0002": [
+      [
+        "Dungeon_Daily_0002_Multi_Point_1"
+      ],
+      [
+        "Dungeon_Daily_0002_Multi_Point_2"
+      ],
+      [
+        "Dungeon_Daily_0002_Multi_Point_3"
+      ],
+      [
+        "Dungeon_Daily_0002_Multi_Point_4"
+      ],
+      [
+        "Dungeon_Daily_0002_Multi_Point_5"
+      ]
+    ]
   }
 }

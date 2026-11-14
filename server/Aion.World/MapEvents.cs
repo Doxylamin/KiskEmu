@@ -61,10 +61,10 @@ public sealed record MapEventObjective(
     /// <summary>Objectives only the client can finish (a cutscene, a note, a talk, a guide); it reports them with 0x9230.</summary>
     public bool ClientSide => Type is "CompleteCutscene" or "CloseNote" or "CompleteNpcTalk" or "CloseGuide";
     /// <summary>
-    /// Objectives the server does not track yet (waves, puzzles, items): finished after a grace period so the event goes on. A score
-    /// without its UnifiedObjectivesList also waits for it (MapEventRun.Tracked).
+    /// Objectives the server does not track yet (puzzles, items): finished after a grace period so the event goes on. A score
+    /// without its UnifiedObjectivesList and a wave not in WaveStepData also wait for it (MapEventRun.Tracked).
     /// </summary>
-    public bool Unsupported => Type is "ClearWave" or "ClearBoardPuzzle" or "GetAbnormal" or "PCSocial"
+    public bool Unsupported => Type is "ClearBoardPuzzle" or "GetAbnormal" or "PCSocial"
         or "UseUsableItemType" or "CollectItem" or "KillNpcCreatureType" or "UpdateEnvObjState";
 }
 
@@ -188,7 +188,8 @@ public sealed class MapEventTables
         [property: JsonPropertyName("volumes")] Dictionary<string, LayerVolume> Volumes,
         [property: JsonPropertyName("deferred")] Dictionary<string, string[]> Deferred,
         [property: JsonPropertyName("teleports")] Dictionary<string, TeleportTarget>? Teleports = null,
-        [property: JsonPropertyName("teleport_effects")] Dictionary<string, int>? TeleportEffects = null);
+        [property: JsonPropertyName("teleport_effects")] Dictionary<string, int>? TeleportEffects = null,
+        [property: JsonPropertyName("waves")] Dictionary<string, string[][]>? Waves = null);
 
     readonly File file;
     readonly Dictionary<int, int> dungeonByMap = [];
@@ -302,6 +303,8 @@ public sealed class MapEventTables
     public TeleportTarget? Teleport(string name) => file.Teleports?.GetValueOrDefault(name);
     /// <summary>A PCTeleport effect name's TeleportEffect.dat id (the 0x3621 effect byte), 0 when unknown or empty.</summary>
     public int TeleportEffect(string name) => file.TeleportEffects?.GetValueOrDefault(name) ?? 0;
+    /// <summary>WaveStepData.dat: a wave's spawners by order (StartWave spawns order 1; each next order when the one before is dead).</summary>
+    public string[][]? Wave(string name) => file.Waves?.GetValueOrDefault(name);
     /// <summary>Spawn entries a StartSpawner directive of the map's events starts: not spawned at map load.</summary>
     public IReadOnlySet<string> Deferred(int mapId) => (file.Deferred.GetValueOrDefault(K(mapId)) ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
 }
@@ -549,6 +552,10 @@ public sealed class MapEventRun
         {
             var o = step.Objectives[i];
             if ((o.ClientSide || o.Unsupported || !Tracked(o, step)) && i < fallbackAt.Length) fallbackAt[i] = now + FallbackMs;
+            // A ClearWave whose wave no StartWave of the event starts (Dungeon_Daily_0001/0002: the wave's first order is the map's own
+            // OrcusGem) runs from the step that waits for it (CANDIDATE: no script starts it, the client data says nothing else).
+            if (o.Type == "ClearWave" && Tracked(o, step) && !waves.ContainsKey(o.Value(0)) && !clearedWaves.Contains(o.Value(0)) && !StartsWave(o.Value(0)))
+                StartWave(o.Value(0));
             // A CloseGuide objective shows its guide (the forced popup) when the step begins: OBSERVED 2026-10-19, ShowGuide (46) for
             // Tutorial_ForcedPopup_Fly_01 at the Subspace's first step and Tutorial_ForcedPopup_L1_ExitDungeon_01 with the Dream
             // Crossroad's join; the client reports CloseGuide (0x9230 kind 2) when the player closes it. Without it the player waited
@@ -561,13 +568,56 @@ public sealed class MapEventRun
         CheckStep(now);
     }
 
-    /// <summary>Objectives of the types the server tracks only with their data (a score with its UnifiedObjectivesList); the others
-    /// finish by the fallback.</summary>
+    /// <summary>Objectives of the types the server tracks only with their data (a score with its UnifiedObjectivesList, a wave of
+    /// WaveStepData); the others finish by the fallback.</summary>
     static bool Tracked(MapEventObjective o, MapEventStep step) => o.Type switch
     {
         "AchieveUnifiedObjectivesScore" => step.Unified is { Length: > 0 },
+        "ClearWave" => MapEventTables.Embedded.Wave(o.Value(0)) is { Length: > 0 },
         _ => true,
     };
+
+    // ---------- Waves ----------
+    // WaveStepData.dat: a wave is spawner groups in order. StartWave spawns order 1; once no NPC of the current order lives the next
+    // order spawns (CANDIDATE: the client data has the orders, not the rule between them; an order of objects only goes on at once);
+    // after the last order the wave is cleared (ClearWave). EndWave stops it (its NPCs stay; the scripts despawn them themselves).
+
+    readonly Dictionary<string, int> waves = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> clearedWaves = new(StringComparer.OrdinalIgnoreCase);
+
+    bool StartsWave(string wave) =>
+        Definition.Stages.SelectMany(st => st.Steps).SelectMany(st => st.Pre.Concat(st.Post).Concat(st.Objectives.SelectMany(o => (o.Pre ?? []).Concat(o.Post ?? []))))
+            .Concat(Definition.Rules?.SelectMany(r => r.Directives) ?? [])
+            .Any(d => d.Type == "StartWave" && string.Equals(d.Value(0), wave, StringComparison.OrdinalIgnoreCase));
+
+    void StartWave(string wave)
+    {
+        if (MapEventTables.Embedded.Wave(wave) is not { Length: > 0 } orders) { Host.Unsupported(this, $"directive StartWave {wave}: not in WaveStepData"); return; }
+        clearedWaves.Remove(wave);
+        waves[wave] = 0;
+        foreach (var spawner in orders[0]) Host.Spawn(spawner, 0);
+    }
+
+    /// <summary>The spawners of one wave's current order, if this run is running it.</summary>
+    public IEnumerable<string> WaveSpawners(string wave) =>
+        waves.TryGetValue(wave, out var at) && MapEventTables.Embedded.Wave(wave) is { } orders && at < orders.Length ? orders[at] : [];
+
+    void WaveTick(long now)
+    {
+        foreach (var (wave, order) in waves.ToList())
+        {
+            if (MapEventTables.Embedded.Wave(wave) is not { } orders) { waves.Remove(wave); continue; }
+            var at = order;
+            while (at < orders.Length && !orders[at].Any(Host.SpawnerAlive))
+            {
+                if (++at < orders.Length) foreach (var spawner in orders[at]) Host.Spawn(spawner, 0);
+            }
+            if (at < orders.Length) { waves[wave] = at; continue; }
+            waves.Remove(wave);
+            clearedWaves.Add(wave);
+            Apply(o => o.Type == "ClearWave" && string.Equals(o.Value(0), wave, StringComparison.OrdinalIgnoreCase), now);
+        }
+    }
 
     // ---------- Events from the world ----------
 
@@ -780,12 +830,18 @@ public sealed class MapEventRun
 
     // ---------- Steps ----------
 
-    void CheckStep(long now)
+    /// <summary>The current step's required objectives (all of them when none is required) reached their counts.</summary>
+    bool StepGoalsMet()
     {
-        if (Finished || stepObjectivesDone || Step is not { } step) return;
+        if (Step is not { } step) return false;
         var required = step.Objectives.Select((o, i) => (o, i)).Where(x => !x.o.Optional).ToList();
         if (required.Count == 0) required = step.Objectives.Select((o, i) => (o, i)).ToList();
-        if (required.Any(x => Goals[x.i] < x.o.Count)) return;
+        return required.All(x => x.i < Goals.Length && Goals[x.i] >= x.o.Count);
+    }
+
+    void CheckStep(long now)
+    {
+        if (Finished || stepObjectivesDone || Step is not { } step || !StepGoalsMet()) return;
         stepObjectivesDone = true;
         if (step.Post.Length > 0) sequences.Add(new Sequence(step.Post, stepSerial));
         Tick(now);
@@ -866,6 +922,7 @@ public sealed class MapEventRun
             }
             if (!progressed) break;
         }
+        if (!Finished && waves.Count > 0) WaveTick(now);
         if (Finished) return;
         // Client-side and untracked objectives time out as done.
         if (Step is { } step)
@@ -886,7 +943,10 @@ public sealed class MapEventRun
                     sequences.Add(new Sequence(rules[i].Directives, stepSerial));
                 }
         // A stage fails once per spell of its conditions (a death fails it when it happens, not every tick until the revival).
-        if (Stage is { Fail.Length: > 0 } stage)
+        // A step whose objectives are done goes on first: FierceHornCave_Normal's wave stage fails on "Lycan totem out of combat"
+        // and its last step is the totem's kill, so the kill itself failed the stage and the wave began again (OURS, zaraza87's
+        // fork: the order of the two in one tick is not in the client data).
+        if (Stage is { Fail.Length: > 0 } stage && !stepObjectivesDone && !StepGoalsMet())
         {
             var failing = Holds(stage.Fail, now);
             if (failing && !stageFailing) { stageFailing = true; FailStage(stage, now); return; }
@@ -1002,6 +1062,8 @@ public sealed class MapEventRun
             case "StartFocusCamera": Host.FocusCamera(d.Value(0), d.Value(2)); break;
             case "EnvObjChangePhase": Host.EnvObjChangePhase(d.Value(0), d.Int(1)); break;
             case "SetEnvObjCanInteract": Host.SetEnvObjCanInteract(d.Value(0), d.Flag(1)); break;
+            case "StartWave": StartWave(d.Value(0)); break;
+            case "EndWave": waves.Remove(d.Value(0)); break;
             case "CameraShake": case "PlayAct": case "ChangeBT": case "NpcMoveforSeamlessCutscene": case "NpcChangePhase":
                 break;   // client-side presentation, or NPC details the server does not model; the event goes on
             default: Host.Unsupported(this, $"directive {d.Type} {d.Value(0)}"); break;
