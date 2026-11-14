@@ -85,7 +85,7 @@ public sealed class ExpeditionTables
 
 public sealed partial class GameSession
 {
-    public const ushort PartyDungeonClearNt = 0x3A69, PartyDungeonMiddleBossKillNt = 0x572e /* OBSERVED (AVION2: 10 mid-boss kills, npc u32) */,
+    public const ushort PartyDungeonClearNt = 0x9333 /* CANDIDATE: usmap 0x3A69 + 0x58ca, the run of the OBSERVED 0x9330/0x9331 (#74) */, PartyDungeonMiddleBossKillNt = 0x572e /* OBSERVED (AVION2: 10 mid-boss kills, npc u32) */,
         ContentsTicketsNt = 0x610b, ContentsTicketUpdateNt = 0x610c; // OBSERVED live (round 2, 2026-11-12)
 
     static ExpeditionTables Expeditions => ExpeditionTables.Embedded;
