@@ -72,6 +72,23 @@ Comparing an official body with what KiskEmu sends for the same situation is how
 OBSERVED. `tools/inspect_capture.py` and `tools/summarize_session.py` check framing and summarize a session without
 printing bodies.
 
+### Capture markers
+
+AVION2's session recordings (`session-….pcap`, read directly, no conversion) can carry capture markers: press the
+marker key (F9) in the game right after an action and type what you did. `capture_timeline.py` picks up
+`session-…-markers.jsonl` beside the recording (or `--markers <file>`; `--no-markers` leaves them out) and puts each
+marker into the timeline at its time, as its own line:
+
+```text
+     2793 c2s 0x171a                                 10 1a173273a250256b9b68
+     2794 == MARKER 1: gathered the node, 2nd use (session-…-marker-001.png) ==
+     2802 s2c 0x3600                                 10 0036a04274cca1010000
+```
+
+`--grep ''` prints every message with the markers between them. The packets just before a marker are the action;
+the screenshot shows what was on screen at the key press. Markers only line up when the packets were stamped by the
+same PC's clock (AVION2's recordings); a pcap from another machine needs its clock offset first.
+
 ## Sharing safely
 
 A raw recording is personal data. The server's stream carries your character names, account and character IDs,
