@@ -318,8 +318,10 @@ observed to be kept). The address pairing above covers the case where it does no
 
 KiskLauncher sets itself up from the account site: `GET /api/launcher/config` (public) gives the site's name,
 `Network:PublicAddress`, the bootstrap port and the client versions, each private one naming its build by
-fingerprint; `GET /api/launcher/builds/<fingerprint>` serves that build's file checklist (`launcher/supported-build.json`,
-built into the host). Optional settings: `Aion:Launcher:ClientVersion` (the version's name, default `2.0.6.0`),
+fingerprint; `GET /api/launcher/builds/<fingerprint>` serves that build's file checklist (`launcher/builds/<game version>.json`,
+built into the host). The versions are `Aion:Native:ClientVersions`, the client game versions this server is built for
+(a JSON array such as `[3527]` or `[3533, 3527]`, the first being the default; unset: 3527, and the game port lets any
+version in). When set, the game port also refuses a client that greets with another version. Optional settings:
 `Aion:Launcher:AllowSteam` (offer "Official latest (Steam)", default true), `Aion:Launcher:SavedDirSuffix` (the
 client's private saved folder; unset, each launcher derives one from the account site's address; keep the value the
 server's players already use when there is one). The account page's launcher download is a ZIP of

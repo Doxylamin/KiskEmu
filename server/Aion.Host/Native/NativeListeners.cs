@@ -44,6 +44,12 @@ public sealed record NativeOptions
     public string? TraceDirectory { get; init; }
     /// <summary>The writable folder the staff dashboard's debug switches use (map-event log, client traces); unset: derived from the two settings above.</summary>
     public string? DebugDirectory { get; init; }
+    /// <summary>
+    /// The client game versions this server is built for (the u32 in the game greeting: 3527 = 2.0.6, 3533, ...). The game
+    /// port refuses another version with a log line instead of letting it stall on the loading screen, and KiskLauncher is
+    /// offered these versions (LauncherEndpoints). Empty: any version is let in and the launcher is offered 3527.
+    /// </summary>
+    public int[] ClientVersions { get; init; } = [];
     public int MaxConnections { get; init; } = 16;
     /// <summary>
     /// A connection without client data for this long is closed. Dead peers are found by TCP keepalive (ServeAsync) well
@@ -128,7 +134,13 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
                 if (buffer.Length > 65536) throw new ProtocolException("Greeting too large");
                 frames = buffer.Drain();
             } while (frames.Count == 0);
-            var key = NativeHandshake.ReadGreeting(frames[0], greetingTag);
+            var key = NativeHandshake.ReadGreeting(frames[0], greetingTag, out var clientVersion);
+            if (greetingTag == NativeHandshake.GameGreeting && !VersionAccepted(Options.ClientVersions, clientVersion))
+            {
+                Logger.LogWarning("{Name} refused a client of game version {Version}: this server is built for {Versions} (Aion:Native:ClientVersions)",
+                    Name, clientVersion, string.Join(", ", Options.ClientVersions));
+                return;
+            }
             var sessionKey = RandomNumberGenerator.GetBytes(32);
             await stream.WriteAsync(HandshakeReply(key, sessionKey), connection.Token);
             var cipher = new Rc4(sessionKey);
@@ -147,6 +159,9 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
             Logger.LogWarning(error, "{Name} connection ended by an unexpected error", Name);
         }
     }
+
+    /// <summary>A greeting without a version (0: older tools, the load test) is let in; otherwise it must be listed, when a list is set.</summary>
+    public static bool VersionAccepted(int[] accepted, int version) => accepted.Length == 0 || version == 0 || accepted.Contains(version);
 
     /// <summary>TCP keepalive: a peer that vanished (crash, link down) is detected within about two minutes instead of at the idle limit.</summary>
     internal static void KeepAlive(TcpClient client)

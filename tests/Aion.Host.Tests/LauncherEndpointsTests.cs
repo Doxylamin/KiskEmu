@@ -47,26 +47,58 @@ public sealed class LauncherEndpointsTests : IAsyncDisposable
         Assert.Equal(JsonValueKind.Null, root.GetProperty("savedDirSuffix").ValueKind);
         var versions = root.GetProperty("clientVersions").EnumerateArray().ToList();
         Assert.Equal(["private", "steam"], versions.Select(v => v.GetProperty("kind").GetString()));
-        Assert.Equal(endpoints.Fingerprint, versions[0].GetProperty("build").GetString());
-        Assert.Equal("2.0.6.0", root.GetProperty("selectedClientVersion").GetString());
+        // Unset Aion:Native:ClientVersions: 3527 (2.0.6), the build the launcher embeds.
+        var build3527 = endpoints.Builds.Single(b => b.GameVersion == 3527);
+        Assert.Equal(("3527", build3527.Fingerprint), (versions[0].GetProperty("id").GetString(), versions[0].GetProperty("build").GetString()));
+        Assert.Equal("3527", root.GetProperty("selectedClientVersion").GetString());
 
-        using var build = JsonDocument.Parse(await client.GetStringAsync("/api/launcher/builds/" + endpoints.Fingerprint.ToUpperInvariant()));
-        Assert.Equal(endpoints.Fingerprint, LauncherEndpoints.ComputeFingerprint(build.RootElement.GetProperty("files")));
+        using var build = JsonDocument.Parse(await client.GetStringAsync("/api/launcher/builds/" + build3527.Fingerprint.ToUpperInvariant()));
+        Assert.Equal(build3527.Fingerprint, LauncherEndpoints.ComputeFingerprint(build.RootElement.GetProperty("files")));
         using var unknown = await client.GetAsync("/api/launcher/builds/" + new string('0', 64));
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
     }
 
     [Fact]
-    public async Task Settings_rename_the_version_set_the_saved_folder_and_can_hide_the_Steam_copy()
+    public async Task The_server_offers_its_configured_versions_in_order_and_can_hide_the_Steam_copy()
     {
-        var client = await StartAsync(LauncherEndpoints.Embedded()!, new()
+        var endpoints = LauncherEndpoints.Embedded()!;
+        var client = await StartAsync(endpoints, new()
         {
-            ["Aion:Launcher:ClientVersion"] = "2.0.7.0", ["Aion:Launcher:AllowSteam"] = "false", ["Aion:Launcher:SavedDirSuffix"] = "abc123",
+            ["Aion:Native:ClientVersions:0"] = "3533", ["Aion:Native:ClientVersions:1"] = "3527", ["Aion:Native:ClientVersions:2"] = "9999",
+            ["Aion:Launcher:AllowSteam"] = "false", ["Aion:Launcher:SavedDirSuffix"] = "abc123",
         });
         var config = await client.GetFromJsonAsync<JsonElement>(LauncherEndpoints.ConfigPath);
         Assert.Equal("abc123", config.GetProperty("savedDirSuffix").GetString());
-        var version = Assert.Single(config.GetProperty("clientVersions").EnumerateArray());
-        Assert.Equal(("2.0.7.0", "2.0.7.0"), (version.GetProperty("id").GetString(), config.GetProperty("selectedClientVersion").GetString()));
+        // 9999 has no build reference: not offered. The first is the default choice.
+        var versions = config.GetProperty("clientVersions").EnumerateArray().ToList();
+        Assert.Equal(["3533", "3527"], versions.Select(v => v.GetProperty("id").GetString()));
+        Assert.Equal("3533", config.GetProperty("selectedClientVersion").GetString());
+        var build3533 = endpoints.Builds.Single(b => b.GameVersion == 3533);
+        Assert.Equal(build3533.Fingerprint, versions[0].GetProperty("build").GetString());
+        using var build = JsonDocument.Parse(await client.GetStringAsync("/api/launcher/builds/" + build3533.Fingerprint));
+        Assert.Equal(("586322693862358479", 3533), (build.RootElement.GetProperty("manifestId").GetString(), build.RootElement.GetProperty("gameVersion").GetInt32()));
+    }
+
+    [Theory]
+    [InlineData(new int[0], 3533, true)]
+    [InlineData(new[] { 3527 }, 0, true)]
+    [InlineData(new[] { 3527 }, 3527, true)]
+    [InlineData(new[] { 3527 }, 3535, false)]
+    public void The_game_port_lets_in_only_listed_versions(int[] accepted, int version, bool allowed) =>
+        Assert.Equal(allowed, Aion.Host.Native.NativeListener.VersionAccepted(accepted, version));
+
+    [Fact]
+    public void The_game_greeting_carries_the_client_version_after_its_key()
+    {
+        // OBSERVED (official 2026-11-04): ... 020103 | cd0d0000 (3533) | 04 06 05 02 44 45 03 00.
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        var body = new Aion.Protocol.Native.PacketWriter().U16(0x3610).Bytes(rsa.ExportRSAPublicKey()).I32(3533)
+            .Raw(Convert.FromHexString("0406050244450300")).ToArray();
+        Aion.Protocol.Native.NativeHandshake.ReadGreeting(body, Aion.Protocol.Native.NativeHandshake.GameGreeting, out var version);
+        Assert.Equal(3533, version);
+        var bare = new Aion.Protocol.Native.PacketWriter().U16(0x3610).Bytes(rsa.ExportRSAPublicKey()).ToArray();
+        Aion.Protocol.Native.NativeHandshake.ReadGreeting(bare, Aion.Protocol.Native.NativeHandshake.GameGreeting, out var none);
+        Assert.Equal(0, none);
     }
 
     [Fact]

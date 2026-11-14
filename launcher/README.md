@@ -15,9 +15,12 @@ Design and evidence: `research/client-installer.md`.
   arguments), the supported-build reference and file checks/placement, GamePlatform.ini, hosts and
   firewall text, the account API client. Cross-platform; tested by `tests/Aion.Launcher.Checks`.
 - `AionLauncher/`: the WinForms app and its elevated helper modes.
-- `supported-build.json`: every file of Steam depot 3393111 manifest 1699273097574069541 (path, size,
-  SHA-256; `tools/launcher_build.py --depot-manifest <Steam>/depotcache/3393111_1699273097574069541.manifest`
-  from `research/local/dev-client/verification.json`, keeping only the depot's 1218 files).
+- `builds/<game version>.json`: one build reference per client game version, the number the client sends in its
+  greeting: every file of that Steam depot 3393111 manifest (path, size, SHA-256), made by `tools/launcher_build.py`.
+  - `3527.json` (2.0.6, manifest 1699273097574069541, 1218 files): `--depot-manifest <Steam>/depotcache/3393111_1699273097574069541.manifest`
+    from `research/local/dev-client/verification.json`. The launcher embeds it as its fallback build.
+  - `3533.json` (Steam build 26262663, manifest 586322693862358479, 1230 files): `--game-version 3533 --scan <client folder>`.
+  The host embeds them all and offers the ones its `Aion:Native:ClientVersions` names.
 - `launcher.example.json`: what a `launcher.json` next to the exe looks like (a server's download ZIP has one, written
   by the server: name, account URL, IPv4 address, bootstrap port; optional `savedDirSuffix`, `certificateThumbprint`,
   `steamClientPath`). It adds that server at the launcher's first start; nothing is embedded in the exe.
@@ -101,11 +104,11 @@ the first server added. Its kept session is dropped: the launcher cannot tell wh
   client versions follow the server; the saved-folder suffix (the server's `savedDirSuffix`, else 32 letters
   derived from the account address) and the pin never change once set.
 - Each private client version names its build by fingerprint (SHA-256 over the quick-check files' `path\0size\0sha256\n`
-  lines, `tools/launcher_build.py`). The embedded `supported-build.json` is used when it matches; another build's
+  lines, `tools/launcher_build.py`). The embedded build (3527) is used when it matches; another build's
   reference comes from `GET /api/launcher/builds/<fingerprint>`, is checked against the fingerprint (and that
   every path stays inside the game folder) and cached under `%LOCALAPPDATA%\KiskPrivate\builds`. The server
   sends only this checklist: the game files always come from the player's own Steam install or Steam account.
-- Game copies are per build and shared by every server on it (`AION2` for the build in `supported-build.json`,
+- Game copies are per build and shared by every server on it (`AION2` for the embedded 3527 build,
   `AION2-<fingerprint>` otherwise). The firewall rules allow one server address; playing on a server with another address re-points
   them (one UAC prompt).
 
@@ -114,8 +117,9 @@ the first server added. Its kept session is dropped: the launcher cannot tell wh
 The Play page has a **Client version** dropdown (dark theme, like the rest). The versions are the server's
 (`clientVersions` from `/api/launcher/config`); the choice is kept per server in the launcher's settings.
 
-- `2.0.6.0` (default): the launcher's private copy, checked against `supported-build.json`, with the
-  firewall rules and the optional Client Editor patch paks, exactly as before.
+- A game version (`3527`, `3533`, ...): the launcher's private copy of that build, checked against its reference,
+  with the firewall rules and the optional Client Editor patch paks. The server lists the versions it is built for
+  (`Aion:Native:ClientVersions`, the first is the default); a launcher without a server list offers `3527`.
 - `Official latest (Steam)` (`steam-latest`): the player's own Steam install, started in place and
   **read-only**: no file in the Steam folder is written, so no patch paks (they would land in its Paks
   folder), no size/hash check (it is newer than the reference) and no firewall rules (they are per exe
@@ -127,9 +131,10 @@ The Play page has a **Client version** dropdown (dark theme, like the rest). The
   PC yet and Steam has moved past it (every official patch, e.g. 2026-11-11), the download page offers
   "Use my Steam copy" next to the 88 GB download, so the version picker on the Play page is not the only way to it.
 
-The server still runs 2.0.6.0 data and opcodes and has no client-version check, so a newer client may
-start but fail or misbehave in-game. The server's settings `Aion:Launcher:ClientVersion` and `Aion:Launcher:AllowSteam`
-choose what it offers (`deploy/linux/README.md`).
+When `Aion:Native:ClientVersions` is set, the game port refuses a client whose greeting names another version (one log
+line on the server) instead of letting it stall on the loading screen; that includes a Steam copy the official servers
+have moved past. `Aion:Native:ClientVersions` and `Aion:Launcher:AllowSteam` choose what the server offers
+(`deploy/linux/README.md`).
 
 ## The KiskPrivate folder
 

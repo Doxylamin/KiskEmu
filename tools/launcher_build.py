@@ -1,8 +1,10 @@
-"""Write the launcher's reference for the supported client build (launcher/supported-build.json).
+"""Write the launcher's reference for one client game version (launcher/builds/<game version>.json).
 
-Source: research/local/dev-client/verification.json, the verified copy of Steam depot 3393111
-manifest 1699273097574069541 (research/client-installer.md). The output lists every file's
-relative path, size and SHA-256 (hashes only, no game data). The launcher checks sizes of all
+A server offers the game versions it is built for (Aion:Native:ClientVersions); each has a reference here,
+named by the version the client sends in its greeting: 3527 (2.0.6, Steam depot 3393111 manifest
+1699273097574069541) and 3533 (Steam build 26262663, manifest 586322693862358479). Source: a verified copy's
+verification.json (research/local/dev-client/verification.json for 3527), or --scan <client folder>, which
+hashes a copy itself. The output lists every file's relative path, size and SHA-256 (hashes only, no game data). The launcher checks sizes of all
 files at each launch, hashes the "quick" set (AION2.exe and the pak index/signature files) and
 offers a full verification.
 
@@ -19,15 +21,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'research/local/dev-client/verification.json'
-OUTPUT = ROOT / 'launcher/supported-build.json'
-BUILD = {'appId': 3393110, 'depotId': 3393111, 'manifestId': '1699273097574069541',
-         'executable': 'Aion2/Binaries/Win64/AION2.exe'}
+BUILDS_DIR = ROOT / 'launcher/builds'
+EXECUTABLE = 'Aion2/Binaries/Win64/AION2.exe'
+# Game version -> its Steam depot manifest (the download coordinates; the version is the build's name).
+MANIFESTS = {3527: '1699273097574069541', 3533: '586322693862358479'}
+DEFAULT_VERSION = 3527
+
+
+def coordinates(version):
+    if version not in MANIFESTS:
+        raise ValueError(f'Unknown game version {version}: add its Steam manifest to MANIFESTS')
+    return {'gameVersion': version, 'appId': 3393110, 'depotId': 3393111, 'manifestId': MANIFESTS[version],
+            'executable': EXECUTABLE}
 
 
 def quick(path):
     """Files hashed before every launch: the game binary and the pak index/signature files."""
     lower = path.lower()
-    return lower == BUILD['executable'].lower() or (lower.startswith('aion2/content/paks/') and lower.endswith(('.utoc', '.sig')))
+    return lower == EXECUTABLE.lower() or (lower.startswith('aion2/content/paks/') and lower.endswith(('.utoc', '.sig')))
 
 
 def _varint(data, i):
@@ -87,7 +98,21 @@ def depot_manifest(data):
     return {'depotId': meta.get(1), 'manifestId': str(meta.get(2)), 'files': files}
 
 
-def build(verification, depot=None):
+def scan(folder):
+    """Hash a client copy into the verification.json shape (every file under the folder, '/' paths)."""
+    folder = Path(folder)
+    files = []
+    for path in sorted(p for p in folder.rglob('*') if p.is_file()):
+        digest = hashlib.sha256()
+        with path.open('rb') as handle:
+            for chunk in iter(lambda: handle.read(1 << 22), b''):
+                digest.update(chunk)
+        files.append({'path': path.relative_to(folder).as_posix(), 'bytes': path.stat().st_size, 'sha256': digest.hexdigest()})
+    return {'status': 'verified', 'errors': [], 'file_count': len(files), 'files': files}
+
+
+def build(verification, depot=None, version=DEFAULT_VERSION):
+    BUILD = coordinates(version)
     if verification.get('status') != 'verified' or verification.get('errors'):
         raise ValueError('verification.json is not a clean verified copy')
     files = sorted(({'path': f['path'].replace('\\', '/'), 'size': f['bytes'], 'sha256': f['sha256'].lower()}
@@ -117,12 +142,16 @@ def build(verification, depot=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', type=Path, default=SOURCE)
-    parser.add_argument('--output', type=Path, default=OUTPUT)
+    parser.add_argument('--game-version', type=int, default=DEFAULT_VERSION, help='the version the client greets with')
+    parser.add_argument('--source', type=Path, default=SOURCE, help='verification.json of a verified copy')
+    parser.add_argument('--scan', type=Path, help='hash this client folder instead of reading --source')
+    parser.add_argument('--output', type=Path, help='default: launcher/builds/<game version>.json')
     parser.add_argument('--depot-manifest', type=Path, help='Steam depotcache/3393111_<manifest>.manifest')
     args = parser.parse_args(argv)
     depot = depot_manifest(args.depot_manifest.read_bytes()) if args.depot_manifest else None
-    result = build(json.loads(args.source.read_text(encoding='utf-8')), depot)
+    verification = scan(args.scan) if args.scan else json.loads(args.source.read_text(encoding='utf-8'))
+    result = build(verification, depot, args.game_version)
+    args.output = args.output or BUILDS_DIR / f'{args.game_version}.json'
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, separators=(',', ':')) + '\n', encoding='utf-8')
     print(f"{args.output}: {result['fileCount']} files, {sum(f['quick'] for f in result['files'])} quick, "

@@ -28,7 +28,7 @@ foreach (var bad in new[] { config with { ServerAddress = "example.com" }, confi
 }
 
 // ---------- Client versions ----------
-Check(ClientVersions.Selected(config).Id == ClientVersion.DefaultId && !ClientVersions.Selected(config).IsSteam, "default client version is 2.0.6.0");
+Check(ClientVersions.Selected(config).Id == ClientVersion.DefaultId && !ClientVersions.Selected(config).IsSteam, "default client version is 3527");
 Check(ClientVersions.Selected(config with { SelectedClientVersion = "steam-latest" }).IsSteam, "steam version selectable");
 Check(ClientVersions.Selected(config with { SelectedClientVersion = "nope" }).Id == ClientVersion.DefaultId, "unknown selection falls back");
 Check(ClientVersions.Arguments(["-steam", "-lp:x"], new("a", "a", "steam", null, ["-foo", "-steam"])).SequenceEqual(["-steam", "-lp:x", "-foo"]), "extra launch args appended once");
@@ -43,7 +43,7 @@ try { (config with { ClientVersions = [new("x", "x", "other")] }).Validate(); Ch
     Check(ClientVersions.SteamFolder(steamVersion, config, new SteamInstall(cvSteamRoot)) == Path.Combine(library, "steamapps", "common", "AION2"), "steam client found via libraryfolders.vdf");
     Check(ClientVersions.SteamFolder(steamVersion, config with { SteamClientPath = temp }, new SteamInstall(cvSteamRoot)) == temp, "steamClientPath overrides detection");
     Check(ClientVersions.Selected(config, "steam-latest").IsSteam, "the player's saved choice selects a version");
-    Check(ClientVersions.Selected(config with { SelectedClientVersion = "steam-latest" }, "2.0.6.0").Id == ClientVersion.DefaultId, "the player's choice beats launcher.json");
+    Check(ClientVersions.Selected(config with { SelectedClientVersion = "steam-latest" }, ClientVersion.DefaultId).Id == ClientVersion.DefaultId, "the player's choice beats launcher.json");
     Check(ClientVersions.Selected(config with { SelectedClientVersion = "steam-latest" }, "gone").IsSteam, "an unknown saved choice falls back to launcher.json");
     // A Steam copy at any build (here: no file list, a newer buildid) is offered instead of downloading the private build.
     var cvSteam = new SteamInstall(cvSteamRoot);
