@@ -48,7 +48,7 @@ public sealed partial class GameSession
             if (op is GuildOpcodes.SendJoinRequestsRq && plain.Length == 2)
             {
                 var replies = new List<byte[]> { PacketWriter.Opcode(GuildOpcodes.SendJoinRequestsRs).U16(0).Varint(0).ToArray() };
-                if (!legionEntryQueryDone) { legionEntryQueryDone = true; replies.AddRange(UnlockUpdateOnce()); }
+                if (!legionEntryQueryDone) { legionEntryQueryDone = true; replies.AddRange(ChatRestartAfterEntry()); }
                 return replies;
             }
             return null;
@@ -62,7 +62,7 @@ public sealed partial class GameSession
                 var w = PacketWriter.Opcode(GuildOpcodes.SendJoinRequestsRs).U16(0).Varint(sent.Count);
                 foreach (var row in sent) WriteJoinSentEntry(w, row);
                 var replies = new List<byte[]> { w.ToArray() };
-                if (!legionEntryQueryDone) { legionEntryQueryDone = true; replies.AddRange(UnlockUpdateOnce()); }
+                if (!legionEntryQueryDone) { legionEntryQueryDone = true; replies.AddRange(ChatRestartAfterEntry()); }
                 return replies;
             }
             case GuildOpcodes.RecvJoinRequestsRq when plain.Length == 2:

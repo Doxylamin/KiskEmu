@@ -774,6 +774,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         sprinting = false;
         Resting = false;
         unlockUpdateSent = false;  // the next world entry re-locks chat in 0xe257 and needs 0xe258 again
+        chatRestartedAfterEntry = false;
         reloading = false;
     }
 
@@ -1172,6 +1173,24 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 ? (quest.Count == 0 ? acquired : [.. acquired, .. quest])
                 : [.. acquired, .. quest, .. qunaRefresh];
         return [GamePackets.ItemModificationList(changes), .. acquired, .. quest, .. qunaRefresh];
+    }
+
+    /// <summary>The 0xe257 list of the last full map load (null before the first).</summary>
+    byte[]? entryUnlockTypes;
+    bool chatRestartedAfterEntry;
+
+    /// <summary>
+    /// Once, after the first world entry's last query: 0xe257 again, then 0xe258, as a reload's burst carries them. Live
+    /// 2026-11-14 (3533): 0xe258 in the first entry burst did not start the Lime chat login (no authn_token, no
+    /// loginWithToken), while the next teleport's reload burst with both did at once. CANDIDATE: the client's chat side
+    /// is not ready during the first load; the pair re-sent after it starts it.
+    /// </summary>
+    List<byte[]> ChatRestartAfterEntry()
+    {
+        if (chatRestartedAfterEntry || entryUnlockTypes is not { } types) return UnlockUpdateOnce();
+        chatRestartedAfterEntry = true;
+        unlockUpdateSent = true;
+        return [GamePackets.ContentsUnlockList(types), GamePackets.ContentsUnlockUpdate()];
     }
 
     List<byte[]> UnlockUpdateOnce()
@@ -1713,6 +1732,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             if (unlockTypes.Contains(RideContentsUnlock)) rideContentsUnlocked = true;
             if (unlockTypes.Contains(DaevanionContentsUnlock)) daevanionContentsUnlocked = true;
             replies.Add(GamePackets.ContentsUnlockList(unlockTypes));
+            entryUnlockTypes = unlockTypes;
             // Rewarded quests go in too (EQuestStatus 4): acquirable list and HUD part progress both read journal status per Quest.dat Part.
             // NPC markers, Alt+1) from Quest.dat PreQuest/NextQuestName against this list. Without them it took the opening
             // HQ1100010 as never done and offered it, and never offered the next NPC-acquired story quest (HQ1101030 after HQ1101021).
