@@ -109,7 +109,7 @@ public sealed class DaevanionTests
     }
 
     [Fact]
-    public async Task Open_all_on_the_live_opcode_opens_what_the_points_pay_for()
+    public async Task Open_all_on_the_live_opcode_opens_the_whole_board_or_nothing()
     {
         var store = new FakeCharacterStore();
         var session = new GameSession(GameData.Embedded, new GameSessionOptions { CharacterLevel = 12, WorldId = 1204 }, new Random(3))
@@ -130,9 +130,17 @@ public sealed class DaevanionTests
         var boardId = DaevanionTables.Embedded.BoardsForCreation(1).First();
         var available = session.DaevanionAvailableForTests(1);
 
-        // Live 2026-11-12: "acquire all nodes" sent 0xe500 with the board id (6 bytes) and got no answer.
-        var replies = await session.HandleAsync(PacketWriter.Opcode(GameSession.DaevanionOpenAllNodeRqLive).I32(boardId).ToArray(), now + 1);
+        // Live 2026-11-12: "acquire all nodes" sent 0xe500 with the board id (6 bytes) and got no answer. Live 2026-11-15
+        // it opened what the points paid for; the button asks for the whole board's crystals, so too few opens nothing.
+        var short_ = await session.HandleAsync(PacketWriter.Opcode(GameSession.DaevanionOpenAllNodeRqLive).I32(boardId).ToArray(), now + 1);
+        var refused = Assert.Single(short_, p => BitConverter.ToUInt16(p, 0) == GameSession.DaevanionOpenAllNodeRsLive);
+        Assert.Equal(1, BitConverter.ToInt32(refused, 2));
+        Assert.Equal(available, session.DaevanionAvailableForTests(1));
 
+        // Enough crystals for the whole board: every node opens in one reply.
+        store.Daevanion = new DaevanionProgress([], new Dictionary<int, int>(), new Dictionary<int, int> { [1] = 100_000 });
+        session.ReloadDaevanionForTests(store.Daevanion);
+        var replies = await session.HandleAsync(PacketWriter.Opcode(GameSession.DaevanionOpenAllNodeRqLive).I32(boardId).ToArray(), now + 2);
         var reply = Assert.Single(replies, p => BitConverter.ToUInt16(p, 0) == GameSession.DaevanionOpenAllNodeRsLive);
         var reader = new PacketReader(reply) { Offset = 2 };
         Assert.Equal(0, reader.I32());
@@ -140,15 +148,8 @@ public sealed class DaevanionTests
         var count = (int)reader.Varint();
         var opened = Enumerable.Range(0, count).Select(_ => reader.I32()).ToList();
         Assert.Equal(reply.Length, reader.Offset);
-        Assert.NotEmpty(opened);
-        Assert.All(opened, id => Assert.Contains(id, store.Daevanion!.NodeIds));
-        Assert.InRange(store.Daevanion!.UsedPoints.GetValueOrDefault(1), 1, available);
+        Assert.All(DaevanionTables.Embedded.NodesOfBoard(boardId), id => Assert.Contains(id, store.Daevanion!.NodeIds));
         Assert.Contains(replies, p => BitConverter.ToUInt16(p, 0) == GameSession.DaevanionPointUpdateNt);
-
-        // Nothing left to pay for: the board is not finished, so result 1 with no nodes (no silent request).
-        var again = await session.HandleAsync(PacketWriter.Opcode(GameSession.DaevanionOpenAllNodeRqLive).I32(boardId).ToArray(), now + 2);
-        var refused = Assert.Single(again, p => BitConverter.ToUInt16(p, 0) == GameSession.DaevanionOpenAllNodeRsLive);
-        Assert.Equal(1, BitConverter.ToInt32(refused, 2));
     }
 
     [Fact]

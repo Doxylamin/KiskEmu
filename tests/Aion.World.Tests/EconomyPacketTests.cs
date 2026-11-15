@@ -211,6 +211,22 @@ public sealed class EconomyPacketTests
     }
 
     [Fact]
+    public async Task Item_store_refuses_a_full_warehouse()
+    {
+        // Live 2026-11-15: the character warehouse took 81 stacks in 80 slots. Default 5 lines = 25 slots, all taken.
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, Now);
+        for (var i = 0; i < GameSession.StorageDefaultLines * GameSession.SlotsPerLine; i++)
+            store.Items.Add(FakeCharacterStore.StorageItem(LifePotion, 1, 500 + i, i));
+        store.Items.Add(FakeCharacterStore.BagItem(LifePotion, 10, 88, 0));
+        await session.InventoryChangesAsync(default);
+        var key = store.Items.Single(i => i.Location == "bag").WireId;
+        var full = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.Storage, (key, 10)), Now);
+        Assert.NotEqual(0, full[0][7]);
+        Assert.Equal("bag", store.Items.Single(i => i.WireId == key).Location);
+    }
+
+    [Fact]
     public async Task Item_store_deposits_and_takes_back_warehouse_and_account_storage()
     {
         var store = new FakeCharacterStore();

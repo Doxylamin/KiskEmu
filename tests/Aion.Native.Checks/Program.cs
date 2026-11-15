@@ -1667,6 +1667,12 @@ var liveCreated2 = await staffSession.HandleAsync(liveCreate2, Now);
 Check(liveCreated2.Count > 0 && liveCreated2[0][0] == 0x01 && liveCreated2[0][1] == 0x8a && liveCreated2[0][2] == 0 && staffSession.Guild?.Name == "KiskEmu",
       "the live 0x8a00 with a 3-byte tail (emblem u16, empty intro) creates the legion");
 await staffSession.HandleAsync([0x34, 0x8a], Now);
+// The live body of 2026-11-15 with an intro: emblem u16 then the intro string (an i32 emblem ate the intro's length).
+var liveCreate3 = Convert.FromHexString("008A074B69736B456D75000001000D54686973206973204B69736B21");
+var liveCreated3 = await staffSession.HandleAsync(liveCreate3, Now);
+Check(liveCreated3.Count > 0 && liveCreated3[0][0] == 0x01 && liveCreated3[0][1] == 0x8a && liveCreated3[0][2] == 0 && staffSession.Guild?.Name == "KiskEmu",
+      "the live 0x8a00 with an intro (emblem u16, intro string) creates the legion");
+await staffSession.HandleAsync([0x34, 0x8a], Now);
 // Gathering: a map 1010 gather node (an EnvObj spawned with 0x3634) used with 0x3636: after its 3 s the material is
 // granted, GatherSourceCompleted_NT 0x8d33, and the node is used up for this player (0x3635; refused until it is back).
 var nodes = WorldObjects.ObjectsOn(1010);

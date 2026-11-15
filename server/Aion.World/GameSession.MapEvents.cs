@@ -1545,6 +1545,8 @@ public sealed partial class GameSession : IMapEventHost
         if (questLog is null) return IsAdmin;
         if (questLog.OpenClearMapEventNames().Contains(definition.Name, StringComparer.OrdinalIgnoreCase)) return true;
         if (MapEventData.DungeonOfMap(definition.Map) is not { } room) return false;
+        // A daily dungeon's waves wait for Process (its 5 s Prepare, GameSession.DailyDungeons.cs).
+        if (room.Type == "Daily" && copy?.Phase == "Prepare") return false;
         if (room.Type == "FieldEvent" && room.Event is { } fieldEvent)
         {
             if (copy?.Phase == "Prepare" && definition.Name.Contains("Prepare", StringComparison.OrdinalIgnoreCase)) return true;

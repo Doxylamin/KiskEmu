@@ -359,11 +359,15 @@ public sealed partial class GameSession
         byte[] Reply(int result, IReadOnlyList<int> ids) => DaevanionBatchOpenReply(rsOpcode, result, boardId, ids);
         if (!BoardAllowed(boardId)) return [Reply(1, [])];
         var opened = CollectOpenAll(boardId);
-        if (opened.Count == 0)
+        // All or nothing: the button names the crystals for the whole board (live 2026-11-15 "Required amount of crystals
+        // to obtain... 120" in red with fewer) and opening what the points paid for left the player with a partial board.
+        if (Daevanion.NodesOfBoard(boardId).Any(id => !daevanionNodes.Contains(id)))
         {
-            var pending = Daevanion.NodesOfBoard(boardId).Any(id => !daevanionNodes.Contains(id));
-            return [Reply(pending ? 1 : 0, [])];
+            foreach (var id in opened.OrderByDescending(i => i))
+                if (Daevanion.NodeOf(id) is { } node) RollbackOpenNode(id, node);
+            return [Reply(1, [])];
         }
+        if (opened.Count == 0) return [Reply(0, [])];
         var tail = await FinishBatchOpenAsync(opened, ct);
         if (tail.Count == 0) return [Reply(1, [])];
         return [Reply(0, opened), .. tail];

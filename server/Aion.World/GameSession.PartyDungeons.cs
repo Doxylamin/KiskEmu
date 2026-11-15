@@ -79,6 +79,10 @@ public sealed partial class GameSession
             var limit = room.Limit > 0 ? room.Limit : room.Progress;
             var fresh = new DungeonCopy(this, id, now) { DeadlineMs = limit > 0 && Timed(room) ? now + (room.Ready + limit) * 1000L : 0 };
             if (room.Ready > 0) { fresh.Phase = "Prepare"; fresh.ProcessAtMs = now + room.Ready * 1000L; }
+            // A daily dungeon starts empty: Prepare (state 1) at the entry, the monsters and the countdown 5 s later
+            // (OBSERVED official 2026-11-12: state 1 at the entry, Process 5 s after the buff choice's 0x6107; the user's
+            // report of 2026-11-15: a 5 s countdown). Ours has no buff choice yet (#77), so the 5 s run from the entry.
+            else if (DailyDungeon.Of(id) is { Seconds: > 0 }) { fresh.Phase = "Prepare"; fresh.ProcessAtMs = now + DailyStartDelayMs; }
             return fresh;
         }
         if (sharedMap is not null) copy = sharedMap.Dungeon ??= Fresh();
@@ -96,7 +100,7 @@ public sealed partial class GameSession
     {
         if (copy is not { Phase: "Prepare" } c || c.Host != this || now < c.ProcessAtMs) return [];
         c.Phase = "Process";
-        var replies = new List<byte[]> { DungeonState(c.DungeonId, DungeonStateProcess, now, c.DeadlineMs) };
+        var replies = DailyProcessStart(c, now) ?? [DungeonState(c.DungeonId, DungeonStateProcess, now, c.DeadlineMs)];
         replies.AddRange(StartEligibleEvents(now));
         return replies;
     }
@@ -193,7 +197,8 @@ public sealed partial class GameSession
         // An instance layer (the story): running since the entry, no deadline (OBSERVED at the HQ001 entry).
         if (!Timed(room)) return c.Cleared ? [] : [DungeonState(c.DungeonId, DungeonStateProcess, c.StartedMs, 0), .. DungeonLimitsAtEntry(c.Deaths)];
         if (c.Failed) return [];
-        if (c.Phase == "Prepare") return [DungeonState(c.DungeonId, DungeonStatePrepare, c.StartedMs, c.ProcessAtMs)];
+        if (c.Phase == "Prepare")
+            return [DungeonState(c.DungeonId, DungeonStatePrepare, c.StartedMs, c.ProcessAtMs), .. CopyDaily is not null ? new[] { DungeonPoint(c.DungeonId, 0) } : []];
         if (DailyStateAtEntry(c, now) is { } daily) return daily;   // GameSession.DailyDungeons.cs
         // After the clear: the state it is in (OBSERVED by the community fork, 234912 #44953, #45201).
         if (c.Cleared) return [DungeonClearedState(c)];

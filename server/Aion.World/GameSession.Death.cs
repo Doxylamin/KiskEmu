@@ -49,6 +49,11 @@ public sealed partial class GameSession
         lastKillerKey = killerKey;
         List<byte[]> deathLimit = [];
         if (copy is { } dungeonCopy) { dungeonCopy.Deaths++; deathLimit = NotifyDungeonDeathCount(); }
+        // A death in a daily dungeon ends its run: the clock stops and the result window (Exit / challenge again) comes up at
+        // once (user report 2026-11-15; ours ran the countdown out first). The host's tick sends it; solo, or all fallen.
+        if (copy is { Cleared: false, Failed: false, WaveEndsMs: > 0 } run && CopyDaily is not null && now < run.WaveEndsMs
+            && DungeonCopySessions().All(s => s == this || s.dead))
+            run.WaveEndsMs = now;
         reviveAt = now + ResolveAutoResurrectMs();
         defaultResurrectAllowedAt = now + data.DefaultResurrectWaitMs(level);
         diedAt = position;

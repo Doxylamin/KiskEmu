@@ -132,6 +132,9 @@ public sealed partial class GameSession
             if (storedItems.TryGetValue(key, out var row) && row.Location == "bag" && count > 0 && count <= row.Quantity)
                 costs.Add((row.InstanceId, row.Revision, (int)count));
         if (costs.Count != map.Count) return [Reply(1)];
+        // Every stored stack takes a slot of its own (the store does not merge). Live 2026-11-15 the character warehouse
+        // took 81 stacks in 80 slots: refuse what does not fit.
+        if (storedItems.Values.Count(i => i.Location == location) + costs.Count > SlotCapacity(container)) return [Reply(1)];
         var stored = await Stored(async () => await store.StoreItemsInContainerAsync(character, location, costs, ct) ? [[]] : []);
         if (stored.Count == 0) return [Reply(1)];
         return [Reply(0), .. await InventoryChangesAsync(ct, 0, 0), .. location == "storage" ? Achieve("StorageStore") : []];

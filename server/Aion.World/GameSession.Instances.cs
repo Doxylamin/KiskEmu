@@ -103,6 +103,15 @@ public sealed partial class GameSession
         else (map, exit) = (HomeMap, data.MapStart(HomeMap)?.Position ?? GamePackets.SpawnPosition);
         if (to is null && hand is null && volume is { } overlay && overlay.Base == map && string.Equals(mode, "CurrentPosition", StringComparison.OrdinalIgnoreCase) && position is { } here)
             exit = here;
+        // A daily dungeon is left whole (user report 2026-11-15): the Exit button of its result window while dead left the
+        // player dead outside, and the next respawn went to the bind point. Out of one: alive, full HP and MP (OURS).
+        if (CopyDaily is not null)
+        {
+            dead = false;
+            reviveAt = 0;
+            defaultResurrectAllowedAt = 0;
+            (resources.Hp, resources.Mp) = (resources.HpMax, resources.MpMax);
+        }
         var leaving = (CopyOwner ?? this).mapEventRuns.Select(r => GamePackets.MapEventLeave(r.Id)).ToList();
         HandOverCopy();
         mapEventRuns.Clear();

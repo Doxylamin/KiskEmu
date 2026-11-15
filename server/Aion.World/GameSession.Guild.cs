@@ -149,10 +149,10 @@ public sealed partial class GameSession
                 {
                     // The 2.0.6 schema: name, rule u8, password, emblem i32, intro. Live 3533 (2026-11-14) sent
                     // `07 "KiskEmu" 00 00 01 00 00`: after the password only three bytes, an emblem u16 (1) and an empty
-                    // intro (CANDIDATE reading; a 4-byte emblem did not fit and the request went unanswered). Read the
-                    // emblem as i32 when four bytes remain, else as u16; the intro only when bytes remain.
+                    // intro. Live 2026-11-15 with an intro: `07 "KiskEmu" 00 00 01 00 0d "This is Kisk!"`, so the emblem is a
+                    // u16 followed by the intro string (OBSERVED in both requests); an i32 there ate the intro's length.
                     var (name, rule, password) = (r.String(), r.U8(), r.String());
-                    var emblem = r.Remaining >= 4 ? r.I32() : r.Remaining >= 2 ? r.U16() : r.Remaining == 1 ? r.U8() : 0;
+                    var emblem = r.Remaining >= 2 ? r.U16() : r.Remaining == 1 ? r.U8() : 0;
                     var intro = r.End ? "" : r.String();
                     byte[] Reply(int result) => PacketWriter.Opcode(GuildCreateRs).U16(result).I64(guild?.Id ?? 0).String(name).U8(guild?.Level ?? 0).I64(0)
                         .U8(rule).String(password).I32(emblem).String(intro).Varint(GuildAuthority.Length)

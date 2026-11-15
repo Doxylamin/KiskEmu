@@ -59,7 +59,14 @@ public sealed class DailyDungeonTests
     [Fact]
     public async Task The_countdown_runs_90_s_kills_count_points_and_its_end_pays_the_point_reward()
     {
-        var (session, entry, store) = await EnterAsync();
+        var (session, prepare, store) = await EnterAsync();
+        // Prepare (1) at the entry with no monsters; Process, the countdown and the waves 5 s later.
+        Assert.Equal(GameSession.DungeonStatePrepare, prepare.Last(p => Op(p) == GameSession.DungeonStateNt)[6]);
+        Assert.DoesNotContain(prepare, p => Op(p) == GameSession.WaveCountdownNt);
+        var go = session.Copy!.ProcessAtMs;
+        Assert.DoesNotContain(await session.TickAsync(go - 100), p => Op(p) == GameSession.WaveCountdownNt);
+        Assert.DoesNotContain(Standing(session), n => n.Contains("Wave_L"));   // the map's lasers stand from the entry
+        var entry = await session.TickAsync(go + 10);
         var state = entry.Last(p => Op(p) == GameSession.DungeonStateNt);
         Assert.Equal(GameSession.DungeonStateProcess, state[6]);
         var start = BitConverter.ToInt64(state, 7);
@@ -68,12 +75,12 @@ public sealed class DailyDungeonTests
         Assert.Equal(85, BitConverter.ToInt32(countdown, 2));
         var end = BitConverter.ToInt64(countdown, 6);
         Assert.Equal(start + 90_000, end);
-        Assert.Contains(entry, p => p.SequenceEqual(GameSession.DungeonPoint(Dungeon, 0)));
+        Assert.Contains(prepare, p => p.SequenceEqual(GameSession.DungeonPoint(Dungeon, 0)));
 
-        await MapEventScenarioHelpers.WaitForMapEventRunAsync(session, "DungeonWave_0001_Sub_MapEvent", Now + 300, attempts: 16);
+        await MapEventScenarioHelpers.WaitForMapEventRunAsync(session, "DungeonWave_0001_Sub_MapEvent", go + 300, attempts: 16);
         var daily = DailyDungeon.Of(Dungeon)!;
         var skill = MapEventScenarioHelpers.BasicAttackSkill(session);
-        var now = Now + 2_000;
+        var now = go + 2_000;
         var expected = 0;
         var sent = new List<byte[]>();
         foreach (var target in session.Targets.Values.Where(t => t.Name.Contains("Wave_L_21") && !t.Dead).Take(10).ToList())
@@ -112,6 +119,25 @@ public sealed class DailyDungeonTests
         var ended = later.First(p => Op(p) == GameSession.DungeonStateNt);
         Assert.Equal(GameSession.DungeonStateEnd, ended[6]);
         Assert.Equal(1, store.Items.Count(i => i.TemplateId == reward[0].ItemId && i.Quantity == reward[0].Count));
+    }
+
+    [Fact]
+    public async Task A_death_ends_the_run_at_once_and_the_exit_revives()
+    {
+        // User report 2026-11-15: the clock ran on after the death and the Exit button left the player dead outside.
+        var (session, _, _) = await EnterAsync();
+        var go = session.Copy!.ProcessAtMs;
+        await session.TickAsync(go + 10);
+        session.NpcHitsPlayer(session.Resource.HpMax * 10, go + 3_000, killerKey: 2001);
+        Assert.True(session.Dead);
+        var over = await session.TickAsync(go + 3_100);
+        Assert.Contains(over, p => Op(p) == GameSession.WaveDungeonCompleteResultNt);
+        Assert.True(session.Copy!.Cleared);
+        var exit = await session.HandleAsync([0x04, 0x40], go + 5_000);
+        Assert.Contains(exit, p => Op(p) == 0x3621);
+        Assert.False(session.Dead);
+        Assert.Equal(0, session.InstanceKey);
+        Assert.Equal(session.Resource.HpMax, session.Resource.Hp);
     }
 
     [Fact]

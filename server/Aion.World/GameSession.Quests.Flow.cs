@@ -82,7 +82,13 @@ public sealed partial class GameSession
         }
 
         if (questLog is null || !questLog.Book.ById.TryGetValue(questId, out var code) || !questLog.CanAccept(code, level, QuestConditionsHold))
+        {
+            // A refusal is retried every frame as well (live 2026-11-15: HQ1103010, a level-46 quest past the cap, 99,618
+            // refusals in 20 minutes, up to 180 a second). Refuse once, then stay quiet on identical repeats for a while.
+            if (repeatedAcceptAnswered.TryGetValue(questId, out var refusedAt) && lastNow - refusedAt < RepeatedAcceptQuietMs) return [];
+            repeatedAcceptAnswered[questId] = lastNow;
             return [GamePackets.QuestAcceptReply(questId, 0, 1)];
+        }
         return await Stored(async () =>
         {
             var saved = await SaveQuestAsync(QuestLog.New(code, questLog.Book.Find(code)!), ct);

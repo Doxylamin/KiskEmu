@@ -64,6 +64,19 @@ public sealed partial class GameSession
             DungeonPoint(c.DungeonId, c.Points), WaveCountdown(daily.Wave, c.WaveEndsMs, again)];
     }
 
+    /// <summary>From the entry to the monsters and the countdown (see JoinCopy).</summary>
+    public const int DailyStartDelayMs = 5_000;
+
+    /// <summary>The Prepare phase ended: Process from now, the countdown (0x6014) and the points; null for other dungeons.</summary>
+    List<byte[]>? DailyProcessStart(DungeonCopy c, long now)
+    {
+        if (DailyDungeon.Of(c.DungeonId) is not { Seconds: > 0 } daily) return null;
+        c.WaveStartedMs = now;
+        c.WaveEndsMs = now + daily.Seconds * 1000L;
+        return [DungeonState(c.DungeonId, DungeonStateProcess, now, 0), .. DungeonLimitsAtEntry(c.Deaths),
+            DungeonPoint(c.DungeonId, c.Points), WaveCountdown(daily.Wave, c.WaveEndsMs, false)];
+    }
+
     /// <summary>A kill in a daily dungeon (the host's): DungeonPoint.dat's points, 0x6104 with the total to the copy.</summary>
     void DailyKillPoints(Target target, long now)
     {
