@@ -165,8 +165,8 @@ public sealed class DungeonWaveTests
         var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, Now, level: 45);
         await MapEventScenarioHelpers.EnterDungeonByIdAsync(session, WaveMap, Now + 200);
         Assert.True(session.MapId == WaveMap, string.Join(" | ", session.MapEventNotes));
-        // The daily run starts 5 s after entry (Prepare, then Process); its map event waits for that.
-        var go = session.Copy!.ProcessAtMs;
+        // The daily run starts 5 s after the buff pick (Prepare, then Process); its map event waits for that.
+        var go = await MapEventScenarioHelpers.PickDailyBuffAsync(session, WaveMap, Now + 1_000);
         await session.TickAsync(go + 10);
         var run = await MapEventScenarioHelpers.WaitForMapEventRunAsync(session, SubEvent, go + 20, attempts: 16);
         Assert.NotNull(run);

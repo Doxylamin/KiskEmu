@@ -9,9 +9,14 @@ Sources (WorldProbe table exports under research/local, 3533 client tables):
 - RewardDungeon.dat: the group's tiers {NeedPoint, Items}; a run pays the highest tier whose NeedPoint the points reach.
   OBSERVED 2026-11-12 (official, 900001): 1730 points paid 4300 CoinEnchant, the 1500-point tier.
 - NpcData.dat (name -> id) and the game catalog (item name -> id).
+- DungeonBuff.dat / DungeonBuffGroup.dat: the buff choice at a daily's entry (0x6105 {slot, buff id}); each slot of the
+  dungeon's DungeonBuffGroupName may draw any of the group's buffs. Names from the client localisation (STR_DungeonWave_*).
+  OBSERVED 2026-11-15 (official, 900001, three runs): the offered ids are DungeonBuff.dat ids, and their names match the
+  choice screen (10 Elite Hunter, 6 Ignoring the Weak, 4 Footwork, 1004 Poisoned by Mana, 9 Ignoring the Elite, 1 Slayer,
+  7 Worm Carnage, 1006 Targeting Weakness).
 
 The countdown length is not in the client tables (Dungeon.dat ProcessStateHoldingTime is 0); it is OBSERVED in the
-official capture of 2026-11-12 for 900001 only (0x6014 ends 90 s after the Process state starts), see SECONDS.
+official captures (0x6014 ends 90 s after the Process state starts in 900001, 60 s in 900002), see SECONDS.
 
     python tools/daily_dungeon_data.py [--research research/local]
 """
@@ -27,9 +32,21 @@ REWARDS = 'daily-reward-tables-20261114/table-000.json'
 WAVES = 'wave-tables-20261114/table-000.json'
 NPCS = 'daily-npc-20261114/table-000.json'
 CATALOG = 'game-catalog-v2/entries.jsonl'
+BUFFS = 'daily-tables-20261114/table-002.json'
+BUFF_GROUPS = 'daily-tables-20261114/table-003.json'
+NAMES = 'l10n-chat-20261112/localization-000.json'
 
 # OBSERVED (official 2026-11-12, 900001): the countdown runs 90 s from the Process state. Not in the client data.
-SECONDS = {'DungeonWave_0001': 90}
+# OBSERVED (official 2026-11-15, 900002): 60 s, after a 12 s Prepare from the entry (0x6100 state 1 {entry, entry + 12 s});
+# 900001 has no fixed Prepare: it waits for the buff choice.
+SECONDS = {'DungeonWave_0001': 90, 'Dungeon_Daily_0001': 60}
+READY = {'Dungeon_Daily_0001': 12}
+# OBSERVED (official 2026-11-15, 900002): the boss kill cleared the run early with 0x6015 {dungeon, 100}, +100 on the total.
+# CANDIDATE: a fixed 100 (one sample, at 54 s of 60).
+CLEAR_BONUS = {'Dungeon_Daily_0001': 100}
+# Reward items missing from the game catalog. OBSERVED (official 2026-11-15): 5760 points in 900002 paid 503700096 x32,
+# the 5500 tier of Reward_Daily_Odium_Light (G_Box_DailyDungeon_Pet_A_01_b x32).
+EXTRA_ITEMS = {'G_Box_DailyDungeon_Pet_A_01_b': 503700096}
 
 
 def _enum(value):
@@ -55,8 +72,33 @@ def _item_ids(catalog):
     return ids
 
 
-def build(dungeons, points, rewards, waves, npcs, items):
+def _names(path):
+    """The localisation export's strings (String_STR_..._body -> text); empty when the export is missing."""
+    try:
+        return json.loads(Path(path).read_text(encoding='utf-8')).get('Entries', {})
+    except FileNotFoundError:
+        return {}
+
+
+def _buff_slots(group, buffs, buff_groups, names):
+    """The buffs a DungeonBuffGroupName offers, per slot: [{slot, buffs: [{id, name, grade, abnormal}]}]."""
+    by_name = {b['Name']: b for b in buffs}
+    slots = {}
+    for row in buff_groups:
+        if row.get('Group') != group or row.get('BuffName') not in by_name:
+            continue
+        b = by_name[row['BuffName']]
+        abnormal = int(b.get('BuffValue1') or 0) if _enum(b.get('BuffType')) == 'Abnormal' else 0
+        slots.setdefault(int(row.get('BuffSlot') or 0), []).append({
+            'id': _id(b), 'name': names.get(f"String_STR_{b['Name']}_body", b['Name']),
+            'grade': _enum(b.get('BuffGrade')), 'abnormal': abnormal})
+    return [{'slot': slot, 'buffs': sorted(choices, key=lambda c: c['id'])} for slot, choices in sorted(slots.items())]
+
+
+def build(dungeons, points, rewards, waves, npcs, items, buffs=(), buff_groups=(), names=None):
     """Rows (lists of dicts as WorldProbe writes them) -> {dungeon id: entry}."""
+    items = {**EXTRA_ITEMS, **items}
+    names = names or {}
     npc_ids = {row['Name']: _id(row) for row in npcs}
     wave_ids = {}
     for row in waves:
@@ -88,8 +130,18 @@ def build(dungeons, points, rewards, waves, npcs, items):
                  'kill_points': dict(sorted(kill.items())), 'subtype_points': subtype, 'env_points': env,
                  'reward_light': sorted(tiers.get(row.get('RewardLight'), []), key=lambda t: -t['need']),
                  'reward_dark': sorted(tiers.get(row.get('RewardDark'), []), key=lambda t: -t['need'])}
+        # The entry level: Dungeon.dat RecommendLevel. Our MapEntrance.dat export (2026-10-18) gates 900002 and 900003 at
+        # 99-99, from before they opened; OBSERVED 2026-11-15 (official): a level-45 character entered 900002.
+        if row.get('RecommendLevel'):
+            entry['min_level'] = int(row['RecommendLevel'])
         if row['Name'] in SECONDS:
             entry['seconds'] = SECONDS[row['Name']]
+        if row['Name'] in READY:
+            entry['ready'] = READY[row['Name']]
+        if row['Name'] in CLEAR_BONUS:
+            entry['clear_bonus'] = CLEAR_BONUS[row['Name']]
+        if row.get('DungeonBuffGroupName') not in (None, '', 'None'):
+            entry['buff_slots'] = _buff_slots(row['DungeonBuffGroupName'], buffs, buff_groups, names)
         out[str(_id(row))] = entry
     return out
 
@@ -100,9 +152,11 @@ def main():
     args = parser.parse_args()
     research = Path(args.research)
     dungeons = build(_rows(research / DUNGEONS), _rows(research / POINTS), _rows(research / REWARDS), _rows(research / WAVES),
-                     _rows(research / NPCS), _item_ids(research / CATALOG))
-    data = {'source': 'Dungeon.dat, DungeonPoint.dat, WaveData.dat, RewardDungeon.dat, NpcData.dat (3533 tables; '
-                      'tools/daily_dungeon_data.py). seconds: OBSERVED in the official capture of 2026-11-12, not in the tables.',
+                     _rows(research / NPCS), _item_ids(research / CATALOG), _rows(research / BUFFS),
+                     _rows(research / BUFF_GROUPS), _names(research / NAMES))
+    data = {'source': 'Dungeon.dat, DungeonPoint.dat, WaveData.dat, RewardDungeon.dat, NpcData.dat, DungeonBuff.dat, '
+                      'DungeonBuffGroup.dat (3533 tables; tools/daily_dungeon_data.py). seconds, ready, clear_bonus: OBSERVED '
+                      'in the official captures of 2026-11-12 and 2026-11-15, not in the tables.',
             'dungeons': dungeons}
     DATA.write_text(json.dumps(data, indent=1, separators=(',', ': ')) + '\n', encoding='utf-8')
     print(f'Wrote {DATA.relative_to(ROOT)} ({len(dungeons)} dungeons)')

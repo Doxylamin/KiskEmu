@@ -6,6 +6,18 @@ namespace Aion.World;
 /// <summary>A point reward tier (RewardDungeon.dat: NeedPoint and its items).</summary>
 public sealed record DailyRewardTier([property: JsonPropertyName("need")] int Need, [property: JsonPropertyName("items")] long[][] Items);
 
+/// <summary>A buff of the daily's choice (DungeonBuff.dat): its id on 0x6105, its name, grade and abnormal (BuffValue1).</summary>
+public sealed record DailyBuff(
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("grade")] string Grade,
+    [property: JsonPropertyName("abnormal")] int Abnormal);
+
+/// <summary>A slot of the choice (DungeonBuffGroup.dat BuffSlot) and the buffs it may draw.</summary>
+public sealed record DailyBuffSlot(
+    [property: JsonPropertyName("slot")] int Slot,
+    [property: JsonPropertyName("buffs")] DailyBuff[] Buffs);
+
 /// <summary>
 /// A daily dungeon (Dungeon.dat DungeonType Daily; tools/daily_dungeon_data.py): the countdown's wave (WaveData.dat id of
 /// DungeonWaveGroupName), the kill points (DungeonPoint.dat), the point rewards (RewardDungeon.dat groups RewardLight /
@@ -22,8 +34,33 @@ public sealed record DailyDungeon(
     [property: JsonPropertyName("subtype_points")] Dictionary<string, int> SubtypePoints,
     [property: JsonPropertyName("reward_light")] DailyRewardTier[] RewardLight,
     [property: JsonPropertyName("reward_dark")] DailyRewardTier[] RewardDark,
-    [property: JsonPropertyName("seconds")] int Seconds = 0)
+    [property: JsonPropertyName("seconds")] int Seconds = 0,
+    [property: JsonPropertyName("buff_slots")] DailyBuffSlot[]? BuffSlots = null,
+    [property: JsonPropertyName("ready")] int Ready = 0,
+    [property: JsonPropertyName("clear_bonus")] int ClearBonus = 0,
+    [property: JsonPropertyName("min_level")] int MinLevel = 0)
 {
+    /// <summary>The dungeon offers a buff choice at the entry (Dungeon.dat DungeonBuffGroupName; OBSERVED 0x6105 in 900001).</summary>
+    public bool HasBuffChoice => BuffSlots is { Length: > 0 };
+
+    /// <summary>A buff of the choice by its DungeonBuff.dat id.</summary>
+    public DailyBuff? Buff(int id) => BuffSlots?.SelectMany(s => s.Buffs).FirstOrDefault(b => b.Id == id);
+
+    /// <summary>
+    /// The three offered buffs, one per slot, none twice: OBSERVED 2026-11-15 (official, three entries) {1:10, 2:6, 3:4},
+    /// {1:1004, 2:9, 3:1}, {1:1004, 2:7, 3:1006}. The draw is CANDIDATE (uniform over the slot's DungeonBuffGroup rows).
+    /// </summary>
+    public List<(int Slot, int BuffId)> DrawBuffs(Random rng)
+    {
+        var picked = new List<(int Slot, int BuffId)>();
+        foreach (var slot in BuffSlots ?? [])
+        {
+            var free = slot.Buffs.Where(b => picked.All(p => p.BuffId != b.Id)).ToList();
+            if (free.Count > 0) picked.Add((slot.Slot, free[rng.Next(free.Count)].Id));
+        }
+        return picked;
+    }
+
     /// <summary>
     /// DungeonPoint.dat: a KillNpc row by the NPC's id, else the KillNpcSubType row of its subtype. OBSERVED (official
     /// 2026-11-12, 900001): +40 per NormalMonster_03..08 kill and +50 for NormalMonster_09, as the table says.

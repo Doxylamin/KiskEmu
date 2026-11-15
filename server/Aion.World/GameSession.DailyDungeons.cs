@@ -4,14 +4,15 @@ namespace Aion.World;
 
 // Daily dungeons (Dungeon.dat type Daily, DailyDungeons.cs): a countdown, points per kill and a reward by points when the
 // countdown ends. OBSERVED in the official capture of 2026-11-12 (900001, a level-45 character, solo):
-//   entry      0x6100 state 1, 0x6104 `dungeon 00` (points 0), buff choice (0x6105-0x6107, not modelled here)
-//   Process    0x6100 state 2 {start, end 0}, 0x6014 {WaveData id 85, end = start + 90 s, 00}, the map events' 0x922e
+//   entry      0x6100 state 1 {entry, 0}, 0x6104 `dungeon 00` (points 0), 0x6105 the buff offer, 0x6109, 0x6108
+//   the pick   DungeonBuffSelect_RQ 0x6106 whenever the player picks (34 s to 15 min seen), 0x6107 the reply (2026-11-15)
+//   Process    5.0 s after 0x6107: 0x6100 state 2 {start, end 0}, 0x6014 {WaveData id 85, end = start + 90 s, 00}, the map events' 0x922e
 //   each kill  0x922d, 0x6104 {dungeon i32, total points varint}: +40/+50 per kill as DungeonPoint.dat says
 //   at the end 0x6102 WaveDungeonCompleteResult_NT `03 dungeon 01 [90 i64] [1730 varint] {930100023: 4300}`, 0x6104 again,
 //              0x6100 state 3 {now, now + 30 s (CompleteStateHoldingTime)}, the living monsters' 0x3642 (act 7), the wave
 //              event's 0x922d status 3, then 0x561b with the reward (EIncreaseReason 58 kDungeonReward)
 //   + 30 s     0x6100 state 4 for 600 s (DungeonEndTick); the player left by hand later.
-// Ours starts the countdown at the world entry (official: after the buff choice, about a minute later, CANDIDATE #77).
+// The chosen buff's abnormal is not applied yet (no data for DungeonBuff.dat's 19003xxx abnormals).
 
 public sealed partial class GameSession
 {
@@ -35,17 +36,54 @@ public sealed partial class GameSession
     /// <summary>
     /// 0x6102 WaveDungeonCompleteResult_NT (usmap {dungeon, grade u8, duration i64, total_point, bonus_point, rewards
     /// map&lt;i32, i64&gt;, sweep_count}): OBSERVED `03 a1bb0d00 01 5a00000000000000 c20d 01 37337037 cc10000000000000`
-    /// (mask 03, no bonus or sweep count on a played run). CANDIDATE: the mask bits' meaning.
+    /// (mask 03, no bonus or sweep count on a played run). With a clear bonus (OBSERVED 2026-11-15, 900002): mask 07 and the
+    /// bonus varint after the total, `07 a2bb0d00 01 3600000000000000 802d 64 01 80da051e 2000000000000000`. CANDIDATE: the
+    /// mask is a presence mask (bit 2 the bonus).
     /// </summary>
-    internal static byte[] WaveDungeonCompleteResult(int dungeonId, byte grade, long durationSec, int points, IReadOnlyList<(int ItemId, long Count)> rewards)
+    internal static byte[] WaveDungeonCompleteResult(int dungeonId, byte grade, long durationSec, int points, IReadOnlyList<(int ItemId, long Count)> rewards, int bonus = 0)
     {
-        var w = PacketWriter.Opcode(WaveDungeonCompleteResultNt).U8(0x03).I32(dungeonId).U8(grade).I64(durationSec)
-            .Varint((uint)Math.Max(0, points)).Varint((uint)rewards.Count);
+        var w = PacketWriter.Opcode(WaveDungeonCompleteResultNt).U8((byte)(bonus > 0 ? 0x07 : 0x03)).I32(dungeonId).U8(grade).I64(durationSec)
+            .Varint((uint)Math.Max(0, points));
+        if (bonus > 0) w.Varint((uint)bonus);
+        w.Varint((uint)rewards.Count);
         foreach (var (item, count) in rewards) w.I32(item).I64(count);
         return w.ToArray();
     }
 
     readonly List<List<(int ItemId, long Count)>> pendingDungeonRewards = [];
+
+    /// <summary>The best result of each daily (dungeon id -> grade, seconds, points, UTC day), for 0x6103 at the world entry.
+    /// Kept for the connection only (OURS: not stored).</summary>
+    readonly Dictionary<int, (byte Grade, long Seconds, int Points, long Day)> dailyBest = [];
+
+    /// <summary>
+    /// 0x6103 WaveDungeonInfo_NT (usmap {wave dungeon infos}): OBSERVED official 2026-11-15 at the world entry after two dailies,
+    /// `02 | 07 a1bb0d00 01 5a e03a | 07 a2bb0d00 01 36 802d`: count u8, then per daily {mask u8 07, dungeon i32, grade u8,
+    /// seconds varint, points varint}: 900001 90 s 7520 (the best of three runs that day: 2960, 1730, 7520) and 900002 54 s
+    /// 5760. CANDIDATE: the best of the day (the reset time is OURS: the UTC day) and mask 07 = the three fields present.
+    /// </summary>
+    internal static byte[] WaveDungeonInfo(IEnumerable<(int DungeonId, byte Grade, long Seconds, int Points)> best)
+    {
+        var rows = best.ToList();
+        var w = PacketWriter.Opcode(0x6103).U8((byte)rows.Count);
+        foreach (var (id, grade, seconds, points) in rows)
+            w.U8(0x07).I32(id).U8(grade).Varint((uint)Math.Max(0, seconds)).Varint((uint)Math.Max(0, points));
+        return w.ToArray();
+    }
+
+    internal byte[] WaveDungeonInfoAtEntry(long now)
+    {
+        var today = now / 86_400_000;
+        return WaveDungeonInfo(dailyBest.Where(e => e.Value.Day == today).OrderBy(e => e.Key)
+            .Select(e => (e.Key, e.Value.Grade, e.Value.Seconds, e.Value.Points)));
+    }
+
+    void RecordDailyBest(int dungeonId, byte grade, long seconds, int points, long now)
+    {
+        var today = now / 86_400_000;
+        if (dailyBest.TryGetValue(dungeonId, out var held) && held.Day == today && held.Points >= points) return;
+        dailyBest[dungeonId] = (grade, seconds, points, today);
+    }
 
     /// <summary>The daily dungeon of this copy, if it is one.</summary>
     DailyDungeon? CopyDaily => copy is { } c ? DailyDungeon.Of(c.DungeonId) : null;
@@ -64,17 +102,103 @@ public sealed partial class GameSession
             DungeonPoint(c.DungeonId, c.Points), WaveCountdown(daily.Wave, c.WaveEndsMs, again)];
     }
 
-    /// <summary>From the entry to the monsters and the countdown (see JoinCopy).</summary>
+    /// <summary>From the buff choice's reply (0x6107) to the monsters and the countdown: OBSERVED 5.0 s (official 2026-11-15).</summary>
     public const int DailyStartDelayMs = 5_000;
 
-    /// <summary>The Prepare phase ended: Process from now, the countdown (0x6014) and the points; null for other dungeons.</summary>
+    /// <summary>OBSERVED live opcodes (official 2026-11-15; usmap DungeonBuffInfo_NT / DungeonBuffSelect_RQ / _RS at 0x28b7 + index).</summary>
+    public const ushort DungeonBuffInfoNt = 0x6105, DungeonBuffSelectRq = 0x6106, DungeonBuffSelectRs = 0x6107;
+
+    /// <summary>0x6105 DungeonBuffInfo_NT {dungeon i32, count u8, {slot i32, buff i32}}: OBSERVED
+    /// `a1bb0d00 03 01000000 0a000000 02000000 06000000 03000000 04000000` (slots 1-3: Elite Hunter, Ignoring the Weak, Footwork).</summary>
+    internal static byte[] DungeonBuffInfo(int dungeonId, IReadOnlyList<(int Slot, int BuffId)> buffs)
+    {
+        var w = PacketWriter.Opcode(DungeonBuffInfoNt).I32(dungeonId).U8((byte)buffs.Count);
+        foreach (var (slot, buff) in buffs) w.I32(slot).I32(buff);
+        return w.ToArray();
+    }
+
+    /// <summary>0x6107 DungeonBuffSelect_RS {result u16, dungeon i32, slot i32}: OBSERVED `0000 a1bb0d00 00000000` after each
+    /// pick (slot 0 though the player picked slots 1 and 3).</summary>
+    internal static byte[] DungeonBuffSelectReply(int dungeonId, int result = 0) =>
+        PacketWriter.Opcode(DungeonBuffSelectRs).U16((ushort)result).I32(dungeonId).I32(0).ToArray();
+
+    /// <summary>
+    /// The entry of a daily still in Prepare (OBSERVED order 2026-11-15): 0x6100 state 1 {entry, 0} (no end while the choice
+    /// waits), 0x6104 points 0, 0x6105 the offer (until a pick), 0x6109 deaths, 0x6108. Null for other dungeons.
+    /// </summary>
+    List<byte[]>? DailyPrepareAtEntry(DungeonCopy c)
+    {
+        if (DailyDungeon.Of(c.DungeonId) is not { Seconds: > 0 }) return null;
+        var end = c.ProcessAtMs == long.MaxValue ? 0 : c.ProcessAtMs;
+        var packets = new List<byte[]> { DungeonState(c.DungeonId, DungeonStatePrepare, c.StartedMs, c.OfferedBuffs.Count > 0 ? 0 : end),
+            DungeonPoint(c.DungeonId, 0) };
+        if (c.OfferedBuffs.Count > 0 && c.ChosenBuff == 0) packets.Add(DungeonBuffInfo(c.DungeonId, c.OfferedBuffs));
+        packets.AddRange(DungeonLimitsAtEntry(c.Deaths));
+        return packets;
+    }
+
+    /// <summary>
+    /// DungeonBuffSelect_RQ 0x6106 (usmap {dungeon i32, slot i32}; the client's encoding is unseen, so a slot of 1-4 bytes is
+    /// read): the pick of an offered slot. The reply, and Process 5 s later (OBSERVED). The buff's abnormal (DungeonBuff.dat
+    /// BuffValue1, 19003xxx) has no data here yet, so the pick is only recorded (OURS).
+    /// </summary>
+    List<byte[]> DungeonBuffSelect(byte[] plain, long now)
+    {
+        int dungeonId, slot;
+        try
+        {
+            var r = new PacketReader(plain) { Offset = 2 };
+            dungeonId = r.I32();
+            slot = r.Remaining switch { >= 4 => r.I32(), 2 or 3 => r.U16(), 1 => r.U8(), _ => 0 };
+        }
+        catch (ProtocolException) { return []; }
+        if (copy is not { Phase: "Prepare", ChosenBuff: 0 } c || c.DungeonId != dungeonId || c.OfferedBuffs.Count == 0)
+        {
+            Note($"dungeon buff select {dungeonId} slot {slot}: no choice open");
+            return [DungeonBuffSelectReply(dungeonId, 1)];
+        }
+        // The slot by number (1-3 on 0x6105); a 0-based index as the fallback (CANDIDATE: the request is unseen).
+        var offer = c.OfferedBuffs.FirstOrDefault(b => b.Slot == slot);
+        if (offer.BuffId == 0 && slot >= 0 && slot < c.OfferedBuffs.Count) offer = c.OfferedBuffs[slot];
+        if (offer.BuffId == 0) return [DungeonBuffSelectReply(dungeonId, 1)];
+        c.ChosenBuff = offer.BuffId;
+        c.ProcessAtMs = now + DailyStartDelayMs;
+        Note($"dungeon {dungeonId}: buff {offer.BuffId} ({DailyDungeon.Of(dungeonId)?.Buff(offer.BuffId)?.Name}) chosen, Process in 5 s");
+        return [DungeonBuffSelectReply(dungeonId)];
+    }
+
+    /// <summary>The Prepare phase ended: Process from now with no end (0x6100 state 2 {now, 0}) and the countdown (0x6014),
+    /// as OBSERVED (the points, deaths and 0x6108 went out at the entry); null for other dungeons.</summary>
     List<byte[]>? DailyProcessStart(DungeonCopy c, long now)
     {
         if (DailyDungeon.Of(c.DungeonId) is not { Seconds: > 0 } daily) return null;
         c.WaveStartedMs = now;
         c.WaveEndsMs = now + daily.Seconds * 1000L;
-        return [DungeonState(c.DungeonId, DungeonStateProcess, now, 0), .. DungeonLimitsAtEntry(c.Deaths),
-            DungeonPoint(c.DungeonId, c.Points), WaveCountdown(daily.Wave, c.WaveEndsMs, false)];
+        return [DungeonState(c.DungeonId, DungeonStateProcess, now, 0), WaveCountdown(daily.Wave, c.WaveEndsMs, false)];
+    }
+
+    /// <summary>ServerMsg_NT (usmap index 0x3981, live 0x8d46: OBSERVED official 2026-11-15) {msg id i32, params list of
+    /// strings}: `85000000 01 07 "2701427"`.</summary>
+    public const ushort ServerMsgNt = 0x8d46;
+    /// <summary>The message "Danger level has risen" (OBSERVED: msg 133 with the elite's NpcData id, in 900001).</summary>
+    public const int ServerMsgDangerRisen = 133;
+
+    internal static byte[] ServerMsg(int msgId, params string[] parameters)
+    {
+        var w = PacketWriter.Opcode(ServerMsgNt).I32(msgId).Varint((uint)parameters.Length);
+        foreach (var p in parameters) w.String(p);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// An elite appears in a daily dungeon: "Danger level has risen" with its NpcData id. OBSERVED official 2026-11-15 (900001):
+    /// 0x8d46 {133, ["2701427"]} in the same frame as the 0x3641 of elite 2701427 and again for 2701431 (two elites, two
+    /// messages in that run; four in the third). CANDIDATE: that every EliteMonster spawn sends it (the wave data may say).
+    /// </summary>
+    void DailyEliteSpawned(Target t)
+    {
+        if (CopyDaily is null || t.SubType != "EliteMonster" || copy is not { Cleared: false, Phase: "Process" }) return;
+        mapEventOut.Add(ServerMsg(ServerMsgDangerRisen, t.NpcId.ToString(System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     /// <summary>A kill in a daily dungeon (the host's): DungeonPoint.dat's points, 0x6104 with the total to the copy.</summary>
@@ -92,24 +216,53 @@ public sealed partial class GameSession
     void DailyCountdownTick(long now)
     {
         if (copy is not { Cleared: false, Failed: false, WaveEndsMs: > 0 } c || c.Host != this || now < c.WaveEndsMs) return;
+        DailyFinish(c, now, early: false);
+    }
+
+    /// <summary>0x6015 WaveSpawnBonusDungeonPoint_NT {dungeon i32, bonus varint}: OBSERVED `a2bb0d00 64` (+100) at 900002's clear.</summary>
+    public const ushort WaveSpawnBonusDungeonPointNt = 0x6015;
+
+    internal static byte[] WaveSpawnBonusDungeonPoint(int dungeonId, int bonus) =>
+        PacketWriter.Opcode(WaveSpawnBonusDungeonPointNt).I32(dungeonId).Varint((uint)Math.Max(0, bonus)).ToArray();
+
+    /// <summary>
+    /// The map event cleared the daily before its countdown ran out (Dungeon_Daily_0001: DungeonClear after the boss's
+    /// ClearWave). OBSERVED official 2026-11-15 (900002, the boss killed 54 s into the 60): 0x6015 {dungeon, 100}, 0x6104 with
+    /// the total (bonus included), 0x6102 mask 07 with the bonus, 0x6104 again, 0x6100 state 3 for the 30 s hold. True when
+    /// the run was a daily's (the generic clear then stays out: no 0x6101 officially).
+    /// </summary>
+    bool DailyClearedByEvent(long now)
+    {
+        if (copy is not { Cleared: false, Failed: false, WaveEndsMs: > 0 } c || CopyDaily is null) return false;
+        DailyFinish(c, now, early: true);
+        return true;
+    }
+
+    /// <summary>The run is over (countdown end or an early clear): the result with the reward of its points, to the copy.</summary>
+    void DailyFinish(DungeonCopy c, long now, bool early)
+    {
         if (DailyDungeon.Of(c.DungeonId) is not { } daily || MapEventData.Dungeon(c.DungeonId) is not { } room) return;
         c.Cleared = true;
         c.ClearedMs = now;
         c.CompleteEndsMs = now + room.Hold * 1000L;
         if (c.CompleteEndsMs == c.ClearedMs) c.EndSent = true;
-        var seconds = (c.WaveEndsMs - c.WaveStartedMs) / 1000;
-        Note($"dungeon {c.DungeonId}: the countdown ended with {c.Points} points");
+        var bonus = early ? daily.ClearBonus : 0;
+        c.Points += bonus;
+        var seconds = ((early ? now : c.WaveEndsMs) - c.WaveStartedMs) / 1000;
+        Note($"dungeon {c.DungeonId}: {(early ? "cleared" : "the countdown ended")} with {c.Points} points");
         foreach (var session in DungeonCopySessions())
         {
             var reward = daily.Reward(c.Points, session.profileRace == 2);
-            var packets = new List<byte[]>
-            {
-                WaveDungeonCompleteResult(c.DungeonId, WaveDungeonGrade, seconds, c.Points, reward),
+            var packets = new List<byte[]>();
+            if (bonus > 0) packets.AddRange([WaveSpawnBonusDungeonPoint(c.DungeonId, bonus), DungeonPoint(c.DungeonId, c.Points)]);
+            packets.AddRange([
+                WaveDungeonCompleteResult(c.DungeonId, WaveDungeonGrade, seconds, c.Points, reward, bonus),
                 DungeonPoint(c.DungeonId, c.Points),
                 DungeonState(c.DungeonId, DungeonStateComplete, c.ClearedMs, c.CompleteEndsMs),
-            };
+            ]);
             if (c.EndSent) packets.Add(DungeonClearedState(c));
             if (reward.Count > 0) session.pendingDungeonRewards.Add(reward);
+            session.RecordDailyBest(c.DungeonId, WaveDungeonGrade, seconds, c.Points, now);
             session.SpendContentTickets(c.DungeonId, "Clear", now);
             // Official: the player stays through Complete and End and leaves by hand. Ours sends them out when End runs out (OURS).
             session.instanceExitAt ??= c.CompleteEndsMs + DungeonEndStateMs;
