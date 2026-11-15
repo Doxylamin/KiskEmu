@@ -1617,7 +1617,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 // #382, #9680, #14311: the same EAppearReasonType as 0x3647/0x3621). Live 2026-10-19: with 0 in the layer the
                 // player kept no controls after Robin ran off.
                 AppearReason = instanceMove && TestPiece(LayerPieceAppearance) ? InstanceReason : 0,
-                TeleportEffect = instanceMove && TestPiece(LayerPieceAppearance) ? InstanceEffect : (byte)0,
+                // A teleport's own effect repeats in the appearance (OBSERVED 2026-11-15: the legion hall scroll's 98 as the trailing
+                // byte with mask bit 12; the artifact teleport, effect 0, has none).
+                TeleportEffect = instanceMove && TestPiece(LayerPieceAppearance) ? InstanceEffect : moveEffect,
                 CharLevel = level, CombatLevel = level, LevelMax = level, Experience = experience, WeaponId = equippedWeapon,
                 Relationship = (byte)((profile?.Race ?? 1) == 2 ? 2 : 1),
                 // The real pools (PcStatLevel + gear + buffs); the 1500/200 defaults made the bar read e.g. 4000/1500.
@@ -1636,6 +1638,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 BonusDaevanionPoints = DaevanionBonusPointWire(),
             }));
         replies.Add(GamePackets.CharBarrier(playerKey));
+        replies.AddRange(afterAppear);
+        afterAppear = [];
         replies.Add(GamePackets.CharStatsUpdate(playerKey, StatSheet().Stats, resources.HpMax));
         if (!shortLoad)
         {
@@ -2434,6 +2438,12 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
 
     /// <summary>The teleport effect of the pending map load (0x41 with instance-layer moves); the own appearance repeats it.</summary>
     byte moveEffect;
+
+    /// <summary>
+    /// Replies the official server sends right after the own appearance of the pending map load (OBSERVED 2026-11-15: a return
+    /// item's 0x5613 and its 0x561b, the artifact teleport's 0x9237 and its 0x561b come after 0x3633/0x3646, not before the move).
+    /// </summary>
+    List<byte[]> afterAppear = [];
 
     /// <summary>Removals of the entities shown on the map just left, sent at the next load when the level stays the same.</summary>
     List<byte[]> sameLevelRemovals = [];

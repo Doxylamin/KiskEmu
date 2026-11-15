@@ -446,9 +446,17 @@ public sealed partial class GameSession
     const double ArtifactArrivalRange = 3000;
 
     /// <summary>
-    /// UseTeleportArtifact_RQ 0x9236 (the world map's teleport confirm): an engraved Kibelisk only. The dialog's cost is one
-    /// teleport scroll, so one Telpo_Home item (530560001 / 560560002) in the bag is used up; without one the move is free
-    /// (INFERRED: the cost table is not exported). Then 0x9237 and the move, across maps through the normal map load.
+    /// The artifact teleport's cost item (OBSERVED official 2026-11-15: four teleports each used one 530559489, 35 down to 32,
+    /// decrease reason 56; no Kina, no Return Scroll). The item is not in the exported item data, so its name is unknown.
+    /// </summary>
+    const int ArtifactTeleportItemId = 530559489;
+    const byte DecreaseArtifactTeleport = 56;
+
+    /// <summary>
+    /// UseTeleportArtifact_RQ 0x9236 (the world map's teleport confirm): an engraved Kibelisk only. OBSERVED official order
+    /// (2026-11-15, four teleports): the own 0x3647 `02 00` with 0x3621 reason 2, the load, and after the appearance
+    /// (0x3633, 0x3646) 0x9237 {0, artifact} and 0x561b using up one teleport item (530559489, decrease 56). Without the
+    /// item the move is free (unrecorded; the item is not handed out here).
     /// </summary>
     async Task<List<byte[]>> UseTeleportArtifactAsync(int artifactId, long now, CancellationToken ct)
     {
@@ -456,21 +464,21 @@ public sealed partial class GameSession
         if (!Kibelisks.TryPlacement(artifactId, out var mapId, out var at)) return Reply(ArtifactNotFound);
         if (!engraved.Contains(artifactId)) return Reply(ArtifactNotEngraved);
         if (resources is null || dead || reloading) return Reply(ArtifactCanNotMove);
-        var replies = Reply(0);
-        if (Store is { } store && CharacterId is { } character && TeleportScroll() is { } scroll)
+        var paid = new List<byte[]>();
+        if (Store is { } store && CharacterId is { } character && TeleportItem() is { } item)
         {
-            var used = await Stored(async () => await store.ConsumeItemAsync(character, scroll.InstanceId, scroll.Revision, 1, ct) ? [[]] : []);
+            var used = await Stored(async () => await store.ConsumeItemAsync(character, item.InstanceId, item.Revision, 1, ct) ? [[]] : []);
             if (used.Count == 0) return Reply(ArtifactCanNotMove);
-            replies.AddRange(await InventoryChangesAsync(ct, 0, DecreaseItemUse));
+            paid = await InventoryChangesAsync(ct, 0, DecreaseArtifactTeleport);
         }
         Note($"UseTeleportArtifact {artifactId}: map {mapId}");
-        replies.AddRange(PcTeleport(mapId, ArtifactArrival(mapId, at), now));
-        return replies;
+        afterAppear.AddRange(Reply(0));
+        afterAppear.AddRange(paid);
+        return PcTeleport(mapId, ArtifactArrival(mapId, at), now);
     }
 
-    ItemState? TeleportScroll() =>
-        storedItems.Values.Where(s => s.Location == "bag" && s.Quantity > 0 && Boxes.Use(s.TemplateId)?.Effect == "Telpo_Home")
-            .OrderBy(s => s.TemplateId).FirstOrDefault();
+    ItemState? TeleportItem() =>
+        storedItems.Values.FirstOrDefault(s => s.Location == "bag" && s.Quantity > 0 && s.TemplateId == ArtifactTeleportItemId);
 
     /// <summary>The map's TeleportArtifact_* point nearest the Kibelisk (MapData TeleportDataMap), else the Kibelisk itself.</summary>
     Vector3d ArtifactArrival(int mapId, Vector3d kibelisk)
