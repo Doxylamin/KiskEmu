@@ -207,16 +207,21 @@ class DotnetNativeHostTests(unittest.TestCase):
             selected = client.frames(3)
             self.assertEqual([b[:2] for b in selected], [b'\x20\x36', b'\x44\x8d', b'\x21\x36'])
             client.send(b'\x22\x36' + struct.pack('<i', 1))
-            burst = client.frames(8)
-            # The class passives (0x382a, weapon equip permission) follow the appearance, as at the official world entry.
-            self.assertEqual([b[:2] for b in burst[:7]], [b'\x23\x36', b'\x46\x37', b'\x00\x8d', b'\x33\x36', b'\x46\x36', b'\x2a\x38', b'\x4a\x36'])
+            burst = client.frames(9)
+            # The class passives (0x382a, weapon equip permission) follow the appearance, then the load protection 10002
+            # (a second 0x382a) before the stats 0x364a, as at the official world entry.
+            self.assertEqual([b[:2] for b in burst[:8]], [b'\x23\x36', b'\x46\x37', b'\x00\x8d', b'\x33\x36', b'\x46\x36', b'\x2a\x38', b'\x2a\x38', b'\x4a\x36'])
             self.assertIn(b'Tester', burst[3])
             client.send(b'\x1c\x8a')
-            seen = []
+            frames = list(burst)
             deadline = time.monotonic() + 10
-            while len(seen) < 2 and time.monotonic() < deadline:  # past the NPC appear burst
-                seen += [b[:2] for b in client.frames(1, 1) if b[:2] in (b'\x1d\x8a', b'\x58\xe2')]
-            self.assertEqual(seen, [b'\x1d\x8a', b'\x58\xe2'])
+            while b'\x1d\x8a' not in [b[:2] for b in frames] and time.monotonic() < deadline:  # past the NPC appear burst
+                frames += client.frames(1, 1)
+            self.assertIn(b'\x1d\x8a', [b[:2] for b in frames])
+            # Chat (45) is in the entry list 0xe257 (varint count, then the types) and no 0xe258 follows (OBSERVED official).
+            unlocks = next(b for b in frames if b[:2] == b'\x57\xe2')
+            self.assertIn(45, unlocks[3:3 + unlocks[2]])
+            self.assertNotIn(b'\x58\xe2', [b[:2] for b in frames])
         finally:
             client.close()
 
