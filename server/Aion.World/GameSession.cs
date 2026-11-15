@@ -1621,8 +1621,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 // player kept no controls after Robin ran off.
                 AppearReason = instanceMove && TestPiece(LayerPieceAppearance) ? InstanceReason : 0,
                 // A teleport's own effect repeats in the appearance (OBSERVED 2026-11-15: the legion hall scroll's 98 as the trailing
-                // byte with mask bit 12; the artifact teleport, effect 0, has none).
-                TeleportEffect = instanceMove && TestPiece(LayerPieceAppearance) ? InstanceEffect : moveEffect,
+                // byte with mask bit 12; the artifact teleport, effect 0, has none). Only a return item's effect: a layer entry's 0x41
+                // is not repeated (OBSERVED, the layer appearance has no arrival effect).
+                TeleportEffect = instanceMove && TestPiece(LayerPieceAppearance) ? InstanceEffect : moveEffect == ReturnTeleportEffect ? moveEffect : (byte)0,
                 CharLevel = level, CombatLevel = level, LevelMax = level, Experience = experience, WeaponId = equippedWeapon,
                 Relationship = (byte)((profile?.Race ?? 1) == 2 ? 2 : 1),
                 // The real pools (PcStatLevel + gear + buffs); the 1500/200 defaults made the bar read e.g. 4000/1500.
