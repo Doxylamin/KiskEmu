@@ -299,7 +299,9 @@ public sealed class GatherCraftScenarioTests
         session.GatherRoll = () => 9999;   // every turn fails
         await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
         var stopped = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStopRq).Varint((uint)key).ToArray(), Now + 500);
-        Assert.Contains(stopped, b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(key)));
+        // OBSERVED 2026-11-15: 0x3639 {key, 0x1906, interactor, gather number}, no 0x363b.
+        Assert.Contains(stopped, b => b.SequenceEqual(GamePackets.InteractEnvObjInterrupted(key, GameSession.GatherInterruptedReason, session.PlayerKey, 1)));
+        Assert.DoesNotContain(stopped, b => GameSessionTestHelpers.Op(b) == 0x363b);
         var later = await session.TickAsync(Now + GameSession.GatherRaceMs(12) + 10);
         Assert.DoesNotContain(later, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt);
         Assert.Equal(-1, session.GatherAttemptsLeft(index));

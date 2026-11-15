@@ -318,14 +318,30 @@ public sealed partial class GameSession
         return lost;
     }
 
-    /// <summary>0x8d32 GatherSourceStop_RQ {target key}: the gather in progress is cancelled; the node is available again (0x363b).</summary>
+    /// <summary>0x3639 _reason of a gather cut short (OBSERVED 2026-11-15, flight time running out mid-gather: `0619`).</summary>
+    public const int GatherInterruptedReason = 0x1906;
+
+    /// <summary>
+    /// 0x8d32 GatherSourceStop_RQ {target key}: the gather in progress is cancelled. OBSERVED (2026-11-15, flight time ran out
+    /// during a node's second gather): InteractEnvObjInterrupted_NT 0x3639 {key, reason 0x1906, interactor, the attempt's
+    /// gather number 2}, and no 0x363b. The use is not spent here (CANDIDATE).
+    /// </summary>
     List<byte[]> GatherStop(byte[] plain)
     {
         uint key;
         try { key = new PacketReader(plain) { Offset = 2 }.Varint(); } catch (ProtocolException) { return []; }
         if (pendingUse is { } use && use.Key == (int)key) pendingUse = null;
         if (pendingGatherLoss is { } loss && loss.Key == (int)key) pendingGatherLoss = null;
-        return [GamePackets.InteractEnvObjAvailableState((int)key)];
+        var index = (int)key - WorldObjects.FirstKey;
+        if (gatherDiscoveredIndex == index) gatherDiscoveredIndex = null;
+        var objects = WorldObjects.ObjectsOn(worldMap);
+        var number = 1;
+        if (index >= 0 && index < objects.Count && objects[index].Gather is { } node)
+        {
+            var total = node.Length >= 7 && node[6] > 0 ? (int)node[6] : 3;
+            number = total - (gatherAttempts.TryGetValue(index, out var left) ? left : total) + 1;
+        }
+        return [GamePackets.InteractEnvObjInterrupted((int)key, GatherInterruptedReason, playerKey, number)];
     }
 
     /// <summary>A gather node's interaction completed: the material, 0x8d33, the node used up (0x3635).</summary>
