@@ -738,6 +738,7 @@ public sealed partial class GameSession : IMapEventHost
         mapEventOut.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(SpawnAppearance(t)), t));
         if (position is { } at && !InNpcView(t.Position, at)) seenNpcs.Remove(t.Key);
         else seenNpcs.Add(t.Key);
+        DailyEliteSpawned(t);   // GameSession.DailyDungeons.cs: "Danger level has risen"
     }
 
     static bool InNpcView(Vector3d npc, Vector3d player)

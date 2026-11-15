@@ -140,6 +140,30 @@ public sealed partial class GameSession
         return [DungeonState(c.DungeonId, DungeonStateProcess, now, 0), WaveCountdown(daily.Wave, c.WaveEndsMs, false)];
     }
 
+    /// <summary>ServerMsg_NT (usmap index 0x3981, live 0x8d46: OBSERVED official 2026-11-15) {msg id i32, params list of
+    /// strings}: `85000000 01 07 "2701427"`.</summary>
+    public const ushort ServerMsgNt = 0x8d46;
+    /// <summary>The message "Danger level has risen" (OBSERVED: msg 133 with the elite's NpcData id, in 900001).</summary>
+    public const int ServerMsgDangerRisen = 133;
+
+    internal static byte[] ServerMsg(int msgId, params string[] parameters)
+    {
+        var w = PacketWriter.Opcode(ServerMsgNt).I32(msgId).Varint((uint)parameters.Length);
+        foreach (var p in parameters) w.String(p);
+        return w.ToArray();
+    }
+
+    /// <summary>
+    /// An elite appears in a daily dungeon: "Danger level has risen" with its NpcData id. OBSERVED official 2026-11-15 (900001):
+    /// 0x8d46 {133, ["2701427"]} in the same frame as the 0x3641 of elite 2701427 and again for 2701431 (two elites, two
+    /// messages in that run; four in the third). CANDIDATE: that every EliteMonster spawn sends it (the wave data may say).
+    /// </summary>
+    void DailyEliteSpawned(Target t)
+    {
+        if (CopyDaily is null || t.SubType != "EliteMonster" || copy is not { Cleared: false, Phase: "Process" }) return;
+        mapEventOut.Add(ServerMsg(ServerMsgDangerRisen, t.NpcId.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
     /// <summary>A kill in a daily dungeon (the host's): DungeonPoint.dat's points, 0x6104 with the total to the copy.</summary>
     void DailyKillPoints(Target target, long now)
     {

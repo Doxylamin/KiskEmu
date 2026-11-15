@@ -71,6 +71,7 @@ public sealed class DailyDungeonTests
         Assert.Equal("0561a1bb0d0003010000000a00000002000000060000000300000004000000",
             Hex(GameSession.DungeonBuffInfo(Dungeon, [(1, 10), (2, 6), (3, 4)])));
         Assert.Equal("07610000a1bb0d0000000000", Hex(GameSession.DungeonBuffSelectReply(Dungeon)));
+        Assert.Equal("468d85000000010732373031343237", Hex(GameSession.ServerMsg(GameSession.ServerMsgDangerRisen, "2701427")));
     }
 
     [Fact]
@@ -101,6 +102,25 @@ public sealed class DailyDungeonTests
         var process = start.First(p => Op(p) == GameSession.DungeonStateNt);
         Assert.Equal(GameSession.DungeonStateProcess, process[6]);
         Assert.Equal(GameSession.WaveCountdownNt, Op(start[start.IndexOf(process) + 1]));   // OBSERVED: 0x6014 right after
+    }
+
+    [Fact]
+    public async Task An_elite_appearing_sends_danger_level_has_risen_with_its_npc_id()
+    {
+        var (session, _, _) = await EnterAsync();
+        var go = await MapEventScenarioHelpers.PickDailyBuffAsync(session, Dungeon, Now + 1_000);
+        await session.TickAsync(go + 10);
+        var elite = session.Targets.Values.First(t => t.SubType == "EliteMonster" && t.Hostile);
+        var normal = session.Targets.Values.First(t => t.SubType == "NormalMonster" && t.Hostile && t.Name != elite.Name);
+        foreach (var t in session.Targets.Values.Where(t => t.Name == elite.Name || t.Name == normal.Name)) { t.Hp = 0; t.CorpseRemoved = true; }
+        ((IMapEventHost)session).Spawn(normal.Name, 0);
+        var plain = await session.TickAsync(go + 100);
+        Assert.DoesNotContain(plain, p => Op(p) == GameSession.ServerMsgNt);
+        ((IMapEventHost)session).Spawn(elite.Name, 0);
+        var spawned = await session.TickAsync(go + 200);
+        var msg = spawned.FindIndex(p => p.SequenceEqual(GameSession.ServerMsg(GameSession.ServerMsgDangerRisen, elite.NpcId.ToString())));
+        Assert.True(msg > 0, "no danger message");
+        Assert.Equal(0x3641, Op(spawned[msg - 1]));   // OBSERVED: right after the elite's appearance
     }
 
     static async Task<(GameSession Session, List<byte[]> Entry, FakeCharacterStore Store)> EnterAsync()
