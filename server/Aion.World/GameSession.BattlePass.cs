@@ -143,6 +143,7 @@ public sealed partial class GameSession
         var itemId = BitConverter.ToInt32(plain, 2);
         var replyOpcode = Opcode(plain) == LegacyBattlePassPurchaseRq ? (ushort)(LegacyBattlePassPurchaseRq + 1) : BattlePassPurchaseRs;
         byte[] Reply(int result) => PacketWriter.Opcode(replyOpcode).U16(result).I32(itemId).ToArray();
+        if (itemId == PassLevelItemId) return await BattlePassBuyLevelAsync(now, Reply, ct);
         var passes = ActivePasses(now)
             .SelectMany(g => g.Id == itemId ? g.Passes.Where(IsPaid) : g.Passes.Where(p => p[0] == itemId && IsPaid(p)))
             .Where(p => !PassUnlocked(p)).ToList();
@@ -159,6 +160,46 @@ public sealed partial class GameSession
         if (pay != QunaPay.Done) return [Reply(pay == QunaPay.NotEnough ? 2 : 1)];
         var changes = price > 0 ? await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy) : [];
         return await UnlockPassesAsync(passes, now, changes, Reply, ct);
+    }
+
+    /// <summary>
+    /// Buying one pass level (OBSERVED 2026-11-15, one purchase for 50 Quna): BattlePassPurchase_RQ names the level item
+    /// 503699018 instead of a pass. 0xe333 (Quna), 0x561b grants the item (EIncreaseReason 72), 0xe32e `0000 <item>`,
+    /// 0x5684, 0xe324 with the pass exp one level higher (95940 → 97940), then 0x561b uses the item up (EDecreaseReason 38).
+    /// The paid track stays as it was. CANDIDATE: the item raises the first active group (the observed one was the Light
+    /// global pass 10044), by the exp to its next level.
+    /// </summary>
+    public const int PassLevelItemId = 503699018;
+    public const long PassLevelQunaCost = 50;
+    const byte DecreasePassLevelItem = 38;
+
+    async Task<List<byte[]>> BattlePassBuyLevelAsync(long now, Func<int, byte[]> Reply, CancellationToken ct)
+    {
+        var group = ActivePasses(now).FirstOrDefault(g => g.Passes.Any(p => p.Length >= 2 && Achievements.Of((int)p[1]) is not null));
+        var free = group?.Passes.FirstOrDefault(p => !IsPaid(p) && p.Length >= 2) ?? group?.Passes.FirstOrDefault(p => p.Length >= 2);
+        if (group is null || free is null || Achievements.Of((int)free[1]) is not { } expEntry) return [Reply(1)];
+        var count = AchievementCount((int)free[1]);
+        var next = expEntry.Steps.Select(s => s[1]).Where(c => c > count).DefaultIfEmpty(0).Min();
+        if (next <= count) return [Reply(1)];
+        if (ApplyPremiumPrice(PlatformGoodsTables.Embedded.QunaItemId, PassLevelQunaCost) is not { } priced) return [Reply(1)];
+        var (currency, price) = priced;
+        if (Store is not { } store || CharacterId is not { } character)
+            return [Reply(0), .. AddPassExp(group, next - count, now)];
+        if (PurchaseCosts([(currency, price)]) is not { } paid) return [Reply(2)];
+        // The ledger's "pass" line, with the level item as its goods.
+        var orders = new List<Aion.Application.Gameplay.ShopOrderLine> { new("pass", PassLevelItemId, 1, currency, price) };
+        var pay = await PayQunaAsync(paid.Quna, new { kind = "pass", level = group.Id },
+            () => StoredOk(() => store.ShopBuyAsync(character, paid.Costs, [(PassLevelItemId, 1L)], [], orders, ct)), ct);
+        if (pay != QunaPay.Done) return [Reply(pay == QunaPay.NotEnough ? 2 : 1)];
+        var replies = new List<byte[]>(await InventoryChangesAsync(ct, IncreaseBattlePassReward, DecreaseShopBuy));
+        replies.Add(Reply(0));
+        replies.AddRange(AddPassExp(group, next - count, now));
+        if (storedItems.Values.FirstOrDefault(i => i.TemplateId == PassLevelItemId && i.Location == "bag") is { } levelItem)
+        {
+            await Stored(async () => await store.ConsumeItemAsync(character, levelItem.InstanceId, levelItem.Revision, 1, ct) ? [[]] : []);
+            replies.AddRange(await InventoryChangesAsync(ct, 0, DecreasePassLevelItem));
+        }
+        return replies;
     }
 
     async Task<List<byte[]>> UnlockPassesAsync(List<long[]> passes, long now, List<byte[]> changes, Func<int, byte[]> Reply, CancellationToken ct)
