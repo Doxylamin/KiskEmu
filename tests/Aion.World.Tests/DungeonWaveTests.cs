@@ -165,7 +165,10 @@ public sealed class DungeonWaveTests
         var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, Now, level: 45);
         await MapEventScenarioHelpers.EnterDungeonByIdAsync(session, WaveMap, Now + 200);
         Assert.True(session.MapId == WaveMap, string.Join(" | ", session.MapEventNotes));
-        var run = await MapEventScenarioHelpers.WaitForMapEventRunAsync(session, SubEvent, Now + 300, attempts: 16);
+        // The daily run starts 5 s after entry (Prepare, then Process); its map event waits for that.
+        var go = session.Copy!.ProcessAtMs;
+        await session.TickAsync(go + 10);
+        var run = await MapEventScenarioHelpers.WaitForMapEventRunAsync(session, SubEvent, go + 20, attempts: 16);
         Assert.NotNull(run);
 
         int Living(int step) => session.Targets.Values.Count(t => t.Name == Step(step) && !t.Dead);
@@ -173,7 +176,7 @@ public sealed class DungeonWaveTests
         Assert.All(Enumerable.Range(1, 30).Where(n => n != 21), n => Assert.Equal(0, Living(n)));
 
         var skill = MapEventScenarioHelpers.BasicAttackSkill(session);
-        var now = Now + 2_000;
+        var now = go + 2_000;
         foreach (var target in session.Targets.Values.Where(t => t.Name == Step(21) && !t.Dead).Take(14).ToList())
         {
             await MapEventScenarioHelpers.SyncPositionAsync(session, target.Position with { X = target.Position.X + 120 }, now);
