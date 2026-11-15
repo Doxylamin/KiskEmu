@@ -159,8 +159,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     public bool Resting { get; private set; }
     public const int RestRegenFactor = 3;
     /// <summary>Where the player is from the movement requests: flying (0x370a/b), gliding (0x3706/7), in a jump or fall (0x3702/3), else on the ground.</summary>
-    /// <summary>WindPath: riding a wind stream (0x3712/0x3713), which spends no flight points (OURS, as the earlier game's
-    /// streams; no official FP during a ride is recorded) and recovers none.</summary>
+    /// <summary>WindPath: riding a wind stream (0x3712/0x3713), which spends no flight points and refills them as on the ground
+    /// (OBSERVED 2026-11-15: entered at half a bar, the gauge kept rising until the landing; the rate, the ground's 4000 a
+    /// second, is CANDIDATE).</summary>
     enum AirState { Ground, Fly, Glide, Fall, WindPath }
     AirState air;
     /// <summary>The flight started running (0x370a mask bit 0): the faster drain.</summary>
@@ -2829,7 +2830,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 var underwater = diving && !dead;
                 resources.Op = underwater ? (int)Math.Max(0, op - seconds * DiveDrain) : (int)Math.Min(OpMax, op + seconds * OpRegen);
                 var fp = resources.Fp;
-                if (resources.FpMax > 0 && !dead && air == AirState.Ground)
+                if (resources.FpMax > 0 && !dead && air is AirState.Ground or AirState.WindPath)
                     resources.Fp = (int)Math.Min(resources.FpMax, fp + seconds * (inCombat ? FpRegenBattle : FpRegenRest));
                 var suffocating = underwater && resources.Op == 0;
                 if (suffocating) replies.AddRange(EnsureOxygenDeficiency(now));
