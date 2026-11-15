@@ -408,22 +408,34 @@ public sealed class TravelParityTests
     }
 
     [Fact]
-    public async Task World_map_teleport_to_engraved_kibelisk_uses_a_scroll_and_crosses_maps()
+    public async Task World_map_teleport_crosses_maps_and_answers_with_the_teleport_item_after_the_appearance()
     {
+        // OBSERVED official 2026-11-15: 0x3647 `02 00` + 0x3621, the load, then after 0x3633/0x3646 0x9237 {0, artifact} and
+        // 0x561b using one teleport item 530559489 (decrease 56). No Kina, and the Return Scroll stays.
         const long t = Now + 450_000;
         var store = new FakeCharacterStore();
         store.TeleportArtifacts.Add(1051035);
         var session = await EnterAscendedAsync(store, t, mapId: 1010);
         store.Items.Add(FakeCharacterStore.BagItem(530560001, 2, 86));
+        store.Items.Add(FakeCharacterStore.BagItem(530559489, 35, 87));
         await GameSessionTestHelpers.LoadInventoryAsync(session, t);
         var replies = await session.HandleAsync(Convert.FromHexString("36929B091000"), t);
-        Assert.True(replies[0].SequenceEqual(GamePackets.UseTeleportArtifactReply(1051035)));
+        Assert.DoesNotContain(replies, p => GameSessionTestHelpers.Op(p) is 0x9237 or 0x561b);
+        Assert.Contains(replies, p => p.SequenceEqual(PlayerPackets.CharDisappear(session.PlayerKey, 2, 0)));
         var load = replies.FirstOrDefault(p => GameSessionTestHelpers.Op(p) == 0x3621);
         Assert.NotNull(load);
         Assert.Equal(1000, BitConverter.ToInt32(load, 6));
         var arrival = GameData.Embedded.MapPoints(1000)["TeleportArtifact_Poeta_Region_03_1"];
         Assert.Equal(new Vector3d(arrival[0], arrival[1], arrival[2]), session.Position);
-        Assert.Contains(store.Items, i => i.TemplateId == 530560001 && i.Quantity == 1);
+        var entry = await session.HandleAsync(new PacketWriter().U16(0x3622).I32(2).ToArray(), t + 500);
+        var ops = entry.Select(GameSessionTestHelpers.Op).ToList();
+        var reply = ops.IndexOf(0x9237);
+        Assert.True(reply > ops.IndexOf(0x3633) && ops.IndexOf(0x3633) >= 0, string.Join(",", ops.Select(o => o.ToString("x4"))));
+        Assert.True(entry[reply].SequenceEqual(GamePackets.UseTeleportArtifactReply(1051035)));
+        Assert.Equal(0x561b, ops[reply + 1]);
+        Assert.Equal(56, entry[reply + 1][^2]);
+        Assert.Contains(store.Items, i => i.TemplateId == 530559489 && i.Quantity == 34);
+        Assert.Contains(store.Items, i => i.TemplateId == 530560001 && i.Quantity == 2);
     }
 
     [Fact]
