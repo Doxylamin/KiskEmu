@@ -462,7 +462,7 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         awake.Add(target.Key);
         brain.Hate[attackerKey] = brain.Hate.GetValueOrDefault(attackerKey) + Math.Max(1, damage);
         brain.CandidateKey = TopHate(brain) ?? attackerKey;
-        return StartChase(target, brain, now);
+        return StartChase(target, brain, now, noticed: false);
     }
 
     static int? TopHate(Brain brain) => brain.Hate.Count == 0 ? null : brain.Hate.MaxBy(h => h.Value).Key;
@@ -500,19 +500,32 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         return [GamePackets.CombatState(target.Key, false)];
     }
 
-    static List<byte[]> StartChase(Target target, Brain brain, long now)
+    /// <param name="noticed">False when the NPC was hit first (Engage): no 0x8d52.</param>
+    static List<byte[]> StartChase(Target target, Brain brain, long now, bool noticed = true)
     {
         var replies = new List<byte[]>();
         brain.VictimKey = brain.CandidateKey != 0 ? brain.CandidateKey : PlayerKey;
         if (!brain.Engaged)
         {
-            // Official aggro start, all in one tick: NpcFirstAggro_NT 0x8d52, the NPC's target (0x3835, the player), a stop
-            // (0x371a), 0x8d21 on (recording 2026-10-19).
             brain.Engaged = true;
-            replies.Add(GamePackets.NpcFirstAggro(target.Key));
-            replies.Add(GamePackets.TargetUpdate(target.Key, brain.VictimKey));
-            replies.AddRange(Stop(target, brain, brain.Heading, now));
-            replies.Add(GamePackets.CombatState(target.Key, true));
+            if (noticed)
+            {
+                // Official aggro start, all in one tick: NpcFirstAggro_NT 0x8d52, the NPC's target (0x3835, the player), a stop
+                // (0x371a), 0x8d21 on (recording 2026-10-19; 2026-11-15 i=283336-283341).
+                replies.Add(GamePackets.NpcFirstAggro(target.Key));
+                replies.Add(GamePackets.TargetUpdate(target.Key, brain.VictimKey));
+                replies.AddRange(Stop(target, brain, brain.Heading, now));
+                replies.Add(GamePackets.CombatState(target.Key, true));
+            }
+            else
+            {
+                // A monster the player hits first gets 0x8d21 but no 0x8d52 (OBSERVED: 0 of 72 on 2026-11-04, 0 of 21 on 2026-11-15);
+                // its 0x3835 to the attacker still follows the 0x8d21, about 50 ms later (65 of 72; 2026-11-04 i=8401 `218d8fb1010001`,
+                // i=8404 `35388fb10100b016`). Sent in the same tick here (OURS).
+                replies.AddRange(Stop(target, brain, brain.Heading, now));
+                replies.Add(GamePackets.CombatState(target.Key, true));
+                replies.Add(GamePackets.TargetUpdate(target.Key, brain.VictimKey));
+            }
         }
         brain.Mode = Mode.Chase;
         brain.Moving = false;  // the next tick starts a run (0x371b) towards the player
