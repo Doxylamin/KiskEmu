@@ -34,6 +34,24 @@ class WorldNpcTests(unittest.TestCase):
         self.assertIn(combat.encode_varint(citizen.hp_max) * 2, citizen_body)
 
 
+class HitCountAndUntouchableTests(unittest.TestCase):
+    def test_hit_count_npcs_have_hits_for_hp(self):
+        # NpcData bHitCountBased: 7 hits for a monster, 5 for a summon (OBSERVED); nothing for any other NPC.
+        self.assertEqual(world_npcs.hit_count({'bHitCountBased': True, 'NpcType': 'ENpcType::Monster'}), {'hp_max': 7, 'hit_count': True})
+        self.assertEqual(world_npcs.hit_count({'bHitCountBased': True, 'NpcType': 'ENpcType::Summon'}), {'hp_max': 5, 'hit_count': True})
+        self.assertEqual(world_npcs.hit_count({'bHitCountBased': False}), {})
+
+    def test_untouchable(self):
+        self.assertFalse(world_npcs.untouchable({'bCanBeAttacked': True, 'NpcTargetAble': 'ENpcTargetAble::Able'}))
+        self.assertTrue(world_npcs.untouchable({'bCanBeAttacked': False, 'NpcTargetAble': 'ENpcTargetAble::Able'}))
+        self.assertTrue(world_npcs.untouchable({'bCanBeAttacked': True, 'NpcTargetAble': 'ENpcTargetAble::Onlypicking'}))
+
+    def test_committed_templates_carry_the_flags(self):
+        templates = json.loads(world_npcs.DATA.read_text(encoding='utf-8'))['templates']
+        self.assertEqual((templates['2290017'].get('hp_max'), templates['2290017'].get('hit_count')), (7, True))
+        self.assertTrue(all(t.get('hp_max') in (5, 7) for t in templates.values() if t.get('hit_count')))
+
+
 class NpcAbnormalTests(unittest.TestCase):
     def test_abnormal_rows(self):
         # SkillEffect Abnormal EffectValueList: [0]/[1] duration, [2] abnormal, [3] level, [4] chance (1224900 -> 12000141 for 20 s, OBSERVED).

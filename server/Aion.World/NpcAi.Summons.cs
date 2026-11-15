@@ -82,7 +82,7 @@ public sealed partial class NpcAi
         var centre = shape.OnTarget ? victim.Position : summon.Position;
         var yaw = HeadingTo(summon.Position, Flat(victim.Position));
         chosen.AddRange(current.Values
-            .Where(t => t.Key != victim.Key && t.OwnerKey == 0 && t.Hostile && !t.Dead && !t.CorpseRemoved
+            .Where(t => t.Key != victim.Key && t.OwnerKey == 0 && t.Attackable && !t.Dead && !t.CorpseRemoved
                 && shape.Contains(centre, yaw, t.Position, t.Radius))
             .OrderBy(t => t.Position.DistanceSquared(centre)).Take(shape.Max - 1));
         return chosen;

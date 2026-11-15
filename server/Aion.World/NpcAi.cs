@@ -195,7 +195,7 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         var bestDistance = CompanionRange;
         foreach (var other in current.Values)
         {
-            if (other.Key == target.Key || !other.Hostile || other.Dead || other.CorpseRemoved) continue;
+            if (other.Key == target.Key || !other.Attackable || other.Dead || other.CorpseRemoved) continue;
             var d = Distance(target.Position, Flat(other.Position));
             if (d < bestDistance) { bestDistance = d; best = other; }
         }
@@ -311,6 +311,7 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         // packs die before anyone walks up to them and the camp looks empty.
         if (!attacker.Hostile && attacker.OwnerKey == 0 && victim.Hostile) damage = Math.Min(damage, Math.Max(0, victim.Hp - 1));
         if (CapNpcDamage is { } cap) damage = cap(victim, damage);
+        damage = victim.Landed(damage);   // a hit-count NPC takes 1 a hit
         if (!victim.Immune) victim.Hp = Math.Max(0, victim.Hp - damage);
         var replies = new List<byte[]> { GamePackets.NpcHp(victim.Key, victim.Hp) };
         if (OnNpcHpChanged is { } hpChanged) replies.AddRange(hpChanged(victim));

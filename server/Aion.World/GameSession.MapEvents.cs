@@ -1362,6 +1362,7 @@ public sealed partial class GameSession : IMapEventHost
                     if (d.Normal is null) d.Remaining -= amount;
                     d.NextAt += d.IntervalMs;
                     if (t.Immune) amount = 0;
+                    amount = t.Landed(amount);   // a hit-count NPC takes 1 a tick
                     t.Hp = Math.Max(0, t.Hp - amount);
                     mapEventOut.Add(RidePackets.AbnormalDamage(t.Key, playerKey, b.Uid, d.EffectId, amount, b.SkillId));
                     mapEventOut.Add(GamePackets.NpcHp(t.Key, t.Hp));

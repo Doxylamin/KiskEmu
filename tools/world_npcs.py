@@ -115,6 +115,28 @@ RELATIONSHIP = {'NoRelation': 0, 'NPC_Light': 3, 'NPC_Dark': 4, 'NPC_Neutral': 5
 COMPANION_HP = 999999
 
 
+def untouchable(row):
+    """NpcData bCanBeAttacked false or NpcTargetAble not Able (Unable, Onlypicking): players cannot hit it. OBSERVED: no player hit
+    lands on such an NPC (0 of 9,127 player hits on NPCs in the 2026-11-04, -11-12 and -11-15 recordings). Ported from addiboii's
+    fork, commit b5355c2."""
+    return not row.get('bCanBeAttacked') or not str(row.get('NpcTargetAble', '')).endswith('::Able')
+
+
+# NpcData bHitCountBased: HP counts hits, every hit takes 1 and none is critical. OBSERVED: templates 2100969, 2100584, 2100614,
+# 2290057 (2026-11-04) and 2290030 (2026-11-15) appear with 7/7 HP and all 46 player hits on them were 1-damage normal hits, HP
+# stepping 6..0; a summon appears with 5/5 (the fork's recordings). CANDIDATE: the same for the rows not recorded. Ported from
+# addiboii's fork, commit 71373b7.
+HIT_COUNT_HP = 7
+HIT_COUNT_SUMMON_HP = 5
+
+
+def hit_count(row):
+    """The template fields of a hit-count NPC (NpcData bHitCountBased): its HP in hits and the flag; {} for any other."""
+    if not row.get('bHitCountBased'):
+        return {}
+    return {'hp_max': HIT_COUNT_SUMMON_HP if str(row.get('NpcType', '')).endswith('::Summon') else HIT_COUNT_HP, 'hit_count': True}
+
+
 def companion_hp(row):
     return row['RelationshipEntity'].endswith('::NPC_Companion') and bool(row.get('bCanBeAttacked'))
 
@@ -352,7 +374,9 @@ def build(maps=MAPDATA, npc_table=NPCDATA, aggro_table=AGGRODATA, skill_table=SK
                                    'sub_type': _enum(row.get('NpcSubType', 'ENpcSubType::NormalMonster')),
                                    'grade': int(row.get('Grade') or 3),
                                    **({'air': True} if row.get('ObjectTerrainType', '').endswith('::Air') else {}),
-                                   **({'hp_max': COMPANION_HP} if companion_hp(row) else {})})
+                                   **({'hp_max': COMPANION_HP} if companion_hp(row) else {}),
+                                   **hit_count(row),
+                                   **({'untouchable': True} if untouchable(row) else {})})
                 used_skills.update(skills)
                 unique_key = int(record.get('UniqueKey', 0)) & 0xffffffff
                 location = position['Location']
@@ -383,7 +407,9 @@ def build(maps=MAPDATA, npc_table=NPCDATA, aggro_table=AGGRODATA, skill_table=SK
                                   'no_rotation': bool(row.get('bNoRotation', False)), 'rotate_max': row.get('RotateAngleMax', 0),
                                   'sub_type': _enum(row.get('NpcSubType', 'ENpcSubType::NormalMonster')), 'grade': int(row.get('Grade') or 3),
                                   **({'air': True} if row.get('ObjectTerrainType', '').endswith('::Air') else {}),
-                                   **({'hp_max': COMPANION_HP} if companion_hp(row) else {})}
+                                   **({'hp_max': COMPANION_HP} if companion_hp(row) else {}),
+                                   **hit_count(row),
+                                   **({'untouchable': True} if untouchable(row) else {})}
         used_skills.update(skills)
     out['templates'] = templates
     out['npc_skills'] = npc_skills(used_skills, skill_table, effect_table)
