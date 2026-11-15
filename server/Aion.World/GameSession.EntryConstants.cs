@@ -55,7 +55,7 @@ public sealed partial class GameSession
             SubscribeList(now),                        // SubscribeList_NT 0xe33b (`00` without a membership)
             Observed(0xe33e, "00"),                    // ? (0xe33e)
             AccountCurrencyLimitStatus(now),           // 0xffae
-            Observed(0x6103, "00"),                    // ? (0x6103): empty (OBSERVED 0107... with records)
+            WaveDungeonInfoAtEntry(now),               // WaveDungeonInfo_NT 0x6103: the dailies' best today (`00` without one)
             // [MonolithList_NT 0xe30b: recorded here; sent with the map's objects, see the file remarks]
             BattlePassInfoList(now),                   // BattlePassInfoList_NT 0xe324
             AccountContentsInfoList(now),              // AccountContentsInfoList_NT 0x56b6 (`00` without keyed attendance seasons)

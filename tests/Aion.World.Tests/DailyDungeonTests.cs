@@ -174,6 +174,21 @@ public sealed class DailyDungeonTests
         Assert.Equal(GameSession.DungeonStateComplete, sent.Last(p => Op(p) == GameSession.DungeonStateNt)[6]);
         Assert.DoesNotContain(sent, p => Op(p) == GameSession.DungeonCompleteResultNt);   // no generic 0x6101 officially
         Assert.Contains(store.Items, i => i.TemplateId == 503700096);
+        // The next world entry lists the run (0x6103 {07, dungeon, grade, seconds, points}).
+        var info = session.WaveDungeonInfoAtEntry(now);
+        Assert.Equal(1, info[2]);
+        Assert.Equal(0x07, info[3]);
+        Assert.Equal(Repo, BitConverter.ToInt32(info, 4));
+        Assert.Equal("036100", Hex(session.WaveDungeonInfoAtEntry(now + 86_400_000)));   // a day later: none
+    }
+
+    [Fact]
+    public void World_entry_lists_the_best_daily_runs_as_official()
+    {
+        // OBSERVED 2026-11-15 (official, after 900001 x3 and 900002): `02 07 a1bb0d00 01 5a e03a 07 a2bb0d00 01 36 802d`.
+        Assert.Equal("0361" + "0207a1bb0d00015ae03a07a2bb0d000136802d",
+            Hex(GameSession.WaveDungeonInfo([(900001, 1, 90, 7520), (900002, 1, 54, 5760)])));
+        Assert.Equal("036100", Hex(GameSession.WaveDungeonInfo([])));
     }
 
     static async Task<(GameSession Session, List<byte[]> Entry, FakeCharacterStore Store)> EnterAsync()

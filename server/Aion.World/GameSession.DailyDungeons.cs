@@ -52,6 +52,39 @@ public sealed partial class GameSession
 
     readonly List<List<(int ItemId, long Count)>> pendingDungeonRewards = [];
 
+    /// <summary>The best result of each daily (dungeon id -> grade, seconds, points, UTC day), for 0x6103 at the world entry.
+    /// Kept for the connection only (OURS: not stored).</summary>
+    readonly Dictionary<int, (byte Grade, long Seconds, int Points, long Day)> dailyBest = [];
+
+    /// <summary>
+    /// 0x6103 WaveDungeonInfo_NT (usmap {wave dungeon infos}): OBSERVED official 2026-11-15 at the world entry after two dailies,
+    /// `02 | 07 a1bb0d00 01 5a e03a | 07 a2bb0d00 01 36 802d`: count u8, then per daily {mask u8 07, dungeon i32, grade u8,
+    /// seconds varint, points varint}: 900001 90 s 7520 (the best of three runs that day: 2960, 1730, 7520) and 900002 54 s
+    /// 5760. CANDIDATE: the best of the day (the reset time is OURS: the UTC day) and mask 07 = the three fields present.
+    /// </summary>
+    internal static byte[] WaveDungeonInfo(IEnumerable<(int DungeonId, byte Grade, long Seconds, int Points)> best)
+    {
+        var rows = best.ToList();
+        var w = PacketWriter.Opcode(0x6103).U8((byte)rows.Count);
+        foreach (var (id, grade, seconds, points) in rows)
+            w.U8(0x07).I32(id).U8(grade).Varint((uint)Math.Max(0, seconds)).Varint((uint)Math.Max(0, points));
+        return w.ToArray();
+    }
+
+    internal byte[] WaveDungeonInfoAtEntry(long now)
+    {
+        var today = now / 86_400_000;
+        return WaveDungeonInfo(dailyBest.Where(e => e.Value.Day == today).OrderBy(e => e.Key)
+            .Select(e => (e.Key, e.Value.Grade, e.Value.Seconds, e.Value.Points)));
+    }
+
+    void RecordDailyBest(int dungeonId, byte grade, long seconds, int points, long now)
+    {
+        var today = now / 86_400_000;
+        if (dailyBest.TryGetValue(dungeonId, out var held) && held.Day == today && held.Points >= points) return;
+        dailyBest[dungeonId] = (grade, seconds, points, today);
+    }
+
     /// <summary>The daily dungeon of this copy, if it is one.</summary>
     DailyDungeon? CopyDaily => copy is { } c ? DailyDungeon.Of(c.DungeonId) : null;
 
@@ -229,6 +262,7 @@ public sealed partial class GameSession
             ]);
             if (c.EndSent) packets.Add(DungeonClearedState(c));
             if (reward.Count > 0) session.pendingDungeonRewards.Add(reward);
+            session.RecordDailyBest(c.DungeonId, WaveDungeonGrade, seconds, c.Points, now);
             session.SpendContentTickets(c.DungeonId, "Clear", now);
             // Official: the player stays through Complete and End and leaves by hand. Ours sends them out when End runs out (OURS).
             session.instanceExitAt ??= c.CompleteEndsMs + DungeonEndStateMs;
