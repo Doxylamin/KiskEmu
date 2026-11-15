@@ -36,12 +36,16 @@ public sealed partial class GameSession
     /// <summary>
     /// 0x6102 WaveDungeonCompleteResult_NT (usmap {dungeon, grade u8, duration i64, total_point, bonus_point, rewards
     /// map&lt;i32, i64&gt;, sweep_count}): OBSERVED `03 a1bb0d00 01 5a00000000000000 c20d 01 37337037 cc10000000000000`
-    /// (mask 03, no bonus or sweep count on a played run). CANDIDATE: the mask bits' meaning.
+    /// (mask 03, no bonus or sweep count on a played run). With a clear bonus (OBSERVED 2026-11-15, 900002): mask 07 and the
+    /// bonus varint after the total, `07 a2bb0d00 01 3600000000000000 802d 64 01 80da051e 2000000000000000`. CANDIDATE: the
+    /// mask is a presence mask (bit 2 the bonus).
     /// </summary>
-    internal static byte[] WaveDungeonCompleteResult(int dungeonId, byte grade, long durationSec, int points, IReadOnlyList<(int ItemId, long Count)> rewards)
+    internal static byte[] WaveDungeonCompleteResult(int dungeonId, byte grade, long durationSec, int points, IReadOnlyList<(int ItemId, long Count)> rewards, int bonus = 0)
     {
-        var w = PacketWriter.Opcode(WaveDungeonCompleteResultNt).U8(0x03).I32(dungeonId).U8(grade).I64(durationSec)
-            .Varint((uint)Math.Max(0, points)).Varint((uint)rewards.Count);
+        var w = PacketWriter.Opcode(WaveDungeonCompleteResultNt).U8((byte)(bonus > 0 ? 0x07 : 0x03)).I32(dungeonId).U8(grade).I64(durationSec)
+            .Varint((uint)Math.Max(0, points));
+        if (bonus > 0) w.Varint((uint)bonus);
+        w.Varint((uint)rewards.Count);
         foreach (var (item, count) in rewards) w.I32(item).I64(count);
         return w.ToArray();
     }
@@ -179,22 +183,50 @@ public sealed partial class GameSession
     void DailyCountdownTick(long now)
     {
         if (copy is not { Cleared: false, Failed: false, WaveEndsMs: > 0 } c || c.Host != this || now < c.WaveEndsMs) return;
+        DailyFinish(c, now, early: false);
+    }
+
+    /// <summary>0x6015 WaveSpawnBonusDungeonPoint_NT {dungeon i32, bonus varint}: OBSERVED `a2bb0d00 64` (+100) at 900002's clear.</summary>
+    public const ushort WaveSpawnBonusDungeonPointNt = 0x6015;
+
+    internal static byte[] WaveSpawnBonusDungeonPoint(int dungeonId, int bonus) =>
+        PacketWriter.Opcode(WaveSpawnBonusDungeonPointNt).I32(dungeonId).Varint((uint)Math.Max(0, bonus)).ToArray();
+
+    /// <summary>
+    /// The map event cleared the daily before its countdown ran out (Dungeon_Daily_0001: DungeonClear after the boss's
+    /// ClearWave). OBSERVED official 2026-11-15 (900002, the boss killed 54 s into the 60): 0x6015 {dungeon, 100}, 0x6104 with
+    /// the total (bonus included), 0x6102 mask 07 with the bonus, 0x6104 again, 0x6100 state 3 for the 30 s hold. True when
+    /// the run was a daily's (the generic clear then stays out: no 0x6101 officially).
+    /// </summary>
+    bool DailyClearedByEvent(long now)
+    {
+        if (copy is not { Cleared: false, Failed: false, WaveEndsMs: > 0 } c || CopyDaily is null) return false;
+        DailyFinish(c, now, early: true);
+        return true;
+    }
+
+    /// <summary>The run is over (countdown end or an early clear): the result with the reward of its points, to the copy.</summary>
+    void DailyFinish(DungeonCopy c, long now, bool early)
+    {
         if (DailyDungeon.Of(c.DungeonId) is not { } daily || MapEventData.Dungeon(c.DungeonId) is not { } room) return;
         c.Cleared = true;
         c.ClearedMs = now;
         c.CompleteEndsMs = now + room.Hold * 1000L;
         if (c.CompleteEndsMs == c.ClearedMs) c.EndSent = true;
-        var seconds = (c.WaveEndsMs - c.WaveStartedMs) / 1000;
-        Note($"dungeon {c.DungeonId}: the countdown ended with {c.Points} points");
+        var bonus = early ? daily.ClearBonus : 0;
+        c.Points += bonus;
+        var seconds = ((early ? now : c.WaveEndsMs) - c.WaveStartedMs) / 1000;
+        Note($"dungeon {c.DungeonId}: {(early ? "cleared" : "the countdown ended")} with {c.Points} points");
         foreach (var session in DungeonCopySessions())
         {
             var reward = daily.Reward(c.Points, session.profileRace == 2);
-            var packets = new List<byte[]>
-            {
-                WaveDungeonCompleteResult(c.DungeonId, WaveDungeonGrade, seconds, c.Points, reward),
+            var packets = new List<byte[]>();
+            if (bonus > 0) packets.AddRange([WaveSpawnBonusDungeonPoint(c.DungeonId, bonus), DungeonPoint(c.DungeonId, c.Points)]);
+            packets.AddRange([
+                WaveDungeonCompleteResult(c.DungeonId, WaveDungeonGrade, seconds, c.Points, reward, bonus),
                 DungeonPoint(c.DungeonId, c.Points),
                 DungeonState(c.DungeonId, DungeonStateComplete, c.ClearedMs, c.CompleteEndsMs),
-            };
+            ]);
             if (c.EndSent) packets.Add(DungeonClearedState(c));
             if (reward.Count > 0) session.pendingDungeonRewards.Add(reward);
             session.SpendContentTickets(c.DungeonId, "Clear", now);

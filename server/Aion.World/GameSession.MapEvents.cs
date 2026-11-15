@@ -285,7 +285,8 @@ public sealed partial class GameSession : IMapEventHost
         // Only served dungeon maps (their scripts, points and spawns are generated); staff may look at the rest.
         if (!staff && !MapEventData.Serves(room.Map)) { Note($"dungeon {room.Name}: map {room.Map} is not served"); return []; }
         var events = MapEventData.EventsOn(room.Map);
-        if (copy == 0 && !staff && events.Count > 0 && !events.Any(e => MapEventRun.StartHolds(e, this, now)))
+        // An event that starts on the copy's own DungeonState (Dungeon_Daily_0001: Prepare) waits for the copy, not for the player.
+        if (copy == 0 && !staff && events.Count > 0 && !events.Any(e => room.Type == "Daily" && StartsOnDungeonState(e) || MapEventRun.StartHolds(e, this, now)))
         {
             var open = questLog?.OpenClearMapEventNames().ToList() ?? [];
             Note($"dungeon {room.Name}: entry refused (map event start blocked; open ClearMapEvent=[{string.Join(", ", open)}])");
@@ -432,12 +433,20 @@ public sealed partial class GameSession : IMapEventHost
     int mapEventsMap;
 
     /// <summary>Ends runs whose exported start conditions no longer hold (quest step moved back, relog inside an instance).</summary>
+    /// <summary>The event starts on the copy's own DungeonState alone (every alternative is a DungeonState condition).</summary>
+    static bool StartsOnDungeonState(MapEventDefinition e) =>
+        e.Start is { Length: > 0 } s && s.All(g => g.Length > 0 && g.All(c => c.Type == "DungeonState"));
+
     List<byte[]> DropMapEventRunsUnlessStartHolds(long now)
     {
         var replies = new List<byte[]>();
         foreach (var run in mapEventRuns.ToList())
         {
-            if (run.WindingDown || MapEventData.Event(run.Name) is not { } def || MapEventRun.StartHolds(def, this, now)) continue;
+            // In a daily, a start on the copy's DungeonState is a trigger, not a lasting condition: Dungeon_Daily_0001 starts on
+            // Prepare and runs on through Process (OBSERVED official 2026-11-15: its 0x922e at the entry, the boss's clear 54 s
+            // into Process). The field events' Prepare scripts do end with Prepare.
+            if (run.WindingDown || MapEventData.Event(run.Name) is not { } def || CopyDaily is not null && StartsOnDungeonState(def)
+                || MapEventRun.StartHolds(def, this, now)) continue;
             mapEventRuns.Remove(run);
             replies.Add(GamePackets.MapEventLeave(run.Id));
             DebugMapEvent($"event drop {run.Name} run {run.Id}: start no longer holds");
@@ -1427,6 +1436,8 @@ public sealed partial class GameSession : IMapEventHost
         var room = MapEventData.DungeonOfMap(worldMap);
         var hold = room is { Hold: > 0 } ? room.Hold * 1000L : PartyDungeonHoldMs;
         var first = copy is { Cleared: false };
+        // A daily dungeon pays its own result (points, reward, tickets, the way out: GameSession.DailyDungeons.cs).
+        var daily = DailyClearedByEvent(mapEventNow);
         // Everyone in the copy clears it (the quest's ClearMapEvent objective, paid at each one's next quest flush).
         foreach (var session in CopyMembers().Prepend(this))
         {
@@ -1435,11 +1446,11 @@ public sealed partial class GameSession : IMapEventHost
             // A dungeon whose event never says MapExit (hand-entered instances) leaves after the usual delay; a generated
             // dungeon holds Dungeon.dat's CompleteStateHoldingTime (expeditions 600 s for the reward cube, sealed dungeons
             // 10 s), then the way out, unless its script says MapExit first.
-            if (Instances.Of(worldMap) is not null) session.instanceExitAt ??= mapEventNow + InstanceExitDelayMs;
-            else if (room is not null) session.instanceExitAt ??= mapEventNow + hold;
+            if (!daily && Instances.Of(worldMap) is not null) session.instanceExitAt ??= mapEventNow + InstanceExitDelayMs;
+            else if (!daily && room is not null) session.instanceExitAt ??= mapEventNow + hold;
             // The clear reward (RewardDungeon.dat RewardLight/RewardDark by race: sealed dungeons' kina, materials, a title), once per copy.
-            if (first && room is not null && session.ClearReward(room) is { } reward) session.pendingRewards.Add(reward);
-            if (first && room is not null) session.SpendContentTickets(MapEventData.DungeonIdOfMap(worldMap), "Clear", mapEventNow);
+            if (first && !daily && room is not null && session.ClearReward(room) is { } reward) session.pendingRewards.Add(reward);
+            if (first && !daily && room is not null) session.SpendContentTickets(MapEventData.DungeonIdOfMap(worldMap), "Clear", mapEventNow);
             if (first && room is not null)
             {
                 var earned = session.AchieveDungeonClear(room, run.Name, CopyMembers().Count() + 1);

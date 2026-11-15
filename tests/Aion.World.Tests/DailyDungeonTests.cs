@@ -34,7 +34,7 @@ public sealed class DailyDungeonTests
         Assert.Equal([(930100023, 4300L)], daily.Reward(1730, dark: true));
         Assert.Equal([(930100023, 10000L)], daily.Reward(12_000, dark: false));
         Assert.Empty(daily.Reward(99, dark: false));
-        Assert.Equal(0, DailyDungeon.Of(900002)!.Seconds);   // no capture for the other two dailies: no countdown
+        Assert.Equal(0, DailyDungeon.Of(900003)!.Seconds);   // no capture for 900003: no countdown
     }
 
     [Fact]
@@ -121,6 +121,59 @@ public sealed class DailyDungeonTests
         var msg = spawned.FindIndex(p => p.SequenceEqual(GameSession.ServerMsg(GameSession.ServerMsgDangerRisen, elite.NpcId.ToString())));
         Assert.True(msg > 0, "no danger message");
         Assert.Equal(0x3641, Op(spawned[msg - 1]));   // OBSERVED: right after the elite's appearance
+    }
+
+    [Fact]
+    public void Odylium_repository_result_matches_the_official_bytes()
+    {
+        // OBSERVED 2026-11-15 (900002, boss killed 54 s into the 60): 5760 points with the +100 clear bonus, 503700096 x32.
+        Assert.Equal("026107a2bb0d00013600000000000000802d640180da051e2000000000000000",
+            Hex(GameSession.WaveDungeonCompleteResult(900002, 1, 54, 5760, [(503700096, 32)], bonus: 100)));
+        Assert.Equal("1560a2bb0d0064", Hex(GameSession.WaveSpawnBonusDungeonPoint(900002, 100)));
+        var repo = DailyDungeon.Of(900002)!;
+        Assert.Equal((60, 12, 100), (repo.Seconds, repo.Ready, repo.ClearBonus));
+        Assert.Equal([(503700096, 32L)], repo.Reward(5760, dark: false));
+    }
+
+    [Fact]
+    public async Task Odylium_repository_prepares_12_s_then_the_boss_kill_clears_it_early_with_the_bonus()
+    {
+        const int Repo = 900002;
+        var store = new FakeCharacterStore { Progress = (45, 0) };
+        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, Now, level: 45);
+        var entry = await MapEventScenarioHelpers.EnterDungeonByIdAsync(session, Repo, Now + 200);
+        Assert.True(session.MapId == Repo, string.Join(" | ", session.MapEventNotes));
+        var prepare = entry.Last(p => Op(p) == GameSession.DungeonStateNt);
+        Assert.Equal(GameSession.DungeonStatePrepare, prepare[6]);
+        Assert.Equal(12_000, BitConverter.ToInt64(prepare, 15) - BitConverter.ToInt64(prepare, 7));
+        Assert.DoesNotContain(entry, p => Op(p) == GameSession.DungeonBuffInfoNt);
+        var go = session.Copy!.ProcessAtMs;
+        var start = await session.TickAsync(go + 10);
+        Assert.Equal(GameSession.DungeonStateProcess, start.Last(p => Op(p) == GameSession.DungeonStateNt)[6]);
+        var countdown = Assert.Single(start, p => Op(p) == GameSession.WaveCountdownNt);
+        Assert.Equal(7, BitConverter.ToInt32(countdown, 2));
+        Assert.Equal(60_000, BitConverter.ToInt64(countdown, 6) - BitConverter.ToInt64(start.Last(p => Op(p) == GameSession.DungeonStateNt), 7));
+
+        // The boss (M_Dungeon_Daily_OrcusGem_01, 3000 points) falls: the map event's DungeonClear ends the run at once.
+        await MapEventScenarioHelpers.WaitForMapEventRunAsync(session, "Dungeon_Daily_0001_MapEvent", go + 50, attempts: 8);
+        var boss = session.Targets.Values.First(t => t.NpcId == 2702174 && !t.Dead);
+        var skill = MapEventScenarioHelpers.BasicAttackSkill(session);
+        var now = go + 20_000;
+        await MapEventScenarioHelpers.SyncPositionAsync(session, boss.Position with { X = boss.Position.X + 120 }, now);
+        boss.Hp = 1;
+        var sent = await MapEventScenarioHelpers.CombatCastAsync(session, skill, boss.Key, boss.Position, now += 50);
+        for (var i = 0; i < 10 && !sent.Any(p => Op(p) == GameSession.WaveDungeonCompleteResultNt); i++)
+            sent.AddRange(await session.TickAsync(now += 300));
+        var result = sent.FindIndex(p => Op(p) == GameSession.WaveDungeonCompleteResultNt);
+        Assert.True(result >= 2, $"boss dead {boss.Dead} hp {boss.Hp}; runs: " + string.Join("; ", session.MapEventRuns.Select(r => $"{r.Name} status {r.Status} step {r.WireStep} goals {string.Join(",", r.Goals)} fin {r.Finished}")) + " notes " + string.Join(" | ", session.MapEventNotes) + " ops " + string.Join(",", sent.Select(p => Op(p).ToString("x4")).Distinct()));
+        Assert.Equal(GameSession.WaveSpawnBonusDungeonPoint(Repo, 100), sent[result - 2]);
+        var points = session.Copy!.Points;
+        Assert.Equal(GameSession.DungeonPoint(Repo, points), sent[result - 1]);
+        Assert.Equal(0x07, sent[result][2]);
+        Assert.True(session.Copy.Cleared);
+        Assert.Equal(GameSession.DungeonStateComplete, sent.Last(p => Op(p) == GameSession.DungeonStateNt)[6]);
+        Assert.DoesNotContain(sent, p => Op(p) == GameSession.DungeonCompleteResultNt);   // no generic 0x6101 officially
+        Assert.Contains(store.Items, i => i.TemplateId == 503700096);
     }
 
     static async Task<(GameSession Session, List<byte[]> Entry, FakeCharacterStore Store)> EnterAsync()

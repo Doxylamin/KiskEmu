@@ -91,6 +91,13 @@ public sealed partial class GameSession
                 fresh.ProcessAtMs = long.MaxValue;
                 fresh.OfferedBuffs = daily.DrawBuffs(rng);
             }
+            // A daily without a choice has a fixed Prepare (OBSERVED official 2026-11-15, 900002: state 1 {entry, entry + 12 s},
+            // its map event starts on DungeonState Prepare, Process when the 12 s are up).
+            else if (DailyDungeon.Of(id) is { Seconds: > 0, Ready: > 0 } ready)
+            {
+                fresh.Phase = "Prepare";
+                fresh.ProcessAtMs = now + ready.Ready * 1000L;
+            }
             return fresh;
         }
         if (sharedMap is not null) copy = sharedMap.Dungeon ??= Fresh();
@@ -124,8 +131,12 @@ public sealed partial class GameSession
         if (Store is null) return true;
         if (Timed(room))
         {
-            if (room.MinLevel > 0 && level < room.MinLevel) { why = $"level {level} < {room.MinLevel}"; return false; }
-            if (room.MaxLevel > 0 && level > room.MaxLevel) { why = $"level {level} > {room.MaxLevel}"; return false; }
+            // A daily's level is Dungeon.dat RecommendLevel: our MapEntrance.dat export (2026-10-18) gates 900002 and 900003
+            // at 99-99 from before they opened, and a level-45 character entered 900002 officially (2026-11-15).
+            var (min, max) = room.Type == "Daily" && DailyDungeon.Of(MapEventData.DungeonIdOfMap(room.Map)) is { MinLevel: > 0 } d
+                ? (d.MinLevel, 0) : (room.MinLevel, room.MaxLevel);
+            if (min > 0 && level < min) { why = $"level {level} < {min}"; return false; }
+            if (max > 0 && level > max) { why = $"level {level} > {max}"; return false; }
             var gate = Patch20261028.EntryItemLevel(room);
             if (gate > 0 && EquipItemLevel() < gate) { why = $"item level {EquipItemLevel()} < {gate}"; return false; }
         }

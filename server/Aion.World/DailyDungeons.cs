@@ -37,7 +37,8 @@ public sealed record DailyDungeon(
     [property: JsonPropertyName("seconds")] int Seconds = 0,
     [property: JsonPropertyName("buff_slots")] DailyBuffSlot[]? BuffSlots = null,
     [property: JsonPropertyName("ready")] int Ready = 0,
-    [property: JsonPropertyName("clear_bonus")] int ClearBonus = 0)
+    [property: JsonPropertyName("clear_bonus")] int ClearBonus = 0,
+    [property: JsonPropertyName("min_level")] int MinLevel = 0)
 {
     /// <summary>The dungeon offers a buff choice at the entry (Dungeon.dat DungeonBuffGroupName; OBSERVED 0x6105 in 900001).</summary>
     public bool HasBuffChoice => BuffSlots is { Length: > 0 };

@@ -37,10 +37,16 @@ BUFF_GROUPS = 'daily-tables-20261114/table-003.json'
 NAMES = 'l10n-chat-20261112/localization-000.json'
 
 # OBSERVED (official 2026-11-12, 900001): the countdown runs 90 s from the Process state. Not in the client data.
-SECONDS = {'DungeonWave_0001': 90}
-READY = {}
-CLEAR_BONUS = {}
-EXTRA_ITEMS = {}
+# OBSERVED (official 2026-11-15, 900002): 60 s, after a 12 s Prepare from the entry (0x6100 state 1 {entry, entry + 12 s});
+# 900001 has no fixed Prepare: it waits for the buff choice.
+SECONDS = {'DungeonWave_0001': 90, 'Dungeon_Daily_0001': 60}
+READY = {'Dungeon_Daily_0001': 12}
+# OBSERVED (official 2026-11-15, 900002): the boss kill cleared the run early with 0x6015 {dungeon, 100}, +100 on the total.
+# CANDIDATE: a fixed 100 (one sample, at 54 s of 60).
+CLEAR_BONUS = {'Dungeon_Daily_0001': 100}
+# Reward items missing from the game catalog. OBSERVED (official 2026-11-15): 5760 points in 900002 paid 503700096 x32,
+# the 5500 tier of Reward_Daily_Odium_Light (G_Box_DailyDungeon_Pet_A_01_b x32).
+EXTRA_ITEMS = {'G_Box_DailyDungeon_Pet_A_01_b': 503700096}
 
 
 def _enum(value):
@@ -124,6 +130,10 @@ def build(dungeons, points, rewards, waves, npcs, items, buffs=(), buff_groups=(
                  'kill_points': dict(sorted(kill.items())), 'subtype_points': subtype, 'env_points': env,
                  'reward_light': sorted(tiers.get(row.get('RewardLight'), []), key=lambda t: -t['need']),
                  'reward_dark': sorted(tiers.get(row.get('RewardDark'), []), key=lambda t: -t['need'])}
+        # The entry level: Dungeon.dat RecommendLevel. Our MapEntrance.dat export (2026-10-18) gates 900002 and 900003 at
+        # 99-99, from before they opened; OBSERVED 2026-11-15 (official): a level-45 character entered 900002.
+        if row.get('RecommendLevel'):
+            entry['min_level'] = int(row['RecommendLevel'])
         if row['Name'] in SECONDS:
             entry['seconds'] = SECONDS[row['Name']]
         if row['Name'] in READY:
