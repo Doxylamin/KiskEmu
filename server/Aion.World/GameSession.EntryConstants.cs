@@ -85,7 +85,7 @@ public sealed partial class GameSession
         AbyssPointUpdate(),                        // AbyssPointUpdate_NT 0xffab
         RankingPointUpdate(),                      // 0xe273 (OURS: not in the recordings; kept with 0xffab)
         PacketWriter.Opcode(0xe223).I64(now).I32(0).ToArray(),   // WorldChatFreeChance_NT (observed: a time then four zero bytes)
-        Observed(0x6000, "00"),                    // ? (0x6000)
+        FieldEventInfoAtEntry(now),                // FieldEventInfo_NT 0x6000: the Shugo festival events running now (GameSession.Festival.cs)
         Observed(0x570f, "000000"),                // DungeonClearKillNpc_NT
     ];
 

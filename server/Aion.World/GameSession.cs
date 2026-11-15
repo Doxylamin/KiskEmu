@@ -2914,6 +2914,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         replies.AddRange(MapEventTick(now));
         replies.AddRange(InstanceTick(now));
         replies.AddRange(AbyssTick(now));
+        replies.AddRange(FestivalTick(now));
         replies.AddRange(AirspaceWorldTick(now));
         replies.AddRange(ContentResetWorldTick(now));
         await FlushContentResetWorkAsync(ct);
