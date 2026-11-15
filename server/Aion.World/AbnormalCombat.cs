@@ -34,8 +34,17 @@ static class AbnormalCombat
     static int Roll(int low, int high, Random rng) =>
         rng.Next(Math.Min(low, high), Math.Max(low, high) + 1);
 
-    /// <summary>Apply one abnormal effect row to a buff's combat state (called from AddBuff).</summary>
-    public static void ApplyRow(int effectId, string type, IReadOnlyList<string> values, BuffCombat combat, int durationMs, long now, Random rng, int hpMax)
+    /// <summary>
+    /// CANDIDATE: a monster's Dot_NormalCalc tick on the player as a share of the hit that put it on. The official amount is open
+    /// (#32): tick / hit was 0.20 on 2026-11-04 (hit 583, tick 118) and 0.24 on 2026-11-15 (hit 3245, tick 782), neither a fixed
+    /// share of the hit nor of the maximum HP; this is between the two.
+    /// </summary>
+    public const double NpcDotShareOfHit = 0.22;
+
+    /// <summary>Apply one abnormal effect row to a buff's combat state (called from AddBuff); <paramref name="hitDamage"/> is the
+    /// monster hit that put the abnormal on (0: none).</summary>
+    public static void ApplyRow(int effectId, string type, IReadOnlyList<string> values, BuffCombat combat, int durationMs, long now, Random rng, int hpMax,
+        int hitDamage = 0)
     {
         switch (type)
         {
@@ -85,6 +94,11 @@ static class AbnormalCombat
                 combat.Dots.Add(MakeDot(effectId, interval, total, durationMs, now, perTick: false));
                 break;
             }
+            // Dot_NormalCalc [interval, bool, bool, flat, flat, ratio, ratio, 1] of a monster's abnormal: a tick every interval from
+            // the apply on (OBSERVED: 2000 ms, 0x3805 mask 0x0a); the amount NpcDotShareOfHit of the hit (CANDIDATE).
+            case "Dot_NormalCalc" when V(values, 0) > 0 && hitDamage > 0:
+                combat.Dots.Add(MakeDot(effectId, V(values, 0), Math.Max(1, (int)Math.Round(hitDamage * NpcDotShareOfHit)), durationMs, now, perTick: true));
+                break;
             case "Dot_TargetHP" or "Dot_Dmg" when V(values, 0) > 0:
             {
                 var interval = V(values, 0);

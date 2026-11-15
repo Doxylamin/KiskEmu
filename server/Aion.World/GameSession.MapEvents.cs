@@ -1239,12 +1239,16 @@ public sealed partial class GameSession : IMapEventHost
         public int? Restore;
     }
 
-    /// <summary>A damage-over-time row on a monster: <see cref="PerTick"/> every <see cref="IntervalMs"/> until <see cref="Remaining"/> is spent.</summary>
+    /// <summary>
+    /// A damage-over-time row on a monster: <see cref="PerTick"/> every <see cref="IntervalMs"/> until <see cref="Remaining"/> is spent
+    /// (Dot_TargetMaxHP), or a Dot_NormalCalc row rolled each tick (<see cref="Normal"/>) while the abnormal lasts.
+    /// </summary>
     sealed class NpcDot
     {
         public required int EffectId, IntervalMs, PerTick;
         public required int Remaining;
         public required long NextAt;
+        public AbnormalSpecs.NormalDotSpec? Normal;
     }
 
     readonly Dictionary<int, List<NpcBuff>> npcBuffs = [];
@@ -1343,8 +1347,8 @@ public sealed partial class GameSession : IMapEventHost
     }
 
     /// <summary>
-    /// The damage-over-time rows of a monster's abnormals (a bleed, a burn): 0x3805 per tick (OBSERVED shape of the player's own dots)
-    /// and its HP; the kill is this player's (loot, experience, quests).
+    /// The damage-over-time rows of a monster's abnormals (a bleed, a burn): 0x3805 mask 0x0a with the amount per tick
+    /// (RidePackets.AbnormalDamage, OBSERVED) and its HP; the kill is this player's (loot, experience, quests).
     /// </summary>
     void NpcDotTick(Target t, List<NpcBuff> list, long now)
     {
@@ -1352,12 +1356,15 @@ public sealed partial class GameSession : IMapEventHost
             foreach (var d in b.Dots)
                 while (!t.Dead && now >= d.NextAt && d.NextAt <= b.ExpireAt && d.Remaining > 0)
                 {
-                    var amount = Math.Min(d.PerTick, d.Remaining);
-                    d.Remaining -= amount;
+                    var amount = d.Normal is { } n
+                        ? Combat.DotTick(data, className, level, equippedWeapon, t.Defense, rng, n.FlatMin, n.FlatMax, n.RatioMin, n.RatioMax)
+                        : Math.Min(d.PerTick, d.Remaining);
+                    if (d.Normal is null) d.Remaining -= amount;
                     d.NextAt += d.IntervalMs;
                     if (t.Immune) amount = 0;
+                    amount = t.Landed(amount);   // a hit-count NPC takes 1 a tick
                     t.Hp = Math.Max(0, t.Hp - amount);
-                    mapEventOut.Add(RidePackets.AbnormalEffect(t.Key, playerKey, b.Uid, d.EffectId, d.Remaining, amount, b.SkillId));
+                    mapEventOut.Add(RidePackets.AbnormalDamage(t.Key, playerKey, b.Uid, d.EffectId, amount, b.SkillId));
                     mapEventOut.Add(GamePackets.NpcHp(t.Key, t.Hp));
                     mapEventOut.AddRange(MapEventHp(t, now));
                     if (t.Dead) mapEventOut.AddRange(PlayerKilledNpc(t, b.SkillId, playerKey, now));

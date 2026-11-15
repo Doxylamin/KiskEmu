@@ -221,6 +221,15 @@ public static class RidePackets
         return w.I32(skillId).ToArray();
     }
 
+    /// <summary>
+    /// 0x3805 mask 0x0a, a damage-over-time tick: key | 0x0a | caster | abnormal uid | effect id i32 | amount varint | skill i32, with no
+    /// remaining total and no opening 0x09 (OBSERVED: 696 player DoT ticks on NPCs on 2026-11-04, 19 on 2026-11-15, no 0x09 on an NPC;
+    /// i=8737 `0538 8fb101 0a b016 01 cbc0be65 9b01 b0770401`, amount 155 of effect 1707000011, skill 17070000). Self heals over time
+    /// keep 0x09 then 0x0b (<see cref="AbnormalEffect"/>).
+    /// </summary>
+    public static byte[] AbnormalDamage(int key, int casterKey, int uid, int effectId, int amount, int skillId) =>
+        PacketWriter.Opcode(0x3805).Varint(key).U8(0x0a).Varint(casterKey).Varint(uid).I32(effectId).Varint(Math.Max(0, amount)).I32(skillId).ToArray();
+
     /// <summary>EResult kItem_Use_Success: official 0x5613/0x5615 carry 772 (`0403`) on success, not 0 (OBSERVED 2026-11-12).</summary>
     public const int ItemUseSuccess = 772;
 

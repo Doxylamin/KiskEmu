@@ -141,7 +141,8 @@ public sealed record NpcSpawn(
     [property: JsonPropertyName("skills")] int[]? Skills = null,
     [property: JsonPropertyName("height")] int Height = 0,
     [property: JsonPropertyName("no_rotation")] bool NoRotation = false,
-    uint UniqueKey = 0, int SocialAction = 0, NpcRoute? Route = null, string SubType = "NormalMonster", int Grade = 3, bool Air = false, int HpMax = 0);
+    uint UniqueKey = 0, int SocialAction = 0, NpcRoute? Route = null, string SubType = "NormalMonster", int Grade = 3, bool Air = false, int HpMax = 0,
+    bool Untouchable = false, bool HitCount = false);
 
 /// <summary>
 /// A MapData waypoint set an NPC walks (tools/world_npcs.py routes): points, Circular / TwoWay / OneWay, walk or run.
@@ -170,7 +171,10 @@ public sealed record NpcSkill(
     [property: JsonPropertyName("cast")] int Cast,
     [property: JsonPropertyName("effect")] int Effect,
     [property: JsonPropertyName("damage_min")] int DamageMin,
-    [property: JsonPropertyName("damage_max")] int DamageMax);
+    [property: JsonPropertyName("damage_max")] int DamageMax,
+    // SkillEffect Abnormal / Abnormal_True rows: [abnormal id, duration min ms, max ms, level, chance of 10000] (tools/world_npcs.py
+    // abnormal_row); put on the player the skill hits.
+    [property: JsonPropertyName("abnormals")] int[][]? Abnormals = null);
 
 /// <summary>One timed damage row of an NPC skill (tools/world_npcs.py skill_hits catalog).</summary>
 public sealed record NpcSkillHitRow(
@@ -215,14 +219,34 @@ public sealed class GameData
         [property: JsonPropertyName("sub_type")] string SubType = "NormalMonster",
         [property: JsonPropertyName("grade")] int Grade = 3,
         [property: JsonPropertyName("air")] bool Air = false,
-        [property: JsonPropertyName("hp_max")] int HpMax = 0);
+        [property: JsonPropertyName("hp_max")] int HpMax = 0,
+        // NpcData bCanBeAttacked false or NpcTargetAble not Able (tools/world_npcs.py untouchable).
+        [property: JsonPropertyName("untouchable")] bool Untouchable = false,
+        // NpcData bHitCountBased (tools/world_npcs.py hit_count): every hit takes 1 HP; hp_max is the hit count.
+        [property: JsonPropertyName("hit_count")] bool HitCount = false);
 
     /// <summary>world-npcs.json: templates by NpcData ID and spawns [name, npc_id, x, y, z, yaw] per map (tools/world_npcs.py).</summary>
     sealed record NpcFile([property: JsonPropertyName("maps")] Dictionary<string, JsonElement[][]> Maps,
         [property: JsonPropertyName("templates")] Dictionary<string, NpcTemplate> Templates,
         [property: JsonPropertyName("npc_skills")] Dictionary<string, NpcSkill>? Skills = null,
         [property: JsonPropertyName("skill_hits")] Dictionary<string, NpcSkillHitRow[]>? SkillHits = null,
-        [property: JsonPropertyName("routes")] Dictionary<string, NpcRoute[]>? Routes = null);
+        [property: JsonPropertyName("routes")] Dictionary<string, NpcRoute[]>? Routes = null,
+        [property: JsonPropertyName("npc_abnormals")] Dictionary<string, NpcAbnormalFile>? Abnormals = null);
+
+    /// <summary>world-npcs.json npc_abnormals: SkillAbnormal GroupId and SkillAbnormalEffect rows [id, type, values...] (tools/world_npcs.py).</summary>
+    sealed record NpcAbnormalFile([property: JsonPropertyName("group")] int Group, [property: JsonPropertyName("effects")] JsonElement[][] Effects);
+
+    Dictionary<int, AbnormalInfo>? npcAbnormals;
+
+    /// <summary>An abnormal an NPC skill puts on players (world-npcs.json npc_abnormals), in the shape of the item buffs' rows.</summary>
+    public AbnormalInfo? NpcAbnormal(int abnormalId)
+    {
+        npcAbnormals ??= (npcs.Abnormals ?? []).ToDictionary(
+            a => int.Parse(a.Key, System.Globalization.CultureInfo.InvariantCulture),
+            a => new AbnormalInfo(a.Value.Group, a.Value.Effects.Select(e => (e[0].GetInt32(), e[1].GetString()!,
+                (IReadOnlyList<string>)e.Skip(2).Select(v => v.GetString()!).ToList())).ToList()));
+        return npcAbnormals.GetValueOrDefault(abnormalId);
+    }
 
     readonly Dictionary<string, StarterProfile> profiles;
     readonly ClassFile classes;
@@ -814,7 +838,7 @@ public sealed class GameData
                 x.t.Skills, x.t.Height, x.t.NoRotation,
                 x.s.Length > 6 ? (uint)x.s[6].GetInt64() : 0, x.s.Length > 7 ? x.s[7].GetInt32() : 0,
                 x.s.Length > 8 && x.s[8].GetInt32() is >= 0 and var route && npcs.Routes?.GetValueOrDefault(id.ToString(System.Globalization.CultureInfo.InvariantCulture)) is { } routes
-                    && route < routes.Length ? routes[route] : null, x.t.SubType, x.t.Grade, x.t.Air, x.t.HpMax)).ToList());
+                    && route < routes.Length ? routes[route] : null, x.t.SubType, x.t.Grade, x.t.Air, x.t.HpMax, x.t.Untouchable, x.t.HitCount)).ToList());
 
     readonly System.Collections.Concurrent.ConcurrentDictionary<int, IReadOnlyList<NpcSpawn>> spawnsByMap = new();
 
@@ -838,7 +862,7 @@ public sealed class GameData
     /// <summary>An NPC the server places itself (no MapData spawn), from its template: null when the template is unknown.</summary>
     public NpcSpawn? NpcFromTemplate(int npcId, string name, double[] position, double yaw) =>
         npcs.Templates.TryGetValue(npcId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var t)
-            ? new NpcSpawn(name, npcId, t.Level, t.Relationship, t.Aggressive, t.WalkSpeed, t.RunSpeed, t.Radius, t.Function, position, yaw, t.AggroType, t.Aggro, t.Skills, t.Height, t.NoRotation, SubType: t.SubType, Grade: t.Grade, Air: t.Air, HpMax: t.HpMax)
+            ? new NpcSpawn(name, npcId, t.Level, t.Relationship, t.Aggressive, t.WalkSpeed, t.RunSpeed, t.Radius, t.Function, position, yaw, t.AggroType, t.Aggro, t.Skills, t.Height, t.NoRotation, SubType: t.SubType, Grade: t.Grade, Air: t.Air, HpMax: t.HpMax, Untouchable: t.Untouchable, HitCount: t.HitCount)
             : null;
 
     /// <summary>A placed spawn of the NPC (its template and name), preferring <paramref name="mapId"/>; null when it is never placed.</summary>

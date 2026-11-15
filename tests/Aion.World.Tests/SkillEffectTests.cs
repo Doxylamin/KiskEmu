@@ -328,10 +328,42 @@ public sealed class SkillEffectTests
     {
         var (session, mob) = await Setup("Assassin");
         var applied = session.ApplyNpcDebuffForTests(mob, Bleed, 3_000, Now + 6_000);
-        Assert.True(HasOp(applied, 0x3805), "the first 0x3805 names the total");
+        Assert.False(HasOp(applied, 0x3805), "no opening 0x3805 on an NPC (OBSERVED)");
         var ticks = await session.TickAsync(Now + 6_000 + 3_500);
         Assert.Equal(97_000, mob.Hp);
-        Assert.True(HasOp(ticks, 0x3805) && HasOp(ticks, 0x8d00));
+        var dot = ticks.Where(p => GameSessionTestHelpers.Op(p) == 0x3805).ToList();
+        Assert.Equal(3, dot.Count);
+        Assert.All(dot, p => Assert.Equal(0x0a, DotMask(p, mob.Key)));
+        Assert.True(HasOp(ticks, 0x8d00));
+    }
+
+    static int DotMask(byte[] packet, int key)
+    {
+        var r = new PacketReader(packet) { Offset = 2 };
+        Assert.Equal(key, (int)r.Varint());
+        return r.U8();
+    }
+
+    [Fact]
+    public void Npc_damage_over_time_tick_is_0x3805_mask_0x0a_with_the_amount() =>
+        // OBSERVED 2026-11-04 i=8737: amount 155 of effect 1707000011 (Chain of Torment's Dot_NormalCalc), skill 17070000.
+        Assert.Equal(Convert.FromHexString("05388fb1010ab01601cbc0be659b01b0770401"), RidePackets.AbnormalDamage(22671, 2864, 1, 1707000011, 155, 17070000));
+
+    [Fact]
+    public async Task Dot_normal_calc_ticks_a_monster_every_interval_while_the_abnormal_lasts()
+    {
+        // Chain of Torment 170700001: Dot_NormalCalc every 1000 ms, flat 173, ratio 18975 (client row via the fork's export).
+        var spec = Assert.Single(AbnormalSpecs.Npc(170700001).NormalDots);
+        Assert.Equal(new AbnormalSpecs.NormalDotSpec(1707000011, 1000, 173, 173, 18975, 18975), spec);
+        var (session, mob) = await Setup("Cleric");
+        var applied = session.ApplyNpcDebuffForTests(mob, 170700001, 10_000, Now + 6_000);
+        Assert.False(HasOp(applied, 0x3805));
+        var ticks = new List<byte[]>();
+        for (var t = 500; t <= 12_000; t += 500) ticks.AddRange(await session.TickAsync(Now + 6_000 + t));
+        var dot = ticks.Where(p => GameSessionTestHelpers.Op(p) == 0x3805).ToList();
+        Assert.Equal(10, dot.Count);
+        Assert.All(dot, p => Assert.Equal(0x0a, DotMask(p, mob.Key)));
+        Assert.True(mob.Hp < 100_000 - 10 * 173, "each tick takes at least its flat part");
     }
 
     [Fact]

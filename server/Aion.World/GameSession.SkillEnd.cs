@@ -24,6 +24,21 @@ partial class GameSession
         pendingSkillEnds.Add((skill, action, at));
     }
 
+    /// <summary>
+    /// A new cast cuts the player's running skills: their 0x3806 with reason 0x0c right before the new 0x3802 (OBSERVED, see
+    /// <see cref="GamePackets.SkillEndCut"/>); a cut skill sends no later natural end. Ends already due go out as natural ends first.
+    /// </summary>
+    List<byte[]> CutRunningSkills(long now)
+    {
+        var ended = SkillEndTick(now);
+        if (pendingSkillEnds.Count == 0) return ended;
+        var cut = pendingSkillEnds.Select(e => GamePackets.SkillEnd(playerKey, e.Skill, e.Action, GamePackets.SkillEndCut)).ToList();
+        pendingSkillEnds.Clear();
+        worldPlayer?.Map?.Broadcast(worldPlayer, cut);
+        ended.AddRange(cut);
+        return ended;
+    }
+
     List<byte[]> SkillEndTick(long now)
     {
         if (pendingSkillEnds.Count == 0) return [];

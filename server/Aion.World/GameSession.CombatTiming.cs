@@ -69,6 +69,7 @@ partial class GameSession
             if (target.Immune && !openQuestOrEventKill && !questKill && !mapEventKill)
                 hits = hits.Select(h => h with { Amount = 0 }).ToList();
             else if (SealStone()) hits = SealStoneBoost(hits);
+            hits = target.Landed(hits);   // a hit-count NPC takes 1 a hit
             // SkillProjectile.dat (Projectiles.Flight): an arrow / bolt lands after its flight, not at the release frame.
             (int Announced, int Arrival) flight = ground || target == shotAt ? mainFlight : area?.Flight(Math.Sqrt(target.Position.DistanceSquared(caster)), rng) ?? (0, 0);
             // The client flies an arrow for the 0x3803's remaining time from when it arrives, so it goes out at the release and its
@@ -156,20 +157,22 @@ partial class GameSession
     /// </summary>
     List<Target> SelfCastTargets(CastRequest request, SkillAreas.Area? shape = null)
     {
-        var here = position ?? request.Location;
+        var here = KnownPosition ?? request.Location;
+        var centre = SelfCastCentre(request.SkillId, request.Location);   // the client's location only within the skill's reach (OURS)
         bool Near(Target t, Vector3d at, double r) => t.Position.DistanceSquared(at) <= r * r;
         if (shape is { IsArea: true, OnTarget: false })
         {
-            var inShape = targets!.Values.Where(t => !t.Dead && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t))
+            var inShape = targets!.Values.Where(t => !t.Dead && !t.Untouchable && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t))
                     && shape.Contains(here, request.Yaw, t.Position, t.Radius))
                 .OrderBy(t => t.Position.DistanceSquared(here)).Take(shape.Max).ToList();
             if (inShape.Count > 0) return inShape;
         }
-        var area = targets!.Values.Where(t => !t.Dead && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t)) && (Near(t, request.Location, AreaRange) || Near(t, here, AreaRange))).ToList();
+        var area = targets!.Values.Where(t => !t.Dead && !t.Untouchable && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t))
+            && (Near(t, centre, AreaRange) || Near(t, here, AreaRange))).ToList();
         if (area.Count > 0) return area;
         if (selectedTarget != playerKey && targets.TryGetValue(selectedTarget, out var selected) && !selected.Dead && Near(selected, here, SelfCastReach))
             return [selected];
-        return targets.Values.Where(t => !t.Dead && t.Hostile && Near(t, here, SelfCastReach))
+        return targets.Values.Where(t => !t.Dead && t.Attackable && Near(t, here, SelfCastReach))
             .OrderBy(t => t.Position.DistanceSquared(here)).Take(1).ToList();
     }
 
@@ -186,7 +189,7 @@ partial class GameSession
         var centre = shape.OnTarget ? main.Position : here;
         var yaw = shape.OnTarget ? Math.Atan2(main.Position.Y - here.Y, main.Position.X - here.X) * 180 / Math.PI : request.Yaw;
         chosen.AddRange(targets.Values
-            .Where(t => t.Key != main.Key && !t.Dead && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t))
+            .Where(t => t.Key != main.Key && !t.Dead && !t.Untouchable && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t))
                 && shape.Contains(centre, yaw, t.Position, t.Radius))
             .OrderBy(t => t.Position.DistanceSquared(centre)).Take(shape.Max - 1));
         return chosen;
@@ -206,7 +209,7 @@ partial class GameSession
         var shape = area.Shape is not null ? area : area.GroundRadius > 0 ? circle : null;
         if (shape is null) return [];
         return targets.Values
-            .Where(t => !t.Dead && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t)) && shape.Contains(centre, request.Yaw, t.Position, t.Radius))
+            .Where(t => !t.Dead && !t.Untouchable && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t)) && shape.Contains(centre, request.Yaw, t.Position, t.Radius))
             .OrderBy(t => t.Position.DistanceSquared(centre)).Take(area.Max > 0 ? area.Max : int.MaxValue).ToList();
     }
 

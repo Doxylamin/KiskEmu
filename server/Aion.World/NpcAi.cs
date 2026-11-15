@@ -195,7 +195,7 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         var bestDistance = CompanionRange;
         foreach (var other in current.Values)
         {
-            if (other.Key == target.Key || !other.Hostile || other.Dead || other.CorpseRemoved) continue;
+            if (other.Key == target.Key || !other.Attackable || other.Dead || other.CorpseRemoved) continue;
             var d = Distance(target.Position, Flat(other.Position));
             if (d < bestDistance) { bestDistance = d; best = other; }
         }
@@ -311,6 +311,7 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         // packs die before anyone walks up to them and the camp looks empty.
         if (!attacker.Hostile && attacker.OwnerKey == 0 && victim.Hostile) damage = Math.Min(damage, Math.Max(0, victim.Hp - 1));
         if (CapNpcDamage is { } cap) damage = cap(victim, damage);
+        damage = victim.Landed(damage);   // a hit-count NPC takes 1 a hit
         if (!victim.Immune) victim.Hp = Math.Max(0, victim.Hp - damage);
         var replies = new List<byte[]> { GamePackets.NpcHp(victim.Key, victim.Hp) };
         if (OnNpcHpChanged is { } hpChanged) replies.AddRange(hpChanged(victim));
@@ -462,7 +463,7 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         awake.Add(target.Key);
         brain.Hate[attackerKey] = brain.Hate.GetValueOrDefault(attackerKey) + Math.Max(1, damage);
         brain.CandidateKey = TopHate(brain) ?? attackerKey;
-        return StartChase(target, brain, now);
+        return StartChase(target, brain, now, noticed: false);
     }
 
     static int? TopHate(Brain brain) => brain.Hate.Count == 0 ? null : brain.Hate.MaxBy(h => h.Value).Key;
@@ -489,6 +490,10 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
     /// <summary>The skill id of the last hit that reached a player (CharDie_NT skill field).</summary>
     public int LastHitSkill { get; private set; }
 
+    /// <summary>The hit's seq within its cast (1: the first hit, which puts the skill's abnormals on) and the attacker's position.</summary>
+    public int LastHitSeq { get; private set; } = 1;
+    public Vector3d LastAttackerAt { get; private set; }
+
     public List<byte[]> Killed(Target target)
     {
         if (!brains.TryGetValue(target.Key, out var brain)) return [];
@@ -500,19 +505,32 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         return [GamePackets.CombatState(target.Key, false)];
     }
 
-    static List<byte[]> StartChase(Target target, Brain brain, long now)
+    /// <param name="noticed">False when the NPC was hit first (Engage): no 0x8d52.</param>
+    static List<byte[]> StartChase(Target target, Brain brain, long now, bool noticed = true)
     {
         var replies = new List<byte[]>();
         brain.VictimKey = brain.CandidateKey != 0 ? brain.CandidateKey : PlayerKey;
         if (!brain.Engaged)
         {
-            // Official aggro start, all in one tick: NpcFirstAggro_NT 0x8d52, the NPC's target (0x3835, the player), a stop
-            // (0x371a), 0x8d21 on (recording 2026-10-19).
             brain.Engaged = true;
-            replies.Add(GamePackets.NpcFirstAggro(target.Key));
-            replies.Add(GamePackets.TargetUpdate(target.Key, brain.VictimKey));
-            replies.AddRange(Stop(target, brain, brain.Heading, now));
-            replies.Add(GamePackets.CombatState(target.Key, true));
+            if (noticed)
+            {
+                // Official aggro start, all in one tick: NpcFirstAggro_NT 0x8d52, the NPC's target (0x3835, the player), a stop
+                // (0x371a), 0x8d21 on (recording 2026-10-19; 2026-11-15 i=283336-283341).
+                replies.Add(GamePackets.NpcFirstAggro(target.Key));
+                replies.Add(GamePackets.TargetUpdate(target.Key, brain.VictimKey));
+                replies.AddRange(Stop(target, brain, brain.Heading, now));
+                replies.Add(GamePackets.CombatState(target.Key, true));
+            }
+            else
+            {
+                // A monster the player hits first gets 0x8d21 but no 0x8d52 (OBSERVED: 0 of 72 on 2026-11-04, 0 of 21 on 2026-11-15);
+                // its 0x3835 to the attacker still follows the 0x8d21, about 50 ms later (65 of 72; 2026-11-04 i=8401 `218d8fb1010001`,
+                // i=8404 `35388fb10100b016`). Sent in the same tick here (OURS).
+                replies.AddRange(Stop(target, brain, brain.Heading, now));
+                replies.Add(GamePackets.CombatState(target.Key, true));
+                replies.Add(GamePackets.TargetUpdate(target.Key, brain.VictimKey));
+            }
         }
         brain.Mode = Mode.Chase;
         brain.Moving = false;  // the next tick starts a run (0x371b) towards the player
@@ -758,6 +776,8 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         var damage = Math.Max(1, (int)Math.Round(Damage(target, hit.Skill, VictimLevel(brain)) * 1000.0 / (1000 + Math.Max(0, defense))));
         LastAttacker = target.Key;
         LastHitSkill = hit.SkillId;
+        LastHitSeq = 1;
+        LastAttackerAt = target.Position;
         var (splash, struck) = Splash(target, hit, victim, p, victimRadius, now);
         if (!struck) return splash;
         return [GamePackets.NpcSkillHit(victim, target.Key, hit.SkillId, hit.ActionSeq, hit.Skill.Effect, damage), .. hitPlayer(damage), .. splash];

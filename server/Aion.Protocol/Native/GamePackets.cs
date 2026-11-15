@@ -1709,8 +1709,19 @@ public static class GamePackets
             .U32((uint)effectId).U32((uint)seq).Varint(10000).U8((byte)seq).U8(0).ToArray();
     }
 
-    /// <summary>0x3806 skill end: key, skill, action uid, u8 0 (OBSERVED 200 ms after every official dodge and sprint dash, before the abnormal's 0x382c).</summary>
-    public static byte[] SkillEnd(int key, int skill, int actionUid) => PacketWriter.Opcode(0x3806).Varint(key).I32(skill).U8((byte)actionUid).U8(0).ToArray();
+    /// <summary>
+    /// 0x3806 skill end: key, skill, action uid, u8 reason. 0 for a natural end (OBSERVED 200 ms after every official dodge and sprint
+    /// dash, before the abnormal's 0x382c); <see cref="SkillEndCut"/> when the actor's next cast cuts the running skill.
+    /// </summary>
+    public static byte[] SkillEnd(int key, int skill, int actionUid, byte reason = 0) =>
+        PacketWriter.Opcode(0x3806).Varint(key).I32(skill).U8((byte)actionUid).U8(reason).ToArray();
+
+    /// <summary>
+    /// 0x3806 reason 0x0c: the actor's next cast cut its still-running skill, sent right before that cast's 0x3802 (OBSERVED, same
+    /// timestamp in 739 of 747 on 2026-11-04 and 347 of 360 on 2026-11-15; i=8583 `0638 b016 80020401 0a 0c`). 0x0f, 0x02 and 0x03 also
+    /// occur, unexplained.
+    /// </summary>
+    public const byte SkillEndCut = 0x0c;
 
     // ---------- NPC movement (official 0x371a-c) ----------
 
@@ -1732,13 +1743,18 @@ public static class GamePackets
     /// dz left out when 0), 0x20 the dead-reckoning bool (97,882 records); the heading pair is always present, and a walk
     /// ends with 01 as 0x371b/0x371c do. Example walk `2e ff 1f ff 5066 5066 01`
     /// (12.6 units = 126/s), run `2f 03 e9 aa fc 51b5 51b5` (Robin at 875/s).
+    /// dx and dy are left out like dz when 0 (OBSERVED, recording 2026-11-15: of 77,498 deltas both 71,084, dx only 1,987,
+    /// dy only 1,677, neither 82, and a present delta byte is never 0; 2026-11-04 `1d37 8fbd01 22 f7 d07c d07c 01` has no dy,
+    /// `1d37 949701 24 0c 9c3e 9c3e 01` no dx, `1d37 e1d701 20 14ed 14ed 01` neither).
     /// </summary>
     public static byte[] NpcMoveDelta(int key, int dx, int dy, int dz, double heading, bool run)
     {
         var angle = HeadingU16(heading);
-        var w = PacketWriter.Opcode(0x371d).Varint(key).U8((run ? 0x01 : 0) | 0x20 | 0x02 | 0x04 | (dz != 0 ? 0x08 : 0));
+        var w = PacketWriter.Opcode(0x371d).Varint(key)
+            .U8((run ? 0x01 : 0) | 0x20 | (dx != 0 ? 0x02 : 0) | (dy != 0 ? 0x04 : 0) | (dz != 0 ? 0x08 : 0));
         if (run) w.U8(3);
-        w.U8((byte)(sbyte)dx).U8((byte)(sbyte)dy);
+        if (dx != 0) w.U8((byte)(sbyte)dx);
+        if (dy != 0) w.U8((byte)(sbyte)dy);
         if (dz != 0) w.U8((byte)(sbyte)dz);
         w.U16(angle).U16(angle);
         if (!run) w.U8(1);
