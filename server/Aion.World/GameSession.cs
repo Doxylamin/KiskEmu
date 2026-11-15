@@ -2159,7 +2159,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     /// An NPC hit lands on the player: combat starts, HP drops (official 0x8d00 for the player's key).
     /// At HP 0 the player dies (see Die); invincible HP holds.
     /// </summary>
-    internal List<byte[]> NpcHitsPlayer(int damage, long now, int killerKey = 0, int killerSkill = 0)
+    internal List<byte[]> NpcHitsPlayer(int damage, long now, int killerKey = 0, int killerSkill = 0, int hitSeq = 0, Vector3d? casterAt = null)
     {
         if (resources is null || dead) return [];
         if (killerSkill > 0) lastNpcHitSkill = killerSkill;
@@ -2180,6 +2180,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.Add(GamePackets.InteractEnvObjAvailableState(use.Key));
             replies.Add(GamePackets.InteractEnvObjInterrupted(use.Key, GamePackets.InterruptDamaged, playerKey));
         }
+        // A monster skill's abnormals on the player (hitSeq 1: its first hit; 0: not a monster skill's hit).
+        if (!dead && casterAt is { } at) replies.AddRange(NpcSkillAbnormals(killerKey, killerSkill, hitSeq, at, damage, now));
         return replies;
     }
 
@@ -2828,6 +2830,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         replies.AddRange(FlightFpTick(now));
         replies.AddRange(SprintTick(now));
         replies.AddRange(DodgeAbnormalTick(now));
+        replies.AddRange(KnockdownTick(now));
         replies.AddRange(SkillEndTick(now));
         replies.AddRange(SummonExpiryTick(now));
         replies.AddRange(ElementalActivateTick(now));
@@ -2971,7 +2974,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 WireMapEventNpcCombatHooks(aiMap.Ai, now, ownMapEvents);
                 aiMap.BroadcastAll(aiMap.Ai.Tick(aiMap.Targets, aiMap.NpcVictims(), now, (key, damage) =>
                 {
-                    if (aiMap.Players.TryGetValue(key, out var victim)) victim.Send(victim.Session.NpcHitsPlayer(damage, now, aiMap.Ai.LastAttacker, aiMap.Ai.LastHitSkill));
+                    if (aiMap.Players.TryGetValue(key, out var victim)) victim.Send(victim.Session.NpcHitsPlayer(damage, now, aiMap.Ai.LastAttacker, aiMap.Ai.LastHitSkill, aiMap.Ai.LastHitSeq, aiMap.Ai.LastAttackerAt));
                     return [];
                 }));
                 ClearMapEventNpcCombatHooks(aiMap.Ai);
@@ -2988,7 +2991,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             ai.SkipLeashHealNpcIds = OpenKillNpcIdsForSharedAi();
             if (ai.SkipLeashHealNpcIds.Count == 0) ai.SkipLeashHealNpcIds = null;
             WireMapEventNpcCombatHooks(ai, now);
-            replies.AddRange(Visible(ai.Tick(targets, invisible || dead || FriendlyToAll ? null : position, now, damage => NpcHitsPlayer(damage, now, ai.LastAttacker, ai.LastHitSkill))));
+            replies.AddRange(Visible(ai.Tick(targets, invisible || dead || FriendlyToAll ? null : position, now, damage => NpcHitsPlayer(damage, now, ai.LastAttacker, ai.LastHitSkill, ai.LastHitSeq, ai.LastAttackerAt))));
             ClearMapEventNpcCombatHooks(ai);
             replies.AddRange(NpcKillsByNpcs(ai, now));
         }

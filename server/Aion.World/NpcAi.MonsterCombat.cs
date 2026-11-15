@@ -115,6 +115,9 @@ public sealed partial class NpcAi
             var defense = brain.VictimIsNpc && current.GetValueOrDefault(victimKey) is { } prey ? prey.Defense : DefenseOf?.Invoke(victimKey) ?? 0;
             var damage = Math.Max(1, (int)Math.Round(shot.Damage * 1000.0 / (1000 + Math.Max(0, defense))));
             LastAttacker = target.Key;
+            LastHitSkill = shot.SkillId;
+            LastHitSeq = shot.Seq;
+            LastAttackerAt = target.Position;
             replies.Add(GamePackets.NpcSkillHit(victimKey, target.Key, shot.SkillId, shot.ActionSeq, shot.Effect, damage, effectSeq: shot.Seq));
             if (hitPlayer is not null) replies.AddRange(hitPlayer(damage));
         }

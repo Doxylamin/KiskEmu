@@ -22,8 +22,12 @@ public static class AbnormalSpecs
         "Dot_Dmg", "Dot_TargetHP", "Dot_TargetMaxHP", "Dot_NormalCalc",
     };
 
-    /// <summary>The rows of an abnormal: item abnormals first, then class-skill abnormals; null when neither table knows it.</summary>
-    public static AbnormalInfo? Info(int abnormalId) => RewardBoxes.Embedded.Abnormal(abnormalId) ?? SkillAreas.Abnormal(abnormalId);
+    /// <summary>
+    /// The rows of an abnormal: item abnormals first, then class-skill abnormals, then the abnormals monster skills put on players
+    /// (world-npcs.json npc_abnormals); null when no table knows it.
+    /// </summary>
+    public static AbnormalInfo? Info(int abnormalId) =>
+        RewardBoxes.Embedded.Abnormal(abnormalId) ?? SkillAreas.Abnormal(abnormalId) ?? GameData.Embedded.NpcAbnormal(abnormalId);
 
     public static IEnumerable<string> Types(int abnormalId) => Info(abnormalId)?.Effects.Select(e => e.Type) ?? [];
 

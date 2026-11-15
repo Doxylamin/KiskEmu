@@ -489,6 +489,10 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
     /// <summary>The skill id of the last hit that reached a player (CharDie_NT skill field).</summary>
     public int LastHitSkill { get; private set; }
 
+    /// <summary>The hit's seq within its cast (1: the first hit, which puts the skill's abnormals on) and the attacker's position.</summary>
+    public int LastHitSeq { get; private set; } = 1;
+    public Vector3d LastAttackerAt { get; private set; }
+
     public List<byte[]> Killed(Target target)
     {
         if (!brains.TryGetValue(target.Key, out var brain)) return [];
@@ -771,6 +775,8 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
         var damage = Math.Max(1, (int)Math.Round(Damage(target, hit.Skill, VictimLevel(brain)) * 1000.0 / (1000 + Math.Max(0, defense))));
         LastAttacker = target.Key;
         LastHitSkill = hit.SkillId;
+        LastHitSeq = 1;
+        LastAttackerAt = target.Position;
         var (splash, struck) = Splash(target, hit, victim, p, victimRadius, now);
         if (!struck) return splash;
         return [GamePackets.NpcSkillHit(victim, target.Key, hit.SkillId, hit.ActionSeq, hit.Skill.Effect, damage), .. hitPlayer(damage), .. splash];

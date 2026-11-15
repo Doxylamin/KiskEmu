@@ -170,7 +170,10 @@ public sealed record NpcSkill(
     [property: JsonPropertyName("cast")] int Cast,
     [property: JsonPropertyName("effect")] int Effect,
     [property: JsonPropertyName("damage_min")] int DamageMin,
-    [property: JsonPropertyName("damage_max")] int DamageMax);
+    [property: JsonPropertyName("damage_max")] int DamageMax,
+    // SkillEffect Abnormal / Abnormal_True rows: [abnormal id, duration min ms, max ms, level, chance of 10000] (tools/world_npcs.py
+    // abnormal_row); put on the player the skill hits.
+    [property: JsonPropertyName("abnormals")] int[][]? Abnormals = null);
 
 /// <summary>One timed damage row of an NPC skill (tools/world_npcs.py skill_hits catalog).</summary>
 public sealed record NpcSkillHitRow(
@@ -222,7 +225,23 @@ public sealed class GameData
         [property: JsonPropertyName("templates")] Dictionary<string, NpcTemplate> Templates,
         [property: JsonPropertyName("npc_skills")] Dictionary<string, NpcSkill>? Skills = null,
         [property: JsonPropertyName("skill_hits")] Dictionary<string, NpcSkillHitRow[]>? SkillHits = null,
-        [property: JsonPropertyName("routes")] Dictionary<string, NpcRoute[]>? Routes = null);
+        [property: JsonPropertyName("routes")] Dictionary<string, NpcRoute[]>? Routes = null,
+        [property: JsonPropertyName("npc_abnormals")] Dictionary<string, NpcAbnormalFile>? Abnormals = null);
+
+    /// <summary>world-npcs.json npc_abnormals: SkillAbnormal GroupId and SkillAbnormalEffect rows [id, type, values...] (tools/world_npcs.py).</summary>
+    sealed record NpcAbnormalFile([property: JsonPropertyName("group")] int Group, [property: JsonPropertyName("effects")] JsonElement[][] Effects);
+
+    Dictionary<int, AbnormalInfo>? npcAbnormals;
+
+    /// <summary>An abnormal an NPC skill puts on players (world-npcs.json npc_abnormals), in the shape of the item buffs' rows.</summary>
+    public AbnormalInfo? NpcAbnormal(int abnormalId)
+    {
+        npcAbnormals ??= (npcs.Abnormals ?? []).ToDictionary(
+            a => int.Parse(a.Key, System.Globalization.CultureInfo.InvariantCulture),
+            a => new AbnormalInfo(a.Value.Group, a.Value.Effects.Select(e => (e[0].GetInt32(), e[1].GetString()!,
+                (IReadOnlyList<string>)e.Skip(2).Select(v => v.GetString()!).ToList())).ToList()));
+        return npcAbnormals.GetValueOrDefault(abnormalId);
+    }
 
     readonly Dictionary<string, StarterProfile> profiles;
     readonly ClassFile classes;

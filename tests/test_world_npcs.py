@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from tools import combat, world_npcs
@@ -31,6 +32,20 @@ class WorldNpcTests(unittest.TestCase):
         mask_at = 2 + len(combat.encode_varint(aggressive.key))
         self.assertEqual(combat.build_npc_appear(aggressive)[mask_at:mask_at + 2], b'\x0c\x20')  # 0x200c
         self.assertIn(combat.encode_varint(citizen.hp_max) * 2, citizen_body)
+
+
+class NpcAbnormalTests(unittest.TestCase):
+    def test_abnormal_rows(self):
+        # SkillEffect Abnormal EffectValueList: [0]/[1] duration, [2] abnormal, [3] level, [4] chance (1224900 -> 12000141 for 20 s, OBSERVED).
+        self.assertEqual(world_npcs.abnormal_row(['20000', '20000', '12000141', '1', '10000', 'None']), [12000141, 20000, 20000, 1, 10000])
+        self.assertEqual(world_npcs.abnormal_row(['1000', '2000', '7', '2']), [7, 1000, 2000, 2, 10000])
+        self.assertIsNone(world_npcs.abnormal_row(['1000', '1000', 'None']))
+
+    def test_committed_npc_skill_abnormals_have_their_rows(self):
+        doc = json.loads(world_npcs.DATA.read_text(encoding='utf-8'))
+        self.assertEqual(doc['npc_skills']['1224900']['abnormals'], [[12000141, 20000, 20000, 1, 10000]])
+        named = {row[0] for skill in doc['npc_skills'].values() for row in skill.get('abnormals', [])}
+        self.assertEqual(named, {int(k) for k in doc['npc_abnormals']})
 
 
 if __name__ == '__main__':

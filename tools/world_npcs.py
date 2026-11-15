@@ -96,6 +96,8 @@ TABLES = ROOT / 'research/local/reuse-table-probe'
 AGGRODATA = TABLES / 'table-012.json'
 SKILLDATA = TABLES / 'table-007.json'
 EFFECTDATA = TABLES / 'table-008.json'
+# SkillAbnormal.dat (table-000) and SkillAbnormalEffect.dat (table-001) of build 26262663.
+ABNORMALDATA = ROOT / 'research/local/abnormal-tables-26262663'
 FIRST_KEY = 2000   # entity keys: 1 is the player, 1000 the training dummy
 
 # ERelationshipEntity ordinals (usmap); 6/3/11/13 also observed on the wire.
@@ -218,26 +220,60 @@ def aggro_shape(row):
             'inner': info['InnnerRadius'], 'height': info['Height'], 'z': _enum(row['AggroRangeZAxis'])}
 
 
+def abnormal_row(values):
+    """An Abnormal / Abnormal_True SkillEffect row as [abnormal id, duration min ms, duration max ms, level, chance of 10000], or None.
+    OBSERVED (2026-11-04 / 2026-11-15): monster skills put [2] on the player for [0]/[1] ms at level [3] (0x382a mask 0x13: the NPC
+    as caster, the skill, its position as range base); [4] read as the chance (CANDIDATE: 10000 in every recorded case). Ported from
+    addiboii's fork, commit 90af6b0."""
+    number = lambda i: int(values[i]) if i < len(values) and str(values[i]).lstrip('-').isdigit() else None
+    if not number(2):
+        return None
+    return [number(2), number(0) or 0, number(1) or number(0) or 0, number(3) or 1, 10000 if number(4) is None else number(4)]
+
+
+def npc_abnormals(skills, tables=ABNORMALDATA):
+    """The abnormals NPC skills put on players: {id: {group, effects: [[effect id, type, values...]]}} from SkillAbnormal.dat
+    GroupId and SkillAbnormalEffect.dat (the shape of boxes.json abnormals). Ported from addiboii's fork, commit 5754e6f."""
+    wanted = {row[0] for skill in skills.values() for row in skill.get('abnormals', [])}
+    tables = Path(tables)
+    if not wanted or not (tables / 'table-001.json').exists():
+        return {}
+    load = lambda i: json.loads((tables / f'table-{i:03}.json').read_text(encoding='utf-8'))['Properties']['Data']
+    value = lambda v: v['Value'] if isinstance(v, dict) else v
+    found = {value(r['ID']): {'group': int(r.get('GroupId') or 0), 'effects': []} for r in load(0) if value(r['ID']) in wanted}
+    for r in load(1):
+        if value(r['AbnormalId']) in found:
+            found[value(r['AbnormalId'])]['effects'].append(
+                [value(r['ID']), _enum(r.get('AbnormalEffectType', '')), *[str(v) for v in r.get('Values') or []][:8]])
+    return {str(k): v for k, v in sorted(found.items())}
+
+
 def npc_skills(skill_ids, skill_table=SKILLDATA, effect_table=EFFECTDATA):
-    """Range/cooldown/cast and the damage effect of each NPC skill (first damage effect group)."""
+    """Range/cooldown/cast and the damage effect of each NPC skill (first damage effect group), and the abnormals its
+    Abnormal / Abnormal_True rows put on the player it hits (abnormal_row)."""
     wanted = set(skill_ids)
     skills = {row['ID']['Value']: row for row in _rows(skill_table) if row['ID']['Value'] in wanted}
     groups = {g['SkillEffectGroupId']['Value'] for row in skills.values() for g in row.get('SkillEffectTimeDataList', [])}
     damage = {}
+    abnormals = {}
     for effect in _rows(effect_table):
         group = effect['SkillEffectGroupId']['Value']
         if group in groups and _enum(effect['EffectType']) == 'Damage' and group not in damage:
             values = effect.get('EffectValueList', [])
             damage[group] = (effect['ID']['Value'], int(values[2]) if len(values) > 3 else 10000,
                              int(values[3]) if len(values) > 3 else 10000)
+        elif group in groups and _enum(effect['EffectType']) in ('Abnormal', 'Abnormal_True'):
+            if (row := abnormal_row(effect.get('EffectValueList', []))) is not None:
+                abnormals.setdefault(group, []).append(row)
     out = {}
     for skill_id, row in sorted(skills.items()):
         group = next((g['SkillEffectGroupId']['Value'] for g in row.get('SkillEffectTimeDataList', [])
                       if g['SkillEffectGroupId']['Value'] in damage), None)
         effect, low, high = damage.get(group, (0, 0, 0))
+        put = [a for g in row.get('SkillEffectTimeDataList', []) for a in abnormals.get(g['SkillEffectGroupId']['Value'], [])]
         out[str(skill_id)] = {'range': row.get('NeedSkillUseRange', 0.0), 'follow': row.get('NeedSkillFollowRange', 0.0),
                               'cooldown': int(row.get('NeedCoolTime', 0)), 'cast': int(row.get('CastingTime', 0)),
-                              'effect': effect, 'damage_min': low, 'damage_max': high}
+                              'effect': effect, 'damage_min': low, 'damage_max': high, **({'abnormals': put} if put else {})}
     return out
 
 
@@ -351,6 +387,7 @@ def build(maps=MAPDATA, npc_table=NPCDATA, aggro_table=AGGRODATA, skill_table=SK
         used_skills.update(skills)
     out['templates'] = templates
     out['npc_skills'] = npc_skills(used_skills, skill_table, effect_table)
+    out['npc_abnormals'] = npc_abnormals(out['npc_skills'])
     return out
 
 
