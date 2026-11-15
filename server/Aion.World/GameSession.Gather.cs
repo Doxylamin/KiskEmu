@@ -35,6 +35,32 @@ public sealed partial class GameSession
     /// <summary>Uses left on a node for this player (object index -> count), while some were used: every gather takes one.</summary>
     readonly Dictionary<int, int> gatherAttempts = [];
 
+    /// <summary>
+    /// A gather's discovery (GatherSourceStart_RS _is_discovered): the node yields its material's better grade. OBSERVED
+    /// (2026-11-15, 15 official gathers, 4 discovered): 0x8d31 _is_discovered and _basic_discovery_result 1, _material_group_key
+    /// 2 (1 otherwise), then 0x8d33 and 0x8d34 result 1 with Fine Odyle (610610014) for Odyle (610610013). The chance is
+    /// CANDIDATE (a quarter, about what the sample shows); lost attempts never showed one.
+    /// </summary>
+    public Func<int> GatherDiscoveryRoll { get; set; } = () => Random.Shared.Next(10_000);
+    public const int GatherDiscoveryChance = 2_500;
+    const int GatherDiscovered = 1;
+
+    /// <summary>The node (object index) whose won attempt was discovered and completes with the better grade.</summary>
+    int? gatherDiscoveredIndex;
+
+    sealed record GatherGradeFile([property: System.Text.Json.Serialization.JsonPropertyName("better")] Dictionary<string, int> Better);
+
+    /// <summary>Common gather material -> its better grade (tools/data/gather-grades.json, tools/gather_grades.py).</summary>
+    static readonly Lazy<IReadOnlyDictionary<int, int>> gatherBetterGrades = new(() =>
+    {
+        using var stream = typeof(GameSession).Assembly.GetManifestResourceStream("gather-grades.json");
+        if (stream is null) return new Dictionary<int, int>();
+        var file = System.Text.Json.JsonSerializer.Deserialize<GatherGradeFile>(stream);
+        return (file?.Better ?? []).ToDictionary(kv => int.Parse(kv.Key, System.Globalization.CultureInfo.InvariantCulture), kv => kv.Value);
+    });
+
+    public static int? GatherBetterGrade(int material) => gatherBetterGrades.Value.TryGetValue(material, out var better) ? better : null;
+
     public int GatherAttemptsLeft(int index) => gatherAttempts.GetValueOrDefault(index, -1);
 
     /// <summary>
@@ -188,12 +214,13 @@ public sealed partial class GameSession
         try { key = new PacketReader(plain) { Offset = 2 }.Varint(); } catch (ProtocolException) { return []; }
         var objects = WorldObjects.ObjectsOn(worldMap);
         var index = (int)key - WorldObjects.FirstKey;
-        byte[] Reply(int result, int attempts, bool won, IReadOnlyList<GatherTurn> turns)
+        byte[] Reply(int result, int attempts, bool won, IReadOnlyList<GatherTurn> turns, bool discovered = false)
         {
             // OBSERVED (88 official GatherSourceStart_RS): _mastery_grade_quest is one bool sharing the open bool byte.
+            // A discovery sets _is_discovered and _basic_discovery_result and material group 2 (OBSERVED 2026-11-15).
             var masteryGradeQuest = TryElevateGatherCollect(out _, out _);
-            var w = PacketWriter.Opcode(GatherStartRs).U16(result).Varint(key).I32(attempts).Bool(won).Bool(false).Varint(0)
-                .Bool(false).Varint(0).I32(1).Varint(turns.Count);
+            var w = PacketWriter.Opcode(GatherStartRs).U16(result).Varint(key).I32(attempts).Bool(won).Bool(discovered).Varint(0)
+                .Bool(discovered).Varint(0).I32(discovered ? 2 : 1).Varint(turns.Count);
             foreach (var t in turns) w.U8(t.Result).Bool(false).Varint(0).I32(t.SuccessBefore).I32(t.SuccessAfter).I32(t.FailBefore).I32(t.FailAfter);
             return w.Bool(masteryGradeQuest).ToArray();
         }
@@ -226,16 +253,19 @@ public sealed partial class GameSession
         {
             var replies = await UseObjectAsync(new PacketWriter().U16(0x3636).Varint(key).ToArray(), now, ct);
             var refused = replies.Any(b => b[0] == 0x37 && b[1] == 0x36 && b.Length > 2 && b[2] != 0);
+            var discovered = false;
             if (!refused)
             {
                 // The node's timed interaction completes only once the turns have played out on the client.
                 if (pendingUse is { } use && use.Key == keyInt)
                     pendingUse = use with { DueMs = Math.Max(use.DueMs, now + GatherRaceMs(turns.Count)) };
+                discovered = GatherBetterGrade((int)node[0]) is not null && GatherDiscoveryRoll() < GatherDiscoveryChance;
             }
+            gatherDiscoveredIndex = discovered ? index : null;
             // OBSERVED order: 0x3638 (the interaction started) before 0x8d31.
             return replies.Count > 0 && replies[0] is [0x38, 0x36, ..]
-                ? [replies[0], Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies.Skip(1)]
-                : [Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies];
+                ? [replies[0], Reply(refused ? 1 : 0, gatherNumber, !refused, turns, discovered), .. replies.Skip(1)]
+                : [Reply(refused ? 1 : 0, gatherNumber, !refused, turns, discovered), .. replies];
         }
         pendingUse = null;
         pendingGatherLoss = (index, keyInt, now + GatherRaceMs(turns.Count));
@@ -286,6 +316,11 @@ public sealed partial class GameSession
     {
         var g = node.Gather!;
         int key = WorldObjects.FirstKey + index, item = (int)g[0], count = (int)g[1];
+        // A discovered attempt yields the better grade, with 0x8d33 / 0x8d34 result 1 (OBSERVED 2026-11-15).
+        var discovered = gatherDiscoveredIndex == index && GatherBetterGrade(item) is not null;
+        gatherDiscoveredIndex = null;
+        if (discovered) item = GatherBetterGrade(item)!.Value;
+        var result = discovered ? GatherDiscovered : 0;
         if (GatherRefused(now, take: true))
             return [GatherCompleted(GatherFailed, key).I32(item).I32(0).I32(0).I32(0).I32(0).ToArray()];
         var bonus = g.Length >= 4 && g[2] > 0 && GatherBonusRoll() == 0 ? ((int)g[2], (int)g[3]) : (0, 0);
@@ -315,8 +350,8 @@ public sealed partial class GameSession
         // OBSERVED order (2026-11-12): the mastery exp (and level), the item, 0x8d33, 0x8d34.
         replies.InsertRange(0, await GatherMasteryExpAsync(ct));
         replies.AddRange(AchieveGather(gatherLevel));
-        replies.Add(GatherCompleted(0, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
-        replies.Add(GatherEnded(0, key));
+        replies.Add(GatherCompleted(result, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
+        replies.Add(GatherEnded(result, key));
         return replies;
     }
 }

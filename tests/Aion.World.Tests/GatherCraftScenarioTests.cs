@@ -188,6 +188,7 @@ public sealed class GatherCraftScenarioTests
         var (session, _) = await OnMap1010NearGatherAsync(store, Now, index);
         session.GatherRoll = () => 0;
         session.GatherBonusRoll = () => 0;
+        session.GatherDiscoveryRoll = () => 9_999;
         var won = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
         // OBSERVED order: 0x3638 before 0x8d31.
         Assert.Equal(new[] { 0x3638, (int)GameSession.GatherStartRs }, won.Take(2).Select(b => (int)GameSessionTestHelpers.Op(b)));
@@ -205,6 +206,35 @@ public sealed class GatherCraftScenarioTests
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![0]);
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![2]);
     }
+
+    [Fact]
+    public async Task A_discovered_gather_yields_the_better_grade()
+    {
+        var hit = WorldObjects.ObjectsOn(1010).Select((o, i) => (o, i))
+            .First(x => x.o.Gather is { } g && GameSession.GatherBetterGrade((int)g[0]) is not null);
+        var (node, index) = hit;
+        var key = WorldObjects.FirstKey + index;
+        var better = GameSession.GatherBetterGrade((int)node.Gather![0])!.Value;
+        var store = GatherStore();
+        var (session, _) = await OnMap1010NearGatherAsync(store, Now, index);
+        session.GatherRoll = () => 0;
+        session.GatherBonusRoll = () => 4;
+        session.GatherDiscoveryRoll = () => 0;
+        var won = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
+        var start = won.Single(b => GameSessionTestHelpers.Op(b) == GameSession.GatherStartRs);
+        // OBSERVED 2026-11-15: _is_success, _is_discovered and _basic_discovery_result share one byte (07), material group 2.
+        var at = 4 + NativeVarint.Encode(key).Length + 4;
+        Assert.Equal(0x07, start[at]);
+        Assert.Equal(2, BitConverter.ToInt32(start, at + 3));
+        var done = await session.TickAsync(Now + Math.Max(node.InteractTime, GameSession.GatherRaceMs(2)) + 10);
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 1);
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == 0x8d34);
+        Assert.Contains(store.Items, i => i.TemplateId == better);
+        Assert.DoesNotContain(store.Items, i => i.TemplateId == (int)node.Gather![0]);
+    }
+
+    [Fact]
+    public void Odyle_is_discovered_as_Fine_Odyle() => Assert.Equal(610610014, GameSession.GatherBetterGrade(610610013));
 
     [Fact]
     public async Task SharedWorld_gather_depletion_is_per_player()
