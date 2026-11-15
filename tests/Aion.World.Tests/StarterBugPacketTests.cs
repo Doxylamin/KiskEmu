@@ -51,6 +51,32 @@ public sealed class StarterBugPacketTests
     }
 
     [Fact]
+    public async Task Inviting_a_player_already_in_a_party_refuses_but_creates_the_inviters_party()
+    {
+        // OBSERVED 2026-11-15: PartyInvite_RS 0x1934 first, then the inviter's PartyInfo_NT (Create).
+        var world = new SharedWorld(GameData.Embedded);
+        var a = await EnterShared(world, new FakeCharacterStore(), "PoetaA", 1);
+        var b = await EnterShared(world, new FakeCharacterStore(), "PoetaB", 2);
+        var c = await EnterShared(world, new FakeCharacterStore(), "PoetaC", 3);
+        foreach (var s in new[] { a, b, c })
+        {
+            s.Teleport(1000, GamePackets.SpawnPosition, Now);
+            await s.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
+        }
+        await a.HandleAsync(SocialRequests.EncodeServerAndName(SocialOpcodes.PartyInviteRq, 1204, b.CharacterName!), Now + 2);
+        await b.HandleAsync(SocialRequests.EncodePartyInviteResponse([
+            new PartyInviteReply(world.Social.Parties.Values.Single().Key, PartyInviteAnswer.Accept)]), Now + 3);
+        var invited = await c.HandleAsync(SocialRequests.EncodeServerAndName(SocialOpcodes.PartyInviteRq, 1204, b.CharacterName!), Now + 5);
+        Assert.Equal(SocialOpcodes.PartyInviteRs, GameSessionTestHelpers.Op(invited[0]));
+        Assert.Equal(GameSession.PartyInviteeInParty, BitConverter.ToUInt16(invited[0], 2));
+        Assert.Equal(SocialOpcodes.PartyInfoNt, GameSessionTestHelpers.Op(invited[1]));
+        Assert.Equal(2, world.Social.Parties.Count);
+        var again = await c.HandleAsync(SocialRequests.EncodeServerAndName(SocialOpcodes.PartyInviteRq, 1204, b.CharacterName!), Now + 6);
+        Assert.Single(again);
+        Assert.Equal(GameSession.PartyInviteeInParty, BitConverter.ToUInt16(again[0], 2));
+    }
+
+    [Fact]
     public async Task Party_kill_credit_reaches_nearby_member_HQ1101018_step_2()
     {
         var (leader, member) = await PartyOnMap1000Async();
