@@ -4,14 +4,15 @@ namespace Aion.World;
 
 // Daily dungeons (Dungeon.dat type Daily, DailyDungeons.cs): a countdown, points per kill and a reward by points when the
 // countdown ends. OBSERVED in the official capture of 2026-11-12 (900001, a level-45 character, solo):
-//   entry      0x6100 state 1, 0x6104 `dungeon 00` (points 0), buff choice (0x6105-0x6107, not modelled here)
-//   Process    0x6100 state 2 {start, end 0}, 0x6014 {WaveData id 85, end = start + 90 s, 00}, the map events' 0x922e
+//   entry      0x6100 state 1 {entry, 0}, 0x6104 `dungeon 00` (points 0), 0x6105 the buff offer, 0x6109, 0x6108
+//   the pick   DungeonBuffSelect_RQ 0x6106 whenever the player picks (34 s to 15 min seen), 0x6107 the reply (2026-11-15)
+//   Process    5.0 s after 0x6107: 0x6100 state 2 {start, end 0}, 0x6014 {WaveData id 85, end = start + 90 s, 00}, the map events' 0x922e
 //   each kill  0x922d, 0x6104 {dungeon i32, total points varint}: +40/+50 per kill as DungeonPoint.dat says
 //   at the end 0x6102 WaveDungeonCompleteResult_NT `03 dungeon 01 [90 i64] [1730 varint] {930100023: 4300}`, 0x6104 again,
 //              0x6100 state 3 {now, now + 30 s (CompleteStateHoldingTime)}, the living monsters' 0x3642 (act 7), the wave
 //              event's 0x922d status 3, then 0x561b with the reward (EIncreaseReason 58 kDungeonReward)
 //   + 30 s     0x6100 state 4 for 600 s (DungeonEndTick); the player left by hand later.
-// Ours starts the countdown at the world entry (official: after the buff choice, about a minute later, CANDIDATE #77).
+// The chosen buff's abnormal is not applied yet (no data for DungeonBuff.dat's 19003xxx abnormals).
 
 public sealed partial class GameSession
 {
@@ -64,17 +65,79 @@ public sealed partial class GameSession
             DungeonPoint(c.DungeonId, c.Points), WaveCountdown(daily.Wave, c.WaveEndsMs, again)];
     }
 
-    /// <summary>From the entry to the monsters and the countdown (see JoinCopy).</summary>
+    /// <summary>From the buff choice's reply (0x6107) to the monsters and the countdown: OBSERVED 5.0 s (official 2026-11-15).</summary>
     public const int DailyStartDelayMs = 5_000;
 
-    /// <summary>The Prepare phase ended: Process from now, the countdown (0x6014) and the points; null for other dungeons.</summary>
+    /// <summary>OBSERVED live opcodes (official 2026-11-15; usmap DungeonBuffInfo_NT / DungeonBuffSelect_RQ / _RS at 0x28b7 + index).</summary>
+    public const ushort DungeonBuffInfoNt = 0x6105, DungeonBuffSelectRq = 0x6106, DungeonBuffSelectRs = 0x6107;
+
+    /// <summary>0x6105 DungeonBuffInfo_NT {dungeon i32, count u8, {slot i32, buff i32}}: OBSERVED
+    /// `a1bb0d00 03 01000000 0a000000 02000000 06000000 03000000 04000000` (slots 1-3: Elite Hunter, Ignoring the Weak, Footwork).</summary>
+    internal static byte[] DungeonBuffInfo(int dungeonId, IReadOnlyList<(int Slot, int BuffId)> buffs)
+    {
+        var w = PacketWriter.Opcode(DungeonBuffInfoNt).I32(dungeonId).U8((byte)buffs.Count);
+        foreach (var (slot, buff) in buffs) w.I32(slot).I32(buff);
+        return w.ToArray();
+    }
+
+    /// <summary>0x6107 DungeonBuffSelect_RS {result u16, dungeon i32, slot i32}: OBSERVED `0000 a1bb0d00 00000000` after each
+    /// pick (slot 0 though the player picked slots 1 and 3).</summary>
+    internal static byte[] DungeonBuffSelectReply(int dungeonId, int result = 0) =>
+        PacketWriter.Opcode(DungeonBuffSelectRs).U16((ushort)result).I32(dungeonId).I32(0).ToArray();
+
+    /// <summary>
+    /// The entry of a daily still in Prepare (OBSERVED order 2026-11-15): 0x6100 state 1 {entry, 0} (no end while the choice
+    /// waits), 0x6104 points 0, 0x6105 the offer (until a pick), 0x6109 deaths, 0x6108. Null for other dungeons.
+    /// </summary>
+    List<byte[]>? DailyPrepareAtEntry(DungeonCopy c)
+    {
+        if (DailyDungeon.Of(c.DungeonId) is not { Seconds: > 0 }) return null;
+        var end = c.ProcessAtMs == long.MaxValue ? 0 : c.ProcessAtMs;
+        var packets = new List<byte[]> { DungeonState(c.DungeonId, DungeonStatePrepare, c.StartedMs, c.OfferedBuffs.Count > 0 ? 0 : end),
+            DungeonPoint(c.DungeonId, 0) };
+        if (c.OfferedBuffs.Count > 0 && c.ChosenBuff == 0) packets.Add(DungeonBuffInfo(c.DungeonId, c.OfferedBuffs));
+        packets.AddRange(DungeonLimitsAtEntry(c.Deaths));
+        return packets;
+    }
+
+    /// <summary>
+    /// DungeonBuffSelect_RQ 0x6106 (usmap {dungeon i32, slot i32}; the client's encoding is unseen, so a slot of 1-4 bytes is
+    /// read): the pick of an offered slot. The reply, and Process 5 s later (OBSERVED). The buff's abnormal (DungeonBuff.dat
+    /// BuffValue1, 19003xxx) has no data here yet, so the pick is only recorded (OURS).
+    /// </summary>
+    List<byte[]> DungeonBuffSelect(byte[] plain, long now)
+    {
+        int dungeonId, slot;
+        try
+        {
+            var r = new PacketReader(plain) { Offset = 2 };
+            dungeonId = r.I32();
+            slot = r.Remaining switch { >= 4 => r.I32(), 2 or 3 => r.U16(), 1 => r.U8(), _ => 0 };
+        }
+        catch (ProtocolException) { return []; }
+        if (copy is not { Phase: "Prepare", ChosenBuff: 0 } c || c.DungeonId != dungeonId || c.OfferedBuffs.Count == 0)
+        {
+            Note($"dungeon buff select {dungeonId} slot {slot}: no choice open");
+            return [DungeonBuffSelectReply(dungeonId, 1)];
+        }
+        // The slot by number (1-3 on 0x6105); a 0-based index as the fallback (CANDIDATE: the request is unseen).
+        var offer = c.OfferedBuffs.FirstOrDefault(b => b.Slot == slot);
+        if (offer.BuffId == 0 && slot >= 0 && slot < c.OfferedBuffs.Count) offer = c.OfferedBuffs[slot];
+        if (offer.BuffId == 0) return [DungeonBuffSelectReply(dungeonId, 1)];
+        c.ChosenBuff = offer.BuffId;
+        c.ProcessAtMs = now + DailyStartDelayMs;
+        Note($"dungeon {dungeonId}: buff {offer.BuffId} ({DailyDungeon.Of(dungeonId)?.Buff(offer.BuffId)?.Name}) chosen, Process in 5 s");
+        return [DungeonBuffSelectReply(dungeonId)];
+    }
+
+    /// <summary>The Prepare phase ended: Process from now with no end (0x6100 state 2 {now, 0}) and the countdown (0x6014),
+    /// as OBSERVED (the points, deaths and 0x6108 went out at the entry); null for other dungeons.</summary>
     List<byte[]>? DailyProcessStart(DungeonCopy c, long now)
     {
         if (DailyDungeon.Of(c.DungeonId) is not { Seconds: > 0 } daily) return null;
         c.WaveStartedMs = now;
         c.WaveEndsMs = now + daily.Seconds * 1000L;
-        return [DungeonState(c.DungeonId, DungeonStateProcess, now, 0), .. DungeonLimitsAtEntry(c.Deaths),
-            DungeonPoint(c.DungeonId, c.Points), WaveCountdown(daily.Wave, c.WaveEndsMs, false)];
+        return [DungeonState(c.DungeonId, DungeonStateProcess, now, 0), WaveCountdown(daily.Wave, c.WaveEndsMs, false)];
     }
 
     /// <summary>A kill in a daily dungeon (the host's): DungeonPoint.dat's points, 0x6104 with the total to the copy.</summary>

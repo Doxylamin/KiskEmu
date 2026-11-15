@@ -594,6 +594,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case 0x3636:
                 return await WithMapEventClearsFlushedAsync(await InteractEnvObjAsync(plain, now, ct), ct);
             case CubeRewardRq: return await CubeRewardAsync(plain, now, ct);
+            case DungeonBuffSelectRq: return DungeonBuffSelect(plain, now);
             case PostLoadRq when plain.Length >= 3: return await LoadPostsAsync(plain, ct);
             case PushRewardInfoRq when plain.Length == 2: return await RetrievePushRewardsAsync(now, ct);
             case TakePushRewardRq when plain.Length >= 8: return await TakePushRewardAsync(plain, ct);

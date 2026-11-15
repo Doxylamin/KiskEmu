@@ -134,6 +134,14 @@ static partial class MapEventScenarioHelpers
         return replies;
     }
 
+    /// <summary>A daily dungeon's buff pick (DungeonBuffSelect_RQ 0x6106 {dungeon i32, slot i32}); Process follows 5 s later.
+    /// Returns when that is (the copy's ProcessAtMs).</summary>
+    public static async Task<long> PickDailyBuffAsync(GameSession session, int dungeonId, long now, int slot = 1)
+    {
+        await session.HandleAsync(new PacketWriter().U16(GameSession.DungeonBuffSelectRq).I32(dungeonId).I32(slot).ToArray(), now);
+        return session.Copy!.ProcessAtMs;
+    }
+
     public static async Task<List<byte[]>> EnterDungeonByIdAsync(GameSession session, int dungeonId, long now)
     {
         var moved = session.EnterDungeonById(dungeonId, now);

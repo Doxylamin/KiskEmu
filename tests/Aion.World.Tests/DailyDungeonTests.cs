@@ -65,6 +65,44 @@ public sealed class DailyDungeonTests
         Assert.Equal("146055000000995717d1a101000000", Hex(GameSession.WaveCountdown(85, 0x01a1d1175799, enterMap: false)));
     }
 
+    [Fact]
+    public void Buff_choice_packets_match_the_official_bytes()
+    {
+        Assert.Equal("0561a1bb0d0003010000000a00000002000000060000000300000004000000",
+            Hex(GameSession.DungeonBuffInfo(Dungeon, [(1, 10), (2, 6), (3, 4)])));
+        Assert.Equal("07610000a1bb0d0000000000", Hex(GameSession.DungeonBuffSelectReply(Dungeon)));
+    }
+
+    [Fact]
+    public async Task The_entry_offers_three_buffs_in_the_official_order_and_the_pick_starts_the_run_5_s_later()
+    {
+        var (session, entry, _) = await EnterAsync();
+        // OBSERVED order (official 2026-11-15): 0x6100 state 1, 0x6104, 0x6105, 0x6109, 0x6108.
+        var ops = entry.Select(Op).Where(o => o is >= 0x6100 and <= 0x6109 and not 0x6103).ToList();   // 0x6103: the world entry's list
+        Assert.Equal([GameSession.DungeonStateNt, GameSession.DungeonPointNt, GameSession.DungeonBuffInfoNt,
+            GameSession.DungeonDeathLimitNt, GameSession.DungeonClearKillNpcNt], ops);
+        var offer = entry.Single(p => Op(p) == GameSession.DungeonBuffInfoNt);
+        Assert.Equal(3, offer[6]);
+        var ids = Enumerable.Range(0, 3).Select(i => BitConverter.ToInt32(offer, 11 + i * 8)).ToList();
+        Assert.Equal(3, ids.Distinct().Count());
+        Assert.All(ids, id => Assert.NotNull(DailyDungeon.Of(Dungeon)!.Buff(id)));
+
+        // An unknown slot is refused and changes nothing; slot 2 is taken; a second pick is refused.
+        var bad = await session.HandleAsync(new PacketWriter().U16(GameSession.DungeonBuffSelectRq).I32(Dungeon).I32(9).ToArray(), Now + 900);
+        Assert.Equal([GameSession.DungeonBuffSelectReply(Dungeon, 1)], bad);
+        var reply = await session.HandleAsync(new PacketWriter().U16(GameSession.DungeonBuffSelectRq).I32(Dungeon).I32(2).ToArray(), Now + 1_000);
+        Assert.Equal([GameSession.DungeonBuffSelectReply(Dungeon)], reply);
+        Assert.Equal(ids[1], session.Copy!.ChosenBuff);
+        Assert.Equal(Now + 6_000, session.Copy.ProcessAtMs);
+        Assert.Equal([GameSession.DungeonBuffSelectReply(Dungeon, 1)],
+            await session.HandleAsync(new PacketWriter().U16(GameSession.DungeonBuffSelectRq).I32(Dungeon).I32(1).ToArray(), Now + 1_100));
+        Assert.DoesNotContain(await session.TickAsync(Now + 5_900), p => Op(p) == GameSession.WaveCountdownNt);
+        var start = await session.TickAsync(Now + 6_010);
+        var process = start.First(p => Op(p) == GameSession.DungeonStateNt);
+        Assert.Equal(GameSession.DungeonStateProcess, process[6]);
+        Assert.Equal(GameSession.WaveCountdownNt, Op(start[start.IndexOf(process) + 1]));   // OBSERVED: 0x6014 right after
+    }
+
     static async Task<(GameSession Session, List<byte[]> Entry, FakeCharacterStore Store)> EnterAsync()
     {
         var store = new FakeCharacterStore { Progress = (45, 0) };   // MapEntrance: level 30 or more
@@ -78,10 +116,16 @@ public sealed class DailyDungeonTests
     public async Task The_countdown_runs_90_s_kills_count_points_and_its_end_pays_the_point_reward()
     {
         var (session, prepare, store) = await EnterAsync();
-        // Prepare (1) at the entry with no monsters; Process, the countdown and the waves 5 s later.
-        Assert.Equal(GameSession.DungeonStatePrepare, prepare.Last(p => Op(p) == GameSession.DungeonStateNt)[6]);
+        // Prepare (1) {entry, 0} at the entry with the buff offer and no monsters; nothing starts until the pick.
+        var first = prepare.Last(p => Op(p) == GameSession.DungeonStateNt);
+        Assert.Equal(GameSession.DungeonStatePrepare, first[6]);
+        Assert.Equal(0, BitConverter.ToInt64(first, 15));
+        Assert.Contains(prepare, p => Op(p) == GameSession.DungeonBuffInfoNt);
         Assert.DoesNotContain(prepare, p => Op(p) == GameSession.WaveCountdownNt);
-        var go = session.Copy!.ProcessAtMs;
+        Assert.DoesNotContain(await session.TickAsync(Now + 60_000), p => Op(p) == GameSession.WaveCountdownNt);
+        // The pick: the reply at once, Process, the countdown and the waves 5 s later.
+        var go = await MapEventScenarioHelpers.PickDailyBuffAsync(session, Dungeon, Now + 61_000);
+        Assert.Equal(Now + 66_000, go);
         Assert.DoesNotContain(await session.TickAsync(go - 100), p => Op(p) == GameSession.WaveCountdownNt);
         Assert.DoesNotContain(Standing(session), n => n.Contains("Wave_L"));   // the map's lasers stand from the entry
         var entry = await session.TickAsync(go + 10);
@@ -144,7 +188,7 @@ public sealed class DailyDungeonTests
     {
         // User report 2026-11-15: the clock ran on after the death and the Exit button left the player dead outside.
         var (session, _, _) = await EnterAsync();
-        var go = session.Copy!.ProcessAtMs;
+        var go = await MapEventScenarioHelpers.PickDailyBuffAsync(session, Dungeon, Now + 1_000);
         await session.TickAsync(go + 10);
         session.NpcHitsPlayer(session.Resource.HpMax * 10, go + 3_000, killerKey: 2001);
         Assert.True(session.Dead);
