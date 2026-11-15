@@ -1162,6 +1162,9 @@ byte[] NameRequest(string name) => Strings(0x3619, name).Append((byte)1).ToArray
 Check((await staffSession.HandleAsync(NameRequest("GM_Elyra"), Now)).Single().SequenceEqual(GamePackets.NameCheck("GM_Elyra")), "staff accounts may take GM names");
 Check((await stored.HandleAsync(NameRequest("GM_Elyra"), Now)).Single().SequenceEqual(GamePackets.NameCheck("GM_Elyra", GamePackets.NameBannedWord))
       && (await stored.HandleAsync(NameRequest("Gmork"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Gmork")), "players may not");
+// A character outside the allowed set: kCharCheckName_InvalidCharset (OBSERVED 2026-11-15 `2220 <name> 01` for an o with a macron).
+Check((await stored.HandleAsync(NameRequest("Madōshi"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Madōshi", GamePackets.NameInvalidCharset))
+      && (await stored.HandleAsync(NameRequest("Madoshi"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Madoshi")), "a name with a non-ASCII letter is refused (8226)");
 await staffSession.HandleAsync(create, Now);
 // A new character on a staff account is a player until it is flagged by hand (migration 035; the dashboard's "staff" command).
 {
