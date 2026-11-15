@@ -237,6 +237,23 @@ public sealed class TravelParityTests
     }
 
     [Fact]
+    public async Task A_wind_stream_ride_refills_flight_points()
+    {
+        // OBSERVED 2026-11-15: entered at half a bar, the gauge kept rising until the landing.
+        var session = await EnterAscendedAsync(new FakeCharacterStore(), Now);
+        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 1);
+        await session.HandleAsync(new PacketWriter().U16(0x3706).ToArray(), Now + 2);
+        await DrainFlightFpAsync(session, Now + 2);
+        Assert.Equal(0, session.Resource.Fp);
+        const long rideAt = Now + 200_000;
+        var at = session.Position!.Value;
+        var ride = new PacketWriter().U16(0x3712).U8(0).Vec3(at).Vec3(at).F32(0).I64(0x20d8407262271328).U16(1).Varint(0).I32(0).ToArray();
+        await session.HandleAsync(ride, rideAt);
+        await session.TickAsync(rideAt + 5_000);
+        Assert.True(session.Resource.Fp >= 4 * GameSession.FpRegenRest, $"FP {session.Resource.Fp}");
+    }
+
+    [Fact]
     public async Task Flight_fp_regen_allows_glide_again()
     {
         var session = await EnterAscendedAsync(new FakeCharacterStore(), Now);

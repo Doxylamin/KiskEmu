@@ -55,6 +55,7 @@
     <EmbeddedResource Include="../../tools/data/item-stats.json" LogicalName="item-stats.json" />
     <EmbeddedResource Include="../../tools/data/instances.json" LogicalName="instances.json" />
     <EmbeddedResource Include="../../tools/data/crafts.json" LogicalName="crafts.json" />
+    <EmbeddedResource Include="../../tools/data/gather-grades.json" LogicalName="gather-grades.json" />
     <EmbeddedResource Include="../../tools/data/guilds.json" LogicalName="guilds.json" />
     <EmbeddedResource Include="../../tools/data/agit_deco.json" LogicalName="agit_deco.json" />
     <EmbeddedResource Include="../../tools/data/world-npcs.json" LogicalName="world-npcs.json" />

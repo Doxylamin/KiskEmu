@@ -9,10 +9,10 @@ namespace Aion.World;
 // time in five) and GatherSourceCompleted_NT 0x8d33. Every gather, won or lost, spends one of the node's uses (EnvObjData
 // InteractCount, usually 3; OBSERVED in game 2026-11-14: a Farming Odyle node gives three gathers, with a bar that runs
 // down); the last one uses the node up for this player for GatherRespawnMs (OURS).
-// Gather mastery (migration 029): a node needs its GatherSource MasteryLevel; each gather pays an eighth of the level's
-// GatherMastery need (OURS) as GatherExpUpdate_NT 0x8d35 {exp i64, gained i64}, a level-up GatherLevelUpdate_NT 0x8d36
-// {level i32, exp i64, skill points i32, specialized points i32} (usmap fields, CANDIDATE). The gather skill tree
-// (MyGatherSkillList_NT, points) is not modelled: the points stay 0.
+// Gather mastery (migration 029): a node needs its GatherSource MasteryLevel; each gather pays its material's exp
+// (OBSERVED, GatherExpFor) as GatherExpUpdate_NT 0x8d35 {exp i64, gained i64}, a level-up GatherLevelUpdate_NT 0x8d36
+// {level u16, exp i64, skill points u16, specialized points u16}. The gather skill tree (MyGatherSkillList_NT) is not
+// modelled: the skill points only count up (GatherSkillPoints).
 public sealed partial class GameSession
 {
     /// <summary>0x8d33 result (OBSERVED): 0 gathered, 1 gathered a better grade, 2 failed.</summary>
@@ -34,6 +34,49 @@ public sealed partial class GameSession
     long gatherExp;
     /// <summary>Uses left on a node for this player (object index -> count), while some were used: every gather takes one.</summary>
     readonly Dictionary<int, int> gatherAttempts = [];
+
+    /// <summary>
+    /// A gather's discovery (GatherSourceStart_RS _is_discovered): the node yields its material's better grade. OBSERVED
+    /// (2026-11-15, 15 official gathers, 4 discovered): 0x8d31 _is_discovered and _basic_discovery_result 1, _material_group_key
+    /// 2 (1 otherwise), then 0x8d33 and 0x8d34 result 1 with Fine Odyle (610610014) for Odyle (610610013). The chance is
+    /// CANDIDATE (a quarter, about what the sample shows); lost attempts never showed one.
+    /// </summary>
+    public Func<int> GatherDiscoveryRoll { get; set; } = () => Random.Shared.Next(10_000);
+    public const int GatherDiscoveryChance = 2_500;
+    const int GatherDiscovered = 1;
+
+    /// <summary>The node (object index) whose won attempt was discovered and completes with the better grade.</summary>
+    int? gatherDiscoveredIndex;
+
+    sealed record GatherGradeFile([property: System.Text.Json.Serialization.JsonPropertyName("better")] Dictionary<string, int> Better);
+
+    /// <summary>Common gather material -> its better grade (tools/data/gather-grades.json, tools/gather_grades.py).</summary>
+    static readonly Lazy<IReadOnlyDictionary<int, int>> gatherBetterGrades = new(() =>
+    {
+        using var stream = typeof(GameSession).Assembly.GetManifestResourceStream("gather-grades.json");
+        if (stream is null) return new Dictionary<int, int>();
+        var file = System.Text.Json.JsonSerializer.Deserialize<GatherGradeFile>(stream);
+        return (file?.Better ?? []).ToDictionary(kv => int.Parse(kv.Key, System.Globalization.CultureInfo.InvariantCulture), kv => kv.Value);
+    });
+
+    /// <summary>
+    /// 0x8d3e GatherComboStart_NT {_gather_combo_count i32, _expiration_time i64} after each won gather, between 0x8d33 and
+    /// 0x8d34 (OBSERVED 2026-11-15, 12 samples): the count runs 1, 2, 3 over won gathers each within 30 s of the last, and
+    /// starts again at 1 after a longer pause; the expiry is the gather's time plus 30 s. What the combo does is not modelled.
+    /// </summary>
+    public const ushort GatherComboStartNt = 0x8d3e;
+    public const long GatherComboMs = 30_000;
+    int gatherCombo;
+    long gatherComboEndsMs;
+
+    byte[] GatherComboStart(long now)
+    {
+        gatherCombo = now < gatherComboEndsMs ? gatherCombo + 1 : 1;
+        gatherComboEndsMs = now + GatherComboMs;
+        return PacketWriter.Opcode(GatherComboStartNt).I32(gatherCombo).I64(gatherComboEndsMs).ToArray();
+    }
+
+    public static int? GatherBetterGrade(int material) => gatherBetterGrades.Value.TryGetValue(material, out var better) ? better : null;
 
     public int GatherAttemptsLeft(int index) => gatherAttempts.GetValueOrDefault(index, -1);
 
@@ -59,12 +102,12 @@ public sealed partial class GameSession
     const int GatherBasicGain = 360;
 
     /// <summary>
-    /// A turn's gain in gauge units. OBSERVED (2026-11-12): small 50, basic 110, epic 200, fail basic 144, fail small 96.
-    /// Critical (2) unrecorded: 160 (OURS, between basic and epic).
+    /// A turn's gain in gauge units. OBSERVED (2026-11-12): small 50, basic 110, epic 200, fail basic 144, fail small 96;
+    /// critical 250 (2026-11-15, uncapped turns; epic was only seen capped there).
     /// </summary>
     static int TurnGain(byte result) => result switch
     {
-        TurnEpicCritical => 200, TurnCritical => 160, TurnBasic => 110, TurnSmall => 50, TurnFailBasic => 144, _ => 96,
+        TurnEpicCritical => 200, TurnCritical => 250, TurnBasic => 110, TurnSmall => 50, TurnFailBasic => 144, _ => 96,
     };
 
     /// <summary>
@@ -104,7 +147,7 @@ public sealed partial class GameSession
     public (int Level, long Exp) GatherMastery => (gatherLevel, gatherExp);
 
     /// <summary>0x8d36 GatherLevelUpdate_NT {level u16, exp i64, skill points u16, specialized points u16} (OBSERVED `368d 0200 0f00000000000000 0100 0000`).</summary>
-    byte[] GatherLevelUpdate() => PacketWriter.Opcode(GatherLevelUpdateNt).U16(gatherLevel).I64(gatherExp).U16(0).U16(0).ToArray();
+    byte[] GatherLevelUpdate() => PacketWriter.Opcode(GatherLevelUpdateNt).U16(gatherLevel).I64(gatherExp).U16(GatherSkillPoints(gatherLevel)).U16(0).ToArray();
 
     /// <summary>0x8d34 after 0x8d33: player key, the 0x8d33 result, 0x3a, node key (OBSERVED `348d 884e 02 3a 9a8401`).</summary>
     byte[] GatherEnded(int result, long key) => PacketWriter.Opcode(0x8d34).Varint(playerKey).U8((byte)result).U8(0x3a).Varint(key).ToArray();
@@ -116,15 +159,30 @@ public sealed partial class GameSession
         return gatherAttempts.TryGetValue(index, out var left) ? total - left : total;
     }
 
-    /// <summary>Mastery exp for a gather (OURS): the level's need over eight; the packets, with the level-up.</summary>
-    async Task<List<byte[]>> GatherMasteryExpAsync(CancellationToken ct, bool lost = false)
+    /// <summary>
+    /// Gather mastery exp per gathered material, whatever the mastery level (OBSERVED 2026-11-15, gather levels 3 to 9: Odyle
+    /// 28, Fine Odyle 36, Aria 20 every time). Other materials pay the Aria value (CANDIDATE).
+    /// </summary>
+    static readonly Dictionary<int, int> GatherExpByMaterial = new() { [610610013] = 28, [610610014] = 36, [610670041] = 20 };
+    public const int GatherExpDefault = 20;
+    /// <summary>A lost attempt pays 6 (OBSERVED for Aria 2026-11-15 and a lost attempt 2026-11-12; CANDIDATE for other materials).</summary>
+    public const int GatherExpLost = 6;
+
+    public static int GatherExpFor(int material, bool lost) => lost ? GatherExpLost : GatherExpByMaterial.GetValueOrDefault(material, GatherExpDefault);
+
+    /// <summary>
+    /// Gather skill points left (0x8d36 _remaining_gather_skill_point), one per level past the first. CANDIDATE: OBSERVED 1 at
+    /// level 2 (2026-11-12) and level − 2 from level 4 to 9 (2026-11-15, maybe a point spent); the skill tree is not modelled.
+    /// </summary>
+    public static int GatherSkillPoints(int level) => Math.Max(0, level - 1);
+
+    /// <summary>Mastery exp for a gather: the material's exp; the packets, with the level-up.</summary>
+    async Task<List<byte[]>> GatherMasteryExpAsync(CancellationToken ct, int material, bool lost = false)
     {
         var need = Crafts.GatherMasteryNeed(gatherLevel);
         if (need <= 0) return [];
-        // A lost attempt pays too, about a third (OBSERVED 2026-11-12: 6 for a lost attempt, 20 for a won one).
-        var gained = Math.Max(1, lost ? need / 24 : need / 8);
+        var gained = GatherExpFor(material, lost);
         gatherExp += gained;
-        var replies = new List<byte[]> { PacketWriter.Opcode(GatherExpUpdateNt).I64(gatherExp).I64(gained).ToArray() };
         var leveled = false;
         while (need > 0 && gatherExp >= need && gatherLevel < CraftTables.MaxMastery)
         {
@@ -133,6 +191,8 @@ public sealed partial class GameSession
             leveled = true;
             need = Crafts.GatherMasteryNeed(gatherLevel);
         }
+        // 0x8d35 carries the exp after any level-up (OBSERVED 2026-11-15: 0, 6, 11, 23 right after each level).
+        var replies = new List<byte[]> { PacketWriter.Opcode(GatherExpUpdateNt).I64(gatherExp).I64(gained).ToArray() };
         if (Store is { } store && CharacterId is { } character)
             await Stored(async () => { await store.SaveMasteryAsync(character, "gather", 0, gatherLevel, gatherExp, ct); return []; });
         if (leveled)
@@ -188,12 +248,13 @@ public sealed partial class GameSession
         try { key = new PacketReader(plain) { Offset = 2 }.Varint(); } catch (ProtocolException) { return []; }
         var objects = WorldObjects.ObjectsOn(worldMap);
         var index = (int)key - WorldObjects.FirstKey;
-        byte[] Reply(int result, int attempts, bool won, IReadOnlyList<GatherTurn> turns)
+        byte[] Reply(int result, int attempts, bool won, IReadOnlyList<GatherTurn> turns, bool discovered = false)
         {
             // OBSERVED (88 official GatherSourceStart_RS): _mastery_grade_quest is one bool sharing the open bool byte.
+            // A discovery sets _is_discovered and _basic_discovery_result and material group 2 (OBSERVED 2026-11-15).
             var masteryGradeQuest = TryElevateGatherCollect(out _, out _);
-            var w = PacketWriter.Opcode(GatherStartRs).U16(result).Varint(key).I32(attempts).Bool(won).Bool(false).Varint(0)
-                .Bool(false).Varint(0).I32(1).Varint(turns.Count);
+            var w = PacketWriter.Opcode(GatherStartRs).U16(result).Varint(key).I32(attempts).Bool(won).Bool(discovered).Varint(0)
+                .Bool(discovered).Varint(0).I32(discovered ? 2 : 1).Varint(turns.Count);
             foreach (var t in turns) w.U8(t.Result).Bool(false).Varint(0).I32(t.SuccessBefore).I32(t.SuccessAfter).I32(t.FailBefore).I32(t.FailAfter);
             return w.Bool(masteryGradeQuest).ToArray();
         }
@@ -226,16 +287,19 @@ public sealed partial class GameSession
         {
             var replies = await UseObjectAsync(new PacketWriter().U16(0x3636).Varint(key).ToArray(), now, ct);
             var refused = replies.Any(b => b[0] == 0x37 && b[1] == 0x36 && b.Length > 2 && b[2] != 0);
+            var discovered = false;
             if (!refused)
             {
                 // The node's timed interaction completes only once the turns have played out on the client.
                 if (pendingUse is { } use && use.Key == keyInt)
                     pendingUse = use with { DueMs = Math.Max(use.DueMs, now + GatherRaceMs(turns.Count)) };
+                discovered = GatherBetterGrade((int)node[0]) is not null && GatherDiscoveryRoll() < GatherDiscoveryChance;
             }
+            gatherDiscoveredIndex = discovered ? index : null;
             // OBSERVED order: 0x3638 (the interaction started) before 0x8d31.
             return replies.Count > 0 && replies[0] is [0x38, 0x36, ..]
-                ? [replies[0], Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies.Skip(1)]
-                : [Reply(refused ? 1 : 0, gatherNumber, !refused, turns), .. replies];
+                ? [replies[0], Reply(refused ? 1 : 0, gatherNumber, !refused, turns, discovered), .. replies.Skip(1)]
+                : [Reply(refused ? 1 : 0, gatherNumber, !refused, turns, discovered), .. replies];
         }
         pendingUse = null;
         pendingGatherLoss = (index, keyInt, now + GatherRaceMs(turns.Count));
@@ -265,20 +329,36 @@ public sealed partial class GameSession
         else gatherAttempts[index] = attempts;
         var lost = new List<byte[]> { GamePackets.InteractEnvObjCompleted(key, playerKey, GatherUsesTaken(index, node)) };
         if (attempts > 0) lost.Add(GamePackets.InteractEnvObjAvailableState(key));
-        lost.AddRange(await GatherMasteryExpAsync(ct, lost: true));
+        lost.AddRange(await GatherMasteryExpAsync(ct, (int)node[0], lost: true));
         lost.Add(GatherCompleted(GatherFailed, key).I32((int)node[0]).I32(0).I32(0).I32(0).I32(0).ToArray());
         lost.Add(GatherEnded(GatherFailed, key));
         return lost;
     }
 
-    /// <summary>0x8d32 GatherSourceStop_RQ {target key}: the gather in progress is cancelled; the node is available again (0x363b).</summary>
+    /// <summary>0x3639 _reason of a gather cut short (OBSERVED 2026-11-15, flight time running out mid-gather: `0619`).</summary>
+    public const int GatherInterruptedReason = 0x1906;
+
+    /// <summary>
+    /// 0x8d32 GatherSourceStop_RQ {target key}: the gather in progress is cancelled. OBSERVED (2026-11-15, flight time ran out
+    /// during a node's second gather): InteractEnvObjInterrupted_NT 0x3639 {key, reason 0x1906, interactor, the attempt's
+    /// gather number 2}, and no 0x363b. The use is not spent here (CANDIDATE).
+    /// </summary>
     List<byte[]> GatherStop(byte[] plain)
     {
         uint key;
         try { key = new PacketReader(plain) { Offset = 2 }.Varint(); } catch (ProtocolException) { return []; }
         if (pendingUse is { } use && use.Key == (int)key) pendingUse = null;
         if (pendingGatherLoss is { } loss && loss.Key == (int)key) pendingGatherLoss = null;
-        return [GamePackets.InteractEnvObjAvailableState((int)key)];
+        var index = (int)key - WorldObjects.FirstKey;
+        if (gatherDiscoveredIndex == index) gatherDiscoveredIndex = null;
+        var objects = WorldObjects.ObjectsOn(worldMap);
+        var number = 1;
+        if (index >= 0 && index < objects.Count && objects[index].Gather is { } node)
+        {
+            var total = node.Length >= 7 && node[6] > 0 ? (int)node[6] : 3;
+            number = total - (gatherAttempts.TryGetValue(index, out var left) ? left : total) + 1;
+        }
+        return [GamePackets.InteractEnvObjInterrupted((int)key, GatherInterruptedReason, playerKey, number)];
     }
 
     /// <summary>A gather node's interaction completed: the material, 0x8d33, the node used up (0x3635).</summary>
@@ -286,6 +366,11 @@ public sealed partial class GameSession
     {
         var g = node.Gather!;
         int key = WorldObjects.FirstKey + index, item = (int)g[0], count = (int)g[1];
+        // A discovered attempt yields the better grade, with 0x8d33 / 0x8d34 result 1 (OBSERVED 2026-11-15).
+        var discovered = gatherDiscoveredIndex == index && GatherBetterGrade(item) is not null;
+        gatherDiscoveredIndex = null;
+        if (discovered) item = GatherBetterGrade(item)!.Value;
+        var result = discovered ? GatherDiscovered : 0;
         if (GatherRefused(now, take: true))
             return [GatherCompleted(GatherFailed, key).I32(item).I32(0).I32(0).I32(0).I32(0).ToArray()];
         var bonus = g.Length >= 4 && g[2] > 0 && GatherBonusRoll() == 0 ? ((int)g[2], (int)g[3]) : (0, 0);
@@ -313,10 +398,11 @@ public sealed partial class GameSession
         }
         else gatherAttempts[index] = usesLeft;
         // OBSERVED order (2026-11-12): the mastery exp (and level), the item, 0x8d33, 0x8d34.
-        replies.InsertRange(0, await GatherMasteryExpAsync(ct));
+        replies.InsertRange(0, await GatherMasteryExpAsync(ct, item));
         replies.AddRange(AchieveGather(gatherLevel));
-        replies.Add(GatherCompleted(0, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
-        replies.Add(GatherEnded(0, key));
+        replies.Add(GatherCompleted(result, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
+        replies.Add(GatherComboStart(now));
+        replies.Add(GatherEnded(result, key));
         return replies;
     }
 }

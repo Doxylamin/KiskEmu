@@ -238,19 +238,34 @@ public sealed partial class GameSession
     async Task<bool> SocialBlockedWithAsync(Guid other, CancellationToken ct) =>
         CharacterId is { } me && Store is { } store && await StoredValue(() => store.SocialBlockedAsync(me, other, ct)) == true;
 
+    /// <summary>PartyInvite_RS result for an invitee already in a party (OBSERVED 2026-11-15 `0792 3419 …`).</summary>
+    public const int PartyInviteeInParty = 0x1934;
+
     async Task<List<byte[]>> PartyInviteAsync(byte[] plain, long now, CancellationToken ct)
     {
         if (SocialRequests.ParsePartyInvite(plain) is not { } target) return [];
         byte[] Fail() => SocialPackets.PartyInviteReply(Failed, ServerId, target.Name);
         if (Social is not { } s || worldPlayer is null || World?.FindOnline(CharacterNames.Stored(target.Name)) is not { } invitee || invitee == worldPlayer) return [Fail()];
         if (invitee.Session.CharacterId is { } other && await SocialBlockedWithAsync(other, ct)) return [Fail()];
-        if (s.PartyOf(invitee) is not null) return [Fail()];
         var replies = new List<byte[]>();
         var party = s.PartyOf(worldPlayer);
+        Party NewParty()
+        {
+            var created = new Party(s.NextId(), worldPlayer);
+            s.Parties[created.Key] = created;
+            return created;
+        }
+        if (s.PartyOf(invitee) is not null)
+        {
+            // OBSERVED 2026-11-15: inviting someone already in a party answers PartyInvite_RS 0x1934 first, and the inviter's
+            // party is created all the same (PartyInfo_NT Create follows).
+            replies.Add(SocialPackets.PartyInviteReply(PartyInviteeInParty, ServerId, invitee.Name));
+            if (party is null) replies.Add(SocialPackets.PartyInfo(Info(NewParty()), PartyUpdateReason.Create));
+            return replies;
+        }
         if (party is null)
         {
-            party = new Party(s.NextId(), worldPlayer);
-            s.Parties[party.Key] = party;
+            party = NewParty();
             replies.Add(SocialPackets.PartyInfo(Info(party), PartyUpdateReason.Create));
         }
         if (party.Leader != worldPlayer || party.Members.Count >= Party.Limit) return [Fail()];

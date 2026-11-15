@@ -56,8 +56,11 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     public const long CombatTimeoutMs = 3500;   // official 0x8d21 leave ~3.3-3.6 s after the last action
     public const long CheckpointMs = 30000;
     public const double AreaRange = 400;        // "within 4m" of the area skills' text
-    /// <summary>Monster respawn after the kill (OURS; the official delay is unknown) and corpse removal (OBSERVED ~4050 ms after 0x8d04).</summary>
-    public const long RespawnMs = 30_000, CorpseMs = 4_000;
+    /// <summary>
+    /// Monster respawn after the kill and corpse removal (OBSERVED ~4050 ms after 0x8d04). The respawn is CANDIDATE: one
+    /// official sample, an Aullaeu Sentry back 54.2 s after its kill (2026-11-15); per-monster times are not known.
+    /// </summary>
+    public const long RespawnMs = 54_000, CorpseMs = 4_000;
     /// <summary>Official SP (stamina): sprint drains 500 every 100 ms; regen per second 20000 out of combat, 5000 in combat, none while sprinting.</summary>
     public const int SprintDrain = 500, SprintTickMs = 100, SpRegenOutOfCombat = 20000, SpRegenInCombat = 5000;
 
@@ -156,8 +159,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     public bool Resting { get; private set; }
     public const int RestRegenFactor = 3;
     /// <summary>Where the player is from the movement requests: flying (0x370a/b), gliding (0x3706/7), in a jump or fall (0x3702/3), else on the ground.</summary>
-    /// <summary>WindPath: riding a wind stream (0x3712/0x3713), which spends no flight points (OURS, as the earlier game's
-    /// streams; no official FP during a ride is recorded) and recovers none.</summary>
+    /// <summary>WindPath: riding a wind stream (0x3712/0x3713), which spends no flight points and refills them as on the ground
+    /// (OBSERVED 2026-11-15: entered at half a bar, the gauge kept rising until the landing; the rate, the ground's 4000 a
+    /// second, is CANDIDATE).</summary>
     enum AirState { Ground, Fly, Glide, Fall, WindPath }
     AirState air;
     /// <summary>The flight started running (0x370a mask bit 0): the faster drain.</summary>
@@ -514,7 +518,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case SkinEquipRq when plain.Length >= 3: return await SkinEquipAsync(plain, ct);
             case SkinExtractionRq when plain.Length >= 3: return await SkinExtractionAsync(plain, ct);
             case GatherStopRq when plain.Length >= 3: return GatherStop(plain);
-            case CraftStartRq when plain.Length >= 7: return await CraftAsync(plain, ct);
+            case CraftStartRq when plain.Length >= 7: return await CraftAsync(plain, now, ct);
             case ConversionStartRq: return await ConversionStartAsync(plain, ct);
             case ConversionLimitListRq when plain.Length >= 2: return await ConversionLimitListAsync(plain, ct);
             case ShopBuyRq when plain.Length >= 4: return await BuyGoodsAsync(plain, now, ct);
@@ -2843,7 +2847,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 var underwater = diving && !dead;
                 resources.Op = underwater ? (int)Math.Max(0, op - seconds * DiveDrain) : (int)Math.Min(OpMax, op + seconds * OpRegen);
                 var fp = resources.Fp;
-                if (resources.FpMax > 0 && !dead && air == AirState.Ground)
+                if (resources.FpMax > 0 && !dead && air is AirState.Ground or AirState.WindPath)
                     resources.Fp = (int)Math.Min(resources.FpMax, fp + seconds * (inCombat ? FpRegenBattle : FpRegenRest));
                 var suffocating = underwater && resources.Op == 0;
                 if (suffocating) replies.AddRange(EnsureOxygenDeficiency(now));
@@ -2891,6 +2895,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.AddRange(await WithMapEventClearsFlushedAsync(await CompleteUseAsync(use.Index, ct, now, timed: true), ct));
         }
         replies.AddRange(await GatherLossTickAsync(now, ct));
+        replies.AddRange(await CraftTickAsync(now, ct));
         if (dead && now >= reviveAt) replies.AddRange(AutoRevive(now));
         WarnStuckReload(now);
         if (itemCast is { } cast && now >= cast.DueMs) replies.AddRange(await CompleteItemCastAsync(now, ct));

@@ -138,8 +138,11 @@ public sealed class GatherCraftScenarioTests
         var session = await GameSessionTestHelpers.EnterMap1010Async(store, Now);
         session.GatherBonusRoll = () => 4;
         var need = CraftTables.Embedded.GatherMasteryNeed(1);
-        var gathersForLevel = (int)Math.Ceiling(need / (double)Math.Max(1, need / 8));
-        var nodes = WorldObjects.ObjectsOn(1010).Select((o, i) => (o, i)).Where(x => x.o.Gather is not null).Take(gathersForLevel).ToList();
+        var material = (int)WorldObjects.ObjectsOn(1010).First(o => o.Gather is not null).Gather![0];
+        var nodes = WorldObjects.ObjectsOn(1010).Select((o, i) => (o, i)).Where(x => x.o.Gather is { } g && g[0] == material).ToList();
+        // Each gather pays its material's exp, whatever the level (OBSERVED 2026-11-15: Odyle 28, Aria 20).
+        var gathersForLevel = (int)Math.Ceiling(need / (double)GameSession.GatherExpFor(material, lost: false));
+        nodes = nodes.Take(gathersForLevel).ToList();
         Assert.True(nodes.Count >= gathersForLevel);
         for (var n = 0; n < gathersForLevel; n++)
         {
@@ -150,9 +153,15 @@ public sealed class GatherCraftScenarioTests
             await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), at);
             await session.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)key).ToArray(), at);
             var replies = await session.TickAsync(at + node.InteractTime + 10);
-            Assert.Contains(replies, b => GameSessionTestHelpers.Op(b) == GameSession.GatherExpUpdateNt);
+            var exp = replies.Single(b => GameSessionTestHelpers.Op(b) == GameSession.GatherExpUpdateNt);
+            Assert.Equal(GameSession.GatherExpFor(material, lost: false), BitConverter.ToInt64(exp, 10));
             if (n == gathersForLevel - 1)
-                Assert.Contains(replies, b => GameSessionTestHelpers.Op(b) == GameSession.GatherLevelUpdateNt);
+            {
+                // 0x8d35 carries the exp after the level-up; 0x8d36 the skill points (one per level past the first, CANDIDATE).
+                Assert.Equal(session.GatherMastery.Exp, BitConverter.ToInt64(exp, 2));
+                var up = replies.Single(b => GameSessionTestHelpers.Op(b) == GameSession.GatherLevelUpdateNt);
+                Assert.Equal(GameSession.GatherSkillPoints(session.GatherMastery.Level), BitConverter.ToUInt16(up, 12));
+            }
         }
         Assert.True(session.GatherMastery.Level >= 2);
     }
@@ -188,6 +197,7 @@ public sealed class GatherCraftScenarioTests
         var (session, _) = await OnMap1010NearGatherAsync(store, Now, index);
         session.GatherRoll = () => 0;
         session.GatherBonusRoll = () => 0;
+        session.GatherDiscoveryRoll = () => 9_999;
         var won = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
         // OBSERVED order: 0x3638 before 0x8d31.
         Assert.Equal(new[] { 0x3638, (int)GameSession.GatherStartRs }, won.Take(2).Select(b => (int)GameSessionTestHelpers.Op(b)));
@@ -201,10 +211,44 @@ public sealed class GatherCraftScenarioTests
         // 0x363a carries the uses taken (1), which runs the node's bar down; 0x8d34 follows 0x8d33 (OBSERVED).
         Assert.Contains(done, b => b.SequenceEqual(GamePackets.InteractEnvObjCompleted(key, session.PlayerKey, 1)));
         var ops = done.Select(b => (int)GameSessionTestHelpers.Op(b)).ToList();
-        Assert.Equal(ops.IndexOf(GameSession.GatherCompletedNt) + 1, ops.IndexOf(0x8d34));
+        // OBSERVED 2026-11-15: 0x8d33, GatherComboStart_NT 0x8d3e {count 1, now + 30 s}, then 0x8d34.
+        Assert.Equal(ops.IndexOf(GameSession.GatherCompletedNt) + 1, ops.IndexOf(GameSession.GatherComboStartNt));
+        Assert.Equal(ops.IndexOf(GameSession.GatherComboStartNt) + 1, ops.IndexOf(0x8d34));
+        var combo = done.Single(b => GameSessionTestHelpers.Op(b) == GameSession.GatherComboStartNt);
+        Assert.Equal(1, BitConverter.ToInt32(combo, 2));
+        Assert.Equal(Now + end + 10 + GameSession.GatherComboMs, BitConverter.ToInt64(combo, 6));
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![0]);
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![2]);
     }
+
+    [Fact]
+    public async Task A_discovered_gather_yields_the_better_grade()
+    {
+        var hit = WorldObjects.ObjectsOn(1010).Select((o, i) => (o, i))
+            .First(x => x.o.Gather is { } g && GameSession.GatherBetterGrade((int)g[0]) is not null);
+        var (node, index) = hit;
+        var key = WorldObjects.FirstKey + index;
+        var better = GameSession.GatherBetterGrade((int)node.Gather![0])!.Value;
+        var store = GatherStore();
+        var (session, _) = await OnMap1010NearGatherAsync(store, Now, index);
+        session.GatherRoll = () => 0;
+        session.GatherBonusRoll = () => 4;
+        session.GatherDiscoveryRoll = () => 0;
+        var won = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
+        var start = won.Single(b => GameSessionTestHelpers.Op(b) == GameSession.GatherStartRs);
+        // OBSERVED 2026-11-15: _is_success, _is_discovered and _basic_discovery_result share one byte (07), material group 2.
+        var at = 4 + NativeVarint.Encode(key).Length + 4;
+        Assert.Equal(0x07, start[at]);
+        Assert.Equal(2, BitConverter.ToInt32(start, at + 3));
+        var done = await session.TickAsync(Now + Math.Max(node.InteractTime, GameSession.GatherRaceMs(2)) + 10);
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt && b[2] == 1);
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == 0x8d34);
+        Assert.Contains(store.Items, i => i.TemplateId == better);
+        Assert.DoesNotContain(store.Items, i => i.TemplateId == (int)node.Gather![0]);
+    }
+
+    [Fact]
+    public void Odyle_is_discovered_as_Fine_Odyle() => Assert.Equal(610610014, GameSession.GatherBetterGrade(610610013));
 
     [Fact]
     public async Task SharedWorld_gather_depletion_is_per_player()
@@ -260,7 +304,9 @@ public sealed class GatherCraftScenarioTests
         session.GatherRoll = () => 9999;   // every turn fails
         await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStartRq).Varint((uint)key).ToArray(), Now);
         var stopped = await session.HandleAsync(new PacketWriter().U16(GameSession.GatherStopRq).Varint((uint)key).ToArray(), Now + 500);
-        Assert.Contains(stopped, b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(key)));
+        // OBSERVED 2026-11-15: 0x3639 {key, 0x1906, interactor, gather number}, no 0x363b.
+        Assert.Contains(stopped, b => b.SequenceEqual(GamePackets.InteractEnvObjInterrupted(key, GameSession.GatherInterruptedReason, session.PlayerKey, 1)));
+        Assert.DoesNotContain(stopped, b => GameSessionTestHelpers.Op(b) == 0x363b);
         var later = await session.TickAsync(Now + GameSession.GatherRaceMs(12) + 10);
         Assert.DoesNotContain(later, b => GameSessionTestHelpers.Op(b) == GameSession.GatherCompletedNt);
         Assert.Equal(-1, session.GatherAttemptsLeft(index));
@@ -315,14 +361,43 @@ public sealed class GatherCraftScenarioTests
         await session.InventoryChangesAsync(default);
         session.CraftRoll = () => 0;
         var crafted = await session.HandleAsync(CraftPacket(worktable.Key), Now);
-        Assert.Equal(GameSession.CraftStartRs, GameSessionTestHelpers.Op(crafted[0]));
-        Assert.Equal(1280, BitConverter.ToUInt16(crafted[0], 2));
-        Assert.True(crafted[0][4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
-        // 0x8d71 (OBSERVED 2026-11-12): u16 1280 kCraft_Success, worktable varint, is_direct_completed 0.
-        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1280 && b[^1] == 0);
-        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftExpUpdateNt);
-        Assert.Contains(store.Items, i => i.TemplateId == Ingot);
+        var start = crafted.Single(b => GameSessionTestHelpers.Op(b) == GameSession.CraftStartRs);
+        Assert.Equal(1280, BitConverter.ToUInt16(start, 2));
+        Assert.True(start[4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
+        // OBSERVED 2026-11-15: the components go at the start, 0x8d6f then the CraftStart broadcast 0x8d72; the craft ends
+        // once its turns have played out.
         Assert.Equal(2, store.Items.Single(i => i.WireId == 70).Quantity);
+        Assert.Equal(0x8d72, GameSessionTestHelpers.Op(crafted[^1]));
+        Assert.DoesNotContain(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt);
+        Assert.DoesNotContain(store.Items, i => i.TemplateId == Ingot);
+        var turns = CraftTurnsOf(start, worktable.Key);
+        Assert.Equal(GameSession.CraftGauge, turns.Where(t => t.Result <= 4).Sum(t => t.Gain));
+        Assert.Empty(await session.TickAsync(Now + GameSession.CraftRaceMs(turns.Count) - 50) is var early
+            ? early.Where(b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt) : []);
+        var done = await session.TickAsync(Now + GameSession.CraftRaceMs(turns.Count) + 10);
+        // 0x8d71 (OBSERVED 2026-11-12): u16 1280 kCraft_Success, worktable varint, is_direct_completed 0.
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1280 && b[^1] == 0);
+        var exp = done.Single(b => GameSessionTestHelpers.Op(b) == GameSession.CraftExpUpdateNt);
+        Assert.Equal(GameSession.CraftExpSuccess, BitConverter.ToInt64(exp, 11));
+        var ops = done.Select(b => (int)GameSessionTestHelpers.Op(b)).ToList();
+        Assert.Equal(ops.IndexOf(GameSession.CraftCompletedNt) + 1, ops.IndexOf(0x8d74));
+        Assert.Contains(store.Items, i => i.TemplateId == Ingot);
+    }
+
+    /// <summary>0x8d6f's turns: result u8, skills varint count, gain before, gain after (OBSERVED 2026-11-15).</summary>
+    static List<(byte Result, int Gain)> CraftTurnsOf(byte[] start, int worktableKey)
+    {
+        var at = 2 + 2 + NativeVarint.Encode(worktableKey).Length + 4 + 1 + 1;   // result, key, recipe, bools, start skills (0)
+        var count = start[at++];
+        var turns = new List<(byte, int)>();
+        for (var i = 0; i < count; i++)
+        {
+            var result = start[at];
+            Assert.Equal(0, start[at + 1]);
+            turns.Add((result, BitConverter.ToInt32(start, at + 2)));
+            at += 10;
+        }
+        return turns;
     }
 
     [Fact]
@@ -338,9 +413,16 @@ public sealed class GatherCraftScenarioTests
         session.CraftRoll = () => 99_999_999;
         var ingotsBefore = store.Items.Where(i => i.TemplateId == Ingot).Sum(i => i.Quantity);
         var crafted = await session.HandleAsync(CraftPacket(worktable.Key), Now);
-        Assert.Equal(1282, BitConverter.ToUInt16(crafted[0], 2));
-        Assert.False(crafted[0][4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
-        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1282);
+        var start = crafted.Single(b => GameSessionTestHelpers.Op(b) == GameSession.CraftStartRs);
+        // OBSERVED 2026-11-15: 0x8d6f says 1280 for a failure too; _is_success is 0 and 0x8d71 carries 1282.
+        Assert.Equal(1280, BitConverter.ToUInt16(start, 2));
+        Assert.False(start[4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
+        var turns = CraftTurnsOf(start, worktable.Key);
+        Assert.Equal(GameSession.CraftGauge, turns.Where(t => t.Result >= 5).Sum(t => t.Gain));
+        var done = await session.TickAsync(Now + GameSession.CraftRaceMs(turns.Count) + 10);
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1282);
+        var exp = done.Single(b => GameSessionTestHelpers.Op(b) == GameSession.CraftExpUpdateNt);
+        Assert.Equal(GameSession.CraftExpFail, BitConverter.ToInt64(exp, 11));
         Assert.Equal(ingotsBefore, store.Items.Where(i => i.TemplateId == Ingot).Sum(i => i.Quantity));
         Assert.DoesNotContain(store.Items, i => i.WireId == 80);
     }
