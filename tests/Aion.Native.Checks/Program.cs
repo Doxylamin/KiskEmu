@@ -1738,6 +1738,7 @@ Check(lostTurn[0][0] == 0x38 && lostTurn[0][1] == 0x36 && lostTurn[1][0] == 0x31
       && lostEnd.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(node2Key))) && staffSession.GatherAttemptsLeft(node2Index) == (int)node2.Gather![6] - 1,
       "a lost attempt: 0x8d31 with failing turns; after they play out 0x8d33 result 2, the node available again, one try fewer");
 staffSession.GatherRoll = () => 0;   // every turn an epic success
+staffSession.GatherDiscoveryRoll = () => 9_999;   // no discovery: the bool byte holds _is_success alone
 var wonTurn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d30).Varint((uint)node2Key).ToArray(), Now + 6100 + GameSession.GatherRaceMs(30) + 100);
 Check(wonTurn[1][0] == 0x31 && wonTurn[1][1] == 0x8d && wonTurn[1][2] == 0 && wonTurn[1][4 + NativeVarint.Encode(node2Key).Length + 4] == 1
       && wonTurn[0][0] == 0x38 && wonTurn[0][1] == 0x36, "a won attempt: 0x8d31 says success and the node's interaction starts (0x3638)");
