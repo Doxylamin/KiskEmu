@@ -59,6 +59,7 @@ public sealed partial class GameSession
         autoUseItems.UnionWith(Read<int[]>("item_auto_use") ?? []);
         presets = Read<PresetSetting>("presets") ?? new([], []);
         restoreCounts = Read<Dictionary<int, RestoreCount>>("item_restores") ?? [];
+        dutyBoard = Read<DutyBoard>(DutyBoardSetting);
         LoadSlotExtends(Read<int[]>(SlotExtendsSetting));
     }
 

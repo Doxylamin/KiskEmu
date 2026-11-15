@@ -1677,6 +1677,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         {
             replies.AddRange(BuffsAfterLoad());
             replies.AddRange(GuildAtEntry());
+            await EnsureDutyBoardAsync(now, ct);   // the duty mission board for 0x8d1c (GameSession.Duty.cs)
             replies.AddRange(EntryLists(now, profile is not null));   // the lists in the recorded order (GameSession.EntryConstants.cs)
             replies.AddRange(AchieveSet("EquipItemLevel", EquipItemLevel(), now: now));
             if (fresh) { replies.AddRange(Achieve("LoginCharacter", now: now)); elapsedAchieveAt = now + 60_000; }
