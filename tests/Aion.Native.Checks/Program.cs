@@ -869,7 +869,10 @@ Check(patrolPackets.Count(b => (b[0] | b[1] << 8) == 0x371c) > 30 && patrolPacke
       && patrolPackets.Count(b => (b[0] | b[1] << 8) == 0x371d) > 200,
       "only walk updates (no start or stop): a full 0x371c about once a second and 0x371d deltas every 100 ms between (observed)");
 var deltas = patrolPackets.Where(b => (b[0] | b[1] << 8) == 0x371d).ToList();
-Check(deltas.All(b => b[^1] == 1 && (b[4] & 0x26) == 0x26 && (b[4] & 0x01) == 0), "the walk deltas carry dx, dy and the heading pair and end with 01, as the official walk deltas");
+Check(deltas.All(b => b[^1] == 1 && (b[4] & 0x20) == 0x20 && (b[4] & 0x01) == 0
+                     && b.Length == 5 + ((b[4] & 0x02) != 0 ? 1 : 0) + ((b[4] & 0x04) != 0 ? 1 : 0) + ((b[4] & 0x08) != 0 ? 1 : 0) + 5)
+      && deltas.Any(b => (b[4] & 0x06) == 0x06),
+      "the walk deltas carry the non-zero dx / dy, the heading pair and end with 01, as the official walk deltas");
 // A companion (Robin in the HQ001 layer: Function Companion, aggressive, relationship 13) attacks a monster near it on its
 // own, then follows its player again once the monster is gone (official: Robin ran to the Cherubim and cast first).
 var companion = new Target { Key = 2150, Name = "N_L0_Starter_HQ001_Robin_01", Hp = 100, HpMax = 100, Position = new Vector3d(0, 0, 0), WalkSpeed = 126, RunSpeed = 500,
