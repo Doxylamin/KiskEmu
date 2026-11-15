@@ -126,6 +126,10 @@ public sealed partial class GameSession
             var unlockedBefore = QuestUnlockTypes().ToHashSet();
             var rewards = quest.Rewards ?? new QuestRewards();
             var items = (rewards.Items ?? []).Where(i => i.Length == 2).Select(i => ((int)i[0], i[1])).ToList();
+            // QuestClassReward.dat (OBSERVED data): the player's class items after the common ones. OURS order (CANDIDATE: no
+            // class-reward quest in the recordings). Idea from Addiboii/A2Core 4ce900c.
+            if (className is { } cls && rewards.ClassItems?.GetValueOrDefault(cls) is { } classItems)
+                items.AddRange(classItems.Where(i => i.Length == 2).Select(i => ((int)i[0], i[1])));
             if (rewards.Select is { Length: > 0 } choices)
             {
                 var idx = selectIndex >= 0 && selectIndex < choices.Length ? selectIndex : 0;
