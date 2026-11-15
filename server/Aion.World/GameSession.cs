@@ -510,7 +510,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             case SkinEquipRq when plain.Length >= 3: return await SkinEquipAsync(plain, ct);
             case SkinExtractionRq when plain.Length >= 3: return await SkinExtractionAsync(plain, ct);
             case GatherStopRq when plain.Length >= 3: return GatherStop(plain);
-            case CraftStartRq when plain.Length >= 7: return await CraftAsync(plain, ct);
+            case CraftStartRq when plain.Length >= 7: return await CraftAsync(plain, now, ct);
             case ConversionStartRq: return await ConversionStartAsync(plain, ct);
             case ConversionLimitListRq when plain.Length >= 2: return await ConversionLimitListAsync(plain, ct);
             case ShopBuyRq when plain.Length >= 4: return await BuyGoodsAsync(plain, now, ct);
@@ -2874,6 +2874,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             replies.AddRange(await WithMapEventClearsFlushedAsync(await CompleteUseAsync(use.Index, ct, now, timed: true), ct));
         }
         replies.AddRange(await GatherLossTickAsync(now, ct));
+        replies.AddRange(await CraftTickAsync(now, ct));
         if (dead && now >= reviveAt) replies.AddRange(AutoRevive(now));
         WarnStuckReload(now);
         if (itemCast is { } cast && now >= cast.DueMs) replies.AddRange(await CompleteItemCastAsync(now, ct));

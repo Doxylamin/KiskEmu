@@ -361,14 +361,43 @@ public sealed class GatherCraftScenarioTests
         await session.InventoryChangesAsync(default);
         session.CraftRoll = () => 0;
         var crafted = await session.HandleAsync(CraftPacket(worktable.Key), Now);
-        Assert.Equal(GameSession.CraftStartRs, GameSessionTestHelpers.Op(crafted[0]));
-        Assert.Equal(1280, BitConverter.ToUInt16(crafted[0], 2));
-        Assert.True(crafted[0][4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
-        // 0x8d71 (OBSERVED 2026-11-12): u16 1280 kCraft_Success, worktable varint, is_direct_completed 0.
-        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1280 && b[^1] == 0);
-        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftExpUpdateNt);
-        Assert.Contains(store.Items, i => i.TemplateId == Ingot);
+        var start = crafted.Single(b => GameSessionTestHelpers.Op(b) == GameSession.CraftStartRs);
+        Assert.Equal(1280, BitConverter.ToUInt16(start, 2));
+        Assert.True(start[4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
+        // OBSERVED 2026-11-15: the components go at the start, 0x8d6f then the CraftStart broadcast 0x8d72; the craft ends
+        // once its turns have played out.
         Assert.Equal(2, store.Items.Single(i => i.WireId == 70).Quantity);
+        Assert.Equal(0x8d72, GameSessionTestHelpers.Op(crafted[^1]));
+        Assert.DoesNotContain(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt);
+        Assert.DoesNotContain(store.Items, i => i.TemplateId == Ingot);
+        var turns = CraftTurnsOf(start, worktable.Key);
+        Assert.Equal(GameSession.CraftGauge, turns.Where(t => t.Result <= 4).Sum(t => t.Gain));
+        Assert.Empty(await session.TickAsync(Now + GameSession.CraftRaceMs(turns.Count) - 50) is var early
+            ? early.Where(b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt) : []);
+        var done = await session.TickAsync(Now + GameSession.CraftRaceMs(turns.Count) + 10);
+        // 0x8d71 (OBSERVED 2026-11-12): u16 1280 kCraft_Success, worktable varint, is_direct_completed 0.
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1280 && b[^1] == 0);
+        var exp = done.Single(b => GameSessionTestHelpers.Op(b) == GameSession.CraftExpUpdateNt);
+        Assert.Equal(GameSession.CraftExpSuccess, BitConverter.ToInt64(exp, 11));
+        var ops = done.Select(b => (int)GameSessionTestHelpers.Op(b)).ToList();
+        Assert.Equal(ops.IndexOf(GameSession.CraftCompletedNt) + 1, ops.IndexOf(0x8d74));
+        Assert.Contains(store.Items, i => i.TemplateId == Ingot);
+    }
+
+    /// <summary>0x8d6f's turns: result u8, skills varint count, gain before, gain after (OBSERVED 2026-11-15).</summary>
+    static List<(byte Result, int Gain)> CraftTurnsOf(byte[] start, int worktableKey)
+    {
+        var at = 2 + 2 + NativeVarint.Encode(worktableKey).Length + 4 + 1 + 1;   // result, key, recipe, bools, start skills (0)
+        var count = start[at++];
+        var turns = new List<(byte, int)>();
+        for (var i = 0; i < count; i++)
+        {
+            var result = start[at];
+            Assert.Equal(0, start[at + 1]);
+            turns.Add((result, BitConverter.ToInt32(start, at + 2)));
+            at += 10;
+        }
+        return turns;
     }
 
     [Fact]
@@ -384,9 +413,16 @@ public sealed class GatherCraftScenarioTests
         session.CraftRoll = () => 99_999_999;
         var ingotsBefore = store.Items.Where(i => i.TemplateId == Ingot).Sum(i => i.Quantity);
         var crafted = await session.HandleAsync(CraftPacket(worktable.Key), Now);
-        Assert.Equal(1282, BitConverter.ToUInt16(crafted[0], 2));
-        Assert.False(crafted[0][4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
-        Assert.Contains(crafted, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1282);
+        var start = crafted.Single(b => GameSessionTestHelpers.Op(b) == GameSession.CraftStartRs);
+        // OBSERVED 2026-11-15: 0x8d6f says 1280 for a failure too; _is_success is 0 and 0x8d71 carries 1282.
+        Assert.Equal(1280, BitConverter.ToUInt16(start, 2));
+        Assert.False(start[4 + NativeVarint.Encode(worktable.Key).Length + 4] == 1);
+        var turns = CraftTurnsOf(start, worktable.Key);
+        Assert.Equal(GameSession.CraftGauge, turns.Where(t => t.Result >= 5).Sum(t => t.Gain));
+        var done = await session.TickAsync(Now + GameSession.CraftRaceMs(turns.Count) + 10);
+        Assert.Contains(done, b => GameSessionTestHelpers.Op(b) == GameSession.CraftCompletedNt && BitConverter.ToUInt16(b, 2) == 1282);
+        var exp = done.Single(b => GameSessionTestHelpers.Op(b) == GameSession.CraftExpUpdateNt);
+        Assert.Equal(GameSession.CraftExpFail, BitConverter.ToInt64(exp, 11));
         Assert.Equal(ingotsBefore, store.Items.Where(i => i.TemplateId == Ingot).Sum(i => i.Quantity));
         Assert.DoesNotContain(store.Items, i => i.WireId == 80);
     }

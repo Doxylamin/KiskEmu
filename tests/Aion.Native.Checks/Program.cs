@@ -1990,14 +1990,17 @@ staffStore.Items.AddRange([Stored(610620013, 4, "bag", null, 70), Stored(6305410
 await staffSession.InventoryChangesAsync(default);
 staffSession.CraftRoll = () => 0;
 byte[] CraftRq() => new PacketWriter().U16(0x8d6e).Varint((uint)worktable.Key).I32(115016001).Varint(0).I32(0).I32(0).Varint(0).ToArray();
-var crafted = await staffSession.HandleAsync(CraftRq(), Now);
-Check(crafted[0][0] == 0x6f && crafted[0][1] == 0x8d && crafted[0][2] == 0 && staffStore.Items.Any(i => i.TemplateId == 610710001)
+// The craft ends once its turns have played out on the client (OBSERVED 2026-11-15, about 1.75 s a turn).
+var craftStarted = await staffSession.HandleAsync(CraftRq(), Now);
+var crafted = await staffSession.TickAsync(Now + GameSession.CraftRaceMs(40) + 10);
+Check(craftStarted.Any(b => b[0] == 0x6f && b[1] == 0x8d && b[2] == 0) && staffStore.Items.Any(i => i.TemplateId == 610710001)
       && staffStore.Items.Single(i => i.WireId == 70).Quantity == 2 && crafted.Any(b => b[0] == 0x71 && b[1] == 0x8d), "a craft succeeds: the ingot, 2 ore used (0x8d6f, 0x8d71)");
 staffSession.CraftRoll = () => 99_999_999;
 var ingots = staffStore.Items.Where(i => i.TemplateId == 610710001).Sum(i => i.Quantity);
-await staffSession.HandleAsync(CraftRq(), Now);
+await staffSession.HandleAsync(CraftRq(), Now + 100_000);
+await staffSession.TickAsync(Now + 100_000 + GameSession.CraftRaceMs(40) + 10);
 Check(staffStore.Items.Where(i => i.TemplateId == 610710001).Sum(i => i.Quantity) == ingots && !staffStore.Items.Any(i => i.WireId == 70), "a failed craft uses up the components");
-Check((await staffSession.HandleAsync(CraftRq(), Now))[0][2] == 3, "no components left: result 3");
+Check((await staffSession.HandleAsync(CraftRq(), Now + 200_000))[0][2] == 3, "no components left: result 3");
 // Craft mastery: the successful craft paid exp (0x8d7c); SetMastery announces a level and widens the recipe list.
 Check(crafted.Any(b => b[0] == 0x7c && b[1] == 0x8d && b[2] == 1) && staffSession.CraftMastery(1).Exp > 0 && staffStore.Masteries.Any(m => m is { Kind: "craft", Category: 1 }),
       "a craft pays Blacksmithing mastery exp (0x8d7c, saved)");
