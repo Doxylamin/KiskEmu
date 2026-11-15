@@ -9,10 +9,10 @@ namespace Aion.World;
 // time in five) and GatherSourceCompleted_NT 0x8d33. Every gather, won or lost, spends one of the node's uses (EnvObjData
 // InteractCount, usually 3; OBSERVED in game 2026-11-14: a Farming Odyle node gives three gathers, with a bar that runs
 // down); the last one uses the node up for this player for GatherRespawnMs (OURS).
-// Gather mastery (migration 029): a node needs its GatherSource MasteryLevel; each gather pays an eighth of the level's
-// GatherMastery need (OURS) as GatherExpUpdate_NT 0x8d35 {exp i64, gained i64}, a level-up GatherLevelUpdate_NT 0x8d36
-// {level i32, exp i64, skill points i32, specialized points i32} (usmap fields, CANDIDATE). The gather skill tree
-// (MyGatherSkillList_NT, points) is not modelled: the points stay 0.
+// Gather mastery (migration 029): a node needs its GatherSource MasteryLevel; each gather pays its material's exp
+// (OBSERVED, GatherExpFor) as GatherExpUpdate_NT 0x8d35 {exp i64, gained i64}, a level-up GatherLevelUpdate_NT 0x8d36
+// {level u16, exp i64, skill points u16, specialized points u16}. The gather skill tree (MyGatherSkillList_NT) is not
+// modelled: the skill points only count up (GatherSkillPoints).
 public sealed partial class GameSession
 {
     /// <summary>0x8d33 result (OBSERVED): 0 gathered, 1 gathered a better grade, 2 failed.</summary>
@@ -85,12 +85,12 @@ public sealed partial class GameSession
     const int GatherBasicGain = 360;
 
     /// <summary>
-    /// A turn's gain in gauge units. OBSERVED (2026-11-12): small 50, basic 110, epic 200, fail basic 144, fail small 96.
-    /// Critical (2) unrecorded: 160 (OURS, between basic and epic).
+    /// A turn's gain in gauge units. OBSERVED (2026-11-12): small 50, basic 110, epic 200, fail basic 144, fail small 96;
+    /// critical 250 (2026-11-15, uncapped turns; epic was only seen capped there).
     /// </summary>
     static int TurnGain(byte result) => result switch
     {
-        TurnEpicCritical => 200, TurnCritical => 160, TurnBasic => 110, TurnSmall => 50, TurnFailBasic => 144, _ => 96,
+        TurnEpicCritical => 200, TurnCritical => 250, TurnBasic => 110, TurnSmall => 50, TurnFailBasic => 144, _ => 96,
     };
 
     /// <summary>
@@ -130,7 +130,7 @@ public sealed partial class GameSession
     public (int Level, long Exp) GatherMastery => (gatherLevel, gatherExp);
 
     /// <summary>0x8d36 GatherLevelUpdate_NT {level u16, exp i64, skill points u16, specialized points u16} (OBSERVED `368d 0200 0f00000000000000 0100 0000`).</summary>
-    byte[] GatherLevelUpdate() => PacketWriter.Opcode(GatherLevelUpdateNt).U16(gatherLevel).I64(gatherExp).U16(0).U16(0).ToArray();
+    byte[] GatherLevelUpdate() => PacketWriter.Opcode(GatherLevelUpdateNt).U16(gatherLevel).I64(gatherExp).U16(GatherSkillPoints(gatherLevel)).U16(0).ToArray();
 
     /// <summary>0x8d34 after 0x8d33: player key, the 0x8d33 result, 0x3a, node key (OBSERVED `348d 884e 02 3a 9a8401`).</summary>
     byte[] GatherEnded(int result, long key) => PacketWriter.Opcode(0x8d34).Varint(playerKey).U8((byte)result).U8(0x3a).Varint(key).ToArray();
@@ -142,15 +142,30 @@ public sealed partial class GameSession
         return gatherAttempts.TryGetValue(index, out var left) ? total - left : total;
     }
 
-    /// <summary>Mastery exp for a gather (OURS): the level's need over eight; the packets, with the level-up.</summary>
-    async Task<List<byte[]>> GatherMasteryExpAsync(CancellationToken ct, bool lost = false)
+    /// <summary>
+    /// Gather mastery exp per gathered material, whatever the mastery level (OBSERVED 2026-11-15, gather levels 3 to 9: Odyle
+    /// 28, Fine Odyle 36, Aria 20 every time). Other materials pay the Aria value (CANDIDATE).
+    /// </summary>
+    static readonly Dictionary<int, int> GatherExpByMaterial = new() { [610610013] = 28, [610610014] = 36, [610670041] = 20 };
+    public const int GatherExpDefault = 20;
+    /// <summary>A lost attempt pays 6 (OBSERVED for Aria 2026-11-15 and a lost attempt 2026-11-12; CANDIDATE for other materials).</summary>
+    public const int GatherExpLost = 6;
+
+    public static int GatherExpFor(int material, bool lost) => lost ? GatherExpLost : GatherExpByMaterial.GetValueOrDefault(material, GatherExpDefault);
+
+    /// <summary>
+    /// Gather skill points left (0x8d36 _remaining_gather_skill_point), one per level past the first. CANDIDATE: OBSERVED 1 at
+    /// level 2 (2026-11-12) and level − 2 from level 4 to 9 (2026-11-15, maybe a point spent); the skill tree is not modelled.
+    /// </summary>
+    public static int GatherSkillPoints(int level) => Math.Max(0, level - 1);
+
+    /// <summary>Mastery exp for a gather: the material's exp; the packets, with the level-up.</summary>
+    async Task<List<byte[]>> GatherMasteryExpAsync(CancellationToken ct, int material, bool lost = false)
     {
         var need = Crafts.GatherMasteryNeed(gatherLevel);
         if (need <= 0) return [];
-        // A lost attempt pays too, about a third (OBSERVED 2026-11-12: 6 for a lost attempt, 20 for a won one).
-        var gained = Math.Max(1, lost ? need / 24 : need / 8);
+        var gained = GatherExpFor(material, lost);
         gatherExp += gained;
-        var replies = new List<byte[]> { PacketWriter.Opcode(GatherExpUpdateNt).I64(gatherExp).I64(gained).ToArray() };
         var leveled = false;
         while (need > 0 && gatherExp >= need && gatherLevel < CraftTables.MaxMastery)
         {
@@ -159,6 +174,8 @@ public sealed partial class GameSession
             leveled = true;
             need = Crafts.GatherMasteryNeed(gatherLevel);
         }
+        // 0x8d35 carries the exp after any level-up (OBSERVED 2026-11-15: 0, 6, 11, 23 right after each level).
+        var replies = new List<byte[]> { PacketWriter.Opcode(GatherExpUpdateNt).I64(gatherExp).I64(gained).ToArray() };
         if (Store is { } store && CharacterId is { } character)
             await Stored(async () => { await store.SaveMasteryAsync(character, "gather", 0, gatherLevel, gatherExp, ct); return []; });
         if (leveled)
@@ -295,7 +312,7 @@ public sealed partial class GameSession
         else gatherAttempts[index] = attempts;
         var lost = new List<byte[]> { GamePackets.InteractEnvObjCompleted(key, playerKey, GatherUsesTaken(index, node)) };
         if (attempts > 0) lost.Add(GamePackets.InteractEnvObjAvailableState(key));
-        lost.AddRange(await GatherMasteryExpAsync(ct, lost: true));
+        lost.AddRange(await GatherMasteryExpAsync(ct, (int)node[0], lost: true));
         lost.Add(GatherCompleted(GatherFailed, key).I32((int)node[0]).I32(0).I32(0).I32(0).I32(0).ToArray());
         lost.Add(GatherEnded(GatherFailed, key));
         return lost;
@@ -348,7 +365,7 @@ public sealed partial class GameSession
         }
         else gatherAttempts[index] = usesLeft;
         // OBSERVED order (2026-11-12): the mastery exp (and level), the item, 0x8d33, 0x8d34.
-        replies.InsertRange(0, await GatherMasteryExpAsync(ct));
+        replies.InsertRange(0, await GatherMasteryExpAsync(ct, item));
         replies.AddRange(AchieveGather(gatherLevel));
         replies.Add(GatherCompleted(result, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
         replies.Add(GatherEnded(result, key));

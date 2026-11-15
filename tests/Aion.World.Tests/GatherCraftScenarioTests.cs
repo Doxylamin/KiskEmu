@@ -138,8 +138,11 @@ public sealed class GatherCraftScenarioTests
         var session = await GameSessionTestHelpers.EnterMap1010Async(store, Now);
         session.GatherBonusRoll = () => 4;
         var need = CraftTables.Embedded.GatherMasteryNeed(1);
-        var gathersForLevel = (int)Math.Ceiling(need / (double)Math.Max(1, need / 8));
-        var nodes = WorldObjects.ObjectsOn(1010).Select((o, i) => (o, i)).Where(x => x.o.Gather is not null).Take(gathersForLevel).ToList();
+        var material = (int)WorldObjects.ObjectsOn(1010).First(o => o.Gather is not null).Gather![0];
+        var nodes = WorldObjects.ObjectsOn(1010).Select((o, i) => (o, i)).Where(x => x.o.Gather is { } g && g[0] == material).ToList();
+        // Each gather pays its material's exp, whatever the level (OBSERVED 2026-11-15: Odyle 28, Aria 20).
+        var gathersForLevel = (int)Math.Ceiling(need / (double)GameSession.GatherExpFor(material, lost: false));
+        nodes = nodes.Take(gathersForLevel).ToList();
         Assert.True(nodes.Count >= gathersForLevel);
         for (var n = 0; n < gathersForLevel; n++)
         {
@@ -150,9 +153,15 @@ public sealed class GatherCraftScenarioTests
             await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), at);
             await session.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)key).ToArray(), at);
             var replies = await session.TickAsync(at + node.InteractTime + 10);
-            Assert.Contains(replies, b => GameSessionTestHelpers.Op(b) == GameSession.GatherExpUpdateNt);
+            var exp = replies.Single(b => GameSessionTestHelpers.Op(b) == GameSession.GatherExpUpdateNt);
+            Assert.Equal(GameSession.GatherExpFor(material, lost: false), BitConverter.ToInt64(exp, 10));
             if (n == gathersForLevel - 1)
-                Assert.Contains(replies, b => GameSessionTestHelpers.Op(b) == GameSession.GatherLevelUpdateNt);
+            {
+                // 0x8d35 carries the exp after the level-up; 0x8d36 the skill points (one per level past the first, CANDIDATE).
+                Assert.Equal(session.GatherMastery.Exp, BitConverter.ToInt64(exp, 2));
+                var up = replies.Single(b => GameSessionTestHelpers.Op(b) == GameSession.GatherLevelUpdateNt);
+                Assert.Equal(GameSession.GatherSkillPoints(session.GatherMastery.Level), BitConverter.ToUInt16(up, 12));
+            }
         }
         Assert.True(session.GatherMastery.Level >= 2);
     }
