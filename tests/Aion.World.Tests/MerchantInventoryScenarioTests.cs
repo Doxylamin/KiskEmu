@@ -28,7 +28,11 @@ public sealed class MerchantInventoryScenarioTests
         Assert.Equal(GameSession.ShopOpenRs, GameSessionTestHelpers.Op(open.Single()));
 
         var sold = await session.HandleAsync(new PacketWriter().U16(GameSession.ShopSellRq).Varint((uint)grocer.Key).Varint(1).I64(43).I64(1).ToArray(), Now);
-        Assert.Equal(0, BitConverter.ToUInt16(sold[0], 2));
+        // Official order (OBSERVED 2026-11-15): 0xe342, the bag change, then 0x8c05 with 1552 and the NPC key as an i32.
+        Assert.Equal((ushort)0xe342, GameSessionTestHelpers.Op(sold[0]));
+        Assert.Equal(GameSession.ShopSellRs, GameSessionTestHelpers.Op(sold[^1]));
+        Assert.Equal(GameSession.ShopSellOk, BitConverter.ToUInt16(sold[^1], 2));
+        Assert.Equal(grocer.Key, BitConverter.ToInt32(sold[^1], 4));
         Assert.Equal(kinaBefore + 2, KinaTotal(store));
         var buybackRow = store.Items.Single(i => i.Location == "buyback");
         Assert.True(sold.Any(b => b[0] == 0x42 && b[1] == 0xe3), "0xe342 RestorableItemList after sell");

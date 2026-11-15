@@ -121,7 +121,7 @@ public sealed class ShopPacketTests
         await session.HandleAsync(new PacketWriter().U16(GameSession.ShopOpenRq).Varint((uint)grocer.Key).ToArray(), Now);
         var buy = await session.HandleAsync(new PacketWriter().U16(GameSession.ShopBuyRq).Varint(1).Varint((uint)grocer.Key).Varint(1)
             .I32(goodsId).I32(1).ToArray(), Now);
-        Assert.Equal(0, BitConverter.ToUInt16(buy[0], 2));
+        Assert.Equal(GameSession.ShopBuyOk, BitConverter.ToUInt16(buy.Single(p => GameSessionTestHelpers.Op(p) == GameSession.ShopBuyRs), 2));
         Assert.Contains(store.Items, i => i.TemplateId == template && i.Location == "storage");
     }
 }

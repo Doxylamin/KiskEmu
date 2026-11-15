@@ -1596,7 +1596,9 @@ Check(shopOpen.Single().SequenceEqual(new PacketWriter().U16(0x8c01).U16(0).Vari
 var potionsBefore = staffStore.Items.Where(i => i.TemplateId == 530126003).Sum(i => i.Quantity);
 var shopKina = KinaTotal();
 var shopBought = await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103015101).I32(2).ToArray(), Now);
-Check(shopBought[0][0] == 0x03 && shopBought[0][1] == 0x8c && shopBought[0][2] == 0 && KinaTotal() == shopKina - 500
+// Official (OBSERVED 2026-11-15): the bag change first, then 0x8c03 with u16 1536 and the NPC key as an i32.
+Check(shopBought[^1][0] == 0x03 && shopBought[^1][1] == 0x8c && BitConverter.ToUInt16(shopBought[^1], 2) == 1536
+      && BitConverter.ToInt32(shopBought[^1], 4) == grocer.Key && KinaTotal() == shopKina - 500
       && staffStore.Items.Where(i => i.TemplateId == 530126003).Sum(i => i.Quantity) == potionsBefore + 2, "buying 2 Life Potions costs 500 Kina (0x8c03)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103055110).I32(1).ToArray(), Now))[0][2] == 1
       && (await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103065101).I32(1).ToArray(), Now))[0][2] == 1,
@@ -1610,7 +1612,7 @@ staffStore.Items.Add(bigKina);
 await staffSession.InventoryChangesAsync(default);
 var shopPotion = staffStore.Items.First(i => i.TemplateId == 530126003 && i.Location == "bag");
 var soldReply = await staffSession.HandleAsync(new PacketWriter().U16(0x8c04).Varint((uint)grocer.Key).Varint(1).I64(shopPotion.WireId).I64(1).ToArray(), Now);
-Check(soldReply[0][0] == 0x05 && soldReply[0][1] == 0x8c && soldReply[0][2] == 0
+Check(soldReply[^1][0] == 0x05 && soldReply[^1][1] == 0x8c && BitConverter.ToUInt16(soldReply[^1], 2) == 1552 && soldReply[0][0] == 0x42 && soldReply[0][1] == 0xe3
       && KinaTotal() == shopKina - 498, "selling a Life Potion pays its SellPrice of 2 Kina (0x8c05)");
 // The sold potion waits for buyback (0xe342 after the sale); restoring it (0xe344) costs its 2 Kina and returns it.
 var soldPotion = staffStore.Items.Single(i => i.Location == "buyback");

@@ -143,7 +143,7 @@ public sealed class CoreLoopE2ETests
         var potionsBefore = store.Items.Where(i => i.TemplateId == LifePotion).Sum(i => i.Quantity);
         var kinaBefore = FakeCharacterStore.KinaIn(store);
         var buy = await session.HandleAsync(new PacketWriter().U16(GameSession.ShopBuyRq).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(GrocerGoodsId).I32(1).ToArray(), t + 2600);
-        Assert.Equal(0, BitConverter.ToUInt16(buy[0], 2));
+        Assert.Equal(GameSession.ShopBuyOk, BitConverter.ToUInt16(buy[^1], 2));
         Assert.Equal(potionsBefore + 1, store.Items.Where(i => i.TemplateId == LifePotion).Sum(i => i.Quantity));
         Assert.True(FakeCharacterStore.KinaIn(store) < kinaBefore);
         var sellWire = store.Items.First(i => i.TemplateId == LifePotion && i.Location == "bag").WireId;
