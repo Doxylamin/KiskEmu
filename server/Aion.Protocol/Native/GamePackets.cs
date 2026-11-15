@@ -1709,8 +1709,19 @@ public static class GamePackets
             .U32((uint)effectId).U32((uint)seq).Varint(10000).U8((byte)seq).U8(0).ToArray();
     }
 
-    /// <summary>0x3806 skill end: key, skill, action uid, u8 0 (OBSERVED 200 ms after every official dodge and sprint dash, before the abnormal's 0x382c).</summary>
-    public static byte[] SkillEnd(int key, int skill, int actionUid) => PacketWriter.Opcode(0x3806).Varint(key).I32(skill).U8((byte)actionUid).U8(0).ToArray();
+    /// <summary>
+    /// 0x3806 skill end: key, skill, action uid, u8 reason. 0 for a natural end (OBSERVED 200 ms after every official dodge and sprint
+    /// dash, before the abnormal's 0x382c); <see cref="SkillEndCut"/> when the actor's next cast cuts the running skill.
+    /// </summary>
+    public static byte[] SkillEnd(int key, int skill, int actionUid, byte reason = 0) =>
+        PacketWriter.Opcode(0x3806).Varint(key).I32(skill).U8((byte)actionUid).U8(reason).ToArray();
+
+    /// <summary>
+    /// 0x3806 reason 0x0c: the actor's next cast cut its still-running skill, sent right before that cast's 0x3802 (OBSERVED, same
+    /// timestamp in 739 of 747 on 2026-11-04 and 347 of 360 on 2026-11-15; i=8583 `0638 b016 80020401 0a 0c`). 0x0f, 0x02 and 0x03 also
+    /// occur, unexplained.
+    /// </summary>
+    public const byte SkillEndCut = 0x0c;
 
     // ---------- NPC movement (official 0x371a-c) ----------
 

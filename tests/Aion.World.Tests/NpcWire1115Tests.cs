@@ -51,4 +51,8 @@ public sealed class NpcWire1115Tests
         Assert.True(tick[1].SequenceEqual(GamePackets.TargetUpdate(2002, NpcAi.PlayerKey)));
         Assert.Contains(tick, p => p.SequenceEqual(GamePackets.CombatState(2002, true)));
     }
+
+    [Fact]
+    public void Skill_end_cut_carries_reason_0x0c() =>
+        Assert.Equal(Convert.FromHexString("0638b016800204010a0c"), GamePackets.SkillEnd(2864, 17040000, 0x0a, GamePackets.SkillEndCut));
 }

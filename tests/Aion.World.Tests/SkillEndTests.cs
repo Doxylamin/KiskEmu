@@ -28,4 +28,31 @@ public sealed class SkillEndTests
         Assert.Contains(all, p => GameSessionTestHelpers.Op(p) == 0x3801);
         Assert.Contains(all, p => GameSessionTestHelpers.Op(p) == 0x3806);
     }
+
+    /// <summary>
+    /// OBSERVED 2026-11-04 / 2026-11-15: a cast that cuts the actor's running skill brings that skill's 0x3806 with reason 0x0c right
+    /// before the new 0x3802; the cut skill sends no later natural end.
+    /// </summary>
+    [Fact]
+    public async Task Next_cast_cuts_the_running_skill_with_reason_0x0c()
+    {
+        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(new FakeCharacterStore(), Now, level: 25, rng: new Random(5));
+        var dummy = session.Targets![Combat.TrainingDummyKey];
+        var first = await session.HandleAsync(Cast(11020000, dummy.Key, dummy.Position), Now + 50);
+        Assert.Single(first, p => GameSessionTestHelpers.Op(p) == 0x3802);
+        Assert.DoesNotContain(first, p => GameSessionTestHelpers.Op(p) == 0x3806);
+
+        var second = await session.HandleAsync(Cast(11010000, dummy.Key, dummy.Position), Now + 350);
+        var cut = second.FindIndex(p => GameSessionTestHelpers.Op(p) == 0x3806);
+        var next = second.FindIndex(p => GameSessionTestHelpers.Op(p) == 0x3802);
+        Assert.True(cut >= 0 && next == cut + 1, "the cut 0x3806 comes right before the next 0x3802");
+        var end = second[cut];
+        Assert.Equal(11020000, BitConverter.ToInt32(end, end.Length - 6));
+        Assert.Equal(GamePackets.SkillEndCut, end[^1]);
+
+        var later = new List<byte[]>();
+        for (var t = 400; t <= 3000; t += 100) later.AddRange(await session.TickAsync(Now + t));
+        Assert.DoesNotContain(later, p => GameSessionTestHelpers.Op(p) == 0x3806 && BitConverter.ToInt32(p, p.Length - 6) == 11020000);
+        Assert.Contains(later, p => GameSessionTestHelpers.Op(p) == 0x3806 && BitConverter.ToInt32(p, p.Length - 6) == 11010000 && p[^1] == 0);
+    }
 }
