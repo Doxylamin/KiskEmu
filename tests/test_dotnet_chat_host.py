@@ -77,6 +77,18 @@ class DotnetChatHostTests(unittest.TestCase):
         self.assertEqual(connection.getresponse().status, 404)
         connection.close()
 
+    def test_chat_port_answers_only_chat_routes(self):
+        def status(port, method, path):
+            connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+            connection.request(method, path, '{}' if method == 'POST' else None, {'Content-Type': 'application/json'})
+            code = connection.getresponse().status
+            connection.close()
+            return code
+        self.assertEqual(status(self.port, 'GET', '/api/status'), 404)
+        self.assertEqual(status(self.port, 'POST', '/api/auth/login'), 404)
+        self.assertEqual(status(self.port, 'GET', '/'), 404)
+        self.assertEqual(status(self.account_port, 'GET', '/api/status'), 200)
+
     def round_trip(self, include_host_port):
         login = self.post('/gameLogin/loginWithToken', {
             'authnToken': 'local', 'gameCode': 'AION2', 'deviceId': 'd', 'clientType': 'GAME',

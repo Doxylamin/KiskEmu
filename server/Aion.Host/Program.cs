@@ -511,6 +511,21 @@ app.Use(async (context, next) =>
     if (context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/internal")) context.Response.Headers.CacheControl = "no-store";
     await next();
 });
+// The chat port is plain HTTP on the bind address with no rate limiter: it answers the chat's own routes only, never the
+// account site, sign-in, registration or the staff API (those stay on the account port, behind TLS and the limiter). OURS.
+if (chatPort is { } chatOnly && chatOnly != port && chatOnly != platform.Port)
+{
+    string[] chatRoutes = ["/gameLogin", "/gameClient", "/stomp", "/internal/online", "/internal/world", "/internal/announce"];
+    app.Use(async (context, next) =>
+    {
+        if (context.Connection.LocalPort == chatOnly && !chatRoutes.Any(route => context.Request.Path.StartsWithSegments(route)))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+        await next();
+    });
+}
 // Player site and staff dashboard on separate ports (Aion:Web:StaffPort): each port answers only its own site.
 if (staffPort is { } siteStaffPort)
     app.UseSiteSplit(port, siteStaffPort, app.Environment.WebRootPath ?? "wwwroot");
