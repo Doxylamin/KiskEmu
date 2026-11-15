@@ -789,7 +789,7 @@ public sealed partial class FakeCharacterStore : INativeCharacterStore
 
     public Task<bool> SortContainerAsync(Guid character, string location, CancellationToken ct)
     {
-        var bag = Items.Select((item, index) => (item, index)).Where(x => x.item.Location == location).OrderBy(x => x.item.TemplateId).ThenBy(x => x.item.WireId).ToList();
+        var bag = Items.Select((item, index) => (item, index)).Where(x => x.item.Location == location).OrderBy(x => ItemCurrencies.SortRank(x.item.TemplateId)).ThenBy(x => x.item.TemplateId).ThenBy(x => x.item.WireId).ToList();
         for (var n = 0; n < bag.Count; n++)
             Items[bag[n].index] = bag[n].item with { Slot = n, Revision = bag[n].item.Revision + 1 };
         return Task.FromResult(true);

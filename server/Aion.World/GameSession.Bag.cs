@@ -196,7 +196,14 @@ public sealed partial class GameSession
         return [Reply(0), .. await InventoryChangesAsync(ct, 0, DecreaseItemRemove)];
     }
 
-    /// <summary>0x563e ItemSort_RQ {npc key i32, EItemContainerType u8}: the bag ordered by item, answered 0x563f.</summary>
+    /// <summary>0x563f ItemSort_RS result after a sort (OBSERVED R1115 i=82211 `3f564002000000000f`, i=90078, i=736353).</summary>
+    public const ushort ItemSortDone = 576;
+
+    /// <summary>
+    /// 0x563e ItemSort_RQ {npc key i32, EItemContainerType u8}: the bag, warehouse or account warehouse ordered with the
+    /// currencies first (ItemCurrencies.SortOrder) and the other items by template. OBSERVED: the 0x561b listing the moved
+    /// items comes first, then 0x563f {u16 576, npc i32, container u8}. A refusal stays result 1 (OURS).
+    /// </summary>
     async Task<List<byte[]>> SortBagAsync(byte[] plain, CancellationToken ct)
     {
         var npc = BitConverter.ToInt32(plain, 2);
@@ -205,7 +212,7 @@ public sealed partial class GameSession
         var location = container switch { InventoryItem.Bag => "bag", InventoryItem.Storage => "storage", InventoryItem.AccountStorage => "account_storage", _ => null };
         if (location is null || Store is not { } store || CharacterId is not { } character) return [Reply(1)];
         var sorted = await Stored(async () => await store.SortContainerAsync(character, location, ct) ? [[]] : []);
-        return sorted.Count == 0 ? [Reply(1)] : [Reply(0), .. await InventoryChangesAsync(ct, 0, 0)];
+        return sorted.Count == 0 ? [Reply(1)] : [.. await InventoryChangesAsync(ct, 0, 0), Reply(ItemSortDone)];
     }
 
     /// <summary>
