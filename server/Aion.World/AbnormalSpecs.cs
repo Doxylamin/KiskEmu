@@ -48,16 +48,24 @@ public static class AbnormalSpecs
     public enum DisplaceKind { Knockback, Aerial }
 
     /// <summary>What a monster does under an abnormal; the rows the server models (the rest only show the icon).</summary>
-    public sealed record NpcModel(bool Held, bool Silence, int SlowPermille, bool Taunt, IReadOnlyList<DotSpec> Dots, IReadOnlyList<Displace> Moves);
+    public sealed record NpcModel(bool Held, bool Silence, int SlowPermille, bool Taunt, IReadOnlyList<DotSpec> Dots, IReadOnlyList<Displace> Moves,
+        IReadOnlyList<NormalDotSpec> NormalDots);
 
     /// <summary>Damage over time on a monster: every <paramref name="IntervalMs"/> a share (<paramref name="PermilleOfMax"/> of 10000 of the maximum HP in total, capped).</summary>
     public sealed record DotSpec(int EffectId, int IntervalMs, int RatioTotal, int Cap);
+
+    /// <summary>
+    /// Dot_NormalCalc [interval ms, bool, bool, flat min, flat max, ratio min, ratio max (1/10000 of the attack), 1]: every interval a
+    /// hit read as a Damage row's (Combat.DotTick, CANDIDATE amount).
+    /// </summary>
+    public sealed record NormalDotSpec(int EffectId, int IntervalMs, int FlatMin, int FlatMax, int RatioMin, int RatioMax);
 
     public static NpcModel Npc(int abnormalId)
     {
         bool held = false, silence = false, taunt = false;
         var slow = 0;
         List<DotSpec> dots = [];
+        List<NormalDotSpec> normalDots = [];
         List<Displace> moves = [];
         foreach (var (id, type, values) in Info(abnormalId)?.Effects ?? [])
         {
@@ -69,10 +77,13 @@ public static class AbnormalSpecs
                 case "Snare": slow = 10_000; break;
                 case "Taunt": taunt = true; break;
                 case "Dot_TargetMaxHP" when Value(values, 0) > 0: dots.Add(new(id, Value(values, 0), Value(values, 1), Value(values, 2))); break;
+                case "Dot_NormalCalc" when Value(values, 0) > 0:
+                    normalDots.Add(new(id, Value(values, 0), Value(values, 3), Value(values, 4), Value(values, 5), Value(values, 6)));
+                    break;
                 case "Knockback": moves.Add(new(DisplaceKind.Knockback, Value(values, 0), Math.Max(100, Value(values, 1)))); break;
                 case "Aerial": moves.Add(new(DisplaceKind.Aerial, Value(values, 0), Math.Max(100, Value(values, 1)))); break;
             }
         }
-        return new(held, silence, Math.Min(10_000, slow), taunt, dots, moves);
+        return new(held, silence, Math.Min(10_000, slow), taunt, dots, moves, normalDots);
     }
 }

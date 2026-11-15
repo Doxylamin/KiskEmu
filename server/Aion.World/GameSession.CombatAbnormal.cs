@@ -205,12 +205,18 @@ public sealed partial class GameSession
             var perTick = (int)Math.Max(1, total / ticks);
             buff.Dots.Add(new NpcDot { EffectId = dot.EffectId, IntervalMs = dot.IntervalMs, PerTick = perTick, Remaining = perTick * ticks, NextAt = now + dot.IntervalMs });
         }
+        // Dot_NormalCalc: a rolled hit every interval from the apply on, while the abnormal lasts.
+        foreach (var dot in model.NormalDots)
+            buff.Dots.Add(new NpcDot
+            {
+                EffectId = dot.EffectId, IntervalMs = dot.IntervalMs, PerTick = 0, Remaining = int.MaxValue, NextAt = now + dot.IntervalMs, Normal = dot,
+            });
         (npcBuffs.TryGetValue(target.Key, out var list) ? list : npcBuffs[target.Key] = []).Add(buff);
         RefreshNpcFlags(target);
         if (abnormalId == Stagger.GroggyAbnormal) target.StaggerUntil = now + durationMs;
         replies.Add(PlayerPackets.AbnormalAdd(target.Key, [new AbnormalWire(buff.Uid, abnormalId, durationMs, now + durationMs,
             CasterKey: playerKey, Level: 1, SkillId: 0, RangeBase: target.Position)]));
-        foreach (var dot in buff.Dots) replies.Add(RidePackets.AbnormalEffect(target.Key, playerKey, buff.Uid, dot.EffectId, dot.Remaining, null, skillId));
+        // No opening 0x3805 on an NPC: a player's damage over time on NPCs is only its 0x0a ticks (OBSERVED, RidePackets.AbnormalDamage).
         if (model.Taunt && targets is not null) replies.AddRange(ai.Taunt(targets, target, now, playerKey));
         foreach (var move in model.Moves.Where(m => m.Kind == AbnormalSpecs.DisplaceKind.Knockback))
             replies.AddRange(KnockbackNpc(target, move.Amount, abnormalId, now));
