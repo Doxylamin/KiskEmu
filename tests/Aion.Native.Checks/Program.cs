@@ -2009,8 +2009,8 @@ await staffSession.HandleAsync(CraftRq(), Now + 100_000);
 await staffSession.TickAsync(Now + 100_000 + GameSession.CraftRaceMs(40) + 10);
 Check(staffStore.Items.Where(i => i.TemplateId == 610710001).Sum(i => i.Quantity) == ingots && !staffStore.Items.Any(i => i.WireId == 70), "a failed craft uses up the components");
 Check((await staffSession.HandleAsync(CraftRq(), Now + 200_000))[0][2] == 3, "no components left: result 3");
-// Craft mastery: the successful craft paid exp (0x8d7c); SetMastery announces a level and widens the recipe list.
-Check(crafted.Any(b => b[0] == 0x7c && b[1] == 0x8d && b[2] == 1) && staffSession.CraftMastery(1).Exp > 0 && staffStore.Masteries.Any(m => m is { Kind: "craft", Category: 1 }),
+// Craft mastery: the successful craft paid exp (0x8d7c); with 20 + 6 (success, fail) level 1's 26 is reached. SetMastery announces a level and widens the recipe list.
+Check(crafted.Any(b => b[0] == 0x7c && b[1] == 0x8d && b[2] == 1) && staffSession.CraftMastery(1) is { Exp: > 0 } or { Level: > 1 } && staffStore.Masteries.Any(m => m is { Kind: "craft", Category: 1 }),
       "a craft pays Blacksmithing mastery exp (0x8d7c, saved)");
 var recipesBefore = Convert.ToInt32(staffSession.CraftMastery(1).Level);
 var masterySet = await staffSession.SetMasteryAsync("craft", 1, 20, default);
