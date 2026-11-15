@@ -1,5 +1,5 @@
 {
- "source": "Dungeon.dat, DungeonPoint.dat, WaveData.dat, RewardDungeon.dat, NpcData.dat (3533 tables; tools/daily_dungeon_data.py). seconds: OBSERVED in the official capture of 2026-11-12, not in the tables.",
+ "source": "Dungeon.dat, DungeonPoint.dat, WaveData.dat, RewardDungeon.dat, NpcData.dat, DungeonBuff.dat, DungeonBuffGroup.dat (3533 tables; tools/daily_dungeon_data.py). seconds, ready, clear_bonus: OBSERVED in the official captures of 2026-11-12 and 2026-11-15, not in the tables.",
  "dungeons": {
   "900001": {
    "name": "DungeonWave_0001",
@@ -458,7 +458,240 @@
      ]
     }
    ],
-   "seconds": 90
+   "seconds": 90,
+   "buff_slots": [
+    {
+     "slot": 1,
+     "buffs": [
+      {
+       "id": 1,
+       "name": "Slayer",
+       "grade": "Special",
+       "abnormal": 19003001
+      },
+      {
+       "id": 2,
+       "name": "Guardian",
+       "grade": "Common",
+       "abnormal": 19003011
+      },
+      {
+       "id": 3,
+       "name": "Adrenaline",
+       "grade": "Special",
+       "abnormal": 19003031
+      },
+      {
+       "id": 4,
+       "name": "Footwork",
+       "grade": "Common",
+       "abnormal": 19003041
+      },
+      {
+       "id": 6,
+       "name": "Ignoring the Weak",
+       "grade": "Common",
+       "abnormal": 19003101
+      },
+      {
+       "id": 7,
+       "name": "Worm Carnage",
+       "grade": "Special",
+       "abnormal": 19003111
+      },
+      {
+       "id": 8,
+       "name": "Fire Moth",
+       "grade": "Common",
+       "abnormal": 19003121
+      },
+      {
+       "id": 9,
+       "name": "Ignoring the Elite",
+       "grade": "Common",
+       "abnormal": 19003131
+      },
+      {
+       "id": 10,
+       "name": "Elite Hunter",
+       "grade": "Special",
+       "abnormal": 19003141
+      },
+      {
+       "id": 1004,
+       "name": "Poisoned by Mana",
+       "grade": "Common",
+       "abnormal": 19003051
+      },
+      {
+       "id": 1005,
+       "name": "Predator",
+       "grade": "Common",
+       "abnormal": 19003061
+      },
+      {
+       "id": 1006,
+       "name": "Targeting Weakness",
+       "grade": "Common",
+       "abnormal": 19003021
+      }
+     ]
+    },
+    {
+     "slot": 2,
+     "buffs": [
+      {
+       "id": 1,
+       "name": "Slayer",
+       "grade": "Special",
+       "abnormal": 19003001
+      },
+      {
+       "id": 2,
+       "name": "Guardian",
+       "grade": "Common",
+       "abnormal": 19003011
+      },
+      {
+       "id": 3,
+       "name": "Adrenaline",
+       "grade": "Special",
+       "abnormal": 19003031
+      },
+      {
+       "id": 4,
+       "name": "Footwork",
+       "grade": "Common",
+       "abnormal": 19003041
+      },
+      {
+       "id": 6,
+       "name": "Ignoring the Weak",
+       "grade": "Common",
+       "abnormal": 19003101
+      },
+      {
+       "id": 7,
+       "name": "Worm Carnage",
+       "grade": "Special",
+       "abnormal": 19003111
+      },
+      {
+       "id": 8,
+       "name": "Fire Moth",
+       "grade": "Common",
+       "abnormal": 19003121
+      },
+      {
+       "id": 9,
+       "name": "Ignoring the Elite",
+       "grade": "Common",
+       "abnormal": 19003131
+      },
+      {
+       "id": 10,
+       "name": "Elite Hunter",
+       "grade": "Special",
+       "abnormal": 19003141
+      },
+      {
+       "id": 1004,
+       "name": "Poisoned by Mana",
+       "grade": "Common",
+       "abnormal": 19003051
+      },
+      {
+       "id": 1005,
+       "name": "Predator",
+       "grade": "Common",
+       "abnormal": 19003061
+      },
+      {
+       "id": 1006,
+       "name": "Targeting Weakness",
+       "grade": "Common",
+       "abnormal": 19003021
+      }
+     ]
+    },
+    {
+     "slot": 3,
+     "buffs": [
+      {
+       "id": 1,
+       "name": "Slayer",
+       "grade": "Special",
+       "abnormal": 19003001
+      },
+      {
+       "id": 2,
+       "name": "Guardian",
+       "grade": "Common",
+       "abnormal": 19003011
+      },
+      {
+       "id": 3,
+       "name": "Adrenaline",
+       "grade": "Special",
+       "abnormal": 19003031
+      },
+      {
+       "id": 4,
+       "name": "Footwork",
+       "grade": "Common",
+       "abnormal": 19003041
+      },
+      {
+       "id": 6,
+       "name": "Ignoring the Weak",
+       "grade": "Common",
+       "abnormal": 19003101
+      },
+      {
+       "id": 7,
+       "name": "Worm Carnage",
+       "grade": "Special",
+       "abnormal": 19003111
+      },
+      {
+       "id": 8,
+       "name": "Fire Moth",
+       "grade": "Common",
+       "abnormal": 19003121
+      },
+      {
+       "id": 9,
+       "name": "Ignoring the Elite",
+       "grade": "Common",
+       "abnormal": 19003131
+      },
+      {
+       "id": 10,
+       "name": "Elite Hunter",
+       "grade": "Special",
+       "abnormal": 19003141
+      },
+      {
+       "id": 1004,
+       "name": "Poisoned by Mana",
+       "grade": "Common",
+       "abnormal": 19003051
+      },
+      {
+       "id": 1005,
+       "name": "Predator",
+       "grade": "Common",
+       "abnormal": 19003061
+      },
+      {
+       "id": 1006,
+       "name": "Targeting Weakness",
+       "grade": "Common",
+       "abnormal": 19003021
+      }
+     ]
+    }
+   ]
   },
   "900002": {
    "name": "Dungeon_Daily_0001",

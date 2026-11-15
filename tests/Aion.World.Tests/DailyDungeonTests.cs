@@ -38,6 +38,24 @@ public sealed class DailyDungeonTests
     }
 
     [Fact]
+    public void The_buff_choice_names_match_the_official_screen()
+    {
+        // OBSERVED 2026-11-15 (official, three entries of 900001): the 0x6105 ids against the choice screen, left to right.
+        var daily = DailyDungeon.Of(Dungeon)!;
+        Assert.True(daily.HasBuffChoice);
+        Assert.Equal([1, 2, 3], daily.BuffSlots!.Select(s => s.Slot));
+        foreach (var (id, name) in new[] { (10, "Elite Hunter"), (6, "Ignoring the Weak"), (4, "Footwork"), (1004, "Poisoned by Mana"),
+                     (9, "Ignoring the Elite"), (1, "Slayer"), (7, "Worm Carnage"), (1006, "Targeting Weakness") })
+            Assert.Equal(name, daily.Buff(id)!.Name);
+        Assert.Equal("Special", daily.Buff(10)!.Grade);
+        Assert.Equal(19003001, daily.Buff(1)!.Abnormal);
+        var drawn = daily.DrawBuffs(new Random(7));
+        Assert.Equal([1, 2, 3], drawn.Select(d => d.Slot));
+        Assert.Equal(3, drawn.Select(d => d.BuffId).Distinct().Count());
+        Assert.False(DailyDungeon.Of(900002)!.HasBuffChoice);
+    }
+
+    [Fact]
     public void Packets_match_the_official_bytes()
     {
         Assert.Equal("0461a1bb0d00c20d", Hex(GameSession.DungeonPoint(Dungeon, 1730)));

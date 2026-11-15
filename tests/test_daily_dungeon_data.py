@@ -36,6 +36,25 @@ class DailyDungeonDataTests(unittest.TestCase):
         self.assertEqual([1500, 100], [t['need'] for t in entry['reward_light']])
         self.assertEqual([], entry['reward_dark'])
 
+    def test_buff_slots_come_from_the_dungeon_buff_group(self):
+        dungeons = [{'ID': {'Value': 900001}, 'Name': 'DungeonWave_0001', 'DungeonType': 'EDungeonType::Daily',
+                     'DungeonBuffGroupName': 'BG'}]
+        buffs = [{'ID': {'Value': 7}, 'Name': 'DungeonWave_C_7', 'BuffGrade': 'EItemGrade::Special',
+                  'BuffType': 'EDungeonBuffType::Abnormal', 'BuffValue1': '19003111'}]
+        groups = [{'Group': 'BG', 'BuffSlot': 2, 'BuffName': 'DungeonWave_C_7'},
+                  {'Group': 'Other', 'BuffSlot': 1, 'BuffName': 'DungeonWave_C_7'}]
+        out = daily_dungeon_data.build(dungeons, [], [], [], [], {}, buffs, groups,
+                                       {'String_STR_DungeonWave_C_7_body': 'Worm Carnage'})
+        self.assertEqual([{'slot': 2, 'buffs': [{'id': 7, 'name': 'Worm Carnage', 'grade': 'Special', 'abnormal': 19003111}]}],
+                         out['900001']['buff_slots'])
+
+    def test_tracked_data_names_the_observed_buffs(self):
+        # OBSERVED 2026-11-15 (official): the ids on 0x6105 against the names on the choice screen.
+        named = {b['id']: b['name'] for s in DATA['dungeons']['900001']['buff_slots'] for b in s['buffs']}
+        self.assertEqual({10: 'Elite Hunter', 6: 'Ignoring the Weak', 4: 'Footwork', 1004: 'Poisoned by Mana',
+                          9: 'Ignoring the Elite', 1: 'Slayer', 7: 'Worm Carnage'},
+                         {k: named[k] for k in (10, 6, 4, 1004, 9, 1, 7)})
+
     def test_tracked_data_pays_the_official_reward(self):
         wave = DATA['dungeons']['900001']
         tier = next(t for t in wave['reward_light'] if 1730 >= t['need'])   # sorted highest first
