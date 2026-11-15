@@ -18,6 +18,22 @@ partial class GameSession
 
     internal void SetPositionForTests(Vector3d at) => position = at;
 
+    /// <summary>Where the server places the character: the last accepted position, else its spawn point (before any move).</summary>
+    Vector3d? KnownPosition => position ?? spawn?.Position;
+
+    /// <summary>
+    /// The centre of a self-targeted area cast (the caster's own key): the client's location while it lies within the skill's UseRange
+    /// plus <see cref="CastRangeToleranceCm"/> of the server's known position (horizontally), else the server's position. OURS
+    /// (anti-cheat): the official clamp is unknown (client-to-server traffic is not readable in our recordings); a modified client
+    /// sending a location next to a far monster used to hit it. Idea from Addiboii/A2Core add6357.
+    /// </summary>
+    internal Vector3d SelfCastCentre(int skillId, Vector3d claimed)
+    {
+        if (KnownPosition is not { } at) return claimed;
+        var reach = Math.Max(0, data.SkillUseRangeCm(skillId)) + CastRangeToleranceCm;
+        return HorizontalDistance(at, claimed) <= reach ? claimed : at;
+    }
+
     /// <summary>Whether a cast may resolve on its target or ground point: within the skill's use range (+ tolerance and
     /// the target's collision radius), and not too far above or below. Skills without a range are not checked.</summary>
     bool CastTargetReachValid(SkillDefinition definition, int skillId, CastRequest request)
@@ -25,7 +41,7 @@ partial class GameSession
         var range = data.SkillUseRangeCm(skillId);
         if (range <= 0) return true;
         var max = range + CastRangeToleranceCm;
-        var caster = position ?? request.Location;
+        var caster = KnownPosition ?? request.Location;
         var ground = SkillAreas.For(skillId) is { IsGround: true } ga ? ga : CastArea(skillId) is { IsGround: true } gb ? gb : null;
         if (ground is not null)
         {

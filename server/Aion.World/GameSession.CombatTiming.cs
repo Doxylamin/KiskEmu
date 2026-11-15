@@ -157,7 +157,8 @@ partial class GameSession
     /// </summary>
     List<Target> SelfCastTargets(CastRequest request, SkillAreas.Area? shape = null)
     {
-        var here = position ?? request.Location;
+        var here = KnownPosition ?? request.Location;
+        var centre = SelfCastCentre(request.SkillId, request.Location);   // the client's location only within the skill's reach (OURS)
         bool Near(Target t, Vector3d at, double r) => t.Position.DistanceSquared(at) <= r * r;
         if (shape is { IsArea: true, OnTarget: false })
         {
@@ -167,7 +168,7 @@ partial class GameSession
             if (inShape.Count > 0) return inShape;
         }
         var area = targets!.Values.Where(t => !t.Dead && !t.Untouchable && (t.Hostile || CombatMayHitNeutralForOpenKillObjective(t))
-            && (Near(t, request.Location, AreaRange) || Near(t, here, AreaRange))).ToList();
+            && (Near(t, centre, AreaRange) || Near(t, here, AreaRange))).ToList();
         if (area.Count > 0) return area;
         if (selectedTarget != playerKey && targets.TryGetValue(selectedTarget, out var selected) && !selected.Dead && Near(selected, here, SelfCastReach))
             return [selected];
