@@ -1211,8 +1211,9 @@ Check(staffEntry.Any(b => b.SequenceEqual(GamePackets.WingList([(30200600, 0)]))
 Check(staffSession.AcquireAllWings()[0].SequenceEqual(GamePackets.WingList(GamePackets.LightWings.Select(id => (id, (byte)0)).ToList())),
       "AcquireWingAll sends every Light wing (42) as the WingList, then the stats with the owned wings");
 var wingChange = await staffSession.HandleAsync(new PacketWriter().U16(0x5674).U8(0).I32(30100300).ToArray(), Now);
-Check(wingChange.Count >= 2 && wingChange[0].SequenceEqual(GamePackets.WingChangeReply(30100300, false))
-      && wingChange[1].SequenceEqual(GamePackets.WingChangeNotice(1, 30100300, false)), "changing to a registered wing (0x5674 -> 0x5675 + 0x5676)");
+Check(wingChange.Count >= 3 && wingChange[0].SequenceEqual(GamePackets.WingChangeNotice(1, 30100300, false))
+      && wingChange[1].SequenceEqual(GamePackets.WingChangeReply(30100300, false)) && wingChange[2].SequenceEqual(Convert.FromHexString("95E2" + "01" + "4C4BCB01")),
+      "changing to a registered wing (0x5674 -> 0x5676, 0x5675, 0xe295 as the official order)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5674).U8(0).I32(40100300).ToArray(), Now)).Single()
       .SequenceEqual(GamePackets.WingChangeReply(40100300, false, 1)), "an unregistered wing is refused");
 // Quests: a character without quests starts on HQ1101010 (opening quest skipped), which the world entry lists.
@@ -1600,7 +1601,9 @@ Check(shopOpen.Single().SequenceEqual(new PacketWriter().U16(0x8c01).U16(0).Vari
 var potionsBefore = staffStore.Items.Where(i => i.TemplateId == 530126003).Sum(i => i.Quantity);
 var shopKina = KinaTotal();
 var shopBought = await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103015101).I32(2).ToArray(), Now);
-Check(shopBought[0][0] == 0x03 && shopBought[0][1] == 0x8c && shopBought[0][2] == 0 && KinaTotal() == shopKina - 500
+// Official (OBSERVED 2026-11-15): the bag change first, then 0x8c03 with u16 1536 and the NPC key as an i32.
+Check(shopBought[^1][0] == 0x03 && shopBought[^1][1] == 0x8c && BitConverter.ToUInt16(shopBought[^1], 2) == 1536
+      && BitConverter.ToInt32(shopBought[^1], 4) == grocer.Key && KinaTotal() == shopKina - 500
       && staffStore.Items.Where(i => i.TemplateId == 530126003).Sum(i => i.Quantity) == potionsBefore + 2, "buying 2 Life Potions costs 500 Kina (0x8c03)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103055110).I32(1).ToArray(), Now))[0][2] == 1
       && (await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103065101).I32(1).ToArray(), Now))[0][2] == 1,
@@ -1614,7 +1617,7 @@ staffStore.Items.Add(bigKina);
 await staffSession.InventoryChangesAsync(default);
 var shopPotion = staffStore.Items.First(i => i.TemplateId == 530126003 && i.Location == "bag");
 var soldReply = await staffSession.HandleAsync(new PacketWriter().U16(0x8c04).Varint((uint)grocer.Key).Varint(1).I64(shopPotion.WireId).I64(1).ToArray(), Now);
-Check(soldReply[0][0] == 0x05 && soldReply[0][1] == 0x8c && soldReply[0][2] == 0
+Check(soldReply[^1][0] == 0x05 && soldReply[^1][1] == 0x8c && BitConverter.ToUInt16(soldReply[^1], 2) == 1552 && soldReply[0][0] == 0x42 && soldReply[0][1] == 0xe3
       && KinaTotal() == shopKina - 498, "selling a Life Potion pays its SellPrice of 2 Kina (0x8c05)");
 // The sold potion waits for buyback (0xe342 after the sale); restoring it (0xe344) costs its 2 Kina and returns it.
 var soldPotion = staffStore.Items.Single(i => i.Location == "buyback");
@@ -2022,12 +2025,13 @@ Check(titled.Count > 0 && titled[0].SequenceEqual(Convert.FromHexString("7D56" +
 Check((await staffSession.AcquireTitleAsync(11010002, default)).Count == 0 && (await staffSession.AcquireTitleAsync(21010001, default)).Count == 0,
       "a title twice, or one of the other race, is refused");
 var titleEquip = await staffSession.HandleAsync(new PacketWriter().U16(0x567f).U8(3).I32(11010002).ToArray(), Now);
-Check(titleEquip[0].SequenceEqual(Convert.FromHexString("8056" + "0000" + "03" + "D2FFA700")) && staffSession.TitleStat("HPMax") == 300 && staffStore.TitleEquips[3] == 11010002,
-      "TitleEquip_RQ in its category (Etc): 0x5680 result 0, its EquipStatList (HPMax 300) applies");
+Check(titleEquip[0].SequenceEqual(Convert.FromHexString("8156" + "03" + "D2FFA700")) && titleEquip[1].SequenceEqual(Convert.FromHexString("94E2" + "010103" + "D2FFA700"))
+      && titleEquip[2].SequenceEqual(Convert.FromHexString("8056" + "0000" + "03" + "D2FFA700")) && staffSession.TitleStat("HPMax") == 300 && staffStore.TitleEquips[3] == 11010002,
+      "TitleEquip_RQ in its category (Etc): 0x5681, 0xe294, then 0x5680 result 0 (official order); its EquipStatList (HPMax 300) applies");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x567f).U8(1).I32(11010002).ToArray(), Now))[0][2] == 1, "the wrong category is refused");
 var titleShown = await staffSession.HandleAsync(new PacketWriter().U16(0x567a).I32(11010002).ToArray(), Now);
-Check(titleShown.Count == 2 && titleShown[0].SequenceEqual(Convert.FromHexString("7B56" + "0000" + "D2FFA700")) && titleShown[1][0] == 0x7c && titleShown[1][1] == 0x56
-      && staffSession.ShownTitle == 11010002, "TitleChange_RQ: 0x567b result 0, 0x567c to those nearby, the shown title");
+Check(titleShown.Count == 2 && titleShown[1].SequenceEqual(Convert.FromHexString("7B56" + "0000" + "D2FFA700")) && titleShown[0][0] == 0x7c && titleShown[0][1] == 0x56
+      && staffSession.ShownTitle == 11010002, "TitleChange_RQ: 0x567c to those nearby, then 0x567b result 0 (official order), the shown title");
 // Skins: the collection (0x8d5c), equipping an owned skin on a slot (0x8d5f), an unknown one refused.
 var skinned = await staffSession.AcquireSkinsAsync([30067101], default);
 Check(skinned.Count == 1 && skinned[0][0] == 0x5c && skinned[0][1] == 0x8d && staffSession.OwnedSkins[30067101] == 1 && staffStore.Skins[30067101] == 1, "AcquireSkin: SkinUpdate_NT 0x8d5c, in the collection (saved)");

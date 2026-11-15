@@ -463,9 +463,11 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 var skin = (plain[2] & 1) != 0;
                 var wanted = BitConverter.ToInt32(plain, 3);
                 if (!OwnedWings().Any(w => w.Id == wanted)) return [GamePackets.WingChangeReply(wanted, skin, 1)];
-                List<byte[]> changed = [GamePackets.WingChangeReply(wanted, skin), GamePackets.WingChangeNotice(playerKey, wanted, skin)];
+                // Official order (OBSERVED 2026-11-15, a wing): 0x5676, 0x5675, 0xe295 `01 <wing>`, then the stats.
+                List<byte[]> changed = [GamePackets.WingChangeNotice(playerKey, wanted, skin), GamePackets.WingChangeReply(wanted, skin)];
                 if (!skin)
                 {
+                    changed.Add(GamePackets.PresetWingUpdate(wanted));
                     wingId = storedWingId = wanted;
                     if (Store is { } wingStore && CharacterId is { } wingChar)
                         await Stored(async () => await wingStore.SetEquippedWingAsync(wingChar, wanted, ct) ? [[]] : []);

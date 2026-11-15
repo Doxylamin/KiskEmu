@@ -139,6 +139,30 @@ public sealed class SubscribeWindowTests
     }
 
     [Fact]
+    public async Task Buying_a_level_raises_the_pass_one_level_and_leaves_the_paid_track_locked()
+    {
+        GameSession.ConfigureShopOptions(new ShopOptions());
+        var store = new FakeCharacterStore(Guid.NewGuid());
+        store.Quna.Seed(store.AccountId, 1_000);
+        var (session, _, _) = await EnterAsync(store, LiveNow);
+        session.GrantBattlePassExp(3000, LiveNow);
+        var nextLevel = AchievementTables.Embedded.Of(FreeExp)!.Steps.Select(s => s[1]).Where(c => c > 3000).Min();
+
+        // OBSERVED 2026-11-15: the request names the level item 503699018; the item is granted, the reply follows, the pass
+        // list shows the next level's exp, and the item is used up. 50 Quna.
+        var bought = await session.HandleAsync(new PacketWriter().U16(GameSession.BattlePassPurchaseRq).I32(GameSession.PassLevelItemId).ToArray(), LiveNow + 1);
+        var reply = bought.Single(p => Op(p) == GameSession.BattlePassPurchaseRs);
+        Assert.Equal(PacketWriter.Opcode(GameSession.BattlePassPurchaseRs).U16(0).I32(GameSession.PassLevelItemId).ToArray(), reply);
+        Assert.True(bought.IndexOf(reply) > 0, "the level item's 0x561b comes before the reply");
+        var global = Passes(bought.Last(p => Op(p) == GameSession.BattlePassInfoListNt)).Single(g => g.Id == GlobalPass);
+        Assert.Equal(nextLevel, global.TotalExp);
+        Assert.False(global.AllPaid);
+        Assert.DoesNotContain(PaidPass, global.Held);
+        Assert.DoesNotContain(store.Items, i => i.TemplateId == GameSession.PassLevelItemId && i.Quantity > 0);
+        Assert.Equal(1_000 - GameSession.PassLevelQunaCost, store.QunaBalance);
+    }
+
+    [Fact]
     public async Task Gm_toggle_and_pass_shop_purchase_drive_the_membership()
     {
         GameSession.ConfigureShopOptions(new ShopOptions { PremiumMode = ShopPremiumMode.Kina });

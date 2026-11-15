@@ -407,15 +407,44 @@ public sealed partial class GameSession
         if (plain.Length < 6) return [];
         var nodeId = BitConverter.ToInt32(plain, 2);
         byte[] Reply(int result) => PacketWriter.Opcode(DaevanionCloseNodeRs).U16(result).I32(nodeId).ToArray();
-        if (Daevanion.NodeOf(nodeId) is not { } node || node.Type == 0 || !daevanionNodes.Remove(nodeId)) return [Reply(1)];
+        if (Daevanion.NodeOf(nodeId) is not { } node || node.Type == 0 || !daevanionNodes.Contains(nodeId)) return [Reply(1)];
+        if (Store is not { } store || CharacterId is not { } character) return [Reply(1)];
+        if (CostStacks(KinaItemId, DaevanionRefundKina) is not { } costs) return [Reply(SlotExtendFailNotEnoughKina)];
+        daevanionNodes.Remove(nodeId);
+        var used = daevanionUsed.ToDictionary(p => p.Key, p => p.Value);
         if (node.Cost > 0 && Daevanion.BoardOf(node.BoardId) is { } board)
         {
             daevanionUsed[board.PointType] = Math.Max(0, daevanionUsed.GetValueOrDefault(board.PointType) - node.Cost);
             if (daevanionUsed[board.PointType] == 0) daevanionUsed.Remove(board.PointType);
         }
-        if (!await PersistDaevanionAsync(ct)) return [Reply(1)];
-        return [Reply(0), DaevanionBoardInfo(), DaevanionPointUpdate(), .. DaevanionOpenStatPackets([node])];
+        void Undo()
+        {
+            daevanionNodes.Add(nodeId);
+            daevanionUsed.Clear();
+            foreach (var (type, points) in used) daevanionUsed[type] = points;
+        }
+        if (!await PersistDaevanionAsync(ct)) { Undo(); return [Reply(1)]; }
+        var paid = await Stored(async () =>
+        {
+            foreach (var (item, revision, count) in costs)
+                if (!await store.ConsumeItemAsync(character, item, revision, count, ct)) return [];
+            return [[]];
+        });
+        if (paid.Count == 0)
+        {
+            Undo();
+            await PersistDaevanionAsync(ct);
+            return [Reply(1), .. await InventoryChangesAsync(ct, 0, 0)];
+        }
+        // Official order (OBSERVED 2026-11-15, one refund): 0xe22e points, 0x364a stats, 0x561d, 0x3656 combat power (not
+        // ours), 0x561b Kina -500 (reason 71), then 0xe22b `0000 <node i32>`. No 0xe226 board list.
+        return [DaevanionPointUpdate(), .. DaevanionOpenStatPackets([node]), .. await InventoryChangesAsync(ct, 0, DecreaseDaevanionRefund), Reply(0)];
     }
+
+    /// <summary>Kina for refunding one Daevanion node (OBSERVED 2026-11-15: 500 for a class-board node; whether it scales with
+    /// the node or the board is not known). EDecreaseReason 71 as the 0x561b carried it.</summary>
+    public const long DaevanionRefundKina = 500;
+    const byte DecreaseDaevanionRefund = 71;
 
     async Task<List<byte[]>> DaevanionResetBoardAsync(byte[] plain, CancellationToken ct)
     {

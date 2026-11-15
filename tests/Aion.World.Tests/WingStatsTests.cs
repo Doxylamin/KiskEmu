@@ -49,7 +49,9 @@ public sealed class WingStatsTests
         var equipHp = WingTables.Embedded.EquipStat(Brawler, "HPMax") - WingTables.Embedded.EquipStat(defaultWing, "HPMax");
 
         var replies = await session.HandleAsync(Equip(Brawler), Now + 10);
-        Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x5675);
+        // Official order (OBSERVED 2026-11-15): 0x5676, 0x5675, 0xe295 `01 <wing>`, then the stats.
+        Assert.Equal([0x5676, 0x5675, 0xe295], replies.Take(3).Select(p => (int)GameSessionTestHelpers.Op(p)));
+        Assert.Equal(GamePackets.PresetWingUpdate(Brawler), replies[2]);
         Assert.Equal(Brawler, session.EquippedWingForTests);
         Assert.Equal(hpBefore + equipHp, session.Resource.HpMax);
         Assert.Equal(defBefore + 400 - WingTables.Embedded.EquipStat(defaultWing, "Defense"), session.Defense);

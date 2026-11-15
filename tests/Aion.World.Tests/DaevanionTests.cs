@@ -69,6 +69,26 @@ public sealed class DaevanionTests
         Assert.NotNull(store.Daevanion);
         Assert.Contains(neighborId, store.Daevanion!.NodeIds);
         Assert.Equal(1, store.Daevanion.UsedPoints.GetValueOrDefault(1));
+
+        // Refunding the node costs 500 Kina (OBSERVED 2026-11-15): refused without it; with it the points come back and the
+        // replies end with 0xe22b `0000 <node>` after the Kina change, with no 0xe226 board list.
+        store.Items.RemoveAll(i => i.TemplateId == 930100001);
+        await session.InventoryChangesAsync(default);
+        var close = PacketWriter.Opcode(GameSession.DaevanionCloseNodeRq).I32(neighborId).ToArray();
+        var refused = await session.HandleAsync(close, now + 2);
+        Assert.Equal(GameSession.DaevanionCloseNodeRs, GameSessionTestHelpers.Op(refused.Single()));
+        Assert.NotEqual(0, BitConverter.ToUInt16(refused[0], 2));
+        Assert.Contains(neighborId, store.Daevanion!.NodeIds);
+
+        store.Items.Add(FakeCharacterStore.BagItem(930100001, 800, 7700));
+        await session.InventoryChangesAsync(default);
+        var refund = await session.HandleAsync(close, now + 3);
+        Assert.Equal(GameSession.DaevanionPointUpdateNt, GameSessionTestHelpers.Op(refund[0]));
+        Assert.Equal(PacketWriter.Opcode(GameSession.DaevanionCloseNodeRs).U16(0).I32(neighborId).ToArray(), refund[^1]);
+        Assert.DoesNotContain(refund, p => GameSessionTestHelpers.Op(p) == GameSession.DaevanionBoardInfoNt);
+        Assert.Equal(300, FakeCharacterStore.KinaIn(store));
+        Assert.DoesNotContain(neighborId, store.Daevanion!.NodeIds);
+        Assert.Equal(0, store.Daevanion.UsedPoints.GetValueOrDefault(1));
     }
 
     [Fact]
