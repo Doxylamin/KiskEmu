@@ -1207,8 +1207,9 @@ Check(staffEntry.Any(b => b.SequenceEqual(GamePackets.WingList([(30200600, 0)]))
 Check(staffSession.AcquireAllWings()[0].SequenceEqual(GamePackets.WingList(GamePackets.LightWings.Select(id => (id, (byte)0)).ToList())),
       "AcquireWingAll sends every Light wing (42) as the WingList, then the stats with the owned wings");
 var wingChange = await staffSession.HandleAsync(new PacketWriter().U16(0x5674).U8(0).I32(30100300).ToArray(), Now);
-Check(wingChange.Count >= 2 && wingChange[0].SequenceEqual(GamePackets.WingChangeReply(30100300, false))
-      && wingChange[1].SequenceEqual(GamePackets.WingChangeNotice(1, 30100300, false)), "changing to a registered wing (0x5674 -> 0x5675 + 0x5676)");
+Check(wingChange.Count >= 3 && wingChange[0].SequenceEqual(GamePackets.WingChangeNotice(1, 30100300, false))
+      && wingChange[1].SequenceEqual(GamePackets.WingChangeReply(30100300, false)) && wingChange[2].SequenceEqual(Convert.FromHexString("95E2" + "01" + "4C4BCB01")),
+      "changing to a registered wing (0x5674 -> 0x5676, 0x5675, 0xe295 as the official order)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5674).U8(0).I32(40100300).ToArray(), Now)).Single()
       .SequenceEqual(GamePackets.WingChangeReply(40100300, false, 1)), "an unregistered wing is refused");
 // Quests: a character without quests starts on HQ1101010 (opening quest skipped), which the world entry lists.

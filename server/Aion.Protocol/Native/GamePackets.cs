@@ -1182,6 +1182,11 @@ public static class GamePackets
     public static byte[] WingChangeReply(int wingId, bool skin, int result = 0) => PacketWriter.Opcode(0x5675).U16(result).Bool(skin).I32(wingId).ToArray();
     /// <summary>0x5676 WingChange_NT: character key, packed is_wing_skin, wing id. CANDIDATE.</summary>
     public static byte[] WingChangeNotice(int key, int wingId, bool skin) => PacketWriter.Opcode(0x5676).Varint(key).Bool(skin).I32(wingId).ToArray();
+    /// <summary>
+    /// 0xe295 PresetWingUpdate_NT after a wing change: OBSERVED 2026-11-15 as `01 <wing i32>` after 0x5676 and 0x5675.
+    /// CANDIDATE reading: preset 1 (the one in use; presets are not modelled), the wing.
+    /// </summary>
+    public static byte[] PresetWingUpdate(int wingId) => PacketWriter.Opcode(0xe295).U8(1).I32(wingId).ToArray();
 
     /// <summary>Default wings (items 532400001/532400002 grant them on use): Light 30200600, Dark 40200601.</summary>
     public static int DefaultWing(int race) => race == 2 ? 40200601 : 30200600;
