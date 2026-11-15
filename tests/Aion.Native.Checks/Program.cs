@@ -2178,8 +2178,9 @@ Check(ranking.Length == 2 + 66 && ranking[0] == 0x57 && ranking[1] == 0x8d && ra
 Check((await bob.HandleAsync(new PacketWriter().U16(0x8c06).I32(7).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x8c07).U16(0).I32(7).Varint(0).I64(Now).ToArray()),
       "coin shop 7 opens (0x8c07 result 0, Christmas event shop from shops.json)");
 var contextReply = await bob.HandleAsync(new PacketWriter().U16(0x5607).U8(3).U8(1).I32(11010000).ToArray(), Now);
-Check(contextReply[0].AsSpan(0, 10).SequenceEqual(new PacketWriter().U16(0x5608).U16(0).U8(3).U8(1).I32(11010000).ToArray()) && contextReply[1][1] == 0x56 && contextReply[1][0] == 0x00,
-      "a hotbar context skill is accepted (0x5608, then the bar as 0x5600)");
+Check(contextReply[0][0] == 0x93 && contextReply[0][1] == 0xe2 && contextReply[1].AsSpan(0, 10).SequenceEqual(new PacketWriter().U16(0x5608).U16(0).U8(3).U8(1).I32(11010000).ToArray())
+      && contextReply[2][1] == 0x56 && contextReply[2][0] == 0x00,
+      "a hotbar context skill is accepted (0xe293 for the skill preset, 0x5608, then the bar as 0x5600)");
 Check(GameSession.SilentRequests.Contains(0x3601) && GameSession.SilentRequests.Contains(0xffa1) && (await bob.HandleAsync(new PacketWriter().U16(0x3601).I64(5).ToArray(), Now)).Count == 0,
       "client time and the 30 s 0xffa1 report are silent, not unanswered");
 // Instance layer: walking into Poeta's L_Starter_InstanceLayer_2 trigger moves the player into its own copy of map
