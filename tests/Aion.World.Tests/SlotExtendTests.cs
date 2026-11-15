@@ -37,8 +37,10 @@ public sealed class SlotExtendTests
         Assert.Equal(GameSession.SlotExtendSuccess, Result(rs));
         Assert.Equal(0, rs[^2]);   // by item
         Assert.Equal(1, rs[^1]);   // by Kina
-        Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == GameSession.SlotExtendNt);
-        Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x561b);
+        // Official order (OBSERVED 2026-11-15): the Kina change, then the reply; no 0x8d51.
+        Assert.DoesNotContain(replies, p => GameSessionTestHelpers.Op(p) == GameSession.SlotExtendNt);
+        Assert.Equal(0x561b, GameSessionTestHelpers.Op(replies[0]));
+        Assert.Same(rs, replies[^1]);
         Assert.Equal(before + GameSession.SlotsPerLine, session.SlotCapacity(InventoryItem.Bag));
         Assert.Equal(15_000 - GameSession.BagExtendKina[0], store.Items.Single(i => i.TemplateId == GameSession.KinaItemId).Quantity);
         Assert.Equal(new[] { 0, 1, 0, 0, 0, 0 }, store.Settings["slot_extends"].Deserialize<int[]>()!);
@@ -69,7 +71,7 @@ public sealed class SlotExtendTests
 
         var replies = await session.HandleAsync(Request(InventoryItem.Bag, 943), Now);
 
-        Assert.Equal(GameSession.SlotExtendSuccess, Result(replies[0]));
+        Assert.Equal(GameSession.SlotExtendSuccess, Result(replies[^1]));
         Assert.Equal(1, session.SlotExtends[0]);
         Assert.DoesNotContain(store.Items, i => i.WireId == 943);
     }
@@ -93,7 +95,7 @@ public sealed class SlotExtendTests
 
         var replies = await session.HandleAsync(Request(15), Now);
 
-        Assert.Equal(GameSession.SlotExtendSuccess, Result(replies[0]));
+        Assert.Equal(GameSession.SlotExtendSuccess, Result(replies[^1]));
         Assert.Equal(1, session.SlotExtends[4]);
         Assert.DoesNotContain(store.Items, i => i.TemplateId == GameSession.KinaItemId);
     }
@@ -108,7 +110,7 @@ public sealed class SlotExtendTests
 
         var replies = await session.HandleAsync(Request(InventoryItem.AccountStorage), Now);
 
-        Assert.Equal(GameSession.SlotExtendSuccess, Result(replies[0]));
+        Assert.Equal(GameSession.SlotExtendSuccess, Result(replies[^1]));
         Assert.Equal(new[] { 0, 1 }, store.AccountSettings["account_storage_extends"].Deserialize<int[]>()!);
         Assert.False(store.Settings.ContainsKey("slot_extends"));
         // Another character of the account (a new session on the same account's settings) sees the extra line.

@@ -7,10 +7,10 @@ namespace Aion.World;
 //
 // ItemContainerSlotExtend_RQ 0x8d4f {npc key i32, EItemContainerType u8, item uid i64 (0: pay Kina), cost idx u8}: OBSERVED
 // live 2026-11-14 as a 16-byte request from the bag's expand button (game version 3533), unanswered until now. Answered
-// _RS 0x8d50 {result u16, npc key i32, container u8, item uid i64, cost idx u8, extensions by item u8, by Kina u8} and
-// _NT 0x8d51 {container u8, item uid i64, by item u8, by Kina u8}. CANDIDATE: the opcodes are usmap 0x398a-0x398c plus the
-// offset of the OBSERVED neighbours 0x8d4e BroadcastSealStoneChange_NT and 0x8d52; the fields are the usmap's; the result
-// is u16 as every observed reply. The result codes are EResult's (usmap): 544 success, 545 fail, 546 over the maximum,
+// _RS 0x8d50 {result u16, npc key i32, container u8, item uid i64, cost idx u8, extensions by item u8, by Kina u8}, OBSERVED
+// live 2026-11-15 after the 0x561b Kina change; the official server sends no _NT 0x8d51 (usmap {container u8, item uid i64,
+// by item u8, by Kina u8}). Containers seen: bag 1, account warehouse 2, character warehouse 0x0f. The result codes are
+// EResult's (usmap): 544 success (OBSERVED), 545 fail, 546 over the maximum,
 // 547 invalid item, 263 not enough Kina. The Kina or ticket goes out as 0x561b with EDecreaseReason
 // kItemContainerExtendInventory 7 / kItemContainerExtendStorage 8 (usmap).
 //
@@ -136,9 +136,9 @@ public sealed partial class GameSession
         if (container == InventoryItem.AccountStorage)
             await Stored(async () => { await store.SaveAccountSettingAsync(AccountStorageExtendsSetting, JsonSerializer.SerializeToElement(new[] { slotExtends[at.Item], slotExtends[at.Kina] }), ct); return []; });
         else await SaveSettingAsync(SlotExtendsSetting, slotExtends, ct);
-        var nt = PacketWriter.Opcode(SlotExtendNt).U8(container).I64(uid)
-            .U8((byte)slotExtends[at.Item]).U8((byte)slotExtends[at.Kina]).ToArray();
+        // Official (OBSERVED 2026-11-15, bag, character and account warehouse): the Kina change (0x561b) first, then 0x8d50
+        // with the new counts, e.g. `2002 00000000 01 0000000000000000 00 02 07` for the bag; no 0x8d51.
         var reason = container == InventoryItem.Bag ? DecreaseExtendInventory : DecreaseExtendStorage;
-        return [Reply(SlotExtendSuccess), nt, .. await InventoryChangesAsync(ct, 0, reason)];
+        return [.. await InventoryChangesAsync(ct, 0, reason), Reply(SlotExtendSuccess)];
     }
 }
