@@ -245,6 +245,8 @@ public sealed partial class GameSession
             return Fail();
         var questAcquire = await TryQuestAcquireFromItemAsync(store, character, row, use, now, reply, ct);
         if (questAcquire.Count > 0) return questAcquire;
+        if (row.TemplateId == LegionHallReturnScrollId)
+            return itemCast is null && LegionHallDestination() is not null ? StartItemCast(row, LegionHallCast, now) : Fail();
         if (use is null)
         {
             LogItemUseRefused(itemId, null, "missing_use_data");
@@ -259,7 +261,7 @@ public sealed partial class GameSession
             "GetVehicleSoulCrystal" => await UseCrystalItemAsync(store, character, row, use, reply, ct),
             "Fix_VehicleCreatureLevel" => await UseBoardLevelItemAsync(store, character, row, use, reply, ct),
             "Skill" => await UseSkillItemAsync(store, character, row, use, reply, now, ct),
-            "Telpo_Home" when itemCast is null => StartItemCast(row, cooldown, reply, now),
+            "Telpo_Home" when itemCast is null => StartItemCast(row, cooldown, now),
             "GetKina" or "GetNonBindingKina" when use.Values is [var amount, ..] && long.TryParse(amount, out var kina) && kina > 0 =>
                 await UseKinaItemAsync(store, character, row, kina, Math.Clamp(count, 1, (int)Math.Min(int.MaxValue, row.Quantity)), reply, ct),
             "GetTitle" when use.Values is [var titleText, ..] && int.TryParse(titleText, out var titleId) => await UseTitleItemAsync(store, character, row, titleId, reply, ct),
@@ -493,15 +495,28 @@ public sealed partial class GameSession
         return replies;
     }
 
-    /// <summary>A cast item (return scroll): 0x5617 now, completed on the tick after the cast time unless the player moves.</summary>
-    List<byte[]>? StartItemCast(ItemState row, ItemCooldown cooldown, bool reply, long now)
+    /// <summary>
+    /// The legion hall return scroll (OBSERVED official 2026-11-15, item 530559490; not in the exported item data): a 2 s cast
+    /// (0x5617, then 0x5619 2.05 s later) that takes the player to the legion's hall (map 902 at L1_Agit_1_Respawn for an Elyos
+    /// legion in the sample).
+    /// </summary>
+    const int LegionHallReturnScrollId = 530559490;
+    static readonly ItemCooldown LegionHallCast = new(0, "None", 2_000);
+    /// <summary>TeleportEffect of a return item's map move: 98 (0x62), OBSERVED with the legion hall scroll; the Return Scroll (Telpo_Home) CANDIDATE.</summary>
+    const byte ReturnTeleportEffect = 98;
+
+    /// <summary>
+    /// A cast item (return scroll): 0x5617 now, completed on the tick after the cast time unless the player moves. No
+    /// 0x5613 yet: the official server answers the request only after the arrival (OBSERVED 2026-11-15).
+    /// </summary>
+    List<byte[]> StartItemCast(ItemState row, ItemCooldown cooldown, long now)
     {
         var key = WireKey(row);
         itemCast = (key, row.TemplateId, now + Math.Max(0, cooldown.CastMs));
         castFrom = position;
         var started = RidePackets.ItemUseStarted(playerKey, key, row.TemplateId);
         worldPlayer?.Map?.Broadcast(worldPlayer, [started]);
-        return reply ? [RidePackets.ItemUseReply(0, key, row.TemplateId), started] : [started];
+        return [started];
     }
 
     /// <summary>Moving (or casting) cancels a cast item: 0x5618 to the player and those nearby.</summary>
@@ -514,22 +529,39 @@ public sealed partial class GameSession
         return [stopped];
     }
 
-    /// <summary>A finished cast: the scroll is used up, 0x5619, then Telpo_Home - bound Kibelisk if any, else race home map.</summary>
+    /// <summary>
+    /// A finished cast: the scroll is used up and the player moves - the legion hall scroll to the legion's hall, Telpo_Home to
+    /// the bound Kibelisk if any, else the race home map. OBSERVED official order (legion hall scroll 2026-11-15): 0x5619, the
+    /// own 0x3647 `02 62` with 0x3621 effect 98, the load; after the own appearance 0x5613 (772), then 0x561b (decrease 14).
+    /// No 0x5616.
+    /// </summary>
     async Task<List<byte[]>> CompleteItemCastAsync(long now, CancellationToken ct)
     {
         if (itemCast is not { } cast || now < cast.DueMs) return [];
         itemCast = null;
         if (Store is not { } store || CharacterId is not { } character || !storedItems.TryGetValue(cast.Key, out var row) || resources is null || dead) return [];
+        var destination = cast.ItemId == LegionHallReturnScrollId ? LegionHallDestination() : TelpoHomeDestination();
+        if (destination is not { } to) return [RidePackets.ItemUseInterrupted(playerKey, cast.Key, cast.ItemId, 0)];
         var done = await Stored(async () => await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, 1, ct) ? [[]] : []);
         if (done.Count == 0) return [RidePackets.ItemUseInterrupted(playerKey, cast.Key, cast.ItemId, 0)];
         var completed = RidePackets.ItemUseCompleted(playerKey, cast.Key, cast.ItemId);
         worldPlayer?.Map?.Broadcast(worldPlayer, [completed]);
-        var (targetMap, home) = TelpoHomeDestination();
-        return [completed, RidePackets.ItemUsed(cast.Key, cast.ItemId), .. await InventoryChangesAsync(ct, 0, DecreaseItemUse), .. PcTeleport(targetMap, home, now)];
+        afterAppear.Add(RidePackets.ItemUseReply(0, cast.Key, cast.ItemId));
+        afterAppear.AddRange(await InventoryChangesAsync(ct, 0, DecreaseItemUse));
+        return [completed, .. PcTeleport(to.MapId, to.Position, now, ReturnTeleportEffect)];
+    }
+
+    /// <summary>The legion hall scroll's destination: the hall the legion rents (guilds.json agits: its map's *_Respawn point).</summary>
+    (int MapId, Vector3d Position)? LegionHallDestination()
+    {
+        if (guild is not { AgitId: > 0 } g || Legion.Agit(g.AgitId) is not { } agit) return null;
+        foreach (var (name, p) in data.MapPoints(agit.MapId))
+            if (name.EndsWith("_Respawn", StringComparison.OrdinalIgnoreCase) && p.Length >= 3) return (agit.MapId, new Vector3d(p[0], p[1], p[2]));
+        return data.MapStart(agit.MapId) is { } start ? (agit.MapId, start.Position) : null;
     }
 
     /// <summary>Return scroll destination: latest engraved TeleportArtifact (bind point), else race starter home.</summary>
-    (int MapId, Vector3d Position) TelpoHomeDestination()
+    (int MapId, Vector3d Position)? TelpoHomeDestination()
     {
         for (var i = engraved.Count - 1; i >= 0; i--)
         {

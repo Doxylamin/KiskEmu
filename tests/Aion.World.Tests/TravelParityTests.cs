@@ -1,3 +1,4 @@
+using Aion.Application.Gameplay;
 using Aion.Protocol.Native;
 using Aion.World;
 using Xunit;
@@ -287,6 +288,54 @@ public sealed class TravelParityTests
         Assert.Equal(1010, BitConverter.ToInt32(load, 6));
         Assert.Equal(bindAt, session.Position);
         Assert.DoesNotContain(store.Items, i => i.TemplateId == 530560001 && i.Quantity > 0);
+    }
+
+    [Fact]
+    public async Task Legion_hall_scroll_casts_then_moves_to_the_hall_and_answers_after_the_appearance()
+    {
+        // OBSERVED official 2026-11-15 (item 530559490): 0x5617, 2 s, 0x5619, own 0x3647 `02 62` + 0x3621 effect 98 to map 902;
+        // after the load 0x3633 (effect byte), 0x3646, then 0x5613 (772) and 0x561b. No 0x5613 at the start, no 0x5616.
+        const long t = Now + 120_000;
+        var store = new FakeCharacterStore();
+        store.GuildRow = new GuildView(7, "Hall", 1, 0, 0, 0, "", "", "", DateTimeOffset.UnixEpoch, [], AgitId: 1, AgitEndMs: long.MaxValue);
+        var session = await EnterAscendedAsync(store, t);
+        store.Items.Add(FakeCharacterStore.BagItem(530559490, 2, 88));
+        await GameSessionTestHelpers.LoadInventoryAsync(session, t);
+        var start = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(88).ToArray(), t + 100);
+        Assert.Contains(start, p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseStartedNt);
+        Assert.DoesNotContain(start, p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseRs);
+        var done = await session.TickAsync(t + 2_200);
+        Assert.Contains(done, p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseCompletedNt);
+        Assert.DoesNotContain(done, p => GameSessionTestHelpers.Op(p) is RidePackets.ItemUseRs or RidePackets.ItemUseNt);
+        Assert.Contains(done, p => p.SequenceEqual(PlayerPackets.CharDisappear(session.PlayerKey, 2, 98)));
+        var load = done.Single(p => GameSessionTestHelpers.Op(p) == 0x3621);
+        Assert.Equal(902, BitConverter.ToInt32(load, 6));
+        Assert.Equal(98, load[^3]);
+        var entry = await session.HandleAsync(new PacketWriter().U16(0x3622).I32(2).ToArray(), t + 2_500);
+        var ops = entry.Select(GameSessionTestHelpers.Op).ToList();
+        var appear = ops.IndexOf(0x3633);
+        var reply = ops.IndexOf(RidePackets.ItemUseRs);
+        Assert.True(appear >= 0 && reply > appear, string.Join(",", ops.Select(o => o.ToString("x4"))));
+        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(entry[reply], 2));
+        Assert.Equal(0x561b, ops[reply + 1]);
+        var at = 2;
+        while ((entry[appear][at++] & 0x80) != 0) { }
+        Assert.Equal(0x1000u, BitConverter.ToUInt32(entry[appear], at) & 0x1000u);   // the appearance repeats the effect (mask bit 12)
+        Assert.Contains(store.Items, i => i.TemplateId == 530559490 && i.Quantity == 1);
+    }
+
+    [Fact]
+    public async Task Legion_hall_scroll_is_refused_without_a_hall()
+    {
+        const long t = Now + 130_000;
+        var store = new FakeCharacterStore();
+        var session = await EnterAscendedAsync(store, t);
+        store.Items.Add(FakeCharacterStore.BagItem(530559490, 1, 89));
+        await GameSessionTestHelpers.LoadInventoryAsync(session, t);
+        var start = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(89).ToArray(), t + 100);
+        Assert.Single(start);
+        Assert.Equal(RidePackets.ItemUseRs, GameSessionTestHelpers.Op(start[0]));
+        Assert.NotEqual(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(start[0], 2));
     }
 
     [Fact]
