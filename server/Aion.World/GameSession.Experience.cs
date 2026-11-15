@@ -137,6 +137,12 @@ public sealed partial class GameSession
             replies.Add(DaevanionBoardInfo());
             replies.Add(DaevanionPointUpdate());
         }
+        // A level-up from kill or party experience re-checks the quests as the quest-reward level-up does (that one runs
+        // the re-check itself after the reward): PCLevel steps and level-gated Auto quests move on now, not at the next
+        // quest change. OURS (CANDIDATE order: after the level-up messages; no kill level-up near a level-gated quest in
+        // the recordings). Idea from Addiboii/A2Core 13a897e.
+        if (reason != ExpReasonQuest && questLog is not null)
+            replies.AddRange(await QuestChangesAsync(questLog.Recheck(level), ct));
         return replies;
     }
 }
