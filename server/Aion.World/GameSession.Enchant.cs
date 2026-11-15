@@ -139,8 +139,11 @@ public sealed partial class GameSession
     public const ushort ItemExceedEnchantRq = 0x5624, ItemExceedEnchantRs = 0x5625;
     const byte DecreaseItemEnchant = 10, DecreaseItemEnchantFail = 11;   // EDecreaseReason
     const byte UpdateEnchant = 1;   // EUpdateReason kEnchant
-    /// <summary>EResult: kItem_Enchant_Success 828 (OBSERVED in 0x5623 and 0x5626, 2026-11-12), Fail_ByProb 833, Fail_LevelDown 835.</summary>
-    public const int EnchantSuccess = 828, EnchantFailByProb = 833, EnchantFailLevelDown = 835;
+    /// <summary>
+    /// EResult: kItem_Enchant_Success 828 (OBSERVED in 0x5623 and 0x5626, 2026-11-12), Fail_ByProb 833, Fail 834 (OBSERVED in
+    /// 0x5626 for a failure that kept the level, R1115), Fail_LevelDown 835.
+    /// </summary>
+    public const int EnchantSuccess = 828, EnchantFailByProb = 833, EnchantFail = 834, EnchantFailLevelDown = 835;
     static EnchantTables Enchants => EnchantTables.Embedded;
     static ExceedEnchantTables Exceeds => ExceedEnchantTables.Embedded;
 
@@ -224,6 +227,13 @@ public sealed partial class GameSession
                 worldPlayer?.Map?.Broadcast(worldPlayer, notices);
                 replies.AddRange(notices);
             }
+        }
+        else if (row.Location == "equipment" && !success)
+        {
+            // OBSERVED R1115 i=125168 `2656d23d42030b0b` (11 -> 11), i=126437 (10 -> 10): another player's failed enchant
+            // that kept the level reaches those nearby as 0x5626 {key, 834, level, level}. Whether the own client gets it
+            // too is not in the recordings (CANDIDATE: not sent, the own 0x5623 already tells it). Idea from Addiboii/A2Core 732db15.
+            worldPlayer?.Map?.Broadcast(worldPlayer, [PacketWriter.Opcode(ItemEnchantNt).Varint(playerKey).U16(EnchantFail).U8(level).U8(after).ToArray()]);
         }
         return replies;
     }

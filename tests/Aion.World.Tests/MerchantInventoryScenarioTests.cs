@@ -62,18 +62,24 @@ public sealed class MerchantInventoryScenarioTests
     }
 
     [Fact]
-    public async Task Item_sort_orders_bag_by_template_id()
+    public async Task Item_sort_puts_currencies_first_then_orders_by_template_id()
     {
         var store = new FakeCharacterStore();
         var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
-        store.Items.Add(FakeCharacterStore.BagItem(530116001, 10, 40));
-        store.Items.Add(FakeCharacterStore.BagItem(LifePotion, 4, 41));
+        store.Items.RemoveAll(i => i.Location == "bag");
+        // OBSERVED R1115: 930100031, Kina 930100001, 930100003/011/017/021/023/019 on slots 0-7, other items after.
+        foreach (var (template, wire) in new[] { (530116001, 40L), (930100019, 41L), (LifePotion, 42L), (930100023, 43L), (GameSession.KinaItemId, 44L),
+                     (930100021, 45L), (930100031, 46L), (930100017, 47L), (930100011, 48L), (930100003, 49L) })
+            store.Items.Add(FakeCharacterStore.BagItem(template, 10, wire, (int)(wire - 40)));
         await session.InventoryChangesAsync(default);
 
         var sort = await session.HandleAsync(new PacketWriter().U16(GameSession.ItemSortRq).I32(0).U8(1).ToArray(), Now);
-        Assert.Equal(0, sort[0][2]);
         var ordered = store.Items.Where(i => i.Location == "bag").OrderBy(i => i.Slot).Select(i => i.TemplateId).ToList();
-        Assert.Equal(ordered.Order().ToList(), ordered);
+        Assert.Equal([930100031, GameSession.KinaItemId, 930100003, 930100011, 930100017, 930100021, 930100023, 930100019, 530116001, LifePotion], ordered);
+        // The item changes first, then 0x563f {u16 576, npc, container} (official `3f564002000000000f` for npc 0, container 15).
+        Assert.True(sort.Count >= 2);
+        Assert.Equal(new PacketWriter().U16(GameSession.ItemSortRs).U16(576).I32(0).U8(1).ToArray(), sort[^1]);
+        Assert.Equal(0x561b, GameSessionTestHelpers.Op(sort[0]));
     }
 
     [Fact]
@@ -86,9 +92,24 @@ public sealed class MerchantInventoryScenarioTests
         await session.InventoryChangesAsync(default);
 
         var sort = await session.HandleAsync(new PacketWriter().U16(GameSession.ItemSortRq).I32(0).U8(2).ToArray(), Now);
-        Assert.Equal(0, sort[0][2]);
+        Assert.Equal(GameSession.ItemSortDone, BitConverter.ToUInt16(sort[^1], 2));
         var ordered = store.Items.Where(i => i.Location == "storage").OrderBy(i => i.Slot).Select(i => i.TemplateId).ToList();
         Assert.Equal(ordered.Order().ToList(), ordered);
+    }
+
+    [Fact]
+    public async Task Item_sort_accepts_the_account_warehouse()
+    {
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
+        store.Items.Add(FakeCharacterStore.StorageItem(LifePotion, 1, 60, 0) with { Location = "account_storage" });
+        store.Items.Add(FakeCharacterStore.StorageItem(530116001, 3, 61, 1) with { Location = "account_storage" });
+        await session.InventoryChangesAsync(default);
+
+        var sort = await session.HandleAsync(new PacketWriter().U16(GameSession.ItemSortRq).I32(0).U8(InventoryItem.AccountStorage).ToArray(), Now);
+        Assert.Equal(new PacketWriter().U16(GameSession.ItemSortRs).U16(GameSession.ItemSortDone).I32(0).U8(InventoryItem.AccountStorage).ToArray(), sort[^1]);
+        var ordered = store.Items.Where(i => i.Location == "account_storage").OrderBy(i => i.Slot).Select(i => i.TemplateId).ToList();
+        Assert.Equal([530116001, LifePotion], ordered);
     }
 
     [Fact]

@@ -1550,8 +1550,9 @@ Check(discard[0][0] == 0x3d && discard[0][2] == 0 && staffStore.Items.Single(i =
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x563c).Varint(1).I64(40).I64(99).Varint(0).ToArray(), Now))[0][2] == 1, "discarding more than the stack is refused");
 var sortReply = await staffSession.HandleAsync(new PacketWriter().U16(0x563e).I32(0).U8(1).ToArray(), Now);
 var sortedBag = staffStore.Items.Where(i => i.Location == "bag").OrderBy(i => i.Slot).ToList();
-Check(sortReply[0][0] == 0x3f && sortReply[0][2] == 0 && sortedBag.Select(i => i.TemplateId).SequenceEqual(sortedBag.Select(i => i.TemplateId).Order()),
-      "ItemSort orders the bag by item (0x563f)");
+Check(sortReply[^1][0] == 0x3f && BitConverter.ToUInt16(sortReply[^1], 2) == 576
+      && sortedBag.Select(i => i.TemplateId).SequenceEqual(sortedBag.Select(i => i.TemplateId).OrderBy(ItemCurrencies.SortRank).ThenBy(t => t)),
+      "ItemSort orders the bag (currencies first) and answers 0x563f 576 after the items");
 // Hotbar: QuickSlotSet (0x5601, the live 27-byte request) stores a slot and echoes it (0x5602); a stored bar replaces
 // the class's default at world entry; QuickSlotReset (0x5603) clears it.
 var quickSet = new PacketWriter().U16(0x5601).U8(0).U8(5).U8(1).I64(41).I32(530126003).I32(0).U8(0).I32(0).U8(0).ToArray();
@@ -3341,7 +3342,7 @@ sealed class FakeStore : INativeCharacterStore
     public Task<bool> SortBagAsync(Guid character, CancellationToken ct) => SortContainerAsync(character, "bag", ct);
     public Task<bool> SortContainerAsync(Guid character, string location, CancellationToken ct)
     {
-        var bag = Items.Select((item, index) => (item, index)).Where(x => x.item.Location == location).OrderBy(x => x.item.TemplateId).ThenBy(x => x.item.WireId).ToList();
+        var bag = Items.Select((item, index) => (item, index)).Where(x => x.item.Location == location).OrderBy(x => ItemCurrencies.SortRank(x.item.TemplateId)).ThenBy(x => x.item.TemplateId).ThenBy(x => x.item.WireId).ToList();
         for (var n = 0; n < bag.Count; n++) Items[bag[n].index] = bag[n].item with { Slot = n, Revision = bag[n].item.Revision + 1 };
         return Task.FromResult(true);
     }

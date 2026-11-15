@@ -1645,16 +1645,21 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
 
     public async Task<bool> SortContainerAsync(VerifiedAccount account, Guid character, string location, CancellationToken ct=default)
     {
-        if(location is not ("bag" or "storage")) throw new GameplayException("invalid_container");
+        if(location is not ("bag" or "storage" or "account_storage")) throw new GameplayException("invalid_container");
         await using var c=await source.OpenConnectionAsync(ct); await using var t=await c.BeginTransactionAsync(ct);
         if(!await Own(c,t,account.AccountId,character,ct)) return false;
+        // The account warehouse is shared by the account's characters (migration 053: account_storage_owner).
+        var rows=location=="account_storage" ? "account_storage_owner=$1 AND location=$2" : "character_id=$1 AND location=$2";
+        object owner=location=="account_storage" ? account.AccountId : character;
         // Clear slots first: one UPDATE that renumbers in place hits item_slot_idx (23505) mid-statement.
-        await Execute(c,t,"UPDATE game.item_instances SET slot=NULL WHERE character_id=$1 AND location=$2",ct,character,location);
-        await Execute(c,t,"""
+        await Execute(c,t,$"UPDATE game.item_instances SET slot=NULL WHERE {rows}",ct,owner,location);
+        // Currencies first in ItemCurrencies.SortOrder (OBSERVED order, CANDIDATE rule), then the rest by template.
+        await Execute(c,t,$"""
             UPDATE game.item_instances i SET slot=o.n-1,revision=i.revision+1
-            FROM (SELECT instance_id,row_number() OVER (ORDER BY template_id,created_at,instance_id) n FROM game.item_instances WHERE character_id=$1 AND location=$2) o
+            FROM (SELECT instance_id,row_number() OVER (ORDER BY array_position($3::int[],template_id) NULLS LAST,template_id,created_at,instance_id) n
+                  FROM game.item_instances WHERE {rows}) o
             WHERE i.instance_id=o.instance_id
-            """,ct,character,location);
+            """,ct,owner,location,ItemCurrencies.SortOrder.ToArray());
         await t.CommitAsync(ct); return true;
     }
 

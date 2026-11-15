@@ -36,7 +36,9 @@ public sealed record QuestRewards(
     [property: JsonPropertyName("kina")] long Kina = 0,
     [property: JsonPropertyName("items")] long[][]? Items = null,
     [property: JsonPropertyName("select")] long[][]? Select = null,
-    [property: JsonPropertyName("random")] string? Random = null);
+    [property: JsonPropertyName("random")] string? Random = null,
+    // QuestClassReward.dat (OBSERVED data): per class name the [item, count] rows that class also gets (14 hero quests).
+    [property: JsonPropertyName("class_items")] Dictionary<string, long[][]>? ClassItems = null);
 
 public sealed record QuestDefinition(
     [property: JsonPropertyName("id")] int Id,

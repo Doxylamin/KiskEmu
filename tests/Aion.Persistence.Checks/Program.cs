@@ -232,7 +232,7 @@ await using(var source=NpgsqlDataSource.Create(connectionString))
     }
     Check(await game.SortContainerAsync(first,id,"bag"),"bag sort succeeds when slots must be renumbered");
     var bagSorted=(await game.InventoryAsync(first,id))!.Items.Where(x=>x.Location=="bag").OrderBy(x=>x.Slot!.Value).Select(x=>x.TemplateId).ToList();
-    Check(bagSorted.SequenceEqual(bagSorted.Order().ToList()),"bag sort orders by template_id");
+    Check(bagSorted.SequenceEqual(bagSorted.OrderBy(ItemCurrencies.SortRank).ThenBy(x=>x).ToList()),"bag sort puts currencies first, then orders by template_id");
     // Warehouse and account storage. The personal warehouse is per character; account storage is shared across the
     // account (its own account_storage_owner slot space), so another character on the account sees what was deposited.
     var depotItem=(await game.InventoryAsync(first,id))!.Items.First(x=>x.Location=="bag");

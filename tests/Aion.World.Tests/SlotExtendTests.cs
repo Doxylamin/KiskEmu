@@ -47,6 +47,25 @@ public sealed class SlotExtendTests
     }
 
     [Fact]
+    public async Task Kina_cost_spends_930100001_first_then_930100031()
+    {
+        // OBSERVED R1115 ~i=726572: the 10th bag expansion emptied 930100001 and took the rest from 930100031.
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
+        var price = GameSession.BagExtendKina[0];
+        store.Items.Add(FakeCharacterStore.BagItem(GameSession.KinaItemId, 1_000, 941));
+        store.Items.Add(FakeCharacterStore.BagItem(930100031, price + 500, 942));
+        await session.InventoryChangesAsync(default);
+
+        var replies = await session.HandleAsync(Request(InventoryItem.Bag), Now);
+
+        Assert.Equal(GameSession.SlotExtendSuccess, Result(replies[^1]));
+        Assert.Equal(0, store.Items.Where(i => i.TemplateId == GameSession.KinaItemId).Sum(i => i.Quantity));
+        Assert.Equal(price + 500 - (price - 1_000), store.Items.Single(i => i.TemplateId == 930100031).Quantity);
+        Assert.Equal(0x561b, GameSessionTestHelpers.Op(replies[0]));
+    }
+
+    [Fact]
     public async Task Not_enough_Kina_is_refused_and_nothing_changes()
     {
         var store = new FakeCharacterStore();

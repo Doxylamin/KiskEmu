@@ -115,11 +115,19 @@ public sealed partial class GameSession
     public static readonly TimeSpan BuybackKept = TimeSpan.FromHours(72);
     List<ItemState> buyback = [];
 
-    /// <summary>Stacks of an item in the bag covering <paramref name="count"/> (largest first), or null when short.</summary>
+    /// <summary>
+    /// Stacks of an item in the bag covering <paramref name="count"/> (largest first), or null when short. A Kina cost
+    /// (930100001) goes on into the other Kina, 930100031, once 930100001 is spent: OBSERVED R1115 ~i=726572, the 10th bag
+    /// expansion (1,000,000 Kina) emptied 930100001 (959,998 → 0) and took the other 40,002 from 930100031
+    /// (2,180,132 → 2,140,130), both with the same decrease reason.
+    /// </summary>
     List<(Guid Item, long Revision, int Count)>? CostStacks(int itemId, long count, Guid? except = null)
     {
         var costs = new List<(Guid, long, int)>();
-        foreach (var stack in storedItems.Values.Where(i => i.TemplateId == itemId && i.Location == "bag" && i.InstanceId != except).OrderByDescending(i => i.Quantity))
+        IEnumerable<ItemState> Stacks(int template) =>
+            storedItems.Values.Where(i => i.TemplateId == template && i.Location == "bag" && i.InstanceId != except).OrderByDescending(i => i.Quantity);
+        var stacks = itemId == KinaItemId ? Stacks(KinaItemId).Concat(Stacks(ItemCurrencies.KinaNonbinding)) : Stacks(itemId);
+        foreach (var stack in stacks)
         {
             if (count <= 0) break;
             var n = (int)Math.Min(Math.Min(stack.Quantity, count), int.MaxValue);
