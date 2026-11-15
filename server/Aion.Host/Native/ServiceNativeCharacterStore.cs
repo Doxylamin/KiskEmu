@@ -786,6 +786,9 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
     public Task AddPendingSiegeApForGuildAsync(long guildId, int ap, IReadOnlyList<Guid> onlineCharacterIds, CancellationToken ct) =>
         game.AddPendingSiegeApForGuildAsync(guildId, ap, onlineCharacterIds, ct);
 
+    public Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int race, int minPoint, CancellationToken ct) =>
+        game.AbyssRankingAsync(WorldId, race, minPoint, ct);
+
     public Task<AirspaceWorldRecord> AirspaceWorldAsync(CancellationToken ct) =>
         game.AirspaceWorldAsync(WorldId, ct);
 

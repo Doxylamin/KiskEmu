@@ -35,7 +35,8 @@ public sealed record QuestRewards(
     [property: JsonPropertyName("exp")] long Exp = 0,
     [property: JsonPropertyName("kina")] long Kina = 0,
     [property: JsonPropertyName("items")] long[][]? Items = null,
-    [property: JsonPropertyName("select")] long[][]? Select = null);
+    [property: JsonPropertyName("select")] long[][]? Select = null,
+    [property: JsonPropertyName("random")] string? Random = null);
 
 public sealed record QuestDefinition(
     [property: JsonPropertyName("id")] int Id,

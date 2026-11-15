@@ -2273,6 +2273,23 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await t.CommitAsync(ct); return true;
     }
 
+    public async Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int worldId, int race, int minPoint, CancellationToken ct=default)
+    {
+        await using var c=await source.OpenConnectionAsync(ct);
+        var rows=new List<AbyssRankRow>();
+        await using var q=Query(c,null,"""
+            SELECT c.character_id,c.wire_id,c.name,COALESCE(g.name,''),COALESCE(g.emblem_id,0),c.level,c.creation_id,a.ranking_point
+            FROM game.character_abyss a JOIN game.characters c USING(character_id)
+            LEFT JOIN game.guild_members m ON m.character_id=c.character_id LEFT JOIN game.guilds g ON g.guild_id=m.guild_id
+            WHERE c.world_id=$1 AND c.race=$2 AND a.ranking_point>=$3
+            ORDER BY a.ranking_point DESC,a.updated_at,c.character_id
+            """,worldId,race,minPoint);
+        await using var r=await q.ExecuteReaderAsync(ct);
+        while(await r.ReadAsync(ct))
+            rows.Add(new AbyssRankRow(r.GetGuid(0),r.GetInt32(1),r.GetString(2),r.GetString(3),r.GetInt32(4),r.GetInt32(5),r.GetInt32(6),r.GetInt32(7)));
+        return rows;
+    }
+
     public async Task AddPendingSiegeApForGuildAsync(long guildId, int ap, IReadOnlyList<Guid> onlineCharacterIds, CancellationToken ct=default)
     {
         if(ap<=0) return;

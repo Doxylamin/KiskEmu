@@ -1677,6 +1677,8 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         {
             replies.AddRange(BuffsAfterLoad());
             replies.AddRange(GuildAtEntry());
+            await EnsureDutyBoardAsync(now, ct);
+            await LoadAbyssRankAsync(ct);   // the Abyss rank for 0x8d57 and the tier buff (GameSession.SeasonRanking.cs)   // the duty mission board for 0x8d1c (GameSession.Duty.cs)
             replies.AddRange(EntryLists(now, profile is not null));   // the lists in the recorded order (GameSession.EntryConstants.cs)
             replies.AddRange(AchieveSet("EquipItemLevel", EquipItemLevel(), now: now));
             if (fresh) { replies.AddRange(Achieve("LoginCharacter", now: now)); elapsedAchieveAt = now + 60_000; }
@@ -2918,6 +2920,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         replies.AddRange(MapEventTick(now));
         replies.AddRange(InstanceTick(now));
         replies.AddRange(AbyssTick(now));
+        replies.AddRange(FestivalTick(now));
         replies.AddRange(AirspaceWorldTick(now));
         replies.AddRange(ContentResetWorldTick(now));
         await FlushContentResetWorkAsync(ct);

@@ -135,6 +135,8 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<AbyssRecord?> AbyssAsync(Guid character, CancellationToken ct) => Task.FromResult<AbyssRecord?>(null);
     Task<bool> SaveAbyssAsync(Guid character, AbyssRecord record, CancellationToken ct) => Task.FromResult(false);
     Task AddPendingSiegeApForGuildAsync(long guildId, int ap, IReadOnlyList<Guid> onlineCharacterIds, CancellationToken ct) => Task.CompletedTask;
+    /// <summary>This world's Abyss ranking of a race (at least <paramref name="minPoint"/> points, best first).</summary>
+    Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int race, int minPoint, CancellationToken ct) => Task.FromResult<IReadOnlyList<AbyssRankRow>>([]);
     Task<AirspaceWorldRecord> AirspaceWorldAsync(CancellationToken ct) => Task.FromResult(new AirspaceWorldRecord([], []));
     Task SaveAirspaceWorldAsync(AirspaceWorldRecord record, CancellationToken ct) => Task.CompletedTask;
     Task<WorldResetCursorRecord> ResetCursorsAsync(CancellationToken ct) => Task.FromResult(new WorldResetCursorRecord(0, 0));

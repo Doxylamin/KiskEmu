@@ -8,7 +8,7 @@ namespace Aion.World;
 //   0x8d7e 0x8d37 0x8d8c 0xe224 0xe32a 0x9331 0xe33b 0xe33e 0xffae 0x6103 [0xe30b] 0xe324 0x56b6 0xe256 0xffa5 0xffa7 0xe262
 //   0x561d 0xe25c 0xe342 0xe343 0x5611 0x572d, PrepareEnterMap 0x3621, and after the load reply and the skill list and
 //   hotbar: 0xe251 0x400a 0xe200 0xffab, the own appearance, 0xe223 0x6000; 0x570f later.
-// Left out of the list (not sent by us or sent elsewhere): 0x8d44, 0x5672, 0x56ac, 0x9232, 0x8d1c, 0xe33d, 0xe257, 0xe352,
+// Left out of the list (not sent by us or sent elsewhere): 0x8d44, 0x5672, 0x56ac, 0x9232, 0xe33d, 0xe257, 0xe352,
 // 0xffb0, 0x5712, 0x5684, 0x8d09; MonolithList_NT 0xe30b goes out with the map's objects (GameSession.Monolith.cs).
 // The official server sends the part up to 0x572d before 0x3621 and the stats, appearance and abnormals (0x3633, 0x3646,
 // 0x382a, 0x364a) after the lists; ours sends the whole block after the load reply and the appearance (OURS: our entry
@@ -46,7 +46,10 @@ public sealed partial class GameSession
             BookmarkedContentList(),                   // 0x9330 right before 0x610b
             ContentsTicketsList(now),                  // 0x610b
         ]);
-        replies.AddRange(CraftListsAtEntry());         // 0x8d7e, 0x8d37, 0x8d8c
+        var craft = CraftListsAtEntry();               // 0x8d7e, 0x8d37, 0x8d8c
+        replies.Add(craft[0]);
+        if (DutyBoardAtEntry() is { } duty) replies.Add(duty);   // DutyMissionQuestJournalStatus_NT 0x8d1c between 0x8d7e and 0x8d37 (R1115 i=355)
+        replies.AddRange(craft.Skip(1));
         replies.AddRange(
         [
             Observed(0xe224, "02010202"),              // ContentsControl_NT
@@ -66,6 +69,7 @@ public sealed partial class GameSession
         ]);
         replies.AddRange(InventoryDepotSyncPackets()); // 0x5611 and 0x561d (recorded: 0x561d here, the depot list before 0x572d)
         replies.Add(Observed(0xe25c, "014b01"));       // ContentsFeatureOnOffListByAdmin_NT
+        if (AbyssTierBuffAtEntry(now) is { } tier) replies.Add(tier);   // the Abyss tier buff 20100 (0x382b) right after it (GameSession.SeasonRanking.cs)
         if (Store is not null) replies.Add(RestorableItems());   // the buyback list 0xe342
         if (withProfile) replies.Add(ItemRestoreStatus(now));   // 0xe343 right after it
         replies.Add(DungeonCoolTimesList(now));        // OURS: not in the recordings; kept with the lists
@@ -85,7 +89,7 @@ public sealed partial class GameSession
         AbyssPointUpdate(),                        // AbyssPointUpdate_NT 0xffab
         RankingPointUpdate(),                      // 0xe273 (OURS: not in the recordings; kept with 0xffab)
         PacketWriter.Opcode(0xe223).I64(now).I32(0).ToArray(),   // WorldChatFreeChance_NT (observed: a time then four zero bytes)
-        Observed(0x6000, "00"),                    // ? (0x6000)
+        FieldEventInfoAtEntry(now),                // FieldEventInfo_NT 0x6000: the Shugo festival events running now (GameSession.Festival.cs)
         Observed(0x570f, "000000"),                // DungeonClearKillNpc_NT
     ];
 

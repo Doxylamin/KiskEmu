@@ -826,6 +826,10 @@ public sealed partial class FakeCharacterStore : INativeCharacterStore
     public int? ContentTicket(int ticketId) => ContentTickets.FirstOrDefault(r => r.TicketId == ticketId)?.Remaining;
 
     public AbyssRecord? Abyss { get; set; }
+    /// <summary>The world's Abyss ranking rows (any race; filtered by race and points like the store).</summary>
+    public List<(int Race, AbyssRankRow Row)> AbyssRanking { get; } = [];
+    public Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int race, int minPoint, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<AbyssRankRow>>(AbyssRanking.Where(r => r.Race == race && r.Row.Point >= minPoint).Select(r => r.Row).OrderByDescending(r => r.Point).ToList());
     public Task<AbyssRecord?> AbyssAsync(Guid character, CancellationToken ct) => Task.FromResult(Abyss);
     public Task<bool> SaveAbyssAsync(Guid character, AbyssRecord record, CancellationToken ct)
     {

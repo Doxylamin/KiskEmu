@@ -43,14 +43,9 @@ public sealed partial class GameSession
                 return [PacketWriter.Opcode(SkinDecoInstanceListRs).U16(0).ToArray()];
             case WorldMapAbyssRankerInfoRq when plain.Length == 2:
                 return WorldMapAbyssRankerInfo(plain);
-            // RetrieveMyLatestSeasonRanking_RQ {contents type u8, class u8}: no ranking, the official empty reply.
+            // RetrieveMyLatestSeasonRanking_RQ {contents type u8, class u8}: the Abyss rank, else the official empty reply.
             case MySeasonRankingRq when plain.Length >= 4:
-            {
-                var body = (byte[])SeasonRankingNone.Clone();
-                body[2] = plain[2];
-                body[3] = plain[3];
-                return [PacketWriter.Opcode(MySeasonRankingRs).Raw(body).I64(now + 3_600_000).ToArray()];
-            }
+                return [MySeasonRankingReply(plain[2], plain[3], now)];   // GameSession.SeasonRanking.cs
             // QuickSlotContextSkill (0x5607) and CoinShopOpen (0x8c06) are handled in HandleAsync main switch (persistence + shop parity).
             // LockOnTarget_RQ: 00 | target varint (as SetMainTarget_RQ; no request sample, CANDIDATE). The reply is the
             // OBSERVED form 0000 | target varint | 0000 (target 0 = unlock); others see 0x3832 key | 00 | target varint.

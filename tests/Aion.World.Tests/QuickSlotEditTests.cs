@@ -50,6 +50,9 @@ public sealed class QuickSlotEditTests
         return entries;
     }
 
+    /// <summary>The 0x5608 reply (an edit on a preset slot sends 0xe293 first).</summary>
+    static byte[] Rs(List<byte[]> replies) => replies.First(p => GameSessionTestHelpers.Op(p) == GameSession.QuickSlotContextSkillRs);
+
     static byte[] BarOf(List<byte[]> replies) => replies.First(p => GameSessionTestHelpers.Op(p) == 0x5600);
 
     static byte[] ContextUpdate(int slot, int context, int skill) =>
@@ -61,7 +64,7 @@ public sealed class QuickSlotEditTests
         var store = new FakeCharacterStore();
         var (session, _) = await EnterAsync(store, create: true);
 
-        var rs = (await session.HandleAsync(ContextUpdate(Slot, 3, Chain1), Now)).First();
+        var rs = Rs(await session.HandleAsync(ContextUpdate(Slot, 3, Chain1), Now));
         Assert.Equal(GameSession.QuickSlotContextSkillRs, GameSessionTestHelpers.Op(rs));
         Assert.Equal(0, BitConverter.ToUInt16(rs, 2));
         Assert.Equal(Chain1, store.QuickSlots[Slot].ContextSkills![3]);
@@ -95,7 +98,7 @@ public sealed class QuickSlotEditTests
         var (session, _) = await EnterAsync(store, create: true);
         await session.HandleAsync(new byte[] { 0x03, 0x56, Slot }, Now);
 
-        var rs = (await session.HandleAsync(ContextUpdate(Slot, 1, Chain1), Now)).First();
+        var rs = Rs(await session.HandleAsync(ContextUpdate(Slot, 1, Chain1), Now));
         Assert.Equal(1, BitConverter.ToUInt16(rs, 2));
     }
 
@@ -157,10 +160,10 @@ public sealed class QuickSlotEditTests
         var store = new FakeCharacterStore();
         var (session, _) = await EnterAsync(store, create: true);
 
-        Assert.Equal(1, BitConverter.ToUInt16((await session.HandleAsync(ContextUpdate(Slot, 4, Chain1), Now)).First(), 2));
-        Assert.Equal(1, BitConverter.ToUInt16((await session.HandleAsync(ContextUpdate(Slot, 1, 123_456_789), Now)).First(), 2));
-        Assert.Equal(1, BitConverter.ToUInt16((await session.HandleAsync(ContextUpdate(200, 1, Chain1), Now)).First(), 2));
-        Assert.Equal(1, BitConverter.ToUInt16((await session.HandleAsync(ContextUpdate(12, 0, SlotSkill), Now)).First(), 2));
+        Assert.Equal(1, BitConverter.ToUInt16(Rs(await session.HandleAsync(ContextUpdate(Slot, 4, Chain1), Now)), 2));
+        Assert.Equal(1, BitConverter.ToUInt16(Rs(await session.HandleAsync(ContextUpdate(Slot, 1, 123_456_789), Now)), 2));
+        Assert.Equal(1, BitConverter.ToUInt16(Rs(await session.HandleAsync(ContextUpdate(200, 1, Chain1), Now)), 2));
+        Assert.Equal(1, BitConverter.ToUInt16(Rs(await session.HandleAsync(ContextUpdate(12, 0, SlotSkill), Now)), 2));
         Assert.Empty(store.QuickSlots);
     }
 
@@ -177,12 +180,12 @@ public sealed class QuickSlotEditTests
         Assert.NotNull(GameData.Embedded.Skill(15_110_000));
 
         var replies = await session.HandleAsync(ContextUpdate(6, 1, ESkill), Now);
-        var rs = replies[0];
+        var rs = Rs(replies);
         Assert.Equal(GameSession.QuickSlotContextSkillRs, GameSessionTestHelpers.Op(rs));
         Assert.Equal(0, BitConverter.ToUInt16(rs, 2));
         Assert.Equal([6, 1], rs[4..6]);
         Assert.Equal(ESkill, BitConverter.ToInt32(rs, 6));
-        Assert.Equal(0x5600, GameSessionTestHelpers.Op(replies[1]));
+        Assert.Equal([GameSession.PresetSkillUpdateNt, GameSession.QuickSlotContextSkillRs, 0x5600], replies.Select(GameSessionTestHelpers.Op));
     }
 
     [Fact]
@@ -192,7 +195,7 @@ public sealed class QuickSlotEditTests
         var (session, _) = await EnterAsync(store, create: true);
         var displaced = GameData.Embedded.DefaultContextSkills(Slot6Skill)[1];
 
-        var rs = (await session.HandleAsync(ContextUpdate(6, 1, ESkill), Now)).First();
+        var rs = Rs(await session.HandleAsync(ContextUpdate(6, 1, ESkill), Now));
         Assert.Equal(0, BitConverter.ToUInt16(rs, 2));
         Assert.Equal(1, rs[10]);
         Assert.Equal(7, rs[11]);
@@ -201,7 +204,7 @@ public sealed class QuickSlotEditTests
         Assert.Equal(ESkill, store.QuickSlots[6].ContextSkills![1]);
 
         // The client follows with the removal of the old position; it is already empty, so nothing changes.
-        var again = (await session.HandleAsync(ContextUpdate(7, 0, 0), Now)).First();
+        var again = Rs(await session.HandleAsync(ContextUpdate(7, 0, 0), Now));
         Assert.Equal(0, BitConverter.ToUInt16(again, 2));
 
         var (_, relog) = await EnterAsync(store, create: false);
@@ -219,7 +222,7 @@ public sealed class QuickSlotEditTests
         var (session, _) = await EnterAsync(store, create: true);
 
         var replies = await session.HandleAsync(ContextUpdate(7, 0, 0), Now);
-        Assert.Equal(0, BitConverter.ToUInt16(replies[0], 2));
+        Assert.Equal(0, BitConverter.ToUInt16(Rs(replies), 2));
         Assert.DoesNotContain(ParseWithContext(BarOf(replies)), e => e.Slot == 7);
 
         var (_, relog) = await EnterAsync(store, create: false);
@@ -233,7 +236,7 @@ public sealed class QuickSlotEditTests
         var (session, _) = await EnterAsync(store, create: true);
         await session.HandleAsync(ContextUpdate(7, 0, 0), Now);
 
-        var rs = (await session.HandleAsync(ContextUpdate(7, 0, 11_010_000), Now)).First();
+        var rs = Rs(await session.HandleAsync(ContextUpdate(7, 0, 11_010_000), Now));
         Assert.Equal(0, BitConverter.ToUInt16(rs, 2));
         Assert.Equal(1, rs[10]);
         Assert.Equal(1, rs[11]);
