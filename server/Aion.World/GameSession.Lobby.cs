@@ -10,8 +10,9 @@ namespace Aion.World;
 // live 2026-10-30 RQ: varint count, {i64 dbid, u8 slot} each. RS 0xe337: result u16, count u8, same pairs as RQ
 // (client replaces its lobby list from the RS; echo every request entry, not only moved slots). No follow-up packets.
 // The dbid arrives as SelectCharacter_RQ's does (varint, possibly shifted 16 bits; OBSERVED for select).
-// Deletion rule (OURS): below level 20 at once, else after 7 days (24 hours before the Oct 28 2026 patch; cancellable); a due deletion moves the
-// character to the store's disabled graveyard account.
+// Deletion rule: after 7 days at every level (OBSERVED 2026-11-15: a level-1 character, 0x3628 `0000 <key> <now + 7 d>`;
+// 24 hours before the Oct 28 2026 patch), cancellable (0x362a `0000 <key>`, OBSERVED); a due deletion moves the character to
+// the store's disabled graveyard account.
 public sealed partial class GameSession
 {
     public const ushort CharDeleteRq = 0x3627, CharDeleteRs = 0x3628, CharDeleteCancelRq = 0x3629, CharDeleteCancelRs = 0x362a,
@@ -23,7 +24,6 @@ public sealed partial class GameSession
     public const int MaxExtendedLobbySlots = 4;
     /// <summary>Total lobby slot indices 0..BaseCharacterSlots-1 (default open + max extensions).</summary>
     public const int BaseCharacterSlots = DefaultLobbySlots + MaxExtendedLobbySlots;
-    public const int ImmediateDeleteBelowLevel = 20;
     public static readonly TimeSpan DeleteDelay = Patch20261028.CharacterDeleteDelay;
 
     int extendedCharacterSlots = -1;
@@ -47,7 +47,7 @@ public sealed partial class GameSession
         return null;
     }
 
-    /// <summary>0x3627 CharPendingDelete_RQ {character key}: deleted now (0x3628 + 0x362b) or after DeleteDelay (0x3628 with the time).</summary>
+    /// <summary>0x3627 CharPendingDelete_RQ {character key}: deleted after DeleteDelay (0x3628 result 0, key, the time).</summary>
     async Task<List<byte[]>> DeleteCharacterAsync(byte[] plain, long now, CancellationToken ct)
     {
         uint key;
@@ -58,11 +58,10 @@ public sealed partial class GameSession
         await Stored(async () => (target = await LobbyCharacterAsync(store, key, ct)) is null ? [] : [[]]);
         if (target is null) return [Reply(1, 0)];
         var character = target.Summary.CharacterId;
-        var immediate = target.Progress.Level < ImmediateDeleteBelowLevel;
-        var at = immediate ? DateTimeOffset.FromUnixTimeMilliseconds(now) : DateTimeOffset.FromUnixTimeMilliseconds(now) + DeleteDelay;
+        var at = DateTimeOffset.FromUnixTimeMilliseconds(now) + DeleteDelay;
         var done = await Stored(async () => await store.RequestCharacterDeleteAsync(character, at, ct) ? [[]] : []);
         if (done.Count == 0) return [Reply(1, 0)];
-        return immediate ? [Reply(0, at.ToUnixTimeMilliseconds()), PacketWriter.Opcode(CharDeletedNt).Varint(key).ToArray()] : [Reply(0, at.ToUnixTimeMilliseconds())];
+        return [Reply(0, at.ToUnixTimeMilliseconds())];
     }
 
     /// <summary>0x3629 CharPendingDeleteCancel_RQ {character key}: a pending deletion is cancelled (0x362a).</summary>

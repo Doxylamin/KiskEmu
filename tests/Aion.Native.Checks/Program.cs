@@ -1041,18 +1041,12 @@ Check(storedCreate.Single()[0] == 0x1c && store.Created.Single().Name == "Player
     Check(renamed.Single().SequenceEqual(new PacketWriter().U16(0x362d).U16(0).Varint(firstKey).String("Renamed").I32(632100001).I64(1).ToArray())
           && lobbyStore.States[0].Summary.Name == "Renamed", "rename: stored and answered 0x362d result 0");
     Check(BitConverter.ToUInt16((await lobbySession.HandleAsync(new PacketWriter().U16(0x362c).Varint(firstKey).String("Second").ToArray(), Now)).Single(), 2) == 8235, "rename to a name in use: kCharChangeName_InvalidCharName");
-    // A level-1 character is deleted at once: 0x3628 then CharDelete_NT 0x362b, and it leaves the list.
-    var deleted = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now);
-    var gone = lobbyStore.States.Count;
-    await lobbyStore.CharacterDeletionsAsync(default);   // as the lobby list does
-    Check(deleted.Count == 2 && deleted[0][0] == 0x28 && deleted[0][2] == 0 && deleted[1].SequenceEqual(new PacketWriter().U16(0x362b).Varint(firstKey).ToArray())
-          && lobbyStore.Deleted.Count == 1 && lobbyStore.States.Count == 1, "a low-level character is deleted at once (0x3628, 0x362b)");
-    // Level 20+: pending for 24 h (shown in the list), cancellable.
-    lobbyStore.States[0] = lobbyStore.States[0] with { Progress = lobbyStore.States[0].Progress with { Level = 30 } };
-    var secondKey = (uint)lobbyStore.States[0].WireId << 16;
-    var pendingDelete = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(secondKey).ToArray(), Now);
-    Check(pendingDelete.Single()[0] == 0x28 && lobbyStore.PendingDeletes.Values.Single() == DateTimeOffset.FromUnixTimeMilliseconds(Now) + GameSession.DeleteDelay, "a level-30 character waits 7 days before deletion");
-    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3629).Varint(secondKey).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x362a).U16(0).Varint(secondKey).ToArray())
+    // Every level waits 7 days (OBSERVED 2026-11-15 for a level-1 character): 0x3628 result 0, the key, the time; no 0x362b.
+    var pendingDelete = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now);
+    Check(pendingDelete.Single().SequenceEqual(new PacketWriter().U16(0x3628).U16(0).Varint(firstKey).I64(Now + (long)GameSession.DeleteDelay.TotalMilliseconds).ToArray())
+          && lobbyStore.PendingDeletes.Values.Single() == DateTimeOffset.FromUnixTimeMilliseconds(Now) + GameSession.DeleteDelay
+          && lobbyStore.Deleted.Count == 0, "a level-1 character waits 7 days before deletion");
+    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3629).Varint(firstKey).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x362a).U16(0).Varint(firstKey).ToArray())
           && lobbyStore.PendingDeletes.Count == 0, "the pending deletion is cancelled (0x362a)");
 }
 bool Refused(List<byte[]> r, int code) => r.Count == 1 && r[0][0] == 0x1c && r[0][1] == 0x36 && BitConverter.ToInt32(r[0], 2) == code;
