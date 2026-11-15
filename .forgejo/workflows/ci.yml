@@ -48,7 +48,9 @@ jobs:
 
   # The xUnit suites, in three jobs that run side by side (the runner stops a job after an hour): the Elyos and the
   # Asmodian quest playthroughs (each plays its race's hero campaign once and runs the campaign tests on copies of it),
-  # and everything else with the Host suite. A hang fails the run with a dump after 20 minutes. Category=LongPlaythrough
+  # and everything else with the Host suite. The cap-quest parity playthrough (All_cap_quests_attempted_by_category,
+  # about 27 minutes per race) has its own job, playthrough-parity, so the rest reports back without waiting for it.
+  # A hang fails the run with a dump after 45 minutes. Category=LongPlaythrough
   # (every side, region and ascension quest at cap) stays out: xunit.runner.json's trait filter needs xUnit v3, so the
   # filters here exclude it.
   world:
@@ -60,10 +62,10 @@ jobs:
         include:
           - part: elyos
             filter: >-
-              (FullyQualifiedName~.CampaignPlaythroughScenarioTests.|FullyQualifiedName~.PlaythroughCampaignTests.|FullyQualifiedName~.CampaignPlaythroughParityTests.|FullyQualifiedName~.PlaythroughSideQuestTests.)&DisplayName~race: 1&Category!=LongPlaythrough
+              (FullyQualifiedName~.CampaignPlaythroughScenarioTests.|FullyQualifiedName~.PlaythroughCampaignTests.|FullyQualifiedName~.CampaignPlaythroughParityTests.|FullyQualifiedName~.PlaythroughSideQuestTests.)&DisplayName~race: 1&Category!=LongPlaythrough&FullyQualifiedName!~.All_cap_quests_attempted_by_category
           - part: asmodian
             filter: >-
-              (((FullyQualifiedName~.CampaignPlaythroughScenarioTests.|FullyQualifiedName~.PlaythroughCampaignTests.|FullyQualifiedName~.CampaignPlaythroughParityTests.|FullyQualifiedName~.PlaythroughSideQuestTests.)&DisplayName~race: 2)|FullyQualifiedName~.PlaythroughAsmodianCampaignTests.)&Category!=LongPlaythrough
+              (((FullyQualifiedName~.CampaignPlaythroughScenarioTests.|FullyQualifiedName~.PlaythroughCampaignTests.|FullyQualifiedName~.CampaignPlaythroughParityTests.|FullyQualifiedName~.PlaythroughSideQuestTests.)&DisplayName~race: 2)|FullyQualifiedName~.PlaythroughAsmodianCampaignTests.)&Category!=LongPlaythrough&FullyQualifiedName!~.All_cap_quests_attempted_by_category
           - part: other
             host: true
             filter: >-
@@ -82,6 +84,25 @@ jobs:
 
       - name: World tests
         run: dotnet test tests/Aion.World.Tests --filter "${{ matrix.filter }}" --blame-hang-timeout 45m --logger "console;verbosity=minimal"
+
+  # The cap-quest parity playthrough, one job per race (each about 27 minutes on its own, 40 beside other jobs).
+  playthrough-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        race: [1, 2]
+    name: playthrough parity (race ${{ matrix.race }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cap-quest parity playthrough
+        run: dotnet test tests/Aion.World.Tests --filter "FullyQualifiedName~.All_cap_quests_attempted_by_category&DisplayName~race: ${{ matrix.race }}" --blame-hang-timeout 45m --logger "console;verbosity=minimal"
 
   # tools/check_persistence.py: the repository checks against a disposable PostgreSQL 18 database (the version the
   # servers run). initdb refuses root, so the cluster belongs to an unprivileged user; it lives only in this job.
