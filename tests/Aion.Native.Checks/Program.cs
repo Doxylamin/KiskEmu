@@ -1041,19 +1041,20 @@ Check(storedCreate.Single()[0] == 0x1c && store.Created.Single().Name == "Player
     Check(renamed.Single().SequenceEqual(new PacketWriter().U16(0x362d).U16(0).Varint(firstKey).String("Renamed").I32(632100001).I64(1).ToArray())
           && lobbyStore.States[0].Summary.Name == "Renamed", "rename: stored and answered 0x362d result 0");
     Check(BitConverter.ToUInt16((await lobbySession.HandleAsync(new PacketWriter().U16(0x362c).Varint(firstKey).String("Second").ToArray(), Now)).Single(), 2) == 8235, "rename to a name in use: kCharChangeName_InvalidCharName");
-    // A level-1 character is deleted at once: 0x3628 then CharDelete_NT 0x362b, and it leaves the list.
-    var deleted = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now);
-    var gone = lobbyStore.States.Count;
-    await lobbyStore.CharacterDeletionsAsync(default);   // as the lobby list does
-    Check(deleted.Count == 2 && deleted[0][0] == 0x28 && deleted[0][2] == 0 && deleted[1].SequenceEqual(new PacketWriter().U16(0x362b).Varint(firstKey).ToArray())
-          && lobbyStore.Deleted.Count == 1 && lobbyStore.States.Count == 1, "a low-level character is deleted at once (0x3628, 0x362b)");
-    // Level 20+: pending for 24 h (shown in the list), cancellable.
-    lobbyStore.States[0] = lobbyStore.States[0] with { Progress = lobbyStore.States[0].Progress with { Level = 30 } };
-    var secondKey = (uint)lobbyStore.States[0].WireId << 16;
-    var pendingDelete = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(secondKey).ToArray(), Now);
-    Check(pendingDelete.Single()[0] == 0x28 && lobbyStore.PendingDeletes.Values.Single() == DateTimeOffset.FromUnixTimeMilliseconds(Now) + GameSession.DeleteDelay, "a level-30 character waits 7 days before deletion");
-    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3629).Varint(secondKey).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x362a).U16(0).Varint(secondKey).ToArray())
+    // Every level waits 7 days (OBSERVED 2026-11-15 for a level-1 character): 0x3628 result 0, the key, the time; no 0x362b.
+    var pendingDelete = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now);
+    Check(pendingDelete.Single().SequenceEqual(new PacketWriter().U16(0x3628).U16(0).Varint(firstKey).I64(Now + (long)GameSession.DeleteDelay.TotalMilliseconds).ToArray())
+          && lobbyStore.PendingDeletes.Values.Single() == DateTimeOffset.FromUnixTimeMilliseconds(Now) + GameSession.DeleteDelay
+          && lobbyStore.Deleted.Count == 0, "a level-1 character waits 7 days before deletion");
+    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3629).Varint(firstKey).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x362a).U16(0).Varint(firstKey).ToArray())
           && lobbyStore.PendingDeletes.Count == 0, "the pending deletion is cancelled (0x362a)");
+    // In a legion: refused with kCharPendingDelete_InGuild and time 0 (OBSERVED 2026-11-15 `4320 <key> 0000000000000000`).
+    lobbyStore.GuildRow = new GuildView(7, "Legion", 1, 0, 0, 0, "", "", "", DateTimeOffset.UnixEpoch,
+        [new GuildMember(lobbyStore.States[0].Summary.CharacterId, "Renamed", 1, 0, "", 1, DateTimeOffset.UnixEpoch)], 0, 0, []);
+    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now)).Single()
+              .SequenceEqual(new PacketWriter().U16(0x3628).U16(8259).Varint(firstKey).I64(0).ToArray())
+          && lobbyStore.PendingDeletes.Count == 0, "a character in a legion is not deleted (0x3628 8259)");
+    lobbyStore.GuildRow = null;
 }
 bool Refused(List<byte[]> r, int code) => r.Count == 1 && r[0][0] == 0x1c && r[0][1] == 0x36 && BitConverter.ToInt32(r[0], 2) == code;
 Check(Refused(await stored.HandleAsync(create.Append((byte)0).ToArray(), Now), GamePackets.CreateInvalidCustomizing) && store.Created.Count == 1 && stored.PersistenceErrors.Count == 1,
@@ -1161,6 +1162,9 @@ byte[] NameRequest(string name) => Strings(0x3619, name).Append((byte)1).ToArray
 Check((await staffSession.HandleAsync(NameRequest("GM_Elyra"), Now)).Single().SequenceEqual(GamePackets.NameCheck("GM_Elyra")), "staff accounts may take GM names");
 Check((await stored.HandleAsync(NameRequest("GM_Elyra"), Now)).Single().SequenceEqual(GamePackets.NameCheck("GM_Elyra", GamePackets.NameBannedWord))
       && (await stored.HandleAsync(NameRequest("Gmork"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Gmork")), "players may not");
+// A character outside the allowed set: kCharCheckName_InvalidCharset (OBSERVED 2026-11-15 `2220 <name> 01` for an o with a macron).
+Check((await stored.HandleAsync(NameRequest("Madōshi"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Madōshi", GamePackets.NameInvalidCharset))
+      && (await stored.HandleAsync(NameRequest("Madoshi"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Madoshi")), "a name with a non-ASCII letter is refused (8226)");
 await staffSession.HandleAsync(create, Now);
 // A new character on a staff account is a player until it is flagged by hand (migration 035; the dashboard's "staff" command).
 {

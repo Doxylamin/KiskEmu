@@ -343,7 +343,9 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 if (name.Length == 0) return [];
                 // The client's EResult codes (only 0 has been observed; the codes are the usmap enum's): a staff-style
                 // name is a banned word for players, a name in use a duplicate.
-                var result = CharacterNames.IsStaffStyle(name) && !StaffAccount ? GamePackets.NameBannedWord : GamePackets.ResultOk;
+                // A character outside the allowed set is kCharCheckName_InvalidCharset (OBSERVED 2026-11-15 `2220 <name> 01`).
+                var result = CharacterNames.IsStaffStyle(name) && !StaffAccount ? GamePackets.NameBannedWord
+                    : CharacterNames.HasInvalidCharset(name) && !StaffAccount ? GamePackets.NameInvalidCharset : GamePackets.ResultOk;
                 if (result == GamePackets.ResultOk && Store is { } names && (await Stored(async () => await names.NameTakenAsync(name, ct) ? [[]] : [])).Count > 0)
                     result = GamePackets.NameDuplicate;
                 return [GamePackets.NameCheck(name, result)];
@@ -1323,7 +1325,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         try
         {
             if (CreateRequest(plain, strict: true) is null) return GamePackets.CreateInvalidCustomizing;
-            if (CharacterNames.IsStaffStyle(refused.Name) && !StaffAccount) return GamePackets.CreateInvalidName;
+            if ((CharacterNames.IsStaffStyle(refused.Name) || CharacterNames.HasInvalidCharset(refused.Name)) && !StaffAccount) return GamePackets.CreateInvalidName;
             if (await store.NameTakenAsync(refused.Name, ct)) return GamePackets.CreateDuplicateName;
             var profile = data.Profile(refused.CreationId, refused.Gender);
             if (profile is null) return GamePackets.CreateInvalidPcData;
@@ -1347,6 +1349,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
             {
                 // Strict complete parsing: unknown tails must not create a character.
                 var request = CreateRequest(plain, strict: true) ?? throw new ArgumentException("Unsupported character creation layout");
+                if (CharacterNames.HasInvalidCharset(request.Name) && !StaffAccount) throw new ArgumentException("Invalid character in the name");
                 var profile = data.Profile(request.CreationId, request.Gender) ?? throw new ArgumentException("Unknown creation profile");
                 if (OtherRace(await store.LobbyAsync(ct), profile.Race)) throw new ArgumentException("The other race on this server");
                 await EnsureExtendedCharacterSlotsAsync(ct);
