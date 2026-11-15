@@ -59,6 +59,23 @@ public sealed partial class GameSession
         return (file?.Better ?? []).ToDictionary(kv => int.Parse(kv.Key, System.Globalization.CultureInfo.InvariantCulture), kv => kv.Value);
     });
 
+    /// <summary>
+    /// 0x8d3e GatherComboStart_NT {_gather_combo_count i32, _expiration_time i64} after each won gather, between 0x8d33 and
+    /// 0x8d34 (OBSERVED 2026-11-15, 12 samples): the count runs 1, 2, 3 over won gathers each within 30 s of the last, and
+    /// starts again at 1 after a longer pause; the expiry is the gather's time plus 30 s. What the combo does is not modelled.
+    /// </summary>
+    public const ushort GatherComboStartNt = 0x8d3e;
+    public const long GatherComboMs = 30_000;
+    int gatherCombo;
+    long gatherComboEndsMs;
+
+    byte[] GatherComboStart(long now)
+    {
+        gatherCombo = now < gatherComboEndsMs ? gatherCombo + 1 : 1;
+        gatherComboEndsMs = now + GatherComboMs;
+        return PacketWriter.Opcode(GatherComboStartNt).I32(gatherCombo).I64(gatherComboEndsMs).ToArray();
+    }
+
     public static int? GatherBetterGrade(int material) => gatherBetterGrades.Value.TryGetValue(material, out var better) ? better : null;
 
     public int GatherAttemptsLeft(int index) => gatherAttempts.GetValueOrDefault(index, -1);
@@ -384,6 +401,7 @@ public sealed partial class GameSession
         replies.InsertRange(0, await GatherMasteryExpAsync(ct, item));
         replies.AddRange(AchieveGather(gatherLevel));
         replies.Add(GatherCompleted(result, key).I32(item).I32(count).I32(0).I32(bonus.Item1).I32(bonus.Item2).ToArray());
+        replies.Add(GatherComboStart(now));
         replies.Add(GatherEnded(result, key));
         return replies;
     }

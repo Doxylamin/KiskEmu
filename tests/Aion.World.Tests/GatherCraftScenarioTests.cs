@@ -211,7 +211,12 @@ public sealed class GatherCraftScenarioTests
         // 0x363a carries the uses taken (1), which runs the node's bar down; 0x8d34 follows 0x8d33 (OBSERVED).
         Assert.Contains(done, b => b.SequenceEqual(GamePackets.InteractEnvObjCompleted(key, session.PlayerKey, 1)));
         var ops = done.Select(b => (int)GameSessionTestHelpers.Op(b)).ToList();
-        Assert.Equal(ops.IndexOf(GameSession.GatherCompletedNt) + 1, ops.IndexOf(0x8d34));
+        // OBSERVED 2026-11-15: 0x8d33, GatherComboStart_NT 0x8d3e {count 1, now + 30 s}, then 0x8d34.
+        Assert.Equal(ops.IndexOf(GameSession.GatherCompletedNt) + 1, ops.IndexOf(GameSession.GatherComboStartNt));
+        Assert.Equal(ops.IndexOf(GameSession.GatherComboStartNt) + 1, ops.IndexOf(0x8d34));
+        var combo = done.Single(b => GameSessionTestHelpers.Op(b) == GameSession.GatherComboStartNt);
+        Assert.Equal(1, BitConverter.ToInt32(combo, 2));
+        Assert.Equal(Now + end + 10 + GameSession.GatherComboMs, BitConverter.ToInt64(combo, 6));
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![0]);
         Assert.Contains(store.Items, i => i.TemplateId == (int)node.Gather![2]);
     }
