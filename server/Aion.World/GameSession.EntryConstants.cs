@@ -69,6 +69,7 @@ public sealed partial class GameSession
         ]);
         replies.AddRange(InventoryDepotSyncPackets()); // 0x5611 and 0x561d (recorded: 0x561d here, the depot list before 0x572d)
         replies.Add(Observed(0xe25c, "014b01"));       // ContentsFeatureOnOffListByAdmin_NT
+        if (AbyssTierBuffAtEntry(now) is { } tier) replies.Add(tier);   // the Abyss tier buff 20100 (0x382b) right after it (GameSession.SeasonRanking.cs)
         if (Store is not null) replies.Add(RestorableItems());   // the buyback list 0xe342
         if (withProfile) replies.Add(ItemRestoreStatus(now));   // 0xe343 right after it
         replies.Add(DungeonCoolTimesList(now));        // OURS: not in the recordings; kept with the lists

@@ -69,6 +69,8 @@ public sealed record BossChallengeRecord(int GroupId, int ClearLevel, long BestP
 /// <summary>Abyss entry pool and ranking (migration 043; 050 pending siege AP and rift PvP flag).</summary>
 public sealed record AbyssRecord(long EntryRemainingMs, long ApAcc, int RankingPoint, int RankingGrade, DateTimeOffset WeeklyResetAt, DateTimeOffset UpdatedAt,
     long PendingSiegeAp = 0, int RiftPvpOn = 0);
+/// <summary>A character of the Abyss season ranking: its ranking point (character_abyss) with the name, legion and class the list shows.</summary>
+public sealed record AbyssRankRow(Guid CharacterId, long WireId, string Name, string Guild, int GuildEmblem, int Level, int ClassId, long Point);
 /// <summary>Fortress owner and siege applicants for a world host (migration 047).</summary>
 public sealed record AirspaceOwnerRecord(int AirspaceId, long GuildId, string Name, int Emblem, string MasterName);
 public sealed record AirspaceApplyRecord(int BattleId, int AirspaceId, long GuildId);
@@ -359,6 +361,9 @@ public interface IGameplayStore
         Task.FromResult(false);
     Task<AbyssRecord?> AbyssAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<AbyssRecord?>(null);
     Task<bool> SaveAbyssAsync(VerifiedAccount account, Guid character, AbyssRecord record, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>A world's Abyss ranking of a race: the characters with at least <paramref name="minPoint"/> ranking points, best first.</summary>
+    Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int worldId, int race, int minPoint, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<AbyssRankRow>>([]);
     /// <summary>Credit offline legion members after fortress siege (migration 050 pending_siege_ap).</summary>
     Task AddPendingSiegeApForGuildAsync(long guildId, int ap, IReadOnlyList<Guid> onlineCharacterIds, CancellationToken ct = default) => Task.CompletedTask;
     Task<AirspaceWorldRecord> AirspaceWorldAsync(int worldId, CancellationToken ct = default) =>
