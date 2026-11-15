@@ -1048,6 +1048,13 @@ Check(storedCreate.Single()[0] == 0x1c && store.Created.Single().Name == "Player
           && lobbyStore.Deleted.Count == 0, "a level-1 character waits 7 days before deletion");
     Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3629).Varint(firstKey).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x362a).U16(0).Varint(firstKey).ToArray())
           && lobbyStore.PendingDeletes.Count == 0, "the pending deletion is cancelled (0x362a)");
+    // In a legion: refused with kCharPendingDelete_InGuild and time 0 (OBSERVED 2026-11-15 `4320 <key> 0000000000000000`).
+    lobbyStore.GuildRow = new GuildView(7, "Legion", 1, 0, 0, 0, "", "", "", DateTimeOffset.UnixEpoch,
+        [new GuildMember(lobbyStore.States[0].Summary.CharacterId, "Renamed", 1, 0, "", 1, DateTimeOffset.UnixEpoch)], 0, 0, []);
+    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now)).Single()
+              .SequenceEqual(new PacketWriter().U16(0x3628).U16(8259).Varint(firstKey).I64(0).ToArray())
+          && lobbyStore.PendingDeletes.Count == 0, "a character in a legion is not deleted (0x3628 8259)");
+    lobbyStore.GuildRow = null;
 }
 bool Refused(List<byte[]> r, int code) => r.Count == 1 && r[0][0] == 0x1c && r[0][1] == 0x36 && BitConverter.ToInt32(r[0], 2) == code;
 Check(Refused(await stored.HandleAsync(create.Append((byte)0).ToArray(), Now), GamePackets.CreateInvalidCustomizing) && store.Created.Count == 1 && stored.PersistenceErrors.Count == 1,

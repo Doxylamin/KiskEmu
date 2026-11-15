@@ -25,6 +25,11 @@ public sealed partial class GameSession
     /// <summary>Total lobby slot indices 0..BaseCharacterSlots-1 (default open + max extensions).</summary>
     public const int BaseCharacterSlots = DefaultLobbySlots + MaxExtendedLobbySlots;
     public static readonly TimeSpan DeleteDelay = Patch20261028.CharacterDeleteDelay;
+    /// <summary>
+    /// 0x3628 result for a character in a legion (usmap kCharPendingDelete_InGuild): OBSERVED 2026-11-15 `4320 <key> 0000000000000000`,
+    /// the client says the character cannot be deleted while in a legion.
+    /// </summary>
+    public const int DeleteRefusedInGuild = 8259;
 
     int extendedCharacterSlots = -1;
     /// <summary>Purchased extensions persisted on auth.accounts (also sent as _extended_character_slot_count).</summary>
@@ -58,6 +63,8 @@ public sealed partial class GameSession
         await Stored(async () => (target = await LobbyCharacterAsync(store, key, ct)) is null ? [] : [[]]);
         if (target is null) return [Reply(1, 0)];
         var character = target.Summary.CharacterId;
+        var inGuild = await Stored(async () => await store.GuildOfAsync(character, ct) is not null ? [[]] : []);
+        if (inGuild.Count > 0) return [Reply(DeleteRefusedInGuild, 0)];
         var at = DateTimeOffset.FromUnixTimeMilliseconds(now) + DeleteDelay;
         var done = await Stored(async () => await store.RequestCharacterDeleteAsync(character, at, ct) ? [[]] : []);
         if (done.Count == 0) return [Reply(1, 0)];
