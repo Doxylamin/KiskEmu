@@ -24,7 +24,11 @@ public sealed partial class NpcAi(Random rng, GameData? data = null)
     /// <summary>A following NPC farther than this from the player gets the speed boost (OURS; the official toggles it as it falls behind).</summary>
     public const double FollowBoostBeyond = 700.0;
     public const int FollowBoost = 8000;
-    public const double LeashRange = 3000.0, ActiveRange = 8000.0;
+    /// <summary>
+    /// How far a chase may go from the monster's spawn before it gives up (CANDIDATE: one official sample, an Aullaeu Sentry
+    /// turned back about 48 m out, 9.5 s into the chase, 2026-11-15; ours was 30 m).
+    /// </summary>
+    public const double LeashRange = 4800.0, ActiveRange = 8000.0;
     public const double WanderRadius = 400.0, Reach = 120.0, TurnResendDegrees = 10.0;
     public const int WanderIdleMinMs = 6000, WanderIdleMaxMs = 15000;
     /// <summary>Official: the NPC's hit (0x3804) followed its skill start (0x3802) by ~600 ms.</summary>

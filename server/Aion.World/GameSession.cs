@@ -56,8 +56,11 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     public const long CombatTimeoutMs = 3500;   // official 0x8d21 leave ~3.3-3.6 s after the last action
     public const long CheckpointMs = 30000;
     public const double AreaRange = 400;        // "within 4m" of the area skills' text
-    /// <summary>Monster respawn after the kill (OURS; the official delay is unknown) and corpse removal (OBSERVED ~4050 ms after 0x8d04).</summary>
-    public const long RespawnMs = 30_000, CorpseMs = 4_000;
+    /// <summary>
+    /// Monster respawn after the kill and corpse removal (OBSERVED ~4050 ms after 0x8d04). The respawn is CANDIDATE: one
+    /// official sample, an Aullaeu Sentry back 54.2 s after its kill (2026-11-15); per-monster times are not known.
+    /// </summary>
+    public const long RespawnMs = 54_000, CorpseMs = 4_000;
     /// <summary>Official SP (stamina): sprint drains 500 every 100 ms; regen per second 20000 out of combat, 5000 in combat, none while sprinting.</summary>
     public const int SprintDrain = 500, SprintTickMs = 100, SpRegenOutOfCombat = 20000, SpRegenInCombat = 5000;
 
