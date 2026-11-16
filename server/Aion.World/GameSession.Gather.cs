@@ -18,9 +18,9 @@ public sealed partial class GameSession
     /// <summary>0x8d33 result (OBSERVED): 0 gathered, 1 gathered a better grade, 2 failed.</summary>
     const int GatherFailed = 2;
 
-    // OBSERVED (83 official GatherSourceCompleted_NT): u8 result, then a constant 0x3a byte, then the varint target key
-    // and five i32 reward fields. The meaning of 0x3a is unknown; mirror it.
-    static PacketWriter GatherCompleted(int result, long key) => PacketWriter.Opcode(GatherCompletedNt).U8((byte)result).U8(0x3a).Varint(key);
+    // OBSERVED (83 official GatherSourceCompleted_NT): the result as a u16 EResult 0x3a00 + n (bytes `n 3a`), then the varint
+    // target key and five i32 reward fields (#70; same bytes as the earlier u8 result + constant 0x3a).
+    static PacketWriter GatherCompleted(int result, long key) => PacketWriter.Opcode(GatherCompletedNt).U16((ushort)(0x3a00 + result)).Varint(key);
     public const ushort GatherStartRq = 0x8d30, GatherStartRs = 0x8d31, GatherStopRq = 0x8d32, GatherCompletedNt = 0x8d33, GatherExpUpdateNt = 0x8d35,
         GatherLevelUpdateNt = 0x8d36;
     public const long GatherRespawnMs = 60_000;
