@@ -195,7 +195,7 @@ public sealed partial class GameSession
             var cooldown = Boxes.Cooldown(itemId);
             if (cooldown.Group != "None" && now < itemCooldowns.GetValueOrDefault(cooldown.Group)) return [];
             if (storedItems.Values.Where(i => i.TemplateId == itemId && i.Location == "bag").OrderBy(i => i.Quantity).FirstOrDefault() is { } stack)
-                return await UseItemAsync(stack.WireId, now, ct);
+                return await UseItemAsync(stack.WireId, now, ct, autoPotion: true);
         }
         return [];
     }

@@ -33,7 +33,7 @@ public sealed partial class GameSession
         var speedBefore = BuffStat("MoveSpeed");
         var replies = new List<byte[]>();
         AddBuff(abnormalId, durationMs, npc?.SkillId ?? 0, now, replies, path: SelfAbnormalPath.PlayerDebuff, caster: npc, hitDamage: hitDamage);
-        replies.AddRange(BuffStatsChanged(speedBefore, byNpc: npc is not null));
+        replies.AddRange(BuffStatsChanged(speedBefore));
         // KnockdownInstant: 0x3816 Abnormal_Move_Instant_NT {key, caster, effect abnormal x 10 + 1, the player's own position, 04 01 01}
         // about 50 ms after the 0x382a (OBSERVED 2026-11-15 i=289759, 48 ms).
         if (npc is { } knocker && info.Effects.Any(e => e.Type == "KnockdownInstant"))

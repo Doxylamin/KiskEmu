@@ -233,7 +233,7 @@ public sealed partial class GameSession
     /// 0x5612 ItemUse_RQ {i64 uid}. Refused (result 1) for an unknown or cooling item, or an effect
     /// that is not implemented; always answers 0x5613 (never leaves the request unanswered).
     /// </summary>
-    async Task<List<byte[]>> UseItemAsync(long uid, long now, CancellationToken ct, bool reply = true, int count = 1)
+    async Task<List<byte[]>> UseItemAsync(long uid, long now, CancellationToken ct, bool reply = true, int count = 1, bool autoPotion = false)
     {
         usedCountApplied = false;
         storedItems.TryGetValue(uid, out var row);
@@ -260,7 +260,7 @@ public sealed partial class GameSession
             "GetVehicleSoul" => await UseSoulItemAsync(store, character, row, use, reply, ct),
             "GetVehicleSoulCrystal" => await UseCrystalItemAsync(store, character, row, use, reply, ct),
             "Fix_VehicleCreatureLevel" => await UseBoardLevelItemAsync(store, character, row, use, reply, ct),
-            "Skill" => await UseSkillItemAsync(store, character, row, use, reply, now, ct),
+            "Skill" => await UseSkillItemAsync(store, character, row, use, reply && !autoPotion, now, ct, autoPotion),
             "Telpo_Home" when itemCast is null => StartItemCast(row, cooldown, now),
             "GetKina" or "GetNonBindingKina" when use.Values is [var amount, ..] && long.TryParse(amount, out var kina) && kina > 0 =>
                 await UseKinaItemAsync(store, character, row, kina, Math.Clamp(count, 1, (int)Math.Min(int.MaxValue, row.Quantity)), reply, ct),
@@ -456,10 +456,14 @@ public sealed partial class GameSession
 
     /// <summary>
     /// An item skill (potions, food, drinks, scrolls): instant HP/MP/FP heals now; Abnormal_True
-    /// effects (heal over time, stat buffs) go through ApplyItemAbnormals. The official order: skill
-    /// start on the player (0x3802), the item count (0x561b), ItemUse_NT (0x5616), then the effect.
+    /// effects (heal over time, stat buffs) go through ApplyItemAbnormals. OBSERVED official order (2026-11-12 r2, Superior Speed
+    /// Scroll i=19270-19278 and Fruit Salad i=34158-34167): 0x3802 skill start on the player, 0x5613, 0x3806 skill end, the
+    /// skill's 0x3804 effect, the item count (0x561b, reason 14), then the effect (0x382a, 0x364a); no ItemUse_NT 0x5616 (#13).
+    /// The auto-potion (OBSERVED 2026-11-15 i=569962-569970, Life Potion 530126004): 0x3802, 0x3806, the item count (0x561b,
+    /// reason 38), 0x5616, an empty 0x364a, then 0x3804; no 0x5613.
     /// </summary>
-    async Task<List<byte[]>?> UseSkillItemAsync(INativeCharacterStore store, Guid character, ItemState row, ItemUse use, bool reply, long now, CancellationToken ct)
+    async Task<List<byte[]>?> UseSkillItemAsync(INativeCharacterStore store, Guid character, ItemState row, ItemUse use, bool reply, long now, CancellationToken ct,
+        bool autoPotion = false)
     {
         if (use.Values is not [var value, ..] || !int.TryParse(value, out var skillId) || resources is not { } r) return null;
         var effects = Boxes.SkillEffects(skillId);
@@ -480,11 +484,14 @@ public sealed partial class GameSession
         var done = await Stored(async () => await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, 1, ct) ? [[]] : []);
         if (done.Count == 0) return null;
         actionUid = actionUid % 255 + 1;
-        var replies = new List<byte[]>();
+        var replies = new List<byte[]> { GamePackets.ItemSkillStart(playerKey, skillId, actionUid, worldPlayer?.Heading ?? 0) };
         if (reply) replies.Add(RidePackets.ItemUseReply(0, WireKey(row), row.TemplateId));
-        replies.Add(GamePackets.SkillStart(skillId, actionUid, worldPlayer?.Heading ?? 0, position ?? Vector3d.Zero, playerKey, actorKey: playerKey));
-        replies.AddRange(await InventoryChangesAsync(ct, 0, DecreaseItemUse));
-        replies.Add(RidePackets.ItemUsed(WireKey(row), row.TemplateId));
+        replies.Add(GamePackets.SkillEnd(playerKey, skillId, actionUid));
+        if (autoPotion)
+            replies.AddRange([.. await InventoryChangesAsync(ct, 0, DecreaseItemAutoUse), RidePackets.ItemUsed(WireKey(row), row.TemplateId),
+                GamePackets.CharStatsUpdate(playerKey, 0), GamePackets.ItemSkillEffect(playerKey, skillId, actionUid)]);
+        else
+            replies.AddRange([GamePackets.ItemSkillEffect(playerKey, skillId, actionUid), .. await InventoryChangesAsync(ct, 0, DecreaseItemUse)]);
         r.Hp = Math.Min(r.HpMax, r.Hp + hp);
         r.Mp = Math.Min(r.MpMax, r.Mp + mp);
         if (r.FpMax > 0) r.Fp = Math.Min(r.FpMax, r.Fp + fp);
@@ -669,4 +676,7 @@ public sealed partial class GameSession
 
     // EIncreaseReason / EDecreaseReason (usmap).
     const byte IncreaseItemUse = 9, IncreaseOpenRewardBox = 31, DecreaseItemUse = 14, DecreaseOpenRewardBox = 37;
+    /// <summary>An auto-used item's decrease (OBSERVED 2026-11-15, the auto-potion; the battle pass level item uses it too).</summary>
+    const byte DecreaseItemAutoUse = 38;
+    internal const byte DecreaseItemUseReason = DecreaseItemUse, DecreaseItemAutoUseReason = DecreaseItemAutoUse;
 }

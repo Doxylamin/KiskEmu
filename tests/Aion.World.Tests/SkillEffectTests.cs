@@ -236,11 +236,11 @@ public sealed class SkillEffectTests
         var (session, _) = await Setup("Assassin");
         var speed = session.AllowedSpeed();
         var applied = session.TryApplyPlayerDebuff(Slow, 3_000, Now + 6_000);
-        Assert.True(HasOp(applied, 0x364b));
+        Assert.True(HasOp(applied, 0x364a));
         Assert.Contains(Slow, session.ActiveBuffs);
         var ended = await session.TickAsync(Now + 6_000 + 3_500);
         Assert.DoesNotContain(Slow, session.ActiveBuffs);
-        Assert.True(HasOp(ended, 0x364b), "the move speed is restored");
+        Assert.True(HasOp(ended, 0x364a), "the move speed is restored");
         Assert.Equal(speed, session.AllowedSpeed(), 6);
     }
 

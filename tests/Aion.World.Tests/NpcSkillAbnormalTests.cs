@@ -87,7 +87,7 @@ public sealed class NpcSkillAbnormalTests
         // 1217770 puts 12172701 (StatChange MoveSpeed -3000) on for 10 s.
         var hit = session.NpcHitsPlayer(100, Now + 100, killerKey: Npc, killerSkill: 1217770, hitSeq: 1, casterAt: NpcAt);
         var stats = hit.Where(p => GameSessionTestHelpers.Op(p) == 0x364a).ToList();
-        Assert.Contains(GamePackets.CharStatsUpdate(session.PlayerKey, [(GameSession.MoveSpeedStat, -3000)], session.Resource!.HpMax), stats);
+        Assert.Contains(GamePackets.CharStatsUpdate(session.PlayerKey, [(GameSession.MoveSpeedStat, -3000)], 0), stats);
         Assert.DoesNotContain(hit, p => GameSessionTestHelpers.Op(p) == 0x364b);
     }
 }

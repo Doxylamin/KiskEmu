@@ -1710,6 +1710,21 @@ public static class GamePackets
     }
 
     /// <summary>
+    /// 0x3802 for an item's skill on the user, with no location (OBSERVED 2026-11-12 r2, 21 bytes: Superior Speed Scroll
+    /// `0238 dd08 00 38b92100 7f 00 dd08 035f4042 904e01 00`, Fruit Salad the same form): actor, 0, skill, action uid, 0, target,
+    /// yaw f32, attack speed 10000, 1, cooldown 0 (as <see cref="SkillStart"/> ends).
+    /// </summary>
+    public static byte[] ItemSkillStart(int key, int skill, int actionUid, double yaw) =>
+        PacketWriter.Opcode(0x3802).Varint(key).U8(0).I32(skill).U8((byte)actionUid).U8(0).Varint(key).F32(yaw).Varint(10000).U8(1).Varint(0).ToArray();
+
+    /// <summary>
+    /// 0x3804 for an item's skill on the user (OBSERVED 2026-11-12 r2: Superior Speed Scroll `0438 dd08 0000 dd08 38b92100 7f 02
+    /// eb592c0d 01000000 904e01 00`, Fruit Salad the same with 2160401): <see cref="SkillEffect"/> on the user with effect id
+    /// skill x 100 + 11.
+    /// </summary>
+    public static byte[] ItemSkillEffect(int key, int skill, int actionUid) => SkillEffect(key, key, skill, actionUid, skill * 100 + 11);
+
+    /// <summary>
     /// 0x3806 skill end: key, skill, action uid, u8 reason. 0 for a natural end (OBSERVED 200 ms after every official dodge and sprint
     /// dash, before the abnormal's 0x382c); <see cref="SkillEndCut"/> when the actor's next cast cuts the running skill.
     /// </summary>
