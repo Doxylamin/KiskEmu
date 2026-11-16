@@ -560,16 +560,17 @@ public static class PlayerPackets
 
     /// <summary>
     /// 0x3804 of a projectile hit, OBSERVED (official Ranger 2026-10-30, Snipe and Rapid Fire): target | 14 00 | caster | skill |
-    /// uid | hit type | effect id u32 | effect seq u32 | attack speed | damage | seq u8 | 01 | 00. Mask bit 0x02 adds the
+    /// uid | hit type | effect id u32 | effect seq u32 | attack speed | damage | 01 | effect seq u16. Mask bit 0x02 adds the
     /// _plotter (block / hard hit / attack angle flags) after the hit type, e.g. 16 00 ... 02 80 00 01 cb14a053 ... in an earlier
-    /// capture; a plain hit has none. CANDIDATE: the order of the seq and the 01 (both samples have seq 1).
+    /// capture; a plain hit has none. The flag comes before the seq: OBSERVED 2026-11-04 (16 mask-0x14 hits with seq 2 end
+    /// `01 0200`, e.g. `...4802000000 c65f 9a6e 01 0200`), as the A2Core fork found (ee8208b, #70).
     /// </summary>
     public static byte[] ProjectileEffect(int targetKey, int casterKey, int skillId, byte actionUid, int effectId, int effectSeq, int damage,
         int attackSpeed = 10000, int hitType = 2)
     {
-        if (effectSeq is < 0 or > 255) throw new ArgumentOutOfRangeException(nameof(effectSeq));
+        if (effectSeq is < 0 or > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(effectSeq));
         return PacketWriter.Opcode(0x3804).Varint(targetKey).U8(0x14).U8(0).Varint(casterKey).I32(skillId).U8(actionUid)
-            .Varint(hitType).U32((uint)effectId).U32((uint)effectSeq).Varint(attackSpeed).Varint(damage).U8((byte)effectSeq).U8(1).U8(0).ToArray();
+            .Varint(hitType).U32((uint)effectId).U32((uint)effectSeq).Varint(attackSpeed).Varint(damage).U8(1).U16((ushort)effectSeq).ToArray();
     }
 
     /// <summary>
