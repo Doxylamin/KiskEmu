@@ -60,6 +60,30 @@ public sealed class TravelParityTests
     }
 
     [Fact]
+    public async Task Flight_ring_refills_the_gauge_over_two_point_six_seconds()
+    {
+        var session = await EnterAscendedAsync(new FakeCharacterStore(), Now);
+        await session.HandleAsync(new PacketWriter().U16(0x370a).U8(0).ToArray(), Now);
+        var max = session.Resource.FpMax;
+        Assert.True(max > 0);
+        session.SetResource('F', max - 67_000);
+
+        // OBSERVED (capture 20261019-231752): 183000 back to 250000 within 2.6 s, not at once (#37).
+        var ring = session.FlyThroughRing(GameSession.FlightRingAbnormal, Now + 50);
+        Assert.Equal(max - 67_000, session.Resource.Fp);
+        Assert.DoesNotContain(ring, p => GameSessionTestHelpers.Op(p) == 0x8d00);
+
+        await session.TickAsync(Now + 1_350);
+        var halfway = session.Resource.Fp;
+        Assert.InRange(halfway, max - 67_000 + 20_000, max - 20_000);
+        await session.TickAsync(Now + 2_650);
+        Assert.Equal(max, session.Resource.Fp);
+        // After the window the flight drains again.
+        await session.TickAsync(Now + 3_500);
+        Assert.True(session.Resource.Fp < max);
+    }
+
+    [Fact]
     public async Task Glide_reports_skip_speed_anti_cheat()
     {
         var session = await EnterAscendedAsync(new FakeCharacterStore(), Now);
