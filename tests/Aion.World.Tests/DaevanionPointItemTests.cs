@@ -34,9 +34,16 @@ public sealed class DaevanionPointItemTests
 
         var before = session.DaevanionAvailableForTests(1);
         var replies = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(901).ToArray(), Now + 3);
-        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(replies[0], 2));
+        // The official order (2026-11-04): 0x561b (decrease reason 70), the use reply, 0xe22f with all five totals (#70).
+        Assert.Equal(0x561b, GameSessionTestHelpers.Op(replies[0]));
+        Assert.Equal(70, replies[0][^2]);
+        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(replies.First(p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseRs), 2));
         Assert.DoesNotContain(store.Items, i => i.TemplateId == crystal && i.Quantity > 0);
         Assert.Equal(before + 3, session.DaevanionAvailableForTests(1));
-        Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == GameSession.UpdateItemDaevanionPointNt);
+        var points = replies.Single(p => GameSessionTestHelpers.Op(p) == GameSession.UpdateItemDaevanionPointNt);
+        Assert.Equal(GameSession.UpdateItemDaevanionPointNt, GameSessionTestHelpers.Op(points));
+        Assert.Equal(2 + 1 + 5 * 3, points.Length);
+        Assert.Equal(5, points[2]);
+        Assert.Equal(1, points[3]);
     }
 }
