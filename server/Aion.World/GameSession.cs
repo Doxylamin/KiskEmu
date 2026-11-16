@@ -1919,6 +1919,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         var basicAuto = definition is not null && SkillCooldown.IsBasicAutoAttack(definition);
         var toggleOff = request.HasChangeToggle && request.ChangeToggle is 0 or 2;
         var toggleOn = request.HasChangeToggle && request.ChangeToggle == 1;
+        if (ToggleOffCast(request) is { } switchedOff) return switchedOff;
         if (basicAuto && toggleOff)
             return StopAutoAttackReplies(request, skill);
         if (basicAuto && toggleOn)
@@ -2043,6 +2044,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         replies.AddRange(ScheduleCombatHits(skill, request, now, (byte)actionUid));
         replies.AddRange(CasterMoveReplies(skill, request, definition!, now));
         replies.AddRange(AbnormalOnlyCastReplies(skill, request, definition!, now));
+        if (!toggleOff) replies.AddRange(ToggleOnReplies(skill, actionUid, now));
         replies.AddRange(SkillEffectReplies(skill, request, definition!, now));
         ScheduleSkillEnd(skill, (byte)actionUid, definition!, now);
         replies.AddRange(SummonFromSkill(skill, request, now));
@@ -2837,6 +2839,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
         ApplyGeometry();
         replies.AddRange(FlushHeldDash(now));
         replies.AddRange(FlightFpTick(now));
+        replies.AddRange(TogglePulses(now));
         replies.AddRange(SprintTick(now));
         replies.AddRange(DodgeAbnormalTick(now));
         replies.AddRange(KnockdownTick(now));

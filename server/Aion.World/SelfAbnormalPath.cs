@@ -23,4 +23,6 @@ public enum SelfAbnormalPath
     CombatHit,
     /// <summary>Chain parent cast accept before 0x3818 (export caster_debuffs only).</summary>
     ChainAccept,
+    /// <summary>A toggle skill's abnormal and its pulse (Chanter mantras, ToggleSkills).</summary>
+    Toggle,
 }

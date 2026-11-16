@@ -75079,6 +75079,17 @@
         ]
       ],
       "source": "client"
+    },
+    "181600011": {
+      "effects": [
+        [
+          181600011,
+          "StatChange",
+          "MoveSpeed",
+          "1370"
+        ]
+      ],
+      "source": "override"
     }
   },
   "abnormal_types": {
@@ -75152,6 +75163,9 @@
     ],
     "170800001": [
       "Dot_NormalCalc",
+      "StatChange"
+    ],
+    "181600011": [
       "StatChange"
     ]
   }
