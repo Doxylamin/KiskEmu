@@ -287,7 +287,7 @@ public sealed partial class GameSession
         if (plain.Length < 6)
             return [PacketWriter.Opcode(SkillLevelDownRs).U16(1).I32(0).ToArray(), ..SkillPointClientSync()];
         var skillId = BitConverter.ToInt32(plain, 2);
-        if (IsBuyableStigma(skillId)) return await StigmaLevelDownAsync(skillId, ct);
+        if (IsBuyableStigma(skillId)) return StigmaLevelDownRefused(skillId);
         byte[] Reply(int result) => PacketWriter.Opcode(SkillLevelDownRs).U16(result).I32(skillId).ToArray();
         var baseline = KitSkillLevel(skillId);
         var current = BoughtSkillLevel(skillId);

@@ -117,6 +117,24 @@ public sealed class StigmaSkillTests
     }
 
     [Fact]
+    public async Task A_stigma_level_down_is_refused_and_keeps_the_level()
+    {
+        var store = new FakeCharacterStore();
+        var (session, cls, _) = await EnterAsync(store, 45, 3);
+        var stigma = GameData.Embedded.StigmaSkills(cls)[0];
+        for (var l = 1; l <= 3; l++) await session.HandleAsync(LevelUp(stigma), Now + 2);
+        var pointsLeft = session.StigmaPointsLeft;
+
+        // The official window has no stigma level-down, only the reset (#14): 0x3842 kSkill_Modify_InvalidAcquireType, then the points.
+        var down = await session.HandleAsync(new PacketWriter().U16(GameSession.SkillLevelDownRq).I32(stigma).ToArray(), Now + 3);
+        Assert.Equal(new PacketWriter().U16(GameSession.SkillLevelDownRs).U16(GameSession.SkillModifyInvalidAcquireType).I32(stigma).ToArray(), down[0]);
+        Assert.Equal((2, 29 - pointsLeft), Points(down[^1]));
+        Assert.Equal(3, session.StigmaSkillLevel(stigma));
+        Assert.Equal(pointsLeft, session.StigmaPointsLeft);
+        Assert.Equal(3, store.Skills.Single(s => s.SkillId == stigma).Purchased);
+    }
+
+    [Fact]
     public async Task The_pool_runs_out_and_a_stigma_shard_adds_a_point()
     {
         var store = new FakeCharacterStore();
