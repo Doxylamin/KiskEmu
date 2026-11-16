@@ -132,8 +132,9 @@ public sealed class MerchantInventoryScenarioTests
         store.Items.Add(FakeCharacterStore.BagItem(abyssPoint, 1_000, 960));
         await session.InventoryChangesAsync(default);
         var buy = await session.HandleAsync(new PacketWriter().U16(GameSession.CoinShopBuyRq).I32(990006).Varint(1).I32(goodsId).I32(1).ToArray(), Now);
-        Assert.Equal(GameSession.CoinShopBuyRs, GameSessionTestHelpers.Op(buy[0]));
-        Assert.Equal(0, BitConverter.ToUInt16(buy[0], 2));
+        Assert.Equal(0x561b, GameSessionTestHelpers.Op(buy[0]));   // the item changes, then 0x8c09 with 1536 (#70)
+        Assert.Equal(GameSession.CoinShopBuyRs, GameSessionTestHelpers.Op(buy[^1]));
+        Assert.Equal(GameSession.CoinShopBought, BitConverter.ToUInt16(buy[^1], 2));
         Assert.Contains(store.Items, i => i.TemplateId == itemId);
         Assert.Equal(500, store.Items.Single(i => i.TemplateId == abyssPoint).Quantity);
     }
