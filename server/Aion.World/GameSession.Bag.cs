@@ -200,7 +200,7 @@ public sealed partial class GameSession
             var removed = await Stored(async () => await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, (int)count, ct) ? [[]] : []);
             if (removed.Count == 0) return [Reply(1), .. await InventoryChangesAsync(ct, 0, DecreaseItemRemove)];
         }
-        return [Reply(0), .. await InventoryChangesAsync(ct, 0, DecreaseItemRemove)];
+        return [Reply(ItemRemoved), .. await InventoryChangesAsync(ct, 0, DecreaseItemRemove)];
     }
 
     /// <summary>0x563f ItemSort_RS result after a sort (OBSERVED R1115 i=82211 `3f564002000000000f`, i=90078, i=736353).</summary>

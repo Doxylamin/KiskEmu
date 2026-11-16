@@ -1546,7 +1546,7 @@ var bagMove = await staffSession.HandleAsync(new PacketWriter().U16(0x563a).I32(
 Check(bagMove[0][0] == 0x3b && bagMove[0][1] == 0x56 && bagMove[0][2] == 0 && staffStore.Items.Single(i => i.WireId == 40).Slot == 30
       && bagMove.Any(b => b[0] == 0x1b && b[1] == 0x56), "ItemMove puts the item on bag slot 30 (0x563b result 0, 0x561b)");
 var discard = await staffSession.HandleAsync(new PacketWriter().U16(0x563c).Varint(1).I64(40).I64(3).Varint(0).ToArray(), Now);
-Check(discard[0][0] == 0x3d && discard[0][2] == 0 && staffStore.Items.Single(i => i.WireId == 40).Quantity == 7, "ItemRemove discards 3 of the 10 (0x563d)");
+Check(discard[0][0] == 0x3d && BitConverter.ToUInt16(discard[0], 2) == GameSession.ItemRemoved && staffStore.Items.Single(i => i.WireId == 40).Quantity == 7, "ItemRemove discards 3 of the 10 (0x563d result 0x0300)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x563c).Varint(1).I64(40).I64(99).Varint(0).ToArray(), Now))[0][2] == 1, "discarding more than the stack is refused");
 var sortReply = await staffSession.HandleAsync(new PacketWriter().U16(0x563e).I32(0).U8(1).ToArray(), Now);
 var sortedBag = staffStore.Items.Where(i => i.Location == "bag").OrderBy(i => i.Slot).ToList();
