@@ -1817,7 +1817,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
     }
 
     /// <summary>
-    /// 0x3801 for a cast: the pre-#140 flags-first form for every skill. The official 9-byte form (GamePackets.CastResult)
+    /// 0x3801 for a cast: the pre-#140 flags-first form for every skill. The shifted 9-byte form `u16, i32, u8` (the old GamePackets.CastResult)
     /// left this client unable to cast again (live 2026-10-30: Ranger 13:35 one shot, Summoner 13:47 summon then no basic
     /// attack request for minutes), even with the 0x3806 end; the old form kept combat working. OBSERVED official 2026-10-30: flags byte 0, result u16, skill (01 38 00 00 00 a0 ed d5 00), no uid. 0x3806 is still sent.
     /// </summary>

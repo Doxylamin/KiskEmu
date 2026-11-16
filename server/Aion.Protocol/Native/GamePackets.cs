@@ -1686,15 +1686,15 @@ public static class GamePackets
     }
 
     /// <summary>
-    /// 0x3801 for a dodge: result u16, the skill, u8 0 and nothing else (OBSERVED, 9 bytes at all 100 official dodges of
-    /// 2026-10-19, the sprint's dash included: the skill is CombatDodge 11000100 even when the start is NormalDodge 11000101).
-    /// Result 1 is the refusal (DashVariant 6). The flags-first 11-byte cast reply reads as a failure to this client and drops the sprint.
+    /// 0x3801 for a dodge: `u8 0, u16 result, i32 skill` (9 bytes), the cast reply with no optional bytes. OBSERVED at all 1771
+    /// official 0x3801 of our recordings, 114 of them dodges (2026-11-15: `01 38 00 0000 e4a81201`, CombatDodge 18000100). The
+    /// skill is CombatDodge even when the start is NormalDodge. Result 1 is the refusal (DashVariant 6). Ours wrote `u16, i32, u8 0`
+    /// until #70.
     /// </summary>
-    /// <summary>0x3801 9-byte form for any skill: result u16, skill i32, change toggle u8 (the dodge's observed shape).</summary>
-    public static byte[] CastResult(int skill, int result = 0, byte changeToggle = 0) =>
-        PacketWriter.Opcode(0x3801).U16(result).I32(skill).U8(changeToggle).ToArray();
+    public static byte[] DodgeResult(int skill, int result = 0) => CastResult(skill, result);
 
-    public static byte[] DodgeResult(int skill, int result = 0) => PacketWriter.Opcode(0x3801).U16(result).I32(skill).U8(0).ToArray();
+    /// <summary>0x3801 9-byte form for any skill: flags u8 0, result u16, skill i32 (<see cref="CastReply(bool, int, byte, bool, int, bool, ushort)"/> with no optional bytes).</summary>
+    public static byte[] CastResult(int skill, int result = 0) => PacketWriter.Opcode(0x3801).U8(0).U16(result).I32(skill).ToArray();
 
     /// <summary>
     /// 0x3804 with switch 00: a self skill's effect (OBSERVED 50-60 ms after all 36 official CombatDodge starts): target, 00 00, actor,
