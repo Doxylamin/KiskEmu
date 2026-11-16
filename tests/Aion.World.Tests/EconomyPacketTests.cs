@@ -203,6 +203,8 @@ public sealed class EconomyPacketTests
         Assert.Equal("bag", store.Items.Single(i => i.WireId == key).Location);
     }
 
+    static ushort StoreResult(List<byte[]> replies, ushort opcode) => BitConverter.ToUInt16(replies.First(b => BitConverter.ToUInt16(b, 0) == opcode), 2);
+
     static byte[] ItemStore(ushort opcode, int npc, byte container, params (long Key, long Count)[] map)
     {
         var w = new PacketWriter().U16(opcode).I32(npc).Varint(map.Length);
@@ -222,7 +224,7 @@ public sealed class EconomyPacketTests
         await session.InventoryChangesAsync(default);
         var key = store.Items.Single(i => i.Location == "bag").WireId;
         var full = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.Storage, (key, 10)), Now);
-        Assert.NotEqual(0, full[0][7]);
+        Assert.NotEqual(GameSession.ItemStored, StoreResult(full, GameSession.ItemStoreRs));
         Assert.Equal("bag", store.Items.Single(i => i.WireId == key).Location);
     }
 
@@ -235,35 +237,31 @@ public sealed class EconomyPacketTests
         await session.InventoryChangesAsync(default);
         var key = store.Items.Single(i => i.Location == "bag").WireId;
 
-        // 0x5642 ItemStore: the whole stack is deposited into the personal warehouse (container 2). The reply is
-        // flag u8 (0x00 store) + npc i32 + result u8 (ok 0) + echoed map + container, so the result byte is at offset 7.
+        // 0x5642 ItemStore: the whole stack is deposited into the personal warehouse. The reply follows the item change
+        // (0x561b): u16 result (1024 stored) + npc i32 + echoed map + container (official 2026-11-12 r1 and 11-15, #70).
         var toStorage = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.Storage, (key, 10)), Now);
-        Assert.Equal(GameSession.ItemStoreRs, BitConverter.ToUInt16(toStorage[0], 0));
-        Assert.Equal(0x00, toStorage[0][2]);
-        Assert.Equal(0, toStorage[0][7]);
-        Assert.Equal(InventoryItem.Storage, toStorage[0][^1]);
+        Assert.Equal(0x561b, BitConverter.ToUInt16(toStorage[0], 0));
+        Assert.Equal(GameSession.ItemStored, StoreResult(toStorage, GameSession.ItemStoreRs));
+        Assert.Equal(InventoryItem.Storage, toStorage.First(b => BitConverter.ToUInt16(b, 0) == GameSession.ItemStoreRs)[^1]);
         Assert.Equal("storage", store.Items.Single(i => i.WireId == key).Location);
-        Assert.Contains(toStorage, b => BitConverter.ToUInt16(b, 0) == 0x561b);
 
         // 0x5644 ItemTakeOut: part of the stack comes back into the bag, splitting it. Its reply flag byte is 0x10.
         var back = await session.HandleAsync(ItemStore(GameSession.ItemTakeOutRq, 0, InventoryItem.Storage, (key, 4)), Now + 1);
-        Assert.Equal(GameSession.ItemTakeOutRs, BitConverter.ToUInt16(back[0], 0));
-        Assert.Equal(0x10, back[0][2]);
-        Assert.Equal(0, back[0][7]);
+        Assert.Equal(GameSession.ItemTakenOut, StoreResult(back, GameSession.ItemTakeOutRs));
         Assert.Equal(6, store.Items.Single(i => i.WireId == key).Quantity);
         Assert.Contains(store.Items, i => i.Location == "bag" && i.TemplateId == LifePotion && i.Quantity == 4);
 
         // The rest comes back to the bag, then the whole stack is deposited into account storage (container 2).
         var rest = await session.HandleAsync(ItemStore(GameSession.ItemTakeOutRq, 0, InventoryItem.Storage, (key, 6)), Now + 2);
-        Assert.Equal(0, rest[0][7]);
+        Assert.Equal(GameSession.ItemTakenOut, StoreResult(rest, GameSession.ItemTakeOutRs));
         Assert.Equal("bag", store.Items.Single(i => i.WireId == key).Location);
         var account = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.AccountStorage, (key, 6)), Now + 3);
-        Assert.Equal(0, account[0][7]);
-        Assert.Equal(InventoryItem.AccountStorage, account[0][^1]);
+        Assert.Equal(GameSession.ItemStored, StoreResult(account, GameSession.ItemStoreRs));
+        Assert.Equal(InventoryItem.AccountStorage, account.First(b => BitConverter.ToUInt16(b, 0) == GameSession.ItemStoreRs)[^1]);
         Assert.Equal("account_storage", store.Items.Single(i => i.WireId == key).Location);
 
         // An unknown container is refused with a non-zero result.
         var bad = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.Bag, (key, 1)), Now + 5);
-        Assert.NotEqual(0, bad[0][7]);
+        Assert.NotEqual(GameSession.ItemStored, StoreResult(bad, GameSession.ItemStoreRs));
     }
 }

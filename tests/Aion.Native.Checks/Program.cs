@@ -1944,15 +1944,18 @@ Check(BitConverter.ToUInt16(fromDepot[0], 2) == 0 && staffStore.Items.First(i =>
 // ItemStore 0x5642 / ItemTakeOut 0x5644: the real client deposit path (npc key, item map uid->count, container byte); 4-byte result.
 var parkedQty = staffStore.Items.First(i => i.WireId == parkedKey).Quantity;
 var storeDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.Storage).ToArray(), Now + 7520);
-// Reply shape (official round 1): flag u8 (0x00 store), npc i32, result u8 (ok 0) at offset 7, echoed map, container last.
-Check(Op(storeDepot[0]) == GameSession.ItemStoreRs && storeDepot[0][2] == 0x00 && storeDepot[0][7] == 0 && storeDepot[0][^1] == InventoryItem.Storage
-      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "storage" } && storeDepot.Any(b => Op(b) == 0x561b),
-      "0x5642 ItemStore deposits a bag stack into the warehouse (flag 0x00, result ok) and sends the change (0x561b)");
+// Reply (official 2026-11-12 r1 and 11-15): after the 0x561b, u16 result (1024 stored, 1040 taken out), npc i32, echoed map, container last.
+byte[] DepotReply(List<byte[]> replies, ushort op) => replies.First(b => Op(b) == op);
+bool DepotAfterChange(List<byte[]> replies, ushort op) => replies.FindIndex(b => Op(b) == 0x561b) is >= 0 and var at && at < replies.FindIndex(b => Op(b) == op);
+Check(BitConverter.ToUInt16(DepotReply(storeDepot, GameSession.ItemStoreRs), 2) == GameSession.ItemStored && DepotReply(storeDepot, GameSession.ItemStoreRs)[^1] == InventoryItem.Storage
+      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "storage" } && DepotAfterChange(storeDepot, GameSession.ItemStoreRs),
+      "0x5642 ItemStore deposits a bag stack into the warehouse: the change (0x561b), then 0x5643 result 1024");
 var takeDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemTakeOutRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.Storage).ToArray(), Now + 7530);
-Check(Op(takeDepot[0]) == GameSession.ItemTakeOutRs && takeDepot[0][2] == 0x10 && takeDepot[0][7] == 0 && takeDepot[0][^1] == InventoryItem.Storage
-      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag" }, "0x5644 ItemTakeOut returns the stack to the bag (flag 0x10)");
+Check(BitConverter.ToUInt16(DepotReply(takeDepot, GameSession.ItemTakeOutRs), 2) == GameSession.ItemTakenOut && DepotReply(takeDepot, GameSession.ItemTakeOutRs)[^1] == InventoryItem.Storage
+      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag" } && DepotAfterChange(takeDepot, GameSession.ItemTakeOutRs),
+      "0x5644 ItemTakeOut returns the stack to the bag: the change, then 0x5645 result 1040");
 var storeAccount = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.AccountStorage).ToArray(), Now + 7540);
-Check(storeAccount[0][7] == 0 && storeAccount[0][^1] == InventoryItem.AccountStorage && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "account_storage" },
+Check(BitConverter.ToUInt16(DepotReply(storeAccount, GameSession.ItemStoreRs), 2) == GameSession.ItemStored && DepotReply(storeAccount, GameSession.ItemStoreRs)[^1] == InventoryItem.AccountStorage && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "account_storage" },
       "0x5642 ItemStore deposits into account storage (container 2)");
 // Mail: staff mail (the builder's Mail command) stores a post for a character by name; LoadPost lists it, TakePost grants
 // the attachment once, DeletePost removes it afterwards.
