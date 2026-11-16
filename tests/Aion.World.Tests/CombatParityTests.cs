@@ -94,6 +94,8 @@ public sealed class CombatParityTests
         var uid = session.GroundDrops.First();
         var loot = await session.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(uid).U8(0).ToArray(), landAt + 100);
         Assert.Contains(loot, p => p.SequenceEqual(LootPackets.LootReply(0, uid, false)));
+        var again = await session.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(uid).U8(0).ToArray(), landAt + 200);
+        Assert.Equal(LootPackets.LootReply(LootPackets.LootGone, uid, false), again.Single());   // a gone drop: 0x2010 (#70)
         var respawn = await session.TickAsync(landAt + GameSession.RespawnMs + 50);
         Assert.Contains(respawn, p => p.SequenceEqual(GamePackets.Death(target.Key)));
         Assert.Equal(target.HpMax, target.Hp);

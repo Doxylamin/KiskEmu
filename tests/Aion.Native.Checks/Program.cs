@@ -2759,8 +2759,8 @@ Check(lootTarget.Dead && lootKill.Any(b => b[0] == 0x1e && b[1] == 0x56) && drop
 var looted = await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500);
 Check(looted.Any(b => b.SequenceEqual(LootPackets.LootReply(0, dropUid, false))) && looted.Any(b => b[0] == 0x1f && b[1] == 0x56) && !game.GroundDrops.Contains(dropUid),
       "looting answers 0x5621 result 0 and removes the drop (0x561f)");
-Check((await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500)).Single().SequenceEqual(LootPackets.LootReply(1, dropUid, false)),
-      "a drop cannot be looted twice");
+Check((await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500)).Single().SequenceEqual(LootPackets.LootReply(LootPackets.LootGone, dropUid, false)),
+      "a drop cannot be looted twice (0x2010, gone)");
 var leftovers = game.GroundDrops.Count;
 var expired = await game.TickAsync(clock += GameSession.DropLifetimeMs + 1000);
 Check(game.GroundDrops.Count == 0 && (leftovers == 0 || expired.Any(b => b[0] == 0x1f && b[1] == 0x56)), "unlooted drops vanish after 60 s (0x561f)");
