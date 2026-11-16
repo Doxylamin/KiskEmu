@@ -354,6 +354,16 @@
         ]
       ],
       "evidence": "Recuperation (Chanter, 8 s): a heal over time, 20 % of the maximum in total."
+    },
+    "181600011": {
+      "effects": [
+        [
+          "StatChange",
+          "MoveSpeed",
+          "1370"
+        ]
+      ],
+      "evidence": "Sprint Mantra pulse (Chanter, 2.4 s, refreshed every second while the toggle is on): OBSERVED 2026-11-15 i=286222 0x364a stat 205 = 1370 with it alone; the row type is CANDIDATE (SkillAbnormalEffect.dat not exported)."
     }
   }
 }

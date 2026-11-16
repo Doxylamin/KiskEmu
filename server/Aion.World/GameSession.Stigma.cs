@@ -153,34 +153,16 @@ public sealed partial class GameSession
         return [.. before, CharCombatPowerUpdate(), Reply(0), learnedOrLevel, StigmaPointUpdate()];
     }
 
-    /// <summary>0x3841 for a stigma: one level back, its points refunded; at 0 the stigma is unlearned (OURS: the official cost is unobserved).</summary>
-    async Task<List<byte[]>> StigmaLevelDownAsync(int skillId, CancellationToken ct)
-    {
-        byte[] Reply(int result) => PacketWriter.Opcode(SkillLevelDownRs).U16(result).I32(skillId).ToArray();
-        var current = StigmaLevel(skillId);
-        if (current <= 0 || !await SaveStigmaLevelAsync(skillId, current - 1, ct)) return [Reply(1), StigmaPointUpdate()];
-        var next = current - 1;
-        var deleted = new List<byte[]>();
-        foreach (var (child, parentLevel, _) in data.StigmaParts(skillId))
-        {
-            if (parentLevel == current)
-            {
-                learned.Remove(child);
-                deleted.Add(GamePackets.SkillDelete(child));
-            }
-            else if (parentLevel < current)
-                deleted.Add(GamePackets.SkillLevelUpdates([child], next, SkillChangeSkill));
-        }
-        if (next == 0)
-        {
-            stigmaLevels.Remove(skillId);
-            learned.Remove(skillId);
-        }
-        else stigmaLevels[skillId] = next;
-        RecomputeCombatPower();
-        RebuildWireClientSkillList();
-        return [.. deleted, CharCombatPowerUpdate(), Reply(0), GamePackets.SkillLevelUpdates([skillId], next, SkillPointLevelDown), StigmaPointUpdate()];
-    }
+    /// <summary>
+    /// 0x3841 for a stigma: refused. The official window offers no stigma level-down, only the reset (0x3843 type 2), so the
+    /// request never comes from the client's own UI (#14). Result <see cref="SkillModifyInvalidAcquireType"/> (CANDIDATE: no
+    /// official refusal recorded), then the stigma points as they are.
+    /// </summary>
+    List<byte[]> StigmaLevelDownRefused(int skillId) =>
+        [PacketWriter.Opcode(SkillLevelDownRs).U16(SkillModifyInvalidAcquireType).I32(skillId).ToArray(), StigmaPointUpdate()];
+
+    /// <summary>EResult kSkill_Modify_InvalidAcquireType (usmap): a level change of the wrong acquire type.</summary>
+    public const int SkillModifyInvalidAcquireType = 6207;
 
     /// <summary>
     /// 0x3843 type 2: every stigma (skill 0) or the one named back to level 0, free, the stigma points refunded. OBSERVED official

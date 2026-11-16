@@ -1,0 +1,155 @@
+{
+  "source": "Skill.dat ToggleOnAbnormalId; the System skill id + 1 and its SkillEffect Abnormal_True row (tools/toggle_skills.py)",
+  "skills": {
+    "1102": {
+      "abnormal": 11021
+    },
+    "14210000": {
+      "abnormal": 142100001
+    },
+    "17410000": {
+      "abnormal": 174100001,
+      "pulse_skill": 17410001,
+      "pulse_abnormal": 174100011,
+      "pulse_duration_ms": 1250,
+      "pulse_filter": 170000071,
+      "pulse_every_ms": 1000
+    },
+    "17410010": {
+      "abnormal": 174100101,
+      "pulse_skill": 17410011,
+      "pulse_abnormal": 174100111,
+      "pulse_duration_ms": 1250,
+      "pulse_filter": 170000071,
+      "pulse_every_ms": 1000
+    },
+    "17410020": {
+      "abnormal": 174100201,
+      "pulse_skill": 17410021,
+      "pulse_abnormal": 174100211,
+      "pulse_duration_ms": 1250,
+      "pulse_filter": 170000071,
+      "pulse_every_ms": 1000
+    },
+    "17410030": {
+      "abnormal": 174100301,
+      "pulse_skill": 17410031,
+      "pulse_abnormal": 174100311,
+      "pulse_duration_ms": 1250,
+      "pulse_filter": 170000071,
+      "pulse_every_ms": 1000
+    },
+    "17410040": {
+      "abnormal": 174100401,
+      "pulse_skill": 17410041,
+      "pulse_abnormal": 174100411,
+      "pulse_duration_ms": 1250,
+      "pulse_filter": 170000071,
+      "pulse_every_ms": 1000
+    },
+    "17410050": {
+      "abnormal": 174100501,
+      "pulse_skill": 17410051,
+      "pulse_abnormal": 174100511,
+      "pulse_duration_ms": 1250,
+      "pulse_filter": 170000071,
+      "pulse_every_ms": 1000
+    },
+    "18160000": {
+      "abnormal": 181600001,
+      "pulse_skill": 18160001,
+      "pulse_abnormal": 181600011,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18160010": {
+      "abnormal": 181600101,
+      "pulse_skill": 18160011,
+      "pulse_abnormal": 181600111,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18160020": {
+      "abnormal": 181600201,
+      "pulse_skill": 18160021,
+      "pulse_abnormal": 181600211,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18160030": {
+      "abnormal": 181600301,
+      "pulse_skill": 18160031,
+      "pulse_abnormal": 181600311,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18160040": {
+      "abnormal": 181600401,
+      "pulse_skill": 18160041,
+      "pulse_abnormal": 181600411,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18160050": {
+      "abnormal": 181600501,
+      "pulse_skill": 18160051,
+      "pulse_abnormal": 181600511,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18190000": {
+      "abnormal": 181900001,
+      "pulse_skill": 18190001,
+      "pulse_abnormal": 181900011,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18190010": {
+      "abnormal": 181900101,
+      "pulse_skill": 18190011,
+      "pulse_abnormal": 181900111,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18190020": {
+      "abnormal": 181900201,
+      "pulse_skill": 18190021,
+      "pulse_abnormal": 181900211,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18190030": {
+      "abnormal": 181900301,
+      "pulse_skill": 18190031,
+      "pulse_abnormal": 181900311,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18190040": {
+      "abnormal": 181900401,
+      "pulse_skill": 18190041,
+      "pulse_abnormal": 181900411,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    },
+    "18190050": {
+      "abnormal": 181900501,
+      "pulse_skill": 18190051,
+      "pulse_abnormal": 181900511,
+      "pulse_duration_ms": 2400,
+      "pulse_filter": 180000101,
+      "pulse_every_ms": 1000
+    }
+  }
+}

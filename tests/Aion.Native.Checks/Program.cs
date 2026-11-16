@@ -1382,11 +1382,11 @@ staffStore.Items.Add(Stored(530116001, 3, "bag", null, 17));
 await staffSession.InventoryChangesAsync(default);
 staffSession.SetResource('H', 10);
 var serum = await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now);
-Check(serum[0].SequenceEqual(RidePackets.ItemUseReply(0, 17, 530116001)) && staffSession.Resource.Hp >= 10 + 15 + staffSession.Resource.HpMax * 5 / 100 - 1
-      && staffStore.Items.Single(i => i.WireId == 17).Quantity == 2 && serum.Any(b => b[0] == 0x02 && b[1] == 0x38) && serum.Any(b => b[0] == 0x16 && b[1] == 0x56),
-      "Life Serum: ItemUse_RS 772, skill start on the player, HP healed (15 + 5% max), one used (0x5616)");
+Check(Op(serum[0]) == 0x3802 && serum[1].SequenceEqual(RidePackets.ItemUseReply(0, 17, 530116001)) && staffSession.Resource.Hp >= 10 + 15 + staffSession.Resource.HpMax * 5 / 100 - 1
+      && staffStore.Items.Single(i => i.WireId == 17).Quantity == 2 && !serum.Any(b => Op(b) == 0x5616),
+      "Life Serum: skill start on the player, ItemUse_RS 772, HP healed (15 + 5% max), one used (no 0x5616, #13)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 1000)).Single()[2] == 1, "the potion cooldown group refuses a second use");
-Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 31_000))[0].AsSpan(2, 2).SequenceEqual(new byte[] { 0x04, 0x03 }), "usable again after its 30 s cooldown");
+Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 31_000))[1].AsSpan(2, 2).SequenceEqual(new byte[] { 0x04, 0x03 }), "usable again after its 30 s cooldown");
 // Souls: a soul item adds soul points to a ride not acquired yet; NeedSoul (5) of them acquire it (0x9007), and
 // soul points level an acquired ride (VehicleLevel: 25 for level 2).
 var soulRide = new[] { 1002, 1003, 1004 }.First(r => r != pet);
@@ -1443,16 +1443,17 @@ Check(staffSession.Resource.Hp > 10 && tick.Count(b => b[0] == 0x05 && b[1] == 0
 var ended = await staffSession.TickAsync(Now + 80_100);
 Check(ended.Any(b => b.SequenceEqual(PlayerPackets.AbnormalRemove(staffSession.PlayerKey, [(1, 1)])) || (b[0] == 0x2c && b[1] == 0x38)) && !staffSession.ActiveBuffs.Contains(20111011),
       "the potion buff expires after 10 s (0x382c reason 1)");
-// Superior Speed Scroll (MoveSpeed 1500): 0x364b {205, 1500}, then {205, 0} when it ends.
+// Speed scroll (MoveSpeed 1500): 0x364a {205, 1500}, then {205, 0} when it ends; no 0x364b or 0x5616 (#13).
 var speed = await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(22).ToArray(), Now + 81_000);
-Check(speed.Any(b => b.SequenceEqual(PlayerPackets.MoveSpeedUpdate(staffSession.PlayerKey, [(205, 1500)]))), "speed scroll: 0x364b MoveSpeed 1500");
+Check(speed.Any(b => b.SequenceEqual(GamePackets.CharStatsUpdate(staffSession.PlayerKey, [(205, 1500)], 0))) && !speed.Any(b => Op(b) is 0x364b or 0x5616),
+      "speed scroll: 0x364a MoveSpeed 1500, no 0x364b or 0x5616");
 // White Dragon's Chopped Steak: HPMax +140 while it lasts (food buff), stats resent.
 var hpUnfed = staffSession.Resource.HpMax;
 var steak = await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(23).ToArray(), Now + 82_000);
 Check(staffSession.Resource.HpMax == hpUnfed + 140 && steak.Any(b => b[0] == 0x4a && b[1] == 0x36), "food: HPMax +140 and 0x364a");
 var later = await staffSession.TickAsync(Now + 82_000 + 300_100);
-Check(later.Any(b => b.SequenceEqual(PlayerPackets.MoveSpeedUpdate(staffSession.PlayerKey, [(205, 0)]))) && staffSession.Resource.HpMax == hpUnfed
-      && staffSession.ActiveBuffs.Count == 0, "after 300 s the speed returns (0x364b 0) and the food's HPMax goes");
+Check(later.Any(b => b.SequenceEqual(GamePackets.CharStatsUpdate(staffSession.PlayerKey, [(205, 0)], 0))) && staffSession.Resource.HpMax == hpUnfed
+      && staffSession.ActiveBuffs.Count == 0, "after 300 s the speed returns (0x364a 0) and the food's HPMax goes");
 // Soul crystals: a crystal item adds crystals of its type (0x9011 reason 2); crystallizing turns a ride's soul
 // points into crystals of its type (0x9010/0x900e/0x9011); crystals pay for a ride when souls are missing.
 var loadRides = typeof(GameSession).GetMethod("LoadRidesAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;

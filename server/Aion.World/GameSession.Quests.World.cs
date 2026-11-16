@@ -255,9 +255,11 @@ public sealed partial class GameSession
     /// <summary>
     /// Flying through a flight ring (EnvObjData Usage FlightRing; the client reports it as an interaction): the reply alone, the
     /// two abnormals the official sent (18999040 for 3 s, 18999041 for 0.1 s; not in the extracted tables) and the flight points
-    /// refilled (OBSERVED capture 20261019-231752 #37632-#37639: 183000 back to 250000 within 2.6 s; ours at once).
+    /// refilled over <see cref="FlightRingRefillMs"/> (OBSERVED capture 20261019-231752 #37632-#37639: 183000 back to 250000 within
+    /// 2.6 s). OURS: the missing points come back in equal parts on the 100 ms flight ticks of that window (no drain meanwhile);
+    /// the per-tick packets are those of the drain (0x8d00 FP and the gauge stats) (#37).
     /// </summary>
-    List<byte[]> FlyThroughRing(int key, long now)
+    internal List<byte[]> FlyThroughRing(int key, long now)
     {
         var replies = new List<byte[]> { GamePackets.InteractEnvObjReply(key) };
         var at = position ?? Vector3d.Zero;
@@ -265,13 +267,16 @@ public sealed partial class GameSession
         replies.Add(PlayerPackets.AbnormalAdd(playerKey, [new AbnormalWire(++buffUid, FlightRingAbnormal + 1, 100, now + 100, CasterKey: playerKey, RangeBase: at)]));
         if (resources is { FpMax: > 0 } r && r.Fp < r.FpMax)
         {
-            r.Fp = r.FpMax;
-            replies.Add(r.FpUpdate());
+            ringRefillUntil = now + FlightRingRefillMs;
+            ringRefillPerTick = (int)Math.Ceiling((r.FpMax - r.Fp) * (double)SprintTickMs / FlightRingRefillMs);
         }
         return replies;
     }
 
-    public const int FlightRingAbnormal = 18999040;
+    public const int FlightRingAbnormal = 18999040, FlightRingRefillMs = 2600;
+    /// <summary>A flight ring's refill: until when, and the points per 100 ms tick.</summary>
+    long ringRefillUntil;
+    int ringRefillPerTick;
 
     const byte IncreaseEnvObjReward = 41; // EIncreaseReason kGatherSource (interaction loot)
 

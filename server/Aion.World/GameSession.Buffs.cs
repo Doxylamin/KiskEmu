@@ -7,8 +7,8 @@ namespace Aion.World;
 // the SkillAbnormal / SkillAbnormalEffect rows from tools/data/boxes.json. Wire as the official Life
 // Potion and speed scroll uses (capture 20261013-144836): 0x382a AbnormalAdd (expire time = server
 // clock at expiry), 0x3805 per heal-over-time row at once (remaining total) and on every tick (remaining,
-// healed) with the HP as 0x8d00, 0x382c AbnormalRemove reason 1 at expiry, 0x364b MoveSpeedUpdate
-// {205, summed MoveSpeed} for speed buffs. StatChange stats join the stat sheet (0x364a, CANDIDATE: no
+// healed) with the HP as 0x8d00, 0x382c AbnormalRemove reason 1 at expiry, 0x364a {205, summed MoveSpeed}
+// for speed buffs (3533; the 2026-10-13 build sent 0x364b). StatChange stats join the stat sheet (0x364a, CANDIDATE: no
 // food sample). One buff per SkillAbnormal group: a new one replaces the old (remove reason 4, CANDIDATE).
 public sealed partial class GameSession
 {
@@ -304,7 +304,7 @@ public sealed partial class GameSession
         if (expired.Count > 0)
         {
             replies.AddRange(RemoveBuffs(expired, ExpireTimeout));
-            replies.AddRange(BuffStatsChanged(speedBefore, byNpc: expired.Any(b => b.Caster is not null)));
+            replies.AddRange(BuffStatsChanged(speedBefore));
         }
         return replies;
     }
@@ -354,18 +354,21 @@ public sealed partial class GameSession
         Boxes.Use(itemId) is { Effect: "Skill", Values: [var skill, ..] } && int.TryParse(skill, out var skillId)
         && AbnormalIds(Boxes.SkillEffects(skillId)).Any(id => Boxes.Abnormal(id)?.Effects.Any(e => e.Type == "UseRebirth") == true);
 
-    /// <summary>The stat sheet with the buffs (when they change stats) and 0x364b when the move speed changed.</summary>
-    List<byte[]> BuffStatsChanged(int speedBefore, bool byNpc = false)
+    /// <summary>The stat sheet with the buffs (when they change stats) and 0x364a stat 205 when the move speed changed.</summary>
+    List<byte[]> BuffStatsChanged(int speedBefore)
     {
         var replies = RefreshStats();
         var speed = BuffStat("MoveSpeed");
-        // A monster's slow and its end: 0x364a {205, the summed MoveSpeed} in the abnormal's tick (OBSERVED 2026-11-15 i=516838 /
-        // i=516839: {205: -1630}, base 1370); item buffs 0x364b (OBSERVED, the speed scroll).
-        if (speed != speedBefore)
-            replies.Add(byNpc ? GamePackets.CharStatsUpdate(playerKey, [(MoveSpeedStat, speed)], resources?.HpMax ?? 0)
-                : PlayerPackets.MoveSpeedUpdate(playerKey, [(MoveSpeedStat, speed)]));
+        if (speed != speedBefore) replies.Add(MoveSpeedStats(speed));
         return replies;
     }
+
+    /// <summary>
+    /// The player's own move speed: 0x364a {205, the summed MoveSpeed}, hp max 0. OBSERVED for a monster's slow (2026-11-15
+    /// i=516839 `4a36 b234 01 cd00 a2f9ffff 0000000000000000`) and the Superior Speed Scroll (2026-11-12 r2 i=19278
+    /// `4a36 dd08 01 cd00 1c070000 0000000000000000`); no 0x364b to the player (#13). 0x364b stays for NPCs (NpcAi).
+    /// </summary>
+    byte[] MoveSpeedStats(int speed) => GamePackets.CharStatsUpdate(playerKey, [(MoveSpeedStat, speed)], 0);
 
     /// <summary>Passive abnormals already announced (by abnormal id), with their uids.</summary>
     readonly Dictionary<int, int> passiveUids = [];
@@ -404,7 +407,7 @@ public sealed partial class GameSession
         var listed = buffs.Where(b => b.AbnormalId != RespawnLoadProtectAbnormal).ToList();
         if (listed.Count == 0) return replies;
         replies.Add(PlayerPackets.AbnormalAdd(playerKey, listed.Select(Wire).ToList()));
-        if (BuffStat("MoveSpeed") is var speed and not 0) replies.Add(PlayerPackets.MoveSpeedUpdate(playerKey, [(MoveSpeedStat, speed)]));
+        if (BuffStat("MoveSpeed") is var speed and not 0) replies.Add(MoveSpeedStats(speed));
         return replies;
     }
 
