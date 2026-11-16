@@ -59,6 +59,11 @@ public class OfficialCombatFxTests
     public void ProjectileHitMatchesOfficial(string hex, int skill, byte uid, int effect, int damage) =>
         Assert.Equal(Hex(hex), PlayerPackets.ProjectileEffect(0xcc42, 0x25df, skill, uid, effect, 1, damage, 11660));
 
+    [Fact]   // a second hit of one projectile (official 2026-11-04 16:32:32): the 01 flag, then the effect seq as a u16 (#70)
+    public void Projectile_hit_with_seq_2_matches_official() =>
+        Assert.Equal(Hex("0438e1a0021400e20690a2b80037025c2a1f4802000000c65f9a6e010200"),
+            PlayerPackets.ProjectileEffect(36961, 866, 12100240, 0x37, 0x481f2a5c, 2, 14106, 12230));
+
     [Fact]
     public void Plotter_hit_differs_from_the_plain_form_only_by_its_mask_bit_and_plotter()
     {

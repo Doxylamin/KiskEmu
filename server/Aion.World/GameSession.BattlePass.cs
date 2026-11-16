@@ -72,10 +72,13 @@ public sealed partial class GameSession
             var held = group.Passes.Where(PassUnlocked).ToList();
             w.I32(group.Id).I32(total).I32(0).I64(CycleStart(2, now) + 7 * 86_400_000L).I64(0).Varint((uint)held.Count);
             foreach (var pass in held) w.I32((int)pass[0]);
-            w.Varint((uint)group.Passes.Length);
-            foreach (var pass in group.Passes)
-                w.I32((int)pass[0]).U8((byte)(pass.Length >= 2 ? achievements.GetValueOrDefault((int)pass[1])?.RewardedStep ?? 0 : 0));
-            w.Varint(0).Bool(false).I32(0).Bool(group.Passes.Any(IsPaid) && group.Passes.Where(IsPaid).All(PassUnlocked));
+            // OBSERVED 2026-11-15 (i=451, i=188154): only passes with a rewarded level are listed, and each group ends
+            // `varint map, false, true, i32 1`, the bools packed (`02 01000000`; two groups share `0a`) (#70).
+            var rewarded = group.Passes.Select(p => (Id: (int)p[0], Step: p.Length >= 2 ? achievements.GetValueOrDefault((int)p[1])?.RewardedStep ?? 0 : 0))
+                .Where(p => p.Step > 0).ToList();
+            w.Varint((uint)rewarded.Count);
+            foreach (var (id, step) in rewarded) w.I32(id).U8((byte)step);
+            w.Varint(0).Bool(false).Bool(true).I32(1);
         }
         return w.ToArray();
     }
@@ -116,12 +119,15 @@ public sealed partial class GameSession
                 claimed[id] = s;
             }
         }
+        // OBSERVED 2026-11-15 (i=147961/147962): the 0x561b, then `23e3 0000 <group> <achievement> <step> 00`, and no list;
+        // the map echoes the request's (empty for a single level) (#70).
         var ok = claimed.Count > 0;
         var reply = TakeBattlePassRewardOpcode(plain);
-        if (ok) changes.AddRange(await InventoryChangesAsync(ct, IncreaseBattlePassReward, 0));
+        var echoed = targets.Skip(1).ToDictionary(t => t.Id, t => t.Step);
+        // OURS: the achievement updates (0x5684) stay, after the 0x561b; the official level claim had none.
         return ok
-            ? [BuildTakeBattlePassRewardReply(reply, 0, groupId, achievementId, step, claimed), .. changes, BattlePassInfoList(now)]
-            : [BuildTakeBattlePassRewardReply(reply, 1, groupId, achievementId, step, claimed)];
+            ? [.. await InventoryChangesAsync(ct, IncreaseBattlePassReward, 0), .. changes, BuildTakeBattlePassRewardReply(reply, 0, groupId, achievementId, step, echoed)]
+            : [BuildTakeBattlePassRewardReply(reply, 1, groupId, achievementId, step, echoed)];
     }
 
     static ushort TakeBattlePassRewardOpcode(byte[] plain) => Opcode(plain) == LegacyTakeBattlePassRewardRq ? (ushort)(LegacyTakeBattlePassRewardRq + 1) : TakeBattlePassRewardRs;

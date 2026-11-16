@@ -107,12 +107,15 @@ public sealed partial class GameSession
         catch (ProtocolException) { return (0, null, 0); }
     }
 
-    // CANDIDATE reply, byte-for-byte reproducing the official round 1 (2026-11-12) store/take-out samples: a flag u8
-    // (0x00 store, 0x10 take-out), the npc key i32, a result u8 (0 = ok in every observed sample), then the item map and
-    // the container echoed. The usmap names the head result i32 + npc i32, but the observed 7-byte prefix only fits this.
-    static byte[] ItemStoreReply(ushort opcode, byte flag, int npc, int result, List<(long Key, long Count)>? map, byte container)
+    // Store/take-out reply: u16 EResult (1024 stored, 1040 taken out), the npc key i32, the item map and the container echoed,
+    // AFTER the item changes (0x561b). OBSERVED: official 2026-11-12 r1 (i=47255 `4356 0004 00000000 01 ... 0f`, i=47502
+    // `4556 1004 ...`) and 2026-11-15 (i=68424, 71191, 122081, 308111; each right after its 0x561b), as the A2Core fork reads it
+    // (#70). Our earlier flag u8 / npc / result u8 reading matched those bytes only with npc 4. Refusal code: CANDIDATE.
+    public const ushort ItemStored = 1024, ItemTakenOut = 1040;
+    const ushort ItemStoreRefused = 1;
+    static byte[] ItemStoreReply(ushort opcode, ushort result, int npc, List<(long Key, long Count)>? map, byte container)
     {
-        var w = PacketWriter.Opcode(opcode).U8(flag).I32(npc).U8((byte)result).Varint(map?.Count ?? 0);
+        var w = PacketWriter.Opcode(opcode).U16(result).I32(npc).Varint(map?.Count ?? 0);
         foreach (var (key, count) in map ?? []) w.I64(key).I64(count);
         return w.U8(container).ToArray();
     }
@@ -124,20 +127,20 @@ public sealed partial class GameSession
     async Task<List<byte[]>> StoreItemsAsync(byte[] plain, CancellationToken ct)
     {
         var (npc, map, container) = ReadItemStoreRequest(plain);
-        byte[] Reply(int result) => ItemStoreReply(ItemStoreRs, 0x00, npc, result, map, container);
+        byte[] Reply(ushort result) => ItemStoreReply(ItemStoreRs, result, npc, map, container);
         var location = StoreLocation(container);
-        if (location is null || map is not { Count: > 0 } || Store is not { } store || CharacterId is not { } character) return [Reply(1)];
+        if (location is null || map is not { Count: > 0 } || Store is not { } store || CharacterId is not { } character) return [Reply(ItemStoreRefused)];
         var costs = new List<(Guid, long, int)>();
         foreach (var (key, count) in map)
             if (storedItems.TryGetValue(key, out var row) && row.Location == "bag" && count > 0 && count <= row.Quantity)
                 costs.Add((row.InstanceId, row.Revision, (int)count));
-        if (costs.Count != map.Count) return [Reply(1)];
+        if (costs.Count != map.Count) return [Reply(ItemStoreRefused)];
         // Every stored stack takes a slot of its own (the store does not merge). Live 2026-11-15 the character warehouse
         // took 81 stacks in 80 slots: refuse what does not fit.
-        if (storedItems.Values.Count(i => i.Location == location) + costs.Count > SlotCapacity(container)) return [Reply(1)];
+        if (storedItems.Values.Count(i => i.Location == location) + costs.Count > SlotCapacity(container)) return [Reply(ItemStoreRefused)];
         var stored = await Stored(async () => await store.StoreItemsInContainerAsync(character, location, costs, ct) ? [[]] : []);
-        if (stored.Count == 0) return [Reply(1)];
-        return [Reply(0), .. await InventoryChangesAsync(ct, 0, 0), .. location == "storage" ? Achieve("StorageStore") : []];
+        if (stored.Count == 0) return [Reply(ItemStoreRefused)];
+        return [.. await InventoryChangesAsync(ct, 0, 0), Reply(ItemStored), .. location == "storage" ? Achieve("StorageStore") : []];
     }
 
     /// <summary>
@@ -147,21 +150,25 @@ public sealed partial class GameSession
     async Task<List<byte[]>> TakeItemsAsync(byte[] plain, CancellationToken ct)
     {
         var (npc, map, container) = ReadItemStoreRequest(plain);
-        byte[] Reply(int result) => ItemStoreReply(ItemTakeOutRs, 0x10, npc, result, map, container);
+        byte[] Reply(ushort result) => ItemStoreReply(ItemTakeOutRs, result, npc, map, container);
         var location = StoreLocation(container);
-        if (location is null || map is not { Count: > 0 } || Store is not { } store || CharacterId is not { } character) return [Reply(1)];
+        if (location is null || map is not { Count: > 0 } || Store is not { } store || CharacterId is not { } character) return [Reply(ItemStoreRefused)];
         var take = new List<(long, int)>();
         foreach (var (key, count) in map)
         {
-            if (!storedItems.TryGetValue(key, out var row) || row.Location != location || count < 1 || count > row.Quantity) return [Reply(1)];
+            if (!storedItems.TryGetValue(key, out var row) || row.Location != location || count < 1 || count > row.Quantity) return [Reply(ItemStoreRefused)];
             take.Add((key, (int)count));
         }
         var taken = await Stored(async () => await store.TakeItemsFromContainerAsync(character, location, take, ct) ? [[]] : []);
-        if (taken.Count == 0) return [Reply(1)];
-        return [Reply(0), .. await InventoryChangesAsync(ct, 0, 0)];
+        if (taken.Count == 0) return [Reply(ItemStoreRefused)];
+        return [.. await InventoryChangesAsync(ct, 0, 0), Reply(ItemTakenOut)];
     }
 
-    /// <summary>0x563c ItemRemove_RQ {map item key -> count (bag), map (temporary bag)}: discarded, answered with the same maps.</summary>
+    /// <summary>
+    /// 0x563c ItemRemove_RQ {map item key -> count (bag), map (temporary bag)}: discarded, answered with the same maps. Success is
+    /// u16 0x0300 (768), from the A2Core fork's recordings (addiboii b9d1858, #70); not in ours. Refusal 1: CANDIDATE.
+    /// </summary>
+    public const ushort ItemRemoved = 0x0300;
     async Task<List<byte[]>> RemoveItemsAsync(byte[] plain, CancellationToken ct)
     {
         var bag = new List<(long Key, long Count)>();
@@ -193,7 +200,7 @@ public sealed partial class GameSession
             var removed = await Stored(async () => await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, (int)count, ct) ? [[]] : []);
             if (removed.Count == 0) return [Reply(1), .. await InventoryChangesAsync(ct, 0, DecreaseItemRemove)];
         }
-        return [Reply(0), .. await InventoryChangesAsync(ct, 0, DecreaseItemRemove)];
+        return [Reply(ItemRemoved), .. await InventoryChangesAsync(ct, 0, DecreaseItemRemove)];
     }
 
     /// <summary>0x563f ItemSort_RS result after a sort (OBSERVED R1115 i=82211 `3f564002000000000f`, i=90078, i=736353).</summary>

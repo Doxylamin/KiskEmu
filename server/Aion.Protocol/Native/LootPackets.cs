@@ -47,5 +47,8 @@ public static class LootPackets
     }
 
     /// <summary>0x5621 ItemLooting_RS: result u16 | drop uid i64 | auto looting bool.</summary>
+    /// <summary>0x5621 result for a drop that is no longer there (the A2Core fork's recordings; ours only show 0) (#70).</summary>
+    public const ushort LootGone = 0x2010;
+
     public static byte[] LootReply(int result, long uid, bool auto) => PacketWriter.Opcode(LootRs).U16(result).I64(uid).Bool(auto).ToArray();
 }

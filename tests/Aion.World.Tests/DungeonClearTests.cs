@@ -10,7 +10,7 @@ public sealed class DungeonClearTests
 {
     const long Now = 1_760_500_000_000;
 
-    static byte[] Strip(byte[] state) => GameSession.DungeonStateTrailingByte ? state[..^1] : state;
+    static byte[] Strip(byte[] state) => state;   // 0x6100 has no trailing byte (#70)
 
     [Fact]
     public void Complete_result_lists_the_clear_reward_by_item_id()
@@ -32,7 +32,7 @@ public sealed class DungeonClearTests
         var seal = MapEventTables.Embedded.Dungeon(310027)!;
         var state = GameSession.DungeonState(310027, GameSession.DungeonStateComplete, 0x1a1b2de8a3b, 0x1a1b2deb14b);
         Assert.Equal("00610bbb0400033b8adeb2a10100004bb1deb2a1010000", Convert.ToHexStringLower(Strip(state)));
-        Assert.Equal(GameSession.DungeonStateTrailingByte ? 24 : 23, state.Length);
+        Assert.Equal(23, state.Length);   // OBSERVED in all our recordings (#70)
         Assert.Equal(0x1a1b2deb14bL - 0x1a1b2de8a3bL, seal.Hold * 1000L);
     }
 

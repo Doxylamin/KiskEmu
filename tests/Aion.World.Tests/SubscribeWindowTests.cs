@@ -34,7 +34,7 @@ public sealed class SubscribeWindowTests
         return list;
     }
 
-    sealed record PassGroupInfo(int Id, int TotalExp, List<int> Held, Dictionary<int, byte> Rewarded, bool AllPaid);
+    sealed record PassGroupInfo(int Id, int TotalExp, List<int> Held, Dictionary<int, byte> Rewarded);
 
     static List<PassGroupInfo> Passes(byte[] packet)
     {
@@ -51,8 +51,11 @@ public sealed class SubscribeWindowTests
             var rewarded = new Dictionary<int, byte>();
             for (var c = r.Varint(); c > 0; c--) rewarded[r.I32()] = r.U8();
             Assert.Equal(0u, r.Varint());
-            r.Bool(); r.I32();
-            groups.Add(new PassGroupInfo(id, total, held, rewarded, r.Bool()));
+            // OBSERVED tail: false, true (packed), i32 1.
+            Assert.False(r.Bool());
+            Assert.True(r.Bool());
+            Assert.Equal(1, r.I32());
+            groups.Add(new PassGroupInfo(id, total, held, rewarded));
         }
         Assert.Equal(packet.Length, r.Offset);
         return groups;
@@ -96,8 +99,7 @@ public sealed class SubscribeWindowTests
         Assert.Equal([10044, 10045], passes.Select(g => g.Id).Order().ToList());
         var global = passes.Single(g => g.Id == GlobalPass);
         Assert.Equal([100150], global.Held);
-        Assert.Equal([100150, PaidPass], global.Rewarded.Keys.Order().ToList());
-        Assert.False(global.AllPaid);
+        Assert.Empty(global.Rewarded);   // only levels above 0 are listed (OBSERVED)
     }
 
     [Fact]
@@ -112,11 +114,13 @@ public sealed class SubscribeWindowTests
         Assert.Equal(3000, session.AchievementCount(FreeExp));
 
         var claimed = await session.HandleAsync(Claim(GlobalPass, FreeExp, 2), LiveNow + 1);
-        Assert.Equal(GameSession.TakeBattlePassRewardRs, Op(claimed[0]));
-        Assert.Equal(0, BitConverter.ToUInt16(claimed[0], 2));
+        // OBSERVED 2026-11-15: the item changes, then the reply with an empty map, and no list (#70).
+        Assert.Equal(0x561b, Op(claimed[0]));
+        Assert.Equal(PacketWriter.Opcode(GameSession.TakeBattlePassRewardRs).U16(0).I32(GlobalPass).I32(FreeExp).U8(2).Varint(0).ToArray(), claimed[^1]);
+        Assert.DoesNotContain(claimed, p => Op(p) == GameSession.BattlePassInfoListNt);
         var levelOne = AchievementTables.Embedded.Of(FreeExp)!.StepRewards(1)[0];
         Assert.Contains(store.Items, i => i.TemplateId == levelOne.ItemId && i.Quantity == levelOne.Count);
-        Assert.Equal(2, Passes(claimed.Last()).Single(g => g.Id == GlobalPass).Rewarded[100150]);
+        Assert.Equal(2, Passes(session.GrantBattlePassExp(0, LiveNow + 1).Last()).Single(g => g.Id == GlobalPass).Rewarded[100150]);
 
         var again = await session.HandleAsync(Claim(GlobalPass, FreeExp, 2), LiveNow + 2);
         Assert.Equal(1, BitConverter.ToUInt16(again[0], 2));
@@ -131,11 +135,10 @@ public sealed class SubscribeWindowTests
         Assert.Equal(0, BitConverter.ToUInt16(bought[0], 2));
         var global = Passes(bought.Last(p => Op(p) == GameSession.BattlePassInfoListNt)).Single(g => g.Id == GlobalPass);
         Assert.Equal([100150, PaidPass], global.Held.Order().ToList());
-        Assert.True(global.AllPaid);
 
         var paid = await session.HandleAsync(Claim(GlobalPass, PaidExp, 2), LiveNow + 6);
-        Assert.Equal(0, BitConverter.ToUInt16(paid[0], 2));
-        Assert.Equal(2, Passes(paid.Last()).Single(g => g.Id == GlobalPass).Rewarded[PaidPass]);
+        Assert.Equal(0, BitConverter.ToUInt16(paid[^1], 2));
+        Assert.Equal(2, Passes(session.GrantBattlePassExp(0, LiveNow + 6).Last()).Single(g => g.Id == GlobalPass).Rewarded[PaidPass]);
     }
 
     [Fact]
@@ -156,7 +159,6 @@ public sealed class SubscribeWindowTests
         Assert.True(bought.IndexOf(reply) > 0, "the level item's 0x561b comes before the reply");
         var global = Passes(bought.Last(p => Op(p) == GameSession.BattlePassInfoListNt)).Single(g => g.Id == GlobalPass);
         Assert.Equal(nextLevel, global.TotalExp);
-        Assert.False(global.AllPaid);
         Assert.DoesNotContain(PaidPass, global.Held);
         Assert.DoesNotContain(store.Items, i => i.TemplateId == GameSession.PassLevelItemId && i.Quantity > 0);
         Assert.Equal(1_000 - GameSession.PassLevelQunaCost, store.QunaBalance);

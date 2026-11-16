@@ -90,11 +90,12 @@ public sealed partial class GameSession
         var taken = new List<GroundDrop>();
         foreach (var uid in uids.Distinct())
         {
-            var ok = drops.TryGetValue(uid, out var drop) && now < drop.ExpiresAt && !dead
-                && (position is not { } p || (p.X - drop.At.X) * (p.X - drop.At.X) + (p.Y - drop.At.Y) * (p.Y - drop.At.Y) <= LootRange * LootRange)
-                && CanPickupDrop(drop);
+            var gone = !drops.TryGetValue(uid, out var drop) || now >= drop.ExpiresAt;
+            var ok = !gone && !dead
+                && (position is not { } p || (p.X - drop!.At.X) * (p.X - drop.At.X) + (p.Y - drop.At.Y) * (p.Y - drop.At.Y) <= LootRange * LootRange)
+                && CanPickupDrop(drop!);
             if (ok) taken.Add(drop!);
-            else replies.Add(LootPackets.LootReply(1, uid, auto));
+            else replies.Add(LootPackets.LootReply(gone ? LootPackets.LootGone : 1, uid, auto));
         }
         if (taken.Count == 0) return replies;
         if (Store is { } store && CharacterId is { } character)

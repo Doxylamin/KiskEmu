@@ -1546,7 +1546,7 @@ var bagMove = await staffSession.HandleAsync(new PacketWriter().U16(0x563a).I32(
 Check(bagMove[0][0] == 0x3b && bagMove[0][1] == 0x56 && bagMove[0][2] == 0 && staffStore.Items.Single(i => i.WireId == 40).Slot == 30
       && bagMove.Any(b => b[0] == 0x1b && b[1] == 0x56), "ItemMove puts the item on bag slot 30 (0x563b result 0, 0x561b)");
 var discard = await staffSession.HandleAsync(new PacketWriter().U16(0x563c).Varint(1).I64(40).I64(3).Varint(0).ToArray(), Now);
-Check(discard[0][0] == 0x3d && discard[0][2] == 0 && staffStore.Items.Single(i => i.WireId == 40).Quantity == 7, "ItemRemove discards 3 of the 10 (0x563d)");
+Check(discard[0][0] == 0x3d && BitConverter.ToUInt16(discard[0], 2) == GameSession.ItemRemoved && staffStore.Items.Single(i => i.WireId == 40).Quantity == 7, "ItemRemove discards 3 of the 10 (0x563d result 0x0300)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x563c).Varint(1).I64(40).I64(99).Varint(0).ToArray(), Now))[0][2] == 1, "discarding more than the stack is refused");
 var sortReply = await staffSession.HandleAsync(new PacketWriter().U16(0x563e).I32(0).U8(1).ToArray(), Now);
 var sortedBag = staffStore.Items.Where(i => i.Location == "bag").OrderBy(i => i.Slot).ToList();
@@ -1944,15 +1944,18 @@ Check(BitConverter.ToUInt16(fromDepot[0], 2) == 0 && staffStore.Items.First(i =>
 // ItemStore 0x5642 / ItemTakeOut 0x5644: the real client deposit path (npc key, item map uid->count, container byte); 4-byte result.
 var parkedQty = staffStore.Items.First(i => i.WireId == parkedKey).Quantity;
 var storeDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.Storage).ToArray(), Now + 7520);
-// Reply shape (official round 1): flag u8 (0x00 store), npc i32, result u8 (ok 0) at offset 7, echoed map, container last.
-Check(Op(storeDepot[0]) == GameSession.ItemStoreRs && storeDepot[0][2] == 0x00 && storeDepot[0][7] == 0 && storeDepot[0][^1] == InventoryItem.Storage
-      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "storage" } && storeDepot.Any(b => Op(b) == 0x561b),
-      "0x5642 ItemStore deposits a bag stack into the warehouse (flag 0x00, result ok) and sends the change (0x561b)");
+// Reply (official 2026-11-12 r1 and 11-15): after the 0x561b, u16 result (1024 stored, 1040 taken out), npc i32, echoed map, container last.
+byte[] DepotReply(List<byte[]> replies, ushort op) => replies.First(b => Op(b) == op);
+bool DepotAfterChange(List<byte[]> replies, ushort op) => replies.FindIndex(b => Op(b) == 0x561b) is >= 0 and var at && at < replies.FindIndex(b => Op(b) == op);
+Check(BitConverter.ToUInt16(DepotReply(storeDepot, GameSession.ItemStoreRs), 2) == GameSession.ItemStored && DepotReply(storeDepot, GameSession.ItemStoreRs)[^1] == InventoryItem.Storage
+      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "storage" } && DepotAfterChange(storeDepot, GameSession.ItemStoreRs),
+      "0x5642 ItemStore deposits a bag stack into the warehouse: the change (0x561b), then 0x5643 result 1024");
 var takeDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemTakeOutRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.Storage).ToArray(), Now + 7530);
-Check(Op(takeDepot[0]) == GameSession.ItemTakeOutRs && takeDepot[0][2] == 0x10 && takeDepot[0][7] == 0 && takeDepot[0][^1] == InventoryItem.Storage
-      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag" }, "0x5644 ItemTakeOut returns the stack to the bag (flag 0x10)");
+Check(BitConverter.ToUInt16(DepotReply(takeDepot, GameSession.ItemTakeOutRs), 2) == GameSession.ItemTakenOut && DepotReply(takeDepot, GameSession.ItemTakeOutRs)[^1] == InventoryItem.Storage
+      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag" } && DepotAfterChange(takeDepot, GameSession.ItemTakeOutRs),
+      "0x5644 ItemTakeOut returns the stack to the bag: the change, then 0x5645 result 1040");
 var storeAccount = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.AccountStorage).ToArray(), Now + 7540);
-Check(storeAccount[0][7] == 0 && storeAccount[0][^1] == InventoryItem.AccountStorage && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "account_storage" },
+Check(BitConverter.ToUInt16(DepotReply(storeAccount, GameSession.ItemStoreRs), 2) == GameSession.ItemStored && DepotReply(storeAccount, GameSession.ItemStoreRs)[^1] == InventoryItem.AccountStorage && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "account_storage" },
       "0x5642 ItemStore deposits into account storage (container 2)");
 // Mail: staff mail (the builder's Mail command) stores a post for a character by name; LoadPost lists it, TakePost grants
 // the attachment once, DeletePost removes it afterwards.
@@ -1976,11 +1979,13 @@ staffStore.Items.Add(Stored(930100001, 5000, "bag", 10, 941));
 await staffSession.HandleAsync(new PacketWriter().U16(0x5610).ToArray(), Now + 7560);
 var dismantleKinaBefore = staffStore.Items.Where(i => i.TemplateId == 930100001).Sum(i => i.Quantity);
 var dismantled = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(940).ToArray(), Now + 7570);
-Check(Op(dismantled[0]) == GameSession.ItemDecomposeRs && BitConverter.ToInt32(dismantled[0], 2) == 0 && BitConverter.ToInt32(dismantled[0], 7) == 1
+var dismantleReply = dismantled.First(b => Op(b) == GameSession.ItemDecomposeRs);
+Check(BitConverter.ToUInt16(dismantleReply, 2) == GameSession.ItemDecomposed && BitConverter.ToInt32(dismantleReply, 5) == 1
+      && dismantled.FindIndex(b => Op(b) == 0x561b) < dismantled.IndexOf(dismantleReply)
       && staffStore.Items.All(i => i.WireId != 940) && staffStore.Items.Where(i => i.TemplateId == 930100001).Sum(i => i.Quantity) == dismantleKinaBefore - 1000
       && DecomposeTables.Embedded.Of(110160001) is { Cost: 1000, Groups.Length: 2 },
       "ItemDecompose_RQ: the sword is gone, 1000 kina paid, the reply counts one dismantled item");
-Check(BitConverter.ToInt32((await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(13).ToArray(), Now + 7580))[0], 2) == 1,
+Check(BitConverter.ToUInt16((await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(13).ToArray(), Now + 7580)).First(b => Op(b) == GameSession.ItemDecomposeRs), 2) == 1,
       "a potion cannot be dismantled (result 1)");
 // Crafting at map 1010's Blacksmith worktable (2910003): recipe 115016001 (2 ore + 1 additive -> an ingot). A success
 // grants the product (0x8d6f, 0x8d71); a failure uses up the components without a product. World entry lists recipes.
@@ -2337,7 +2342,7 @@ Check(GameSession.AscensionQuests.Select(c => book.Find(c)!).ToList() is [var li
 jo.ExitSharedWorld();
 Check(layer.TakeWhile(b => Op(b) != 0x3623).Any(b => Op(b) == 0x3642 && b[^1] == 1) && !layer.Any(b => Op(b) == 0x3642 && KeyOf(b) == guide.Key) && layerOps.IndexOf(0x3623) >= 0,
       "the layer shares Poeta's level: the base map's other NPCs are removed before the load reply (0x3642 flag 1, as observed; Robin not twice)");
-Check(layer.Any(b => Op(b) == GameSession.DungeonStateNt && BitConverter.ToInt32(b, 2) == 96 && b[6] == GameSession.DungeonStateProcess && b.Length == 24)
+Check(layer.Any(b => Op(b) == GameSession.DungeonStateNt && BitConverter.ToInt32(b, 2) == 96 && b[6] == GameSession.DungeonStateProcess && b.Length == 23)
       && layerOps.IndexOf(GameSession.DungeonStateNt) < layerOps.IndexOf(GameSession.DungeonDeathLimitNt)
       && layerOps.IndexOf(GameSession.DungeonDeathLimitNt) < layerOps.IndexOf(GameSession.DungeonClearKillNpcNt) && layerOps.IndexOf(GameSession.DungeonClearKillNpcNt) < layerOps.IndexOf(0x922e),
       "the layer's state: 0x6100 dungeon 96 running, 0x6109, 0x6108, then the event join (the observed order)");
@@ -2754,8 +2759,8 @@ Check(lootTarget.Dead && lootKill.Any(b => b[0] == 0x1e && b[1] == 0x56) && drop
 var looted = await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500);
 Check(looted.Any(b => b.SequenceEqual(LootPackets.LootReply(0, dropUid, false))) && looted.Any(b => b[0] == 0x1f && b[1] == 0x56) && !game.GroundDrops.Contains(dropUid),
       "looting answers 0x5621 result 0 and removes the drop (0x561f)");
-Check((await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500)).Single().SequenceEqual(LootPackets.LootReply(1, dropUid, false)),
-      "a drop cannot be looted twice");
+Check((await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500)).Single().SequenceEqual(LootPackets.LootReply(LootPackets.LootGone, dropUid, false)),
+      "a drop cannot be looted twice (0x2010, gone)");
 var leftovers = game.GroundDrops.Count;
 var expired = await game.TickAsync(clock += GameSession.DropLifetimeMs + 1000);
 Check(game.GroundDrops.Count == 0 && (leftovers == 0 || expired.Any(b => b[0] == 0x1f && b[1] == 0x56)), "unlooted drops vanish after 60 s (0x561f)");

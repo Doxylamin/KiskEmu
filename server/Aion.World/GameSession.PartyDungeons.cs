@@ -166,20 +166,13 @@ public sealed partial class GameSession
     static bool CopyFull(MapInstance inside, DungeonInfo room) => room.MaxMember > 0 && inside.Players.Count >= room.MaxMember;
 
     /// <summary>
-    /// DungeonState_NT 0x6100 {dungeon i32, EDungeonState u8, start i64, end i64}, then a trailing u8 0 while
-    /// <see cref="DungeonStateTrailingByte"/> holds. The fields are OBSERVED (ours: `60000000 02 [now] 0 00` at the layer entry;
-    /// the community fork: byte-exact 2026-11-06 234912 #44953). The length is not settled (capture #75 item 1): ours read a
-    /// trailing 00 (24 bytes with the opcode), the fork's recordings show 23 bytes in all 33 + 4 instances.
+    /// DungeonState_NT 0x6100 {dungeon i32, EDungeonState u8, start i64, end i64}: 23 bytes with the opcode, no trailing byte.
+    /// OBSERVED in every full 0x6100 of our official recordings (25 on 2026-11-04, 5 on 11-12, 32 on 11-15; capture #75 item 1)
+    /// and the community fork's (byte-exact 2026-11-06 234912 #44953). Our earlier trailing u8 0 was a misreading (#70).
     /// </summary>
-    internal static byte[] DungeonState(int dungeonId, byte state, long startMs, long endMs)
-    {
-        var w = PacketWriter.Opcode(DungeonStateNt).I32(dungeonId).U8(state).I64(startMs).I64(endMs);
-        if (DungeonStateTrailingByte) w.U8(0);
-        return w.ToArray();
-    }
+    internal static byte[] DungeonState(int dungeonId, byte state, long startMs, long endMs) =>
+        PacketWriter.Opcode(DungeonStateNt).I32(dungeonId).U8(state).I64(startMs).I64(endMs).ToArray();
 
-    /// <summary>CANDIDATE: 0x6100 ends in a u8 0 (our reading; the fork's recordings say no). Flip it once capture #75 item 1 answers.</summary>
-    internal const bool DungeonStateTrailingByte = true;
 
     /// <summary>
     /// DungeonCompleteResult_NT 0x6101 {u8 0, dungeon i32, succeeded u8, rewards varint count + [item i32, count i64]}: OBSERVED

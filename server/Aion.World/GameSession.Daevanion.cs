@@ -481,12 +481,25 @@ public sealed partial class GameSession
         if (consumed.Count == 0) return null;
         daevanionBonus[g.PointType] = daevanionBonus.GetValueOrDefault(g.PointType) + g.Amount;
         if (!await PersistDaevanionAsync(ct)) return null;
-        return
-        [
-            .. Used(row, reply),
-            PacketWriter.Opcode(UpdateItemDaevanionPointNt).U8(1).U8((byte)g.PointType).I32(g.Amount).ToArray(),
-            DaevanionPointUpdate(),
-        ];
+        // OBSERVED official 2026-11-04 (i=153515-153517, 303467-303469): the 0x561b with decrease reason 70, the item-use reply,
+        // then 0xe22f with every point type's item-bonus total, and nothing after (#70, as the A2Core fork found, 7265c13).
+        var replies = await InventoryChangesAsync(ct, 0, DecreaseDaevanionItem);
+        replies.AddRange(Used(row, reply));
+        replies.Add(UpdateItemDaevanionPoint());
+        return replies;
+    }
+
+    const byte DecreaseDaevanionItem = 70;
+
+    /// <summary>
+    /// 0xe22f UpdateItemDaevanionPoint_NT {varint count, {u8 point type, u16 item-bonus total}} for the five point types. OBSERVED
+    /// `2fe2 05 010a00 020000 030000 040000 050000` (official 2026-11-04 i=153517: type 1 at 10 after a crystal; 11, 12 later).
+    /// </summary>
+    byte[] UpdateItemDaevanionPoint()
+    {
+        var w = PacketWriter.Opcode(UpdateItemDaevanionPointNt).Varint(5);
+        for (byte type = 1; type <= 5; type++) w.U8(type).U16((ushort)Math.Clamp(daevanionBonus.GetValueOrDefault(type), 0, ushort.MaxValue));
+        return w.ToArray();
     }
 
     /// <summary>Summed EStat wire bonuses from stat nodes (values are basis points for % stats).</summary>
