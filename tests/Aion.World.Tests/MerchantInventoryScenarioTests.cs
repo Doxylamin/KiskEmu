@@ -54,9 +54,9 @@ public sealed class MerchantInventoryScenarioTests
         var kinaBefore = KinaTotal(store);
 
         var reply = await session.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(940).ToArray(), Now);
-        Assert.Equal(GameSession.ItemDecomposeRs, GameSessionTestHelpers.Op(reply[0]));
-        Assert.Equal(0, BitConverter.ToInt32(reply[0], 2));
-        Assert.Equal(1, BitConverter.ToInt32(reply[0], 7));
+        var rs = reply.Single(b => GameSessionTestHelpers.Op(b) == GameSession.ItemDecomposeRs);
+        Assert.Equal(GameSession.ItemDecomposed, BitConverter.ToUInt16(rs, 2));
+        Assert.Equal(1, BitConverter.ToInt32(rs, 5));
         Assert.DoesNotContain(store.Items, i => i.WireId == 940);
         Assert.Equal(kinaBefore - 1000, KinaTotal(store));
     }
@@ -163,7 +163,7 @@ public sealed class MerchantInventoryScenarioTests
         await session.InventoryChangesAsync(default);
 
         var reply = await session.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(950).ToArray(), Now);
-        Assert.Equal(0, BitConverter.ToInt32(reply[0], 2));
+        Assert.Equal(GameSession.ItemDecomposed, BitConverter.ToUInt16(reply.Single(b => GameSessionTestHelpers.Op(b) == GameSession.ItemDecomposeRs), 2));
         Assert.Equal(1, session.AchievementCount(rareDecomposeAch));
         Assert.Equal(0, session.AchievementCount(uniqueDecomposeAch));
         Assert.Contains(reply, b => GameSessionTestHelpers.Op(b) == GameSession.AchievementCountUpdateNt);

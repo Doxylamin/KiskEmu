@@ -439,8 +439,8 @@ public sealed class GatherCraftScenarioTests
         var rule = DecomposeTables.Embedded.Of(110160001)!;
 
         var reply = await session.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(940).ToArray(), Now);
-        Assert.Equal(GameSession.ItemDecomposeRs, GameSessionTestHelpers.Op(reply[0]));
-        Assert.Equal(0, BitConverter.ToInt32(reply[0], 2));
+        var rs = reply.Single(b => GameSessionTestHelpers.Op(b) == GameSession.ItemDecomposeRs);
+        Assert.Equal(GameSession.ItemDecomposed, BitConverter.ToUInt16(rs, 2));
         Assert.Equal(kinaBefore - rule.Cost, store.Items.Where(i => i.TemplateId == GameSession.KinaItemId).Sum(i => i.Quantity));
         Assert.DoesNotContain(store.Items, i => i.WireId == 940);
     }

@@ -1979,11 +1979,13 @@ staffStore.Items.Add(Stored(930100001, 5000, "bag", 10, 941));
 await staffSession.HandleAsync(new PacketWriter().U16(0x5610).ToArray(), Now + 7560);
 var dismantleKinaBefore = staffStore.Items.Where(i => i.TemplateId == 930100001).Sum(i => i.Quantity);
 var dismantled = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(940).ToArray(), Now + 7570);
-Check(Op(dismantled[0]) == GameSession.ItemDecomposeRs && BitConverter.ToInt32(dismantled[0], 2) == 0 && BitConverter.ToInt32(dismantled[0], 7) == 1
+var dismantleReply = dismantled.First(b => Op(b) == GameSession.ItemDecomposeRs);
+Check(BitConverter.ToUInt16(dismantleReply, 2) == GameSession.ItemDecomposed && BitConverter.ToInt32(dismantleReply, 5) == 1
+      && dismantled.FindIndex(b => Op(b) == 0x561b) < dismantled.IndexOf(dismantleReply)
       && staffStore.Items.All(i => i.WireId != 940) && staffStore.Items.Where(i => i.TemplateId == 930100001).Sum(i => i.Quantity) == dismantleKinaBefore - 1000
       && DecomposeTables.Embedded.Of(110160001) is { Cost: 1000, Groups.Length: 2 },
       "ItemDecompose_RQ: the sword is gone, 1000 kina paid, the reply counts one dismantled item");
-Check(BitConverter.ToInt32((await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(13).ToArray(), Now + 7580))[0], 2) == 1,
+Check(BitConverter.ToUInt16((await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(13).ToArray(), Now + 7580)).First(b => Op(b) == GameSession.ItemDecomposeRs), 2) == 1,
       "a potion cannot be dismantled (result 1)");
 // Crafting at map 1010's Blacksmith worktable (2910003): recipe 115016001 (2 ore + 1 additive -> an ingot). A success
 // grants the product (0x8d6f, 0x8d71); a failure uses up the components without a product. World entry lists recipes.
