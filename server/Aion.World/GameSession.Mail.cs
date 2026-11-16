@@ -6,9 +6,9 @@ namespace Aion.World;
 // Mail (the client's Post system; migration 030 game.character_posts). The 0xe2 run (catalogue index + 0xdd07, anchored
 // by the OBSERVED LoadPost 0xe214/0xe215): RecvPost_NT 0xe216, ReadPost 0xe217/0xe218, DeletePost 0xe219/0xe21a,
 // TakePost 0xe21b/0xe21c. Common_Post = {EPostType u8, EPostSaveTab u8, Post.dat id i32, dbid i64, msg params string,
-// read, taken, sent i64, expire i64, attachments [{item i32, count i64, expire i64}], reason i32} (usmap order;
-// LoadPost_RS's head 0000 | tab | total | unread | posts is OBSERVED with no posts). Staff mail uses Post.dat 106
-// (title "{0}", body "{1}", sender the client's own name string) with the parameters joined by '|' (CANDIDATE).
+// read, taken (packed), sent i64, expire i64, attachments [{item i32, count i64, expire i64}], reason u16}. OBSERVED with a
+// post on 2026-11-15 (see WritePost). Staff mail uses Post.dat 106 (title "{0}", body "{1}", sender the client's own name
+// string); its parameters are stored joined by '|' and sent as the official JSON (PostParamsJson).
 public sealed partial class GameSession
 {
     public const ushort PostLoadRq = 0xe214, PostLoadRs = 0xe215, PostRecvNt = 0xe216, PostReadRq = 0xe217, PostReadRs = 0xe218,
@@ -28,12 +28,26 @@ public sealed partial class GameSession
         }
     }
 
-    static PacketWriter WritePost(PacketWriter w, PostRecord post)
+    // OBSERVED official 2026-11-15 i=833 (a LoadPost_RS with one reward post): `01 02 1e000000 df02000000002905
+    // 2b {"_params":[{"_index":0,"_value":"10045"}]} 03 <sent i64> <expire i64> 01 {40da051e, 1, 0} 5901`: the message
+    // parameters are JSON, read and taken share one packed byte, and the reason is a u16 (#70, as the A2Core fork found, d705a80).
+    internal static PacketWriter WritePost(PacketWriter w, PostRecord post)
     {
-        w.U8((byte)post.Type).U8((byte)post.Tab).I32(post.DataId).I64(post.Id).String(post.Params).Bool(post.Read).Bool(post.Taken)
+        w.U8((byte)post.Type).U8((byte)post.Tab).I32(post.DataId).I64(post.Id).String(PostParamsJson(post.Params)).Bool(post.Read).Bool(post.Taken)
             .I64(post.Sent.ToUnixTimeMilliseconds()).I64(post.Expire.ToUnixTimeMilliseconds()).Varint((uint)post.Attachments.Count);
         foreach (var (item, count) in post.Attachments) w.I32(item).I64(count).I64(0);
-        return w.I32(post.Reason);
+        return w.U16((ushort)post.Reason);
+    }
+
+    /// <summary>
+    /// The wire form of a post's parameters: `{"_params":[{"_index":0,"_value":"..."}, ...]}`. Stored rows keep our '|'-joined
+    /// form (staff mail: title|body); a stored value that is already JSON passes as it is.
+    /// </summary>
+    internal static string PostParamsJson(string stored)
+    {
+        if (stored.StartsWith('{')) return stored;
+        var values = stored.Length == 0 ? [] : stored.Split('|');
+        return System.Text.Json.JsonSerializer.Serialize(new { _params = values.Select((value, index) => new { _index = index, _value = value }) });
     }
 
     /// <summary>0xe214 LoadPost_RQ {tab u8, unread filter, last account dbid, last game dbid}: the tab's mail (both tabs for tab 0).</summary>
