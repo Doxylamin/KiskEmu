@@ -390,16 +390,25 @@ public sealed class GameData
         return points.Select(kv => ((string, Vector3d)?)(kv.Key, new Vector3d(kv.Value[0], kv.Value[1], kv.Value[2]))).FirstOrDefault();
     }
 
-    /// <summary>The map's TeleportData *_Respawn point (death respawn), preferring the race's Light/Dark name when present.</summary>
-    public Vector3d? MapRespawn(int mapId, int race)
+    /// <summary>
+    /// The map's TeleportData *_Respawn point for a death respawn: the race's Light/Dark points when the map names any, and
+    /// of those the one nearest to <paramref name="near"/> (where the character fell). CANDIDATE: the official open-world
+    /// respawn target is not recorded (#31). The field maps' only *_Respawn points are the Daeva Hunter spots, so the
+    /// nearest one beats the old pick, the first by name, which sent every death on a field map to the same far spot.
+    /// </summary>
+    public (string Name, Vector3d Position)? MapRespawn(int mapId, int race, Vector3d? near = null)
     {
-        var points = MapPoints(mapId);
         var raceWord = race == 2 ? "Dark" : "Light";
-        var respawns = points.Where(p => p.Key.EndsWith("_Respawn", StringComparison.OrdinalIgnoreCase)).ToList();
+        var respawns = MapPoints(mapId)
+            .Where(p => p.Key.EndsWith("_Respawn", StringComparison.OrdinalIgnoreCase))
+            .Select(p => (Name: p.Key, Position: new Vector3d(p.Value[0], p.Value[1], p.Value[2])))
+            .ToList();
         if (respawns.Count == 0) return null;
-        foreach (var (name, p) in respawns.OrderByDescending(n => n.Key.Contains(raceWord, StringComparison.OrdinalIgnoreCase)).ThenBy(n => n.Key, StringComparer.Ordinal))
-            return new Vector3d(p[0], p[1], p[2]);
-        return null;
+        var raced = respawns.Where(r => r.Name.Contains(raceWord, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (raced.Count > 0) respawns = raced;
+        return near is { } at
+            ? respawns.OrderBy(r => r.Position.DistanceSquared(at)).ThenBy(r => r.Name, StringComparer.Ordinal).First()
+            : respawns.OrderBy(r => r.Name, StringComparer.Ordinal).First();
     }
 
     /// <summary>Named destinations: MapData teleport points and the dev menu's "teleport map x y z" buttons, as (name, map, position).</summary>

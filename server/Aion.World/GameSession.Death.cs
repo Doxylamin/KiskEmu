@@ -70,24 +70,43 @@ public sealed partial class GameSession
     /// <summary>0x8d22 CharRespawn_RQ {ERespawnType u8, item uid i64}.</summary>
     async Task<List<byte[]>> RespawnRequestAsync(byte type, long itemUid, long now, CancellationToken ct)
     {
-        if (!dead) return [RidePackets.RespawnReply(1)];
+        if (!dead) return ReviveRefused($"respawn type {type}", "not dead");
         if (now < defaultResurrectAllowedAt && type != RidePackets.RespawnItem)
-            return [RidePackets.RespawnReply(1)];
+            return ReviveRefused($"respawn type {type}", $"wait {(defaultResurrectAllowedAt - now) / 1000}s more");
         if (type == RidePackets.RespawnItem)
         {
-            if (!TryResolveRebirthItem(itemUid, out var row)) return [RidePackets.RespawnReply(1)];
-            if (DungeonRevivesLeft() == 0) return [RidePackets.RespawnReply(1)];
+            if (!TryResolveRebirthItem(itemUid, out var row)) return ReviveRefused("item", RebirthItemProblem(itemUid));
+            if (DungeonRevivesLeft() == 0) return ReviveRefused("item", "no revives left in this dungeon run");
             if (Store is not { } store || CharacterId is not { } character)
-                return [RidePackets.RespawnReply(1)];
+                return ReviveRefused("item", "no character store");
             var used = await Stored(async () => await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, 1, ct) ? [[]] : []);
-            if (used.Count == 0) return [RidePackets.RespawnReply(1)];
+            if (used.Count == 0) return ReviveRefused("item", $"item {row.TemplateId} could not be used up (uid {itemUid}, revision {row.Revision})");
+            ReviveLogLine($"item {row.TemplateId}");
             // OBSERVED by the community fork (090856 #96729-#96741, three times): 0x8d23, abnormal 10003, 0x8d26 (self and
             // nearby), 0x8d00, then the item change. Not sent: the system skill 8047 (0x3802/0x3806/0x3804) before the item.
             var revived = Revive(now, inPlace: true);
             return [RidePackets.RespawnReply(0), .. revived, .. await InventoryChangesAsync(ct, 0, DecreaseUseRebirthItem)];
         }
+        ReviveLogLine($"respawn type {type}");
         return [RidePackets.RespawnReply(0), .. Revive(now, leave: RespawnLeavesDungeon)];
     }
+
+    /// <summary>One line per revive and refused revive (path, reason, where), in the host log whatever the debug settings.</summary>
+    public static Action<string>? ReviveLog { get; set; }
+
+    void ReviveLogLine(string text) =>
+        ReviveLog?.Invoke($"Revive: character {CharacterId?.ToString() ?? playerKey.ToString(System.Globalization.CultureInfo.InvariantCulture)} map {worldMap}: {text}");
+
+    List<byte[]> ReviveRefused(string path, string reason)
+    {
+        ReviveLogLine($"{path} refused: {reason}");
+        return [RidePackets.RespawnReply(1)];
+    }
+
+    string RebirthItemProblem(long itemUid) =>
+        !storedItems.TryGetValue(itemUid, out var found) ? $"no item with uid {itemUid}"
+        : found.Location != "bag" ? $"item {found.TemplateId} is in {found.Location}, not the bag"
+        : $"item {found.TemplateId} gives no UseRebirth buff";
 
     bool TryResolveRebirthItem(long itemUid, out ItemState row)
     {
@@ -103,7 +122,12 @@ public sealed partial class GameSession
     List<byte[]> UseRebirth(bool use, long now)
     {
         if (!use) return [RidePackets.UseRebirthReply(0, false)];
-        if (!dead || !CanRebirth || DungeonRevivesLeft() == 0) return [RidePackets.UseRebirthReply(1, false)];
+        if (!dead || !CanRebirth || DungeonRevivesLeft() == 0)
+        {
+            ReviveLogLine($"rebirth buff refused: {(!dead ? "not dead" : !CanRebirth ? "no rebirth buff" : "no revives left in this dungeon run")}");
+            return [RidePackets.UseRebirthReply(1, false)];
+        }
+        ReviveLogLine("rebirth buff");
         // CANDIDATE: as the item revive (the rebirth buff's path is unrecorded); Revive sends 0x8d26 in place.
         return [RidePackets.UseRebirthReply(0, true), .. UseRebirthBuff(), .. Revive(now, inPlace: true)];
     }
@@ -126,11 +150,12 @@ public sealed partial class GameSession
         return limit > 0 ? Math.Max(0, limit - c.Revives.GetValueOrDefault(ReviveKey)) : -1;
     }
 
-    Vector3d RespawnPoint()
+    (string Name, Vector3d Position) RespawnPoint()
     {
-        if (DungeonRevivalPoint() is { } dungeon) return dungeon;
-        if (data.MapRespawn(worldMap, profileRace) is { } map) return map;
-        return data.MapStart(worldMap)?.Position ?? position ?? spawn?.Position ?? GamePackets.SpawnPosition;
+        if (DungeonRevivalPoint() is { } dungeon) return ("dungeon revival point", dungeon);
+        if (data.MapRespawn(worldMap, profileRace, diedAt ?? position) is { } map) return map;
+        if (data.MapStart(worldMap) is { } start) return start;
+        return ("where it stood", position ?? spawn?.Position ?? GamePackets.SpawnPosition);
     }
 
     /// <param name="leave">Dungeon.dat ResurrectionType Restart (GameSession.DailyDungeons.cs): out of the dungeon instead of its
@@ -169,7 +194,8 @@ public sealed partial class GameSession
                 return gone;
             }
         }
-        var at = RespawnPoint();
+        var (pointName, at) = RespawnPoint();
+        ReviveLogLine($"to {pointName} ({at.X:0},{at.Y:0},{at.Z:0}), fell at {(diedAt is { } d ? $"({d.X:0},{d.Y:0},{d.Z:0})" : "unknown")}");
         var replies = new List<byte[]> { PlayerPackets.CharDisappear(playerKey, RespawnAppearReason, RespawnTeleportEffect) };
         replies.AddRange(Teleport(worldMap, at, now, RespawnAppearReason, RespawnTeleportEffect));
         AddBuff(RespawnProtectAbnormal, RespawnProtectMs, 0, now, replies, path: SelfAbnormalPath.DeathProtection);
@@ -178,7 +204,11 @@ public sealed partial class GameSession
     }
 
     /// <summary>Timer-driven auto-rez at the respawn point (same replies as an accepted CharRespawn_RQ).</summary>
-    List<byte[]> AutoRevive(long now) => [RidePackets.RespawnReply(0), .. Revive(now, leave: RespawnLeavesDungeon)];
+    List<byte[]> AutoRevive(long now)
+    {
+        ReviveLogLine($"automatic after {ResolveAutoResurrectMs() / 1000}s");
+        return [RidePackets.RespawnReply(0), .. Revive(now, leave: RespawnLeavesDungeon)];
+    }
 
     List<byte[]> EnsureAliveAfterLoad()
     {

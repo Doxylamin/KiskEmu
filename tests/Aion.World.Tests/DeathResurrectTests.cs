@@ -228,4 +228,52 @@ public class DeathResurrectTests
         Assert.True(session.Resource.Hp > 0);
         Assert.Equal(session.Resource.HpMax, session.Resource.Hp);
     }
+
+    [Fact]
+    public void Field_respawn_is_the_respawn_point_nearest_to_the_fall()
+    {
+        // Map 1010 (Light field): its *_Respawn points are the Daeva Hunter spots. The old pick was the first by name
+        // (DaevaHunter_L1_10_Respawn) wherever the character fell.
+        var data = GameData.Embedded;
+        var points = data.MapPoints(1010).Where(p => p.Key.EndsWith("_Respawn", StringComparison.OrdinalIgnoreCase)).ToList();
+        Assert.True(points.Count > 2);
+        foreach (var (name, p) in points)
+        {
+            var fell = new Vector3d(p[0] + 30, p[1] - 20, p[2]);
+            Assert.Equal(name, data.MapRespawn(1010, 1, fell)?.Name);
+        }
+        Assert.Equal(points.Select(p => p.Key).Order(StringComparer.Ordinal).First(), data.MapRespawn(1010, 1)?.Name);
+    }
+
+    [Fact]
+    public void Respawn_prefers_the_race_points_then_the_nearest()
+    {
+        // Map 20 (Reshanta): Abyss_Reshanta_A_Dark_Respawn, _Light_Respawn and a plain _Respawn.
+        var data = GameData.Embedded;
+        var dark = data.MapPoints(20)["Abyss_Reshanta_A_Dark_Respawn"];
+        var nearDark = new Vector3d(dark[0], dark[1], dark[2]);
+        Assert.Equal("Abyss_Reshanta_A_Light_Respawn", data.MapRespawn(20, 1, nearDark)?.Name);
+        Assert.Equal("Abyss_Reshanta_A_Dark_Respawn", data.MapRespawn(20, 2, nearDark)?.Name);
+    }
+
+    [Fact]
+    public async Task Revives_and_refusals_are_logged()
+    {
+        const long t = Now + 600_000;
+        var lines = new List<string>();
+        var before = GameSession.ReviveLog;
+        GameSession.ReviveLog = lines.Add;
+        try
+        {
+            var session = await EnterAscendedAsync(new FakeCharacterStore(), t);
+            session.NpcHitsPlayer(session.Resource.HpMax * 10, t + 1000, killerKey: 2001);
+            var refused = await session.HandleAsync(new PacketWriter().U16(RidePackets.RespawnRq).U8(RidePackets.RespawnItem).I64(424242).ToArray(), t + 1500);
+            Assert.Contains(refused, p => p.SequenceEqual(RidePackets.RespawnReply(1)));
+            Assert.Contains(lines, l => l.Contains("item refused: no item with uid 424242"));
+            await session.HandleAsync(new PacketWriter().U16(RidePackets.RespawnRq).U8(RidePackets.RespawnAuto).I64(0).ToArray(), t + 2000);
+            Assert.Contains(lines, l => l.Contains($"respawn type {RidePackets.RespawnAuto}"));
+            Assert.Contains(lines, l => l.Contains(" to ") && l.Contains("fell at ("));
+        }
+        finally { GameSession.ReviveLog = before; }
+    }
 }
