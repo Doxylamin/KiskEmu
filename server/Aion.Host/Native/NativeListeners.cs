@@ -355,6 +355,8 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
             ? LoginPackets.PreGeneratedIntro(LoginPackets.DefaultWorlds[0].Id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) : null;
         // Map event notes (unsupported directives, objectives finished by timeout) go to the host log.
         GameSession.MapEventLog ??= text => Logger.LogInformation("Map event: {Text}", text);
+        // Every revive and refused revive (path, reason, respawn point) goes to the host log too.
+        GameSession.ReviveLog ??= text => Logger.LogInformation("{Text}", text);
         var gameData = services.GetRequiredService<GameData>();
         var session = new GameSession(gameData, new GameSessionOptions
         {
