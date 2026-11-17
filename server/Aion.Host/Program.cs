@@ -512,13 +512,13 @@ app.Use(async (context, next) =>
     await next();
 });
 // The chat port is plain HTTP on the bind address with no rate limiter: it answers the chat's own routes only, never the
-// account site, sign-in, registration or the staff API (those stay on the account port, behind TLS and the limiter). OURS.
+// account site, sign-in, registration or the staff API (those stay on the account port, behind TLS and the limiter).
+// The realm link answers there from loopback only (managed world servers). OURS.
 if (chatPort is { } chatOnly && chatOnly != port && chatOnly != platform.Port)
 {
-    string[] chatRoutes = ["/gameLogin", "/gameClient", "/stomp", "/internal/online", "/internal/world", "/internal/announce"];
     app.Use(async (context, next) =>
     {
-        if (context.Connection.LocalPort == chatOnly && !chatRoutes.Any(route => context.Request.Path.StartsWithSegments(route)))
+        if (context.Connection.LocalPort == chatOnly && !Aion.Host.Chat.ChatPortRoutes.Allows(context.Request.Path, context.Connection.RemoteIpAddress))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
