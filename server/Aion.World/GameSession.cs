@@ -1652,6 +1652,7 @@ public sealed partial class GameSession(GameData data, GameSessionOptions option
                 BonusDaevanionPoints = DaevanionBonusPointWire(),
             }));
         replies.Add(GamePackets.CharBarrier(playerKey));
+        replies.AddRange(SealStoneAtLoad());   // the Power Shard slot and toggle again on every map load (teleports too)
         replies.AddRange(afterAppear);
         afterAppear = [];
         replies.Add(GamePackets.CharStatsUpdate(playerKey, StatSheet().Stats, resources.HpMax));

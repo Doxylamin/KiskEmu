@@ -105,6 +105,20 @@ public sealed partial class GameSession
         catch (ProtocolException) { return null; }
     }
 
+    /// <summary>
+    /// Where a room request's dungeon id starts: right after the opcode, or one byte later when only that offset names a known
+    /// dungeon or expedition group. CANDIDATE (community fork ChanAge 9962b83): a 3533 client sent one extra byte before the
+    /// id in the room create (`00 c2 27 09` = 600002 one byte later), and the fork reads list and instant join the same way.
+    /// The create request already handles this through its level-first check.
+    /// </summary>
+    internal static int DungeonIdOffset(byte[] plain)
+    {
+        static bool Known(int id) => id > 0
+            && (ExpeditionTables.Embedded.GroupForContent(id) is not null || MapEventData.Dungeon(id) is not null);
+        if (plain.Length < 6 || Known(BitConverter.ToInt32(plain, 2))) return 2;
+        return plain.Length >= 7 && Known(BitConverter.ToInt32(plain, 3)) ? 3 : 2;
+    }
+
     /// <summary>DungeonRoomInstantJoin_RQ {dungeon i32, wanted roles (varint count, one EPartyRole u8 each), level u8, race u8}.
     /// CANDIDATE: the community fork's client trace `FF270900 01 02 01 03` (600063, role 2, level 1, race 3); the roles are single
     /// bytes here, not the (role, count) pairs of Create/EditSetting.</summary>
@@ -113,7 +127,7 @@ public sealed partial class GameSession
         if (plain.Length < 7) return null;
         try
         {
-            var reader = new PacketReader(plain) { Offset = 2 };
+            var reader = new PacketReader(plain) { Offset = DungeonIdOffset(plain) };
             var dungeonId = reader.I32();
             var role = RoomRoleAll;
             if (reader.Remaining > 0)
@@ -238,8 +252,9 @@ public sealed partial class GameSession
     List<byte[]> DungeonRoomList(byte[] plain)
     {
         if (plain.Length < 7) return [];
-        var contentId = BitConverter.ToInt32(plain, 2);
-        var level = plain.Length > 6 ? plain[6] : (byte)0;
+        var at = DungeonIdOffset(plain);
+        var contentId = BitConverter.ToInt32(plain, at);
+        var level = plain.Length > at + 4 ? plain[at + 4] : (byte)0;
         var resolved = Expeditions.ResolveDungeonId(contentId, level);
         if (MapEventData.Dungeon(resolved) is not { Type: "Party" })
             return [DungeonRoomListReply(RoomFailed, contentId, null, [])];

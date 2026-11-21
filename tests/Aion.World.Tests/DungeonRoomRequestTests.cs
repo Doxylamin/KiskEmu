@@ -43,6 +43,17 @@ public sealed class DungeonRoomRequestTests
     }
 
     [Fact]
+    public void Room_requests_find_the_dungeon_id_one_byte_later()
+    {
+        // CANDIDATE (community fork ChanAge 9962b83): a 3533 client put one byte before the id (600002 = c2270900).
+        Assert.Equal(2, GameSession.DungeonIdOffset(Convert.FromHexString("0097" + "C2270900" + "00")));
+        Assert.Equal(3, GameSession.DungeonIdOffset(Convert.FromHexString("0097" + "00" + "C2270900" + "00")));
+        Assert.Equal(2, GameSession.DungeonIdOffset(Convert.FromHexString("0097" + "00" + "01020304" + "00")));   // neither: unchanged
+        var shifted = GameSession.ParseInstantJoin(Convert.FromHexString("1297" + "00" + "FF270900" + "01" + "02" + "01" + "03"));
+        Assert.Equal((600063, (byte)1, (byte)3, (byte)2), shifted);
+    }
+
+    [Fact]
     public async Task Create_reads_the_3533_body_with_the_level_first()
     {
         // OBSERVED 2026-11-14 (game version 3533, our test server's client trace): level 0, dungeon 600002, race 3,

@@ -154,4 +154,22 @@ public sealed class SealStoneTests
         await HitAsync(session, target, at);
         Assert.Equal(1000, store.Items.Single(i => i.TemplateId == Shard).Quantity);
     }
+
+    [Fact]
+    public async Task A_map_load_resends_the_slotted_stack_and_the_toggle()
+    {
+        var (empty, _) = await BagAsync(50);
+        Assert.Empty(empty.SealStoneAtLoad());   // nothing slotted: item 0 would clear the slot
+
+        var (session, _, _, _) = await FieldAsync(50, slot: true);
+        var status = new PacketWriter().U16(GameSession.SealStoneStatusNt).Varint(session.PlayerKey).Bool(true).ToArray();
+        Assert.Equal([PlayerPackets.SealstoneChange(session.PlayerKey, Shard), status], session.SealStoneAtLoad());
+
+        // The teleport's map load (0x3622) carries both.
+        var spawn = GameSessionTestHelpers.LiveGameData.Spawns(1010).First();
+        session.Teleport(1010, new Vector3d(spawn.Position[0], spawn.Position[1], spawn.Position[2]), Now + 10);
+        var load = await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 10);
+        Assert.Contains(load, p => p.SequenceEqual(PlayerPackets.SealstoneChange(session.PlayerKey, Shard)));
+        Assert.Contains(load, p => p.SequenceEqual(status));
+    }
 }
