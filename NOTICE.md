@@ -16,6 +16,9 @@ authenticator is set up, a key of its own for stored secrets, recovery codes acc
 spaces, the RFC 6238 test vectors) is ported from Addiboii's A2Core (https://github.com/Addiboii/A2Core, commits
 26306c5, add7287, e5e8d2b and a5d4bdc).
 
+Re-sending the Power Shard slot after each map load and finding a room request's dungeon id one byte later are ported
+from Artezianec's A2Core-ChanAge fork (https://github.com/Artezianec/A2Core-ChanAge, commit 9962b83).
+
 The code is original work under the AGPL-3.0 (see LICENSE), with third-party open-source code under its own license:
 CUE4Parse (Apache-2.0, `third_party/CUE4Parse`) and the launcher's NuGet packages SteamKit2 (LGPL-2.1) and QRCoder
 (MIT). The game data the server runs on (`tools/data/*.json`, `data/aion-server-data.tar.gz`,
