@@ -2320,7 +2320,7 @@ public sealed partial class PostgresGameplayStore(NpgsqlDataSource source, Progr
         await using var c=await source.OpenConnectionAsync(ct);
         var owners=new List<AirspaceOwnerRecord>();
         await using(var q=Query(c,null,"""
-            SELECT o.airspace_id,o.guild_id,g.name,g.emblem,COALESCE(m.name,'')
+            SELECT o.airspace_id,o.guild_id,g.name,g.emblem_id,COALESCE(m.name,'')
             FROM game.airspace_owner o
             JOIN game.guilds g ON g.guild_id=o.guild_id
             LEFT JOIN game.guild_members gm ON gm.guild_id=g.guild_id AND gm.grade=0
