@@ -12,6 +12,8 @@ export const STAFF_ROLES = ['gamemaster', 'moderator', 'admin'] as const;
 export interface AdminCharacter {
   characterId: string; name: string; accountId: string; accountName: string; worldId: number;
   level: number; race: number; gender: number; creationId: number; accountDisabled: boolean; accountRoles?: string[] | null; staff?: boolean;
+  /** On the graveyard account (deleted); pendingDeleteAt: a deletion the owner asked for; blocked: deactivated by staff. */
+  deleted?: boolean; pendingDeleteAt?: string | null; blocked?: boolean; blockReason?: string | null;
 }
 
 export interface InventoryItem { instanceId?: string; templateId: number; quantity: number; location: string; slot: number | null }
@@ -62,6 +64,33 @@ export const ERRORS: Record<string, string> = {
   invalid_ascension: 'Ascension grade must be between 1 and 6.',
   unknown_class: "That class is not available for this character's race and gender.",
   no_catalogue: 'No catalogue build is imported on the server.',
+  character_online: 'The character is in the world. Ask the player to log out (or kick them) and try again.',
+  character_deleted: 'That character is already deleted.',
+  invalid_action: 'That character action is not known.',
+  invalid_reason: 'The reason is limited to 200 characters.',
+  not_pending: 'The character has no pending deletion.',
+  already_blocked: 'The character is already deactivated.',
+  not_blocked: 'The character is not deactivated.',
+  unknown_account: 'That account was not found or is disabled.',
+  same_account: 'The character is already on that account.',
+  other_race: 'That account plays the other race on this world.',
+  no_free_slot: 'That account has no free character slot on this world.',
+  same_world: 'The character is already on that world.',
+  invalid_move: 'The move is missing a character, world or account.',
+  invalid_name: 'Names are 1 to 64 characters, without # or control characters.',
+  reserved_name: 'GM-style names are for staff accounts.',
+  name_unavailable: 'That name is taken on the target world. Give the character a new name.',
+  character_blocked: 'The character is deactivated. Reactivate it before moving it.',
+  move_in_progress: 'Another move of this character has not finished.',
+  market_pending: 'The character has market listings or unclaimed sales. They must end first.',
+  move_finished: 'This move has already completed.',
+  move_cancelled: 'This move was cancelled. Start it again.',
+  move_incomplete: 'The move did not finish: a world stopped answering. The character stays blocked; press Move again to finish it.',
+  world_unreachable: 'A world server did not answer. Nothing was moved.',
+  world_offline: 'That world is not running.',
+  schema_mismatch: 'The two worlds are on different database versions. Update both first.',
+  unsupported_schema: 'This world has a character table the move cannot copy safely.',
+  no_worlds: 'This server runs no separate worlds.',
 };
 
 /** GET /api/admin/live: players in the world now (in-memory on the host). */
@@ -96,6 +125,8 @@ export interface ServerHealth {
 export interface AuditEntry { id: number; at: string; action: string; characterId: string | null; characterName: string | null; actorName: string | null; details: string }
 
 ERRORS.invalid_timer = 'Give the shortest and longest wait in hours (the longest at least the shortest, at most 7 days).';
+ERRORS.invalid_bug_report = 'Pick a status; the note can have up to 2000 characters.';
+ERRORS.realm_only = 'Bug reports are kept by the auth host.';
 ERRORS.world_only = 'Pick a world: this is answered by a world server.';
 ERRORS.not_online = 'That player is no longer in the world.';
 ERRORS.not_possible = 'The game could not do that right now.';
@@ -119,6 +150,30 @@ export interface NpcChoice { npcId: number; name: string; level: number; hostile
 export interface Sanction { id: number; accountId: string; accountName: string; kind: 'ban' | 'mute'; reason: string; createdAt: string; expiresAt: string | null; createdBy: string | null; revokedAt: string | null; revokedBy: string | null }
 export interface ChatLine { id: number; at: string; channel: string; sender: string; receiver: string | null; content: string; accountId: string | null }
 export interface Ticket { id: number; createdAt: string; accountId: string | null; accountName: string | null; characterName: string | null; category: string; content: string; status: 'open' | 'closed'; staffNote: string; handledBy: string | null; handledAt: string | null }
+export type BugStatus = 'open' | 'in_progress' | 'fixed' | 'wont_fix';
+/** A "/bug" report as listed (migration 106). */
+export interface BugReportSummary {
+  id: number; createdAt: string; accountId: string | null; accountName: string | null; characterId: string | null; characterName: string | null;
+  worldId: number; mapId: number | null; mapName: string | null; quests: string[]; text: string; status: BugStatus; staffNote: string;
+  handledBy: string | null; handledAt: string | null; commit: string | null; screenshotType: string | null;
+}
+export interface BugSource { kind: string; file?: string; map?: number; index?: number; uniqueKey?: number; home?: number[]; homeYaw?: number; ownerKey?: number }
+export interface BugSpawn { key: number; npcId: number; name: string; level: number; x: number; y: number; z: number; heading: number; distance: number; dead: boolean; hostile: boolean; relationship: number; function: string; seen: boolean; source: BugSource }
+export interface BugObject { key: number; env: number; name: string; envName?: string; x: number; y: number; z: number; yaw: number; distance: number; shown: boolean; file: string; map: number; index: number; uniqueKey: number }
+export interface BugQuest { code: string; id: number; title?: string; type?: string; status: number; statusName: string; step: number; goals: number[]; questMap?: number; startNpc?: number; finishNpc?: number; stepNpc?: number; stepObjectives: { type: string; npc?: number; npcs?: number[]; item?: number; target?: string; count: number }[] }
+export interface BugPacket { agoMs: number; dir: 'C' | 'S'; op: string; name?: string; length: number; hex?: string }
+/** What the world server captured at the moment of the report (GameSession.BugReport.cs). */
+export interface BugContext {
+  reportedAt: string; serverMs: number;
+  server: { commit?: string; worldId: number; sharedWorld: boolean };
+  character: { accountId?: string; id?: string; name?: string; race: number; raceName: string; className?: string; level: number; staffRole?: string; hp: number; hpMax: number; dead: boolean; inCombat: boolean };
+  location?: { mapId: number; mapName: string; instance?: number; x: number; y: number; z: number; heading: number; subzoneId: number; subzone?: string; area?: string };
+  quests: { active: BugQuest[]; recentEvents: { agoMs: number; kind: string; code: string; step: number; status: number; goals?: number[] }[]; lastRewarded: BugQuest[] };
+  mapEvents: { id: number; name: string; status: number; stage: number; step: number; goals: number[]; ageMs: number }[];
+  nearbyRadius: number; nearby: BugSpawn[]; nearbyObjects: BugObject[];
+  packets: { capacity: number; previewBytes: number; recent: BugPacket[] };
+}
+export interface BugReportDetail { report: BugReportSummary; context: BugContext }
 export interface Maintenance { enabled: boolean; message: string; since: string | null; by: string | null }
 export interface ScheduledEvent { id: number; kind: 'announce' | 'exp' | 'drop'; startsAt: string; endsAt: string | null; repeatMinutes: number | null; text: string; multiplier: number | null; createdBy: string | null; cancelledAt: string | null; lastRunAt: string | null }
 export interface PopulationPoint { at: string; players: number; connections: number }

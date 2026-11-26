@@ -124,10 +124,9 @@ public sealed class CraftTables
 // (CANDIDATE layouts). Craft mastery per ECraftCategory (migration 029): a recipe is known up to the mastery of its
 // worktable, the success rate is the CraftRecipeRate curve at the player's mastery gap over the recipe (the published
 // rates, about 73% at gap 0 rising towards 88%, have this shape), a failed craft uses up the components (OURS).
-// Each craft pays mastery exp (OURS: an eighth of the level's CraftMastery need, so about eight crafts a level):
+// Each craft pays mastery exp (OBSERVED 2026-11-15: 20 for a success, 6 for a failure, at craft levels 4 to 7):
 // CraftExpUpdate_NT 0x8d7c {category u8, exp i64, gained i64}; a level-up CraftLevelUpdate_NT 0x8d7d {category u8,
-// level i32, exp i64, skill points i32} and the recipe list again (new recipes). Both layouts are the usmap fields
-// (CANDIDATE); at world entry the levels above 1 are announced with 0x8d7d (CANDIDATE: the official entry of a fresh
+// level u16, exp i64, skill points u16} and the recipe list again (new recipes). Both layouts OBSERVED 2026-11-12; at world entry the levels above 1 are announced with 0x8d7d (CANDIDATE: the official entry of a fresh
 // character sent none).
 public sealed partial class GameSession
 {
@@ -166,30 +165,38 @@ public sealed partial class GameSession
         return recipes.ToArray();
     }
 
-    static byte[] CraftLevelUpdate(int category, int level, long exp) => PacketWriter.Opcode(CraftLevelUpdateNt).U8((byte)category).I32(level).I64(exp).I32(0).ToArray();
+    /// <summary>EResult kCraft_Success / kCraft_ComboSuccess / kCraft_Fail (OBSERVED 1280 in 0x8d6f and 0x8d71, 2026-11-12).</summary>
+    const int CraftSuccess = 1280, CraftComboSuccess = 1281, CraftFail = 1282;
 
-    /// <summary>World entry: gather skills (none), the known recipes, the default conversions, then the masteries above level 1.</summary>
+    /// <summary>0x8d7d CraftLevelUpdate_NT: category u8 | level u16 | exp i64 | skill points u16 (OBSERVED `7d8d 05 0b00 16..00 0100`).</summary>
+    static byte[] CraftLevelUpdate(int category, int level, long exp) =>
+        PacketWriter.Opcode(CraftLevelUpdateNt).U8((byte)category).U16(level).I64(exp).U16(0).ToArray();
+
+    /// <summary>
+    /// World entry: gather skills (none), the known recipes, the default conversions. The mastery levels go in 0x3633's
+    /// CharDetail (OBSERVED: no 0x8d7d/0x8d36 on any official map load; sent here they printed a level-up line for every
+    /// craft on each teleport).
+    /// </summary>
     List<byte[]> CraftListsAtEntry()
     {
         var conversions = Crafts.Conversions(profileRace);
         var converted = PacketWriter.Opcode(0x8d8c).Varint(conversions.Count);
         foreach (var id in conversions) converted.I32(id).I32(0);
-        var replies = new List<byte[]> { Convert.FromHexString("378D0000000000"), CraftRecipeList(), converted.ToArray() };
-        foreach (var (category, (lvl, exp)) in craftMastery.OrderBy(p => p.Key))
-            if (lvl > 1) replies.Add(CraftLevelUpdate(category, lvl, exp));
-        if (gatherLevel > 1) replies.Add(GatherLevelUpdate());
+        var replies = new List<byte[]> { CraftRecipeList(), Convert.FromHexString("378D0000000000"), converted.ToArray() };   // OBSERVED order: 0x8d7e, 0x8d37, 0x8d8c
         return replies;
     }
 
-    /// <summary>Mastery exp for a craft (OURS): the level's need over eight; level-ups carry the surplus. The packets, with the recipe list on a level-up.</summary>
-    async Task<List<byte[]>> CraftMasteryExpAsync(int category, CancellationToken ct)
+    /// <summary>Craft mastery exp: 20 a success, 6 a failure (OBSERVED 2026-11-15, Orichalcum Ingot at craft levels 4 to 7).</summary>
+    public const int CraftExpSuccess = 20, CraftExpFail = 6;
+
+    /// <summary>Mastery exp for a craft; level-ups carry the surplus. The packets, with the recipe list on a level-up.</summary>
+    async Task<List<byte[]>> CraftMasteryExpAsync(int category, bool success, CancellationToken ct)
     {
         var (lvl, exp) = CraftMastery(category);
         var need = Crafts.CraftMasteryNeed(lvl);
         if (need <= 0) return [];
-        var gained = Math.Max(1, need / 8);
+        var gained = success ? CraftExpSuccess : CraftExpFail;
         exp += gained;
-        var replies = new List<byte[]> { PacketWriter.Opcode(CraftExpUpdateNt).U8((byte)category).I64(exp).I64(gained).ToArray() };
         var leveled = false;
         while (need > 0 && exp >= need && lvl < CraftTables.MaxMastery)
         {
@@ -199,6 +206,8 @@ public sealed partial class GameSession
             need = Crafts.CraftMasteryNeed(lvl);
         }
         craftMastery[category] = (lvl, exp);
+        // 0x8d7c carries the exp left after a level-up (OBSERVED: exp 22, gained 26 with the level-up in the same ms).
+        var replies = new List<byte[]> { PacketWriter.Opcode(CraftExpUpdateNt).U8((byte)category).I64(exp).I64(gained).ToArray() };
         if (Store is { } store && CharacterId is { } character)
             await Stored(async () => { await store.SaveMasteryAsync(character, "craft", category, lvl, exp, ct); return []; });
         if (leveled)
@@ -223,7 +232,76 @@ public sealed partial class GameSession
         return replies;
     }
 
-    async Task<List<byte[]>> CraftAsync(byte[] plain, CancellationToken ct)
+    /// <summary>
+    /// One turn of the crafting mini-game (DevPacketData_Common_CraftTurnResult {result u8, skills int[], gain before and
+    /// after skills}). OBSERVED 2026-11-15 (six official Orichalcum Ingot crafts): the success and the fail gauge are 400 each,
+    /// a turn adds to one of them (2 critical, 3 basic, 4 small; 5 fail basic, 6 fail small), the last turn is capped at what its
+    /// gauge still needs.
+    /// </summary>
+    public readonly record struct CraftTurn(byte Result, int Gain);
+
+    public const int CraftGauge = 400;
+    const byte CraftTurnEpic = 1, CraftTurnCritical = 2, CraftTurnBasic = 3, CraftTurnSmall = 4, CraftTurnFailBasic = 5, CraftTurnFailSmall = 6;
+
+    /// <summary>
+    /// A turn's gain. OBSERVED 2026-11-15: small 59 to 63 and basic 129 to 139 (rising with the craft level, 4 to 7), fail basic
+    /// 84, fail small 56. Critical was only seen capped (153 at most): 200 (CANDIDATE); epic unseen: 250 (CANDIDATE).
+    /// </summary>
+    static int CraftTurnGain(byte result) => result switch
+    {
+        CraftTurnEpic => 250, CraftTurnCritical => 200, CraftTurnBasic => 135, CraftTurnSmall => 60, CraftTurnFailBasic => 84, _ => 56,
+    };
+
+    /// <summary>
+    /// The client plays a craft's turns before it completes (OBSERVED 2026-11-15: 0x8d71 came 7.2 s after 0x8d6f for four
+    /// turns, 14.0 s for eight, 17.4 s for ten).
+    /// </summary>
+    public static long CraftRaceMs(int turns) => 1750L * Math.Max(1, turns);
+
+    /// <summary>
+    /// The turns shown for an outcome already rolled: each turn goes to the success side with 65% (CANDIDATE), unless that
+    /// would fill the gauge of the side that must lose; the winning side's gauge fills last.
+    /// </summary>
+    List<CraftTurn> CraftTurns(bool success)
+    {
+        var turns = new List<CraftTurn>();
+        int won = 0, lost = 0;
+        while (turns.Count < 40 && won < CraftGauge && lost < CraftGauge)
+        {
+            var toSuccess = CraftRoll() < 65_000_000;
+            var kind = CraftRoll();
+            var result = toSuccess
+                ? kind < 10_000_000 ? CraftTurnCritical : kind < 55_000_000 ? CraftTurnBasic : CraftTurnSmall
+                : kind < 50_000_000 ? CraftTurnFailBasic : CraftTurnFailSmall;
+            var successSide = result <= CraftTurnSmall;
+            var gauge = successSide ? won : lost;
+            if (gauge + CraftTurnGain(result) >= CraftGauge && successSide != success)
+            {
+                // That turn would decide the wrong way: it goes to the deciding side instead.
+                result = success ? CraftTurnSmall : CraftTurnFailSmall;
+                successSide = success;
+                gauge = successSide ? won : lost;
+            }
+            var gain = Math.Min(CraftTurnGain(result), CraftGauge - gauge);
+            if (successSide) won += gain; else lost += gain;
+            turns.Add(new CraftTurn(result, gain));
+        }
+        return turns;
+    }
+
+    /// <summary>A craft whose turns are playing on the client; it completes at DueMs.</summary>
+    sealed record PendingCraft(uint Worktable, CraftTables.Recipe Recipe, int Result, bool GrantsProduct, bool ComboSuccess,
+        List<(int Item, long Count)> Goods, long DueMs);
+
+    PendingCraft? pendingCraft;
+
+    /// <summary>
+    /// 0x8d6e CraftStart_RQ {worktable key, recipe, …}. OBSERVED order (2026-11-15): the components taken (0x561b), 0x8d6f
+    /// with the turns (result 1280 even for a craft that will fail: _is_success says it), CraftStart broadcast 0x8d72
+    /// {player, worktable, 01}; once the turns have played: the mastery exp (0x8d7c, 0x8d7d), 0x8d71 with the result
+    /// (1282 for a failure), CraftEnd broadcast 0x8d74 {player, result u16, worktable, 01}, the product (0x561b).
+    /// </summary>
+    async Task<List<byte[]>> CraftAsync(byte[] plain, long now, CancellationToken ct)
     {
         uint worktable;
         int recipeId;
@@ -234,10 +312,14 @@ public sealed partial class GameSession
             recipeId = r.I32();
         }
         catch (ProtocolException) { return []; }
-        byte[] Reply(int result, bool success, bool failReward = false, bool combo = false, bool comboSuccess = false) =>
-            PacketWriter.Opcode(CraftStartRs).U16(result).Varint(worktable).I32(recipeId)
-            .Bool(success).Bool(failReward).Bool(combo).Bool(comboSuccess).Varint(0).Varint(0).Varint(0).Varint(0).I32(0).I32(0).I32(0)
-            .U8(0).I32(0).Varint(0).Varint(0).U8(0).I32(0).Varint(0).Varint(0).ToArray();
+        byte[] Reply(int result, bool success, IReadOnlyList<CraftTurn>? turns = null, bool failReward = false, bool combo = false, bool comboSuccess = false)
+        {
+            var w = PacketWriter.Opcode(CraftStartRs).U16(result).Varint(worktable).I32(recipeId)
+                .Bool(success).Bool(failReward).Bool(combo).Bool(comboSuccess).Varint(0).Varint(turns?.Count ?? 0);
+            foreach (var t in turns ?? []) w.U8(t.Result).Varint(0).I32(t.Gain).I32(t.Gain);
+            return w.Varint(0).Varint(0).I32(0).I32(0).I32(0).U8(0).I32(0).Varint(0).Varint(0).U8(0).I32(0).Varint(0).Varint(0).ToArray();
+        }
+        if (pendingCraft is not null) return [Reply(1, false)];
         if (Crafts.Of(recipeId) is not { } recipe || recipe.Race != profileRace) return [Reply(1, false)];
         var elevateCraft = AllowsElevateCraftRecipe(recipe);
         if (!recipe.Auto && !elevateCraft) return [Reply(1, false)];
@@ -257,27 +339,47 @@ public sealed partial class GameSession
         }
         var gap = CraftLevelOf(recipe.Worktable) - recipe.Mastery;
         var outcome = ResolveCraftOutcome(recipe, gap, CraftRoll, CraftRoll);
+        List<(int Item, long Count)> goods = outcome.GrantsProduct ? [(outcome.Product, outcome.ProductCount)] : [];
+        if (outcome.GrantsProduct && TryElevateCraftCollect(out var elevateItem, out _)
+            && ElevateCraftWorktable(elevateItem) == recipe.Worktable && HeldCount(elevateItem) < 1
+            && goods.All(g => g.Item != elevateItem))
+            goods.Add((elevateItem, 1));
+        var replies = new List<byte[]>();
         if (Store is { } store && CharacterId is { } character)
         {
-            List<(int Item, long Count)> goods = outcome.GrantsProduct ? [(outcome.Product, outcome.ProductCount)] : [];
-            if (outcome.GrantsProduct && TryElevateCraftCollect(out var elevateItem, out _)
-                && ElevateCraftWorktable(elevateItem) == recipe.Worktable && HeldCount(elevateItem) < 1
-                && goods.All(g => g.Item != elevateItem))
-                goods.Add((elevateItem, 1));
-            var done = await Stored(async () => await store.ShopBuyAsync(character, costs, goods, [], ct) ? [[]] : []);
-            if (done.Count == 0) return [Reply(1, false)];
+            var taken = await Stored(async () => await store.ShopBuyAsync(character, costs, [], [], ct) ? [[]] : []);
+            if (taken.Count == 0) return [Reply(1, false)];
+            replies.AddRange(await InventoryChangesAsync(ct, IncreaseCraftItem, DecreaseCraftItem));
         }
+        var result = outcome.ComboSuccess ? CraftComboSuccess : outcome.GrantsProduct ? CraftSuccess : CraftFail;
+        var turns = CraftTurns(outcome.GrantsProduct);
+        pendingCraft = new PendingCraft(worktable, recipe, result, outcome.GrantsProduct, outcome.ComboSuccess, goods, now + CraftRaceMs(turns.Count));
+        // 0x8d6f's result is 1280 for a failure too (OBSERVED 2026-11-15); _is_success and 0x8d71 carry the outcome.
+        replies.Add(Reply(outcome.ComboSuccess ? CraftComboSuccess : CraftSuccess, outcome.Success, turns, combo: outcome.ComboAttempt, comboSuccess: outcome.ComboSuccess));
+        replies.Add(PacketWriter.Opcode(0x8d72).Varint(playerKey).Varint(worktable).U8(1).ToArray());
+        return replies;
+    }
+
+    /// <summary>A craft's end once its turns have played (see <see cref="CraftAsync"/>).</summary>
+    async Task<List<byte[]>> CraftTickAsync(long now, CancellationToken ct)
+    {
+        if (pendingCraft is not { } craft || now < craft.DueMs) return [];
+        pendingCraft = null;
+        var recipe = craft.Recipe;
+        if (craft.Goods.Count > 0 && Store is { } store && CharacterId is { } character)
+            await Stored(async () => await store.GrantLootAsync(character, craft.Goods, ct) ? [[]] : []);
         var achieve = new List<byte[]>();
-        if (outcome.GrantsProduct)
+        if (craft.GrantsProduct)
         {
             achieve.AddRange(AchieveCraft(recipe.Worktable, CraftLevelOf(recipe.Worktable)));
-            if (outcome.ComboSuccess) achieve.AddRange(Achieve("CraftComboSuccess", 1, e => e.Values.Length == 0 || e.Has(recipeId.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+            if (craft.ComboSuccess) achieve.AddRange(Achieve("CraftComboSuccess", 1, e => e.Values.Length == 0 || e.Has(recipe.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))));
         }
-        return [Reply(0, outcome.Success, combo: outcome.ComboAttempt, comboSuccess: outcome.ComboSuccess), .. await InventoryChangesAsync(ct, IncreaseCraftItem, DecreaseCraftItem),
-            // 0x8d71 (OBSERVED, 19 official completions 2026-11-02..05, 8 bytes): result u8 (0 success, 1 combo success with two
-            // items, 2 failed; a failed combo yields nothing), worktable key i32, direct-completed bool.
-            PacketWriter.Opcode(CraftCompletedNt).U8(outcome.ComboSuccess ? 1 : outcome.GrantsProduct ? 0 : 2).U32(worktable).Bool(outcome.GrantsProduct).ToArray(),
-            .. await CraftMasteryExpAsync(CraftCategories.GetValueOrDefault(recipe.Worktable), ct),
+        return [.. await CraftMasteryExpAsync(CraftCategories.GetValueOrDefault(recipe.Worktable), craft.GrantsProduct, ct),
+            // 0x8d71 (OBSERVED 2026-11-12 `718d 0005 b9b701 00`): result u16 EResult (1280 success, 1281 combo success with
+            // two items, 1282 failed; a failed combo yields nothing), worktable key varint, is_direct_completed bool (0).
+            PacketWriter.Opcode(CraftCompletedNt).U16(craft.Result).Varint(craft.Worktable).Bool(false).ToArray(),
+            PacketWriter.Opcode(0x8d74).Varint(playerKey).U16(craft.Result).Varint(craft.Worktable).U8(1).ToArray(),
+            .. await InventoryChangesAsync(ct, IncreaseCraftItem, DecreaseCraftItem),
             .. achieve];
     }
 

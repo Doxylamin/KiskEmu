@@ -168,6 +168,14 @@
     }
   },
   "abnormals": {
+    "10000002": {
+      "effects": [
+        [
+          "Stagger"
+        ]
+      ],
+      "evidence": "The groggy abnormal of a broken groggy guard (Stagger.cs; OBSERVED id and GroggyTime duration in the fork recordings): mastery scattershot/rampage skills require HasAbnormalEffectType Stagger on the target. CANDIDATE type."
+    },
     "100000041": {
       "effects": [
         [
@@ -223,14 +231,6 @@
         ]
       ],
       "evidence": "Aerial Snare (Gladiator) and the Chanter 18390040: the name says airborne, 3 s."
-    },
-    "100000401": {
-      "effects": [
-        [
-          "Stagger"
-        ]
-      ],
-      "evidence": "Stagger break state (4 s): mastery scattershot/rampage skills require HasAbnormalEffectType Stagger on the target."
     },
     "100000701": {
       "effects": [
@@ -354,6 +354,16 @@
         ]
       ],
       "evidence": "Recuperation (Chanter, 8 s): a heal over time, 20 % of the maximum in total."
+    },
+    "181600011": {
+      "effects": [
+        [
+          "StatChange",
+          "MoveSpeed",
+          "1370"
+        ]
+      ],
+      "evidence": "Sprint Mantra pulse (Chanter, 2.4 s, refreshed every second while the toggle is on): OBSERVED 2026-11-15 i=286222 0x364a stat 205 = 1370 with it alone; the row type is CANDIDATE (SkillAbnormalEffect.dat not exported)."
     }
   }
 }

@@ -285,7 +285,8 @@ public sealed partial class GameSession : IMapEventHost
         // Only served dungeon maps (their scripts, points and spawns are generated); staff may look at the rest.
         if (!staff && !MapEventData.Serves(room.Map)) { Note($"dungeon {room.Name}: map {room.Map} is not served"); return []; }
         var events = MapEventData.EventsOn(room.Map);
-        if (copy == 0 && !staff && events.Count > 0 && !events.Any(e => MapEventRun.StartHolds(e, this, now)))
+        // An event that starts on the copy's own DungeonState (Dungeon_Daily_0001: Prepare) waits for the copy, not for the player.
+        if (copy == 0 && !staff && events.Count > 0 && !events.Any(e => room.Type == "Daily" && StartsOnDungeonState(e) || MapEventRun.StartHolds(e, this, now)))
         {
             var open = questLog?.OpenClearMapEventNames().ToList() ?? [];
             Note($"dungeon {room.Name}: entry refused (map event start blocked; open ClearMapEvent=[{string.Join(", ", open)}])");
@@ -313,9 +314,9 @@ public sealed partial class GameSession : IMapEventHost
         // took the start point (2026-10-30, HQ003: TriggerActor_03 fired, the client stayed at the door), so a door is a PCTeleport
         // (reason 2) with the door's effect SeamlessDoorTeleport_heavy_in (TeleportEffect 40).
         var moved = InstanceMove(room.Map, arrival, now, teleportEffect: throughDoor ? DoorTeleportEffect : null);
-        // Every member pays one weekly ticket on first entry (portal join into the leader's copy included); room UI passes consumeTicket too.
-        if (moved.Count > 0 && !IsAdmin && Timed(room) && !alreadyInCopy)
-            ConsumeExpeditionTicket(room, now);
+        // Every member pays the dungeon's Enter tickets on first entry (portal join into the leader's copy included).
+        if (moved.Count > 0 && !IsAdmin && !alreadyInCopy)
+            SpendContentTickets(dungeonId, "Enter", now);
         return moved;
     }
 
@@ -432,12 +433,20 @@ public sealed partial class GameSession : IMapEventHost
     int mapEventsMap;
 
     /// <summary>Ends runs whose exported start conditions no longer hold (quest step moved back, relog inside an instance).</summary>
+    /// <summary>The event starts on the copy's own DungeonState alone (every alternative is a DungeonState condition).</summary>
+    static bool StartsOnDungeonState(MapEventDefinition e) =>
+        e.Start is { Length: > 0 } s && s.All(g => g.Length > 0 && g.All(c => c.Type == "DungeonState"));
+
     List<byte[]> DropMapEventRunsUnlessStartHolds(long now)
     {
         var replies = new List<byte[]>();
         foreach (var run in mapEventRuns.ToList())
         {
-            if (run.WindingDown || MapEventData.Event(run.Name) is not { } def || MapEventRun.StartHolds(def, this, now)) continue;
+            // In a daily, a start on the copy's DungeonState is a trigger, not a lasting condition: Dungeon_Daily_0001 starts on
+            // Prepare and runs on through Process (OBSERVED official 2026-11-15: its 0x922e at the entry, the boss's clear 54 s
+            // into Process). The field events' Prepare scripts do end with Prepare.
+            if (run.WindingDown || MapEventData.Event(run.Name) is not { } def || CopyDaily is not null && StartsOnDungeonState(def)
+                || MapEventRun.StartHolds(def, this, now)) continue;
             mapEventRuns.Remove(run);
             replies.Add(GamePackets.MapEventLeave(run.Id));
             DebugMapEvent($"event drop {run.Name} run {run.Id}: start no longer holds");
@@ -467,6 +476,7 @@ public sealed partial class GameSession : IMapEventHost
         npcBuffs.Clear();
         if (!RunsMapEvents || targets is null) return;
         dormantSpawners.UnionWith(MapEventData.Deferred(worldMap));
+        dormantSpawners.UnionWith(DormantWaveSpawners());
         foreach (var t in targets.Values)
         {
             if (t.Key == Combat.TrainingDummyKey) continue;
@@ -535,10 +545,11 @@ public sealed partial class GameSession : IMapEventHost
     {
         if (ToCopyOwner(o => o.MapEventKilled(target, now))) return [];
         CubeKilled(target, now);
+        DailyKillPoints(target, now);   // GameSession.DailyDungeons.cs
         if (mapEventRuns.Count == 0) return DrainMapEvents();
         mapEventNow = now;
         var alive = targets?.Values.Any(t => string.Equals(t.Name, target.Name, StringComparison.OrdinalIgnoreCase) && !t.Dead) == true;
-        foreach (var run in mapEventRuns.ToList()) run.Killed(target.NpcId, target.Name, target.Hostile, alive, now);
+        foreach (var run in mapEventRuns.ToList()) run.Killed(target.NpcId, target.Name, target.Hostile, alive, now, target.SubType);
         return DrainMapEvents();
     }
 
@@ -591,14 +602,15 @@ public sealed partial class GameSession : IMapEventHost
         return DrainMapEvents();
     }
 
-    List<byte[]> MapEventUsedObject(string spawnName, long now)
+    /// <summary>A placed object used (or, <paramref name="destroyed"/>, broken by hits) for the map events.</summary>
+    List<byte[]> MapEventUsedObject(string spawnName, long now, string? dataName = null, bool destroyed = false)
     {
-        if (ToCopyOwner(o => o.MapEventUsedObject(spawnName, now)) || mapEventRuns.Count == 0) return [];
+        if (ToCopyOwner(o => o.MapEventUsedObject(spawnName, now, dataName, destroyed)) || mapEventRuns.Count == 0) return [];
         mapEventNow = now;
         foreach (var run in mapEventRuns.ToList())
         {
             var before = string.Join(',', run.Goals);
-            var counted = run.UsedObject(spawnName, now);
+            var counted = destroyed ? run.Destroyed(spawnName, now, dataName) : run.UsedObject(spawnName, now, dataName);
             if (counted)
                 DebugMapEvent($"UseEnvObj {spawnName}: counted {before} -> {string.Join(',', run.Goals)} step {run.StepOrder}");
             else if (run.Step is { } step)
@@ -688,6 +700,8 @@ public sealed partial class GameSession : IMapEventHost
         if (mapEventRuns.Count == 0 && pendingSpawns.Count == 0 && pendingExit is null && npcBuffs.Count == 0 && copy is null) return [];
         mapEventNow = now;
         DungeonTimeLimit(now);
+        DailyCountdownTick(now);   // GameSession.DailyDungeons.cs
+        DungeonEndTick(now);   // GameSession.PartyDungeons.cs
         var phase = DungeonPhaseTick(now);
         if (phase.Count > 0) mapEventOut.InsertRange(0, phase);
         NpcBuffTick(now);
@@ -730,9 +744,10 @@ public sealed partial class GameSession : IMapEventHost
     /// <summary>The appear goes out now. Far from the player it is not marked seen, so the next approach sends it again.</summary>
     void ShowSpawned(Target t)
     {
-        mapEventOut.Add(GamePackets.NpcAppear(SpawnAppearance(t)));
+        mapEventOut.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(SpawnAppearance(t)), t));
         if (position is { } at && !InNpcView(t.Position, at)) seenNpcs.Remove(t.Key);
         else seenNpcs.Add(t.Key);
+        DailyEliteSpawned(t);   // GameSession.DailyDungeons.cs: "Danger level has risen"
     }
 
     static bool InNpcView(Vector3d npc, Vector3d player)
@@ -827,7 +842,7 @@ public sealed partial class GameSession : IMapEventHost
             mapEventOut.Add(GamePackets.MapEventJoin(run.Id, run.Name, (byte)run.Status, run.StageOrder, run.WireStep, run.Goals, run.StartedMs, run.Variables));
             mapEventOut.Add(GamePackets.MapEventProgress(run.Id, (byte)run.Status, run.StageOrder, run.WireStep, run.Goals, run.Variables));
             ((IMapEventHost)this).ScriptBeat(run, "talk-ready", $"{objective.Type} {objective.Value(0)} key={t.Key} talk={talk}", mapEventNow);
-            Note($"wire AskNpc run={run.Id} step={run.StepOrder} goals=[{string.Join(',', run.Goals)}] sent 0x922e+0x922d 0x39cd rel={questRelation} 0x3641 key={t.Key} npc={t.NpcId} talk={talk}");
+            Note($"wire AskNpc run={run.Id} step={run.StepOrder} goals=[{string.Join(',', run.Goals)}] sent 0x922e+0x922d 0x8d92 rel={questRelation} 0x3641 key={t.Key} npc={t.NpcId} talk={talk}");
         }
         DebugMapEvent($"AskNpc ready {t.Name} ({t.NpcId}) talk={talk} rel={questRelation} appearAggressive=false");
         PlaytestDebug.Action("map_event_ask_npc_prepare",
@@ -901,6 +916,7 @@ public sealed partial class GameSession : IMapEventHost
     void BringBack(Target t)
     {
         t.Hp = t.HpMax;
+        Stagger.Restore(t);   // the guard comes back full with the spawn (OURS)
         t.CorpseRemoved = false;
         t.Held = false;
         t.Immune = false;
@@ -941,7 +957,7 @@ public sealed partial class GameSession : IMapEventHost
         if (!t.Hostile || t.Dead) return;
         var wasTalk = t.AppearNonAggressive;
         t.AppearNonAggressive = false;
-        mapEventOut.Add(GamePackets.NpcAppear(SpawnAppearance(t)));
+        mapEventOut.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(SpawnAppearance(t)), t));
         DebugMapEvent($"turned hostile {t.Name} ({t.NpcId}) key={t.Key} rel={t.Relationship} wasTalk={wasTalk}: re-appear");
     }
 
@@ -999,6 +1015,7 @@ public sealed partial class GameSession : IMapEventHost
             if (!t.Dead && !t.CorpseRemoved) { already++; continue; }
             revived++;
             t.Hp = t.HpMax;
+            Stagger.Restore(t);   // the guard comes back full with the spawn (OURS)
             t.CorpseRemoved = false;
             t.Held = false;
             t.Immune = false;
@@ -1105,6 +1122,7 @@ public sealed partial class GameSession : IMapEventHost
             var angle = index++ * 2 * Math.PI / Math.Max(1, count);
             t.Position = centre with { X = centre.X + Math.Cos(angle) * Math.Min(radius, 400), Y = centre.Y + Math.Sin(angle) * Math.Min(radius, 400) };
             t.Hp = t.HpMax;
+            Stagger.Restore(t);   // the guard comes back full with the spawn (OURS)
             t.CorpseRemoved = false;
             ShowSpawned(t);
         }
@@ -1190,7 +1208,7 @@ public sealed partial class GameSession : IMapEventHost
 
     /// <summary>
     /// ChangeRelationshipEntity: the spawner's NPCs take the relationship (Monster: attackable, and fighting when aggressive;
-    /// NPC_Companion / NPC_Neutral: at peace), 0x39cd per visible NPC. Dormant ones spawn with it.
+    /// NPC_Companion / NPC_Neutral: at peace), 0x8d92 per visible NPC. Dormant ones spawn with it.
     /// </summary>
     void IMapEventHost.SetRelationship(string spawner, string relationship)
     {
@@ -1221,12 +1239,16 @@ public sealed partial class GameSession : IMapEventHost
         public int? Restore;
     }
 
-    /// <summary>A damage-over-time row on a monster: <see cref="PerTick"/> every <see cref="IntervalMs"/> until <see cref="Remaining"/> is spent.</summary>
+    /// <summary>
+    /// A damage-over-time row on a monster: <see cref="PerTick"/> every <see cref="IntervalMs"/> until <see cref="Remaining"/> is spent
+    /// (Dot_TargetMaxHP), or a Dot_NormalCalc row rolled each tick (<see cref="Normal"/>) while the abnormal lasts.
+    /// </summary>
     sealed class NpcDot
     {
         public required int EffectId, IntervalMs, PerTick;
         public required int Remaining;
         public required long NextAt;
+        public AbnormalSpecs.NormalDotSpec? Normal;
     }
 
     readonly Dictionary<int, List<NpcBuff>> npcBuffs = [];
@@ -1325,8 +1347,8 @@ public sealed partial class GameSession : IMapEventHost
     }
 
     /// <summary>
-    /// The damage-over-time rows of a monster's abnormals (a bleed, a burn): 0x3805 per tick (OBSERVED shape of the player's own dots)
-    /// and its HP; the kill is this player's (loot, experience, quests).
+    /// The damage-over-time rows of a monster's abnormals (a bleed, a burn): 0x3805 mask 0x0a with the amount per tick
+    /// (RidePackets.AbnormalDamage, OBSERVED) and its HP; the kill is this player's (loot, experience, quests).
     /// </summary>
     void NpcDotTick(Target t, List<NpcBuff> list, long now)
     {
@@ -1334,12 +1356,15 @@ public sealed partial class GameSession : IMapEventHost
             foreach (var d in b.Dots)
                 while (!t.Dead && now >= d.NextAt && d.NextAt <= b.ExpireAt && d.Remaining > 0)
                 {
-                    var amount = Math.Min(d.PerTick, d.Remaining);
-                    d.Remaining -= amount;
+                    var amount = d.Normal is { } n
+                        ? Combat.DotTick(data, className, level, equippedWeapon, t.Defense, rng, n.FlatMin, n.FlatMax, n.RatioMin, n.RatioMax)
+                        : Math.Min(d.PerTick, d.Remaining);
+                    if (d.Normal is null) d.Remaining -= amount;
                     d.NextAt += d.IntervalMs;
                     if (t.Immune) amount = 0;
+                    amount = t.Landed(amount);   // a hit-count NPC takes 1 a tick
                     t.Hp = Math.Max(0, t.Hp - amount);
-                    mapEventOut.Add(RidePackets.AbnormalEffect(t.Key, playerKey, b.Uid, d.EffectId, d.Remaining, amount, b.SkillId));
+                    mapEventOut.Add(RidePackets.AbnormalDamage(t.Key, playerKey, b.Uid, d.EffectId, amount, b.SkillId));
                     mapEventOut.Add(GamePackets.NpcHp(t.Key, t.Hp));
                     mapEventOut.AddRange(MapEventHp(t, now));
                     if (t.Dead) mapEventOut.AddRange(PlayerKilledNpc(t, b.SkillId, playerKey, now));
@@ -1418,6 +1443,8 @@ public sealed partial class GameSession : IMapEventHost
         var room = MapEventData.DungeonOfMap(worldMap);
         var hold = room is { Hold: > 0 } ? room.Hold * 1000L : PartyDungeonHoldMs;
         var first = copy is { Cleared: false };
+        // A daily dungeon pays its own result (points, reward, tickets, the way out: GameSession.DailyDungeons.cs).
+        var daily = DailyClearedByEvent(mapEventNow);
         // Everyone in the copy clears it (the quest's ClearMapEvent objective, paid at each one's next quest flush).
         foreach (var session in CopyMembers().Prepend(this))
         {
@@ -1426,11 +1453,11 @@ public sealed partial class GameSession : IMapEventHost
             // A dungeon whose event never says MapExit (hand-entered instances) leaves after the usual delay; a generated
             // dungeon holds Dungeon.dat's CompleteStateHoldingTime (expeditions 600 s for the reward cube, sealed dungeons
             // 10 s), then the way out, unless its script says MapExit first.
-            if (Instances.Of(worldMap) is not null) session.instanceExitAt ??= mapEventNow + InstanceExitDelayMs;
-            else if (room is not null) session.instanceExitAt ??= mapEventNow + hold;
+            if (!daily && Instances.Of(worldMap) is not null) session.instanceExitAt ??= mapEventNow + InstanceExitDelayMs;
+            else if (!daily && room is not null) session.instanceExitAt ??= mapEventNow + hold;
             // The clear reward (RewardDungeon.dat RewardLight/RewardDark by race: sealed dungeons' kina, materials, a title), once per copy.
-            if (first && room is not null && (session.profileRace == 2 ? room.RewardDark : room.RewardLight) is { Length: > 0 } reward)
-                session.pendingRewards.Add(reward.Where(r => r.Length >= 2).Select(r => ((int)r[0], r[1])).ToList());
+            if (first && !daily && room is not null && session.ClearReward(room) is { } reward) session.pendingRewards.Add(reward);
+            if (first && !daily && room is not null) session.SpendContentTickets(MapEventData.DungeonIdOfMap(worldMap), "Clear", mapEventNow);
             if (first && room is not null)
             {
                 var earned = session.AchieveDungeonClear(room, run.Name, CopyMembers().Count() + 1);
@@ -1441,8 +1468,12 @@ public sealed partial class GameSession : IMapEventHost
         if (copy is { } c && room is not null && !c.Cleared)
         {
             c.Cleared = true;
-            // OBSERVED (HQ001 clear #14161-14167): DungeonCompleteResult_NT, Complete (3), then End (4) until the hold's end — all copy members.
-            BroadcastPartyDungeonClearEnd(room, mapEventNow - c.StartedMs, c.DungeonId, mapEventNow, hold);
+            // OBSERVED (ours HQ001 clear #14161-14167; the community fork's recordings 2026-11-04 to 06): DungeonCompleteResult_NT
+            // with the clear reward, Complete (3) from the clear for Dungeon.dat's hold, End (4) when it ends, for 600 s — to
+            // everyone in the copy. The way out keeps its own timing (instanceExitAt above: the hold, else 60 s, OURS).
+            c.ClearedMs = mapEventNow;
+            c.CompleteEndsMs = mapEventNow + (room.Hold > 0 ? room.Hold * 1000L : 0);
+            BroadcastDungeonClear(room, c, mapEventNow - c.StartedMs);
         }
     }
 
@@ -1505,8 +1536,7 @@ public sealed partial class GameSession : IMapEventHost
         {
             if (!usedObjects.Contains(i)) continue;
             var o = objects[i];
-            if (MapEventRun.NameMatches(spawnName, o.Name)) return true;
-            if (o.EnvName is { Length: > 0 } env && MapEventRun.NameMatches(spawnName, env)) return true;
+            if (MapEventRun.ObjectNamed(spawnName, o.Name, o.EnvDataName)) return true;
         }
         return false;
     }
@@ -1534,6 +1564,8 @@ public sealed partial class GameSession : IMapEventHost
         if (questLog is null) return IsAdmin;
         if (questLog.OpenClearMapEventNames().Contains(definition.Name, StringComparer.OrdinalIgnoreCase)) return true;
         if (MapEventData.DungeonOfMap(definition.Map) is not { } room) return false;
+        // A daily dungeon's waves wait for Process (its 5 s Prepare, GameSession.DailyDungeons.cs).
+        if (room.Type == "Daily" && copy?.Phase == "Prepare") return false;
         if (room.Type == "FieldEvent" && room.Event is { } fieldEvent)
         {
             if (copy?.Phase == "Prepare" && definition.Name.Contains("Prepare", StringComparison.OrdinalIgnoreCase)) return true;
@@ -1578,7 +1610,7 @@ public sealed partial class GameSession : IMapEventHost
             return moved.Count > 0 ? [.. Reply(0), .. moved] : Reply(1);
         }
         Note($"QuestTeleport {record.Code} uid {uid}: map {dest.Map} ({dest.Source}{(dest.Npc is { } npc ? $" npc {npc}" : "")})");
-        return [.. Reply(0), .. Teleport(dest.Map, dest.At, now)];
+        return [.. Reply(0), .. PcTeleport(dest.Map, dest.At, now)];
     }
 
     /// <summary>
@@ -1631,10 +1663,40 @@ public sealed partial class GameSession : IMapEventHost
 
     bool IMapEventHost.SpawnerAlive(string spawner) => SpawnerNpcs(spawner).Any(t => !t.Dead);
 
+    (int Living, int Total) IMapEventHost.SpawnerCount(string spawner)
+    {
+        var all = SpawnerNpcs(spawner).ToList();
+        return (all.Count(t => !t.Dead), all.Count);
+    }
+
+    /// <summary>
+    /// A wave map's wave spawners wait for their order (MapEventRun.StartWave / WaveTick), and so do the placed spawners of the same
+    /// family that no wave names (DungeonWave_0001's Wave_L_1..20: nobody starts them). OBSERVED on map 900001 (official run of
+    /// 2026-11-12): only order 1 (Wave_L_21) at the join, Wave_L_1..20 never; before, all 30 spawned at entry (600 monsters at once).
+    /// The family rule elsewhere is CANDIDATE.
+    /// </summary>
+    IEnumerable<string> DormantWaveSpawners()
+    {
+        var waveSpawners = MapEventData.WaveSpawnersOn(worldMap).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (waveSpawners.Count == 0 || targets is null) return waveSpawners;
+        static string Family(string name) => name.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
+        var families = waveSpawners.Select(Family).Where(f => f.EndsWith('_')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unused = targets.Values.Select(t => t.Name).Where(n => !waveSpawners.Contains(n) && families.Contains(Family(n)));
+        return waveSpawners.Concat(unused).ToList();
+    }
+
     bool IMapEventHost.SpawnerExists(string spawner) =>
         startedSpawners.Contains(spawner) || !dormantSpawners.Contains(spawner) && (SpawnerNpcs(spawner).Any() || SpawnerObjects(spawner).Any());
 
     bool IMapEventHost.PlayerDead => dead;
+
+    /// <summary>The bag's count of a CollectItem objective's item (map-events.json items: Item.dat internal name to id); -1 when unknown.</summary>
+    long IMapEventHost.HeldItems(string itemName) =>
+        MapEventTables.Embedded.ItemId(itemName) is var item and > 0 ? QuestHeldCount(item) : -1;
+
+    /// <summary>The abnormal is on the player, or landed since the step began (GameSession.Buffs.cs AddBuff).</summary>
+    bool? IMapEventHost.GainedAbnormal(int abnormalId, long sinceMs) =>
+        buffs.Any(b => b.AbnormalId == abnormalId) || abnormalsGainedAt.TryGetValue(abnormalId, out var at) && at >= sinceMs;
 
     double? IMapEventHost.DistanceTo(string spawner)
     {

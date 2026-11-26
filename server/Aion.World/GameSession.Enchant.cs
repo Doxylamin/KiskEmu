@@ -123,9 +123,14 @@ public sealed class ExceedEnchantTables
 }
 
 // Item enchanting. Live opcodes in the 0x56 run (catalogue index + 0x54ca, as 0x561b/0x561c/0x563a): ItemEnchant_RQ
-// 0x5622 -> RS 0x5623 (CANDIDATE), BroadcastItemEnchant_NT 0x5626 (OBSERVED: key | 3c 03 | before | current, after the
-// 0x561c of the equipped item). The request is read as _equip_uid i64 then the client's cost list, which is not trusted:
-// the costs come from Enchant.dat (Kina and CoinEnchant 930100023 for weapons and armour). The level is upgrades.enchant.
+// 0x5622 -> RS 0x5623 (OBSERVED: result 828 on success), BroadcastItemEnchant_NT 0x5626 (OBSERVED: key | 3c 03 | before | current, after the
+// 0x561c of the equipped item). The request (usmap) is _equip_uid i64 then _cost_items: varint n x ComponentItem
+// {_origin_component_id i32, _replaced_component_id i32, _item: varint m x {_item_key i64, _item_count i64}}; live
+// 2026-11-12 it named Enhance Stone 930100023 x960 from the bag and a belt scroll from the warehouse, then 4 zero bytes
+// the usmap does not declare (ignored). The amounts are not trusted: the costs come from Enchant.dat (Kina and the
+// materials); the listed stacks (bag or warehouse) are spent first, then bag and warehouse stacks. A replacement
+// component (_replaced_component_id) is not honoured: only stacks of the material itself count (CANDIDATE: no
+// replacement table exported). The level is upgrades.enchant.
 // Chance: SuccessProb + the failure correction built up (upgrades.enchant_bonus), out of 10000; a failure adds
 // FailCorrectionProb and loses FailPenalty levels (Rune accessories), materials are spent either way.
 public sealed partial class GameSession
@@ -133,6 +138,12 @@ public sealed partial class GameSession
     public const ushort ItemEnchantRq = 0x5622, ItemEnchantRs = 0x5623, ItemEnchantNt = 0x5626;
     public const ushort ItemExceedEnchantRq = 0x5624, ItemExceedEnchantRs = 0x5625;
     const byte DecreaseItemEnchant = 10, DecreaseItemEnchantFail = 11;   // EDecreaseReason
+    const byte UpdateEnchant = 1;   // EUpdateReason kEnchant
+    /// <summary>
+    /// EResult: kItem_Enchant_Success 828 (OBSERVED in 0x5623 and 0x5626, 2026-11-12), Fail_ByProb 833, Fail 834 (OBSERVED in
+    /// 0x5626 for a failure that kept the level, R1115), Fail_LevelDown 835.
+    /// </summary>
+    public const int EnchantSuccess = 828, EnchantFailByProb = 833, EnchantFail = 834, EnchantFailLevelDown = 835;
     static EnchantTables Enchants => EnchantTables.Embedded;
     static ExceedEnchantTables Exceeds => ExceedEnchantTables.Embedded;
 
@@ -146,6 +157,32 @@ public sealed partial class GameSession
     int ExceedStat(string stat) => inventory.Values.Where(i => i.Container == InventoryItem.Equipped && i.Detail is { SurpassEnchantLevel: > 0 })
         .Sum(i => Exceeds.Effect(data.Item(i.ItemId)?.Category, data.ItemLevel(i.ItemId), i.Detail!.SurpassEnchantLevel).GetValueOrDefault(stat));
 
+    /// <summary>ItemEnchant_RQ / ItemExceedEnchant_RQ cost list: per material (origin id) the stack keys the client picked.</summary>
+    internal static Dictionary<int, List<long>> ReadCostItems(byte[] plain)
+    {
+        var listed = new Dictionary<int, List<long>>();
+        try
+        {
+            var r = new PacketReader(plain) { Offset = 10 };
+            if (r.End) return listed;
+            var components = r.Varint();
+            for (var c = 0; c < components && c < 32; c++)
+            {
+                var origin = r.I32();
+                r.I32();   // _replaced_component_id
+                var stacks = r.Varint();
+                var keys = listed.TryGetValue(origin, out var known) ? known : listed[origin] = [];
+                for (var i = 0; i < stacks && i < 64; i++)
+                {
+                    keys.Add(r.I64());
+                    r.I64();   // _item_count: the server decides the amount
+                }
+            }
+        }
+        catch (ProtocolException) { }
+        return listed;
+    }
+
     /// <summary>The roll for an attempt: 0..9999 (replaceable in checks).</summary>
     public Func<int> EnchantRoll { get; set; } = () => Random.Shared.Next(10_000);
 
@@ -158,20 +195,12 @@ public sealed partial class GameSession
             return [Reply(1, 0, 0)];
         var level = EnchantOf(row);
         if (Enchants.Next(row.TemplateId, level) is not { } step) return [Reply(2, level, row.TemplateId)];
-        // Costs: Kina from the largest stacks, then each material.
-        var costs = new List<(Guid, long, int)>();
-        bool Take(int itemId, long count)
-        {
-            foreach (var stack in storedItems.Values.Where(i => i.TemplateId == itemId && i.Location == "bag" && i.InstanceId != row.InstanceId).OrderByDescending(i => i.Quantity))
-            {
-                if (count <= 0) break;
-                var n = (int)Math.Min(stack.Quantity, count);
-                costs.Add((stack.InstanceId, stack.Revision, n));
-                count -= n;
-            }
-            return count <= 0;
-        }
-        if (!Take(KinaItemId, step.Kina) || step.Costs.Any(c => !Take(c.ItemId, c.Count))) return [Reply(3, level, row.TemplateId)];
+        // Costs: Kina, then each material from the stacks the client listed (bag or warehouse), then the largest ones.
+        var listed = ReadCostItems(plain);
+        var plan = new MaterialPlan(this, row.InstanceId);
+        if (!plan.Take(KinaItemId, step.Kina) || step.Costs.Any(c => !plan.Take(c.ItemId, c.Count, listed.GetValueOrDefault(c.ItemId))))
+            return [Reply(3, level, row.TemplateId)];
+        var costs = plan.Costs;
         var bonus = EnchantOf(row, "enchant_bonus");
         var success = EnchantRoll() < step.Success + bonus;
         var penalty = step.FailPenalty < 0 ? -step.FailPenalty : step.FailPenalty;
@@ -179,8 +208,10 @@ public sealed partial class GameSession
         var nextBonus = success ? 0 : bonus + step.FailCorrection;
         var done = await Stored(async () => await store.EnchantItemAsync(character, row.InstanceId, row.Revision, costs, after, nextBonus, ct) ? [[]] : []);
         if (done.Count == 0) return [Reply(1, level, row.TemplateId)];
-        var replies = new List<byte[]> { Reply(success ? 0 : 4, after, row.TemplateId) };
-        replies.AddRange(await InventoryChangesAsync(ct, 0, success ? DecreaseItemEnchant : DecreaseItemEnchantFail));
+        var result = success ? EnchantSuccess : after < level ? EnchantFailLevelDown : EnchantFailByProb;
+        // Official order (2026-11-12): the item changes (0x561b), then 0x5623, then the achievements and 0x5626.
+        var replies = await InventoryChangesAsync(ct, 0, success ? DecreaseItemEnchant : DecreaseItemEnchantFail, update: UpdateEnchant);
+        replies.Add(Reply(result, after, row.TemplateId));
         if (success) replies.AddRange(AchieveEnchant(after));
         if (row.Location == "equipment" && after != level)
         {
@@ -191,11 +222,18 @@ public sealed partial class GameSession
                 var notices = new List<byte[]>
                 {
                     PlayerPackets.ItemEquipChange(playerKey, EquipItemLevel(), [((byte)visual, Broad(level), Broad(after))]),
-                    PacketWriter.Opcode(ItemEnchantNt).Varint(playerKey).U8(0x3c).U8(0x03).U8(level).U8(after).ToArray(),
+                    PacketWriter.Opcode(ItemEnchantNt).Varint(playerKey).U16(result).U8(level).U8(after).ToArray(),
                 };
                 worldPlayer?.Map?.Broadcast(worldPlayer, notices);
                 replies.AddRange(notices);
             }
+        }
+        else if (row.Location == "equipment" && !success)
+        {
+            // OBSERVED R1115 i=125168 `2656d23d42030b0b` (11 -> 11), i=126437 (10 -> 10): another player's failed enchant
+            // that kept the level reaches those nearby as 0x5626 {key, 834, level, level}. Whether the own client gets it
+            // too is not in the recordings (CANDIDATE: not sent, the own 0x5623 already tells it). Idea from Addiboii/A2Core 732db15.
+            worldPlayer?.Map?.Broadcast(worldPlayer, [PacketWriter.Opcode(ItemEnchantNt).Varint(playerKey).U16(EnchantFail).U8(level).U8(after).ToArray()]);
         }
         return replies;
     }

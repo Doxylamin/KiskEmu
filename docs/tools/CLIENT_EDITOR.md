@@ -44,7 +44,7 @@ dotnet publish editor/AionClientEditor -c Release -r win-x64 -o out/client-edito
 
 | Check | What it verifies | Patch impact |
 |-------|------------------|--------------|
-| **Sizes** (every launch) | Every file listed in `launcher/supported-build.json` exists with the expected **size** | **Extra** patch files (`z_KiskEmu_*`) are **not** in the manifest → **allowed** |
+| **Sizes** (every launch) | Every file listed in the build's reference (`launcher/builds/<game version>.json`) exists with the expected **size** | **Extra** patch files (`z_KiskEmu_*`) are **not** in the manifest → **allowed** |
 | **Quick hash** (when `.utoc`/`.sig`/exe timestamps change) | SHA-256 of `AION2.exe` and every `Aion2/Content/Paks/**/*.utoc` and `.sig` listed in the manifest | Patch pak adds **new** utoc/sig names → quick set unchanged → **allowed** |
 | **Full verify** (player-initiated) | SHA-256 of **all** manifest files including `.ucas` | Unchanged base files pass; patch files are outside the manifest |
 

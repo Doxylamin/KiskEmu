@@ -13,7 +13,8 @@ namespace Aion.World;
 // OBSERVED in the official HQ001 run (capture 20261013-144836 #9605-14304): MapEventJoin_NT 0x922e at entry, one
 // MapEventUpdateProgress_NT 0x922d per objective change and per step, MapEventLeave_NT 0x922f after the exit move;
 // the step's objectives count from the step start while its pre-directives still play; looped directives (a hurry
-// caption every 15 s) do not block the ones after them; Delay does.
+// caption every 15 s) do not block the ones after them; Delay does, and so does a PlayNpcTalk for its NpcTalk PlayTime and an
+// NpcMoveToWayPoint while its NPC still fights (the NPCs walked off before their speech or fight was over).
 
 public sealed record MapEventCondition([property: JsonPropertyName("t")] string Type, [property: JsonPropertyName("v")] string[] Values)
 {
@@ -53,13 +54,24 @@ public sealed record MapEventObjective(
     {
         "KillNpc" or "UseEnvObj" or "KillNpcRelationshipEntity" or "KillNpcSubtype" or "KillNpcCreatureType" or "CollectItem" or "UseUsableItemType"
             => int.TryParse(Value(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 0 ? n : 1,
+        // The points the step's UnifiedObjectivesList kills must add up to (the client's UnifiedObjectiveScore, the same number).
+        "AchieveUnifiedObjectivesScore" => int.TryParse(Value(0), NumberStyles.Integer, CultureInfo.InvariantCulture, out var score) && score > 0 ? score : 1,
         _ => 1,
     };
     /// <summary>Objectives only the client can finish (a cutscene, a note, a talk, a guide); it reports them with 0x9230.</summary>
     public bool ClientSide => Type is "CompleteCutscene" or "CloseNote" or "CompleteNpcTalk" or "CloseGuide";
-    /// <summary>Objectives the server does not track yet (waves, puzzles, scores, items): finished after a grace period so the event goes on.</summary>
-    public bool Unsupported => Type is "AchieveUnifiedObjectivesScore" or "ClearWave" or "ClearBoardPuzzle" or "GetAbnormal" or "PCSocial"
-        or "UseUsableItemType" or "CollectItem" or "KillNpcCreatureType" or "UpdateEnvObjState";
+    /// <summary>
+    /// Objectives the server does not track yet (puzzles, item uses): finished after a grace period so the event goes on. A score
+    /// without its UnifiedObjectivesList and a wave not in WaveStepData also wait for it (MapEventRun.Tracked); CollectItem and
+    /// GetAbnormal too when the host cannot tell (MapEventRun.HeldKnown). UpdateEnvObjState counts the states play reaches (used:
+    /// Occupied, Finish; destroyed: Dead) and keeps the fallback: some of its objects play cannot reach (CoastalCave's
+    /// E_CoastalCave_StoneWall_Auto_001 "Dead" is not destructible, Musphel's barriers are EnvObj_MonsterEnemy).
+    /// </summary>
+    public bool Unsupported => Type is "ClearBoardPuzzle" or "PCSocial"
+        or "UseUsableItemType" or "KillNpcCreatureType" or "UpdateEnvObjState";
+
+    /// <summary>Objectives counted from the player's state (the bag's items, the abnormals gained), checked every tick.</summary>
+    public bool Held => Type is "CollectItem" or "GetAbnormal";
 }
 
 public sealed record MapEventStep(
@@ -68,7 +80,10 @@ public sealed record MapEventStep(
     [property: JsonPropertyName("obj")] MapEventObjective[] Objectives,
     [property: JsonPropertyName("post")] MapEventDirective[] Post,
     [property: JsonPropertyName("fail")] MapEventCondition[][]? Fail = null,
-    [property: JsonPropertyName("faildir")] MapEventDirective[]? FailDirectives = null);
+    [property: JsonPropertyName("faildir")] MapEventDirective[]? FailDirectives = null,
+    // "Collect points" steps: the UnifiedObjectivesList kills and the step's UnifiedObjectiveScore (tools/map_events.py).
+    [property: JsonPropertyName("uobj")] MapEventObjective[]? Unified = null,
+    [property: JsonPropertyName("score")] int Score = 0);
 
 public sealed record MapEventStage(
     [property: JsonPropertyName("id")] int Id,
@@ -117,7 +132,9 @@ public sealed record DungeonInfo(
     [property: JsonPropertyName("quest_gate")] System.Text.Json.JsonElement[][]? QuestGate = null,
     [property: JsonPropertyName("reward_light")] long[][]? RewardLight = null,
     [property: JsonPropertyName("reward_dark")] long[][]? RewardDark = null,
-    [property: JsonPropertyName("arrival_cutscene")] string? ArrivalCutscene = null);
+    [property: JsonPropertyName("arrival_cutscene")] string? ArrivalCutscene = null,
+    // Revives allowed per run (Dungeon.dat bUseRebirthLimit + RebirthLimitCount, OBSERVED in the table, build 26262663); 0: no limit.
+    [property: JsonPropertyName("rebirth_limit")] int RebirthLimit = 0);
 
 /// <summary>A base map's EnterInstanceLayer trigger actor: walking into it enters the dungeon.</summary>
 public sealed record DungeonEntry(
@@ -179,7 +196,9 @@ public sealed class MapEventTables
         [property: JsonPropertyName("volumes")] Dictionary<string, LayerVolume> Volumes,
         [property: JsonPropertyName("deferred")] Dictionary<string, string[]> Deferred,
         [property: JsonPropertyName("teleports")] Dictionary<string, TeleportTarget>? Teleports = null,
-        [property: JsonPropertyName("teleport_effects")] Dictionary<string, int>? TeleportEffects = null);
+        [property: JsonPropertyName("teleport_effects")] Dictionary<string, int>? TeleportEffects = null,
+        [property: JsonPropertyName("waves")] Dictionary<string, string[][]>? Waves = null,
+        [property: JsonPropertyName("items")] Dictionary<string, int>? Items = null);
 
     readonly File file;
     readonly Dictionary<int, int> dungeonByMap = [];
@@ -293,8 +312,38 @@ public sealed class MapEventTables
     public TeleportTarget? Teleport(string name) => file.Teleports?.GetValueOrDefault(name);
     /// <summary>A PCTeleport effect name's TeleportEffect.dat id (the 0x3621 effect byte), 0 when unknown or empty.</summary>
     public int TeleportEffect(string name) => file.TeleportEffects?.GetValueOrDefault(name) ?? 0;
+    /// <summary>WaveStepData.dat: a wave's spawners by order (StartWave spawns order 1; each next order when the one before is dead).</summary>
+    public string[][]? Wave(string name) => file.Waves?.GetValueOrDefault(name);
+
+    /// <summary>The spawners of every wave the map's events run (ClearWave objectives, StartWave directives): they wait for their order.</summary>
+    public IEnumerable<string> WaveSpawnersOn(int mapId) =>
+        EventsOn(mapId).SelectMany(e => e.Stages.SelectMany(st => st.Steps).SelectMany(st =>
+                st.Objectives.Where(o => o.Type == "ClearWave").Select(o => o.Value(0))
+                    .Concat(st.Pre.Concat(st.Post).Concat(st.Objectives.SelectMany(o => (o.Pre ?? []).Concat(o.Post ?? [])))
+                        .Concat(e.Rules?.SelectMany(r => r.Directives) ?? [])
+                        .Where(d => d.Type == "StartWave").Select(d => d.Value(0)))))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .SelectMany(w => Wave(w) ?? []).SelectMany(order => order);
+    /// <summary>The item id of an Item.dat internal name a CollectItem objective names; 0 when unknown.</summary>
+    public int ItemId(string name) => file.Items?.GetValueOrDefault(name) ?? 0;
     /// <summary>Spawn entries a StartSpawner directive of the map's events starts: not spawned at map load.</summary>
     public IReadOnlySet<string> Deferred(int mapId) => (file.Deferred.GetValueOrDefault(K(mapId)) ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>The client's NpcTalk play times of the talks the map events name (tools/npc_talks.py -> tools/data/npc-talks.json).</summary>
+public static class NpcTalks
+{
+    sealed record File([property: JsonPropertyName("talks")] Dictionary<string, int> Talks);
+
+    static readonly Lazy<Dictionary<string, int>> talks = new(() =>
+    {
+        using var stream = typeof(NpcTalks).Assembly.GetManifestResourceStream("npc-talks.json") ?? throw new InvalidOperationException("npc-talks.json is not embedded");
+        var file = JsonSerializer.Deserialize<File>(stream) ?? throw new InvalidDataException("npc-talks.json");
+        return new Dictionary<string, int>(file.Talks, StringComparer.OrdinalIgnoreCase);
+    });
+
+    /// <summary>The sum of the talk's lines' PlayTime (ms), 0 when the table has no such talk.</summary>
+    public static int DurationMs(string talk) => talks.Value.GetValueOrDefault(talk);
 }
 
 /// <summary>What a running event asks of the world (the session implements it for its private instance copy).</summary>
@@ -307,6 +356,8 @@ public interface IMapEventHost
     void Despawn(string spawner, int delayMs, bool kill);
     void SummonAround(string target, string spawner, int count, double radius);
     void MoveNpc(string spawner, string route);
+    /// <summary>How long a talk plays (the sum of its NpcTalk lines' PlayTime, ms); 0 when unknown.</summary>
+    int TalkDurationMs(string talk) => NpcTalks.DurationMs(talk);
     void FollowPc(string spawner, bool follow);
     void RotateNpc(string spawner, string target);
     void Talk(string talk);
@@ -364,6 +415,15 @@ public interface IMapEventHost
     bool SpawnerExists(string spawner);
     bool PlayerDead { get; }
     double? DistanceTo(string spawner);
+
+    /// <summary>How many of an item (Item.dat internal name) the player holds; -1 when the host cannot tell (then the CollectItem
+    /// objective waits for the fallback).</summary>
+    long HeldItems(string itemName) => -1;
+    /// <summary>Whether the player has gained the abnormal since <paramref name="sinceMs"/> or carries it now; null when the host cannot tell.</summary>
+    bool? GainedAbnormal(int abnormalId, long sinceMs) => null;
+    /// <summary>How many NPCs carry the spawner name and how many of them live (a wave order's progress); (0, 0) when the host
+    /// cannot tell (then the wave waits for the whole order to die).</summary>
+    (int Living, int Total) SpawnerCount(string spawner) => (0, 0);
 }
 
 /// <summary>One player's run of a map event: stage, step, objective counters, directive sequences and repeaters.</summary>
@@ -372,6 +432,8 @@ public sealed class MapEventRun
     public const int Ready = 1, Incomplete = 2, Complete = 3, Expired = 4;
     /// <summary>Client-side and untracked objectives finish by themselves after this long, so the story cannot stall.</summary>
     public const int FallbackMs = 30_000;
+    /// <summary>Held objectives (CollectItem, GetAbnormal) whose host can tell: no 30 s fallback, only this long safety net (OURS).</summary>
+    public const int HeldFallbackMs = 300_000;
     public const int VariableCount = 8;
 
     sealed class Sequence(IReadOnlyList<MapEventDirective> list, int step)
@@ -380,7 +442,47 @@ public sealed class MapEventRun
         public int Step { get; } = step;
         public int Index { get; set; }
         public long WaitUntil { get; set; }
+        /// <summary>When the last PlayNpcTalk of this sequence is over (its NpcTalk PlayTime after it started).</summary>
+        public long TalkUntil { get; set; }
+        /// <summary>When the directive at Index started waiting for its NPC's fight to end (null: not waiting).</summary>
+        public long? FightSince { get; set; }
+        /// <summary>Spawners this sequence changed the relationship of: the script itself takes them out of their fight.</summary>
+        public HashSet<string> Released { get; } = new(StringComparer.OrdinalIgnoreCase);
         public bool Done => Index >= List.Count;
+    }
+
+    /// <summary>
+    /// The longest a scripted walk waits for its NPC's fight to end (CANDIDATE: no table names one; the client-side
+    /// objectives' fallback, so a fight the NPC cannot finish never stalls the story).
+    /// </summary>
+    public const int FightWaitMs = FallbackMs;
+
+    /// <summary>A talk with no NpcTalk row: 3000 ms (CANDIDATE: the PlayTime of most caption lines).</summary>
+    public const int DefaultTalkMs = 3000;
+
+    /// <summary>How long a PlayNpcTalk plays: the sum of the talk's NpcTalk PlayTime (tools/data/npc-talks.json).</summary>
+    int TalkMs(string talk) => Host.TalkDurationMs(talk) is var ms and > 0 ? ms : DefaultTalkMs;
+
+    /// <summary>
+    /// Whether the directive at the sequence's Index must wait. The user's report against the official server: scripted
+    /// NPCs finish their speech and their fight before they walk on; ours ran to the next point mid-sentence (121 talk ->
+    /// walk pairs in the data have no Delay between them) and mid-fight.
+    /// - A walk (NpcMoveToWayPoint) or the next talk waits until this sequence's last PlayNpcTalk is over. Other
+    ///   directives (FollowPc, spawns, aggro) do not wait (CANDIDATE: kept as before, e.g. a wagon's caption and its
+    ///   Cherubim group in HQ001 still come together); a Delay after a talk runs alongside it, so "talk, Delay, walk" walks after the later of the two.
+    /// - An NpcMoveToWayPoint waits while its NPC is still fighting. Not when this sequence changed the NPC's
+    ///   relationship before the move (the script ends that fight itself: Mard turns NPC_Dark and leaves Elvida at 70 %
+    ///   HP in HQ001), and no longer than <see cref="FightWaitMs"/>.
+    /// </summary>
+    bool Holds(Sequence sequence, MapEventDirective d, long now)
+    {
+        if (d.Repeats) return false;
+        if (d.Type is "NpcMoveToWayPoint" or "PlayNpcTalk" && now < sequence.TalkUntil) return true;
+        if (d.Type != "NpcMoveToWayPoint") return false;
+        var spawner = d.Value(0);
+        if (sequence.Released.Contains(spawner) || !Host.NpcInCombat(spawner)) return false;
+        sequence.FightSince ??= now;
+        return now - sequence.FightSince.Value < FightWaitMs;
     }
 
     sealed class Repeater(MapEventDirective directive, long nextMs)
@@ -436,6 +538,17 @@ public sealed class MapEventRun
         Goals = [];
         Host.Progress(this);
     }
+    /// <summary>The dungeon ended outside the script (a daily dungeon's countdown): complete, nothing more runs or spawns.</summary>
+    public void Stop()
+    {
+        if (Status is Complete or Expired) return;
+        Status = Complete;
+        Goals = [];
+        sequences.Clear();
+        repeaters.Clear();
+        waves.Clear();
+        Host.Progress(this);
+    }
     public MapEventStage? Stage => StageIndex < Definition.Stages.Length ? Definition.Stages[StageIndex] : null;
     public MapEventStep? Step => Stage is { } stage && StepIndex < stage.Steps.Length ? stage.Steps[StepIndex] : null;
     public int StageOrder => Stage?.Id ?? 0;
@@ -468,6 +581,7 @@ public sealed class MapEventRun
     {
         var step = Step!;
         Goals = new int[step.Objectives.Length];
+        stepStartedMs = now;
         repeaters.Clear();
         stepObjectivesDone = false;
         stepSerial++;
@@ -481,7 +595,13 @@ public sealed class MapEventRun
         for (var i = 0; i < step.Objectives.Length; i++)
         {
             var o = step.Objectives[i];
-            if ((o.ClientSide || o.Unsupported) && i < fallbackAt.Length) fallbackAt[i] = now + FallbackMs;
+            if ((o.ClientSide || o.Unsupported || !Tracked(o, step)) && i < fallbackAt.Length) fallbackAt[i] = now + FallbackMs;
+            // The bag's items and the gained abnormals count by state (before: always the 30 s fallback).
+            else if (o.Held && i < fallbackAt.Length) fallbackAt[i] = now + (HeldKnown(o) ? HeldFallbackMs : FallbackMs);
+            // A ClearWave whose wave no StartWave of the event starts (Dungeon_Daily_0001/0002: the wave's first order is the map's own
+            // OrcusGem) runs from the step that waits for it (CANDIDATE: no script starts it, the client data says nothing else).
+            if (o.Type == "ClearWave" && Tracked(o, step) && !waves.ContainsKey(o.Value(0)) && !clearedWaves.Contains(o.Value(0)) && !StartsWave(o.Value(0)))
+                StartWave(o.Value(0), now);
             // A CloseGuide objective shows its guide (the forced popup) when the step begins: OBSERVED 2026-10-19, ShowGuide (46) for
             // Tutorial_ForcedPopup_Fly_01 at the Subspace's first step and Tutorial_ForcedPopup_L1_ExitDungeon_01 with the Dream
             // Crossroad's join; the client reports CloseGuide (0x9230 kind 2) when the player closes it. Without it the player waited
@@ -492,6 +612,123 @@ public sealed class MapEventRun
         sequences.Add(new Sequence(step.Pre, stepSerial));
         Tick(now);
         CheckStep(now);
+    }
+
+    /// <summary>Objectives of the types the server tracks only with their data (a score with its UnifiedObjectivesList, a wave of
+    /// WaveStepData); the others finish by the fallback.</summary>
+    static bool Tracked(MapEventObjective o, MapEventStep step) => o.Type switch
+    {
+        "AchieveUnifiedObjectivesScore" => step.Unified is { Length: > 0 },
+        "ClearWave" => MapEventTables.Embedded.Wave(o.Value(0)) is { Length: > 0 },
+        _ => true,
+    };
+
+    // ---------- Held objectives (CollectItem, GetAbnormal) ----------
+
+    /// <summary>When the current step began: abnormals gained from then on count for its GetAbnormal objectives.</summary>
+    long stepStartedMs;
+
+    bool HeldKnown(MapEventObjective o) => o.Type switch
+    {
+        "CollectItem" => Host.HeldItems(o.Value(0)) >= 0,
+        "GetAbnormal" => int.TryParse(o.Value(0), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) && Host.GainedAbnormal(id, stepStartedMs) is not null,
+        _ => false,
+    };
+
+    /// <summary>
+    /// CollectItem follows the count of the named item in the bag (as the quests' collect steps; a count once reached stays: a Seal
+    /// key is used on its door right after); GetAbnormal is done once the player gained the abnormal. The Seal events'
+    /// "Quest_UseItem_NoEffect_Key_A_c_01a_b" (Worn Key 534960001, from the Seal_Dungeon_Usable_Env reward objects) waited for the
+    /// 30 s fallback in 13 Seal events. CANDIDATE: from the client's objective data (zaraza87's fork), no recording.
+    /// </summary>
+    void HeldTick(long now)
+    {
+        if (Finished || Step is not { } step) return;
+        for (var i = 0; i < step.Objectives.Length && i < Goals.Length && ReferenceEquals(Step, step) && !Finished; i++)
+        {
+            var o = step.Objectives[i];
+            if (!o.Held || Goals[i] >= o.Count) continue;
+            var reached = o.Type switch
+            {
+                "CollectItem" => Host.HeldItems(o.Value(0)) is var held and >= 0 ? (int)Math.Min(o.Count, held) : 0,
+                "GetAbnormal" => int.TryParse(o.Value(0), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) && Host.GainedAbnormal(id, stepStartedMs) == true ? o.Count : 0,
+                _ => 0,
+            };
+            if (reached > Goals[i]) Apply(x => ReferenceEquals(x, o), now, reached - Goals[i]);
+        }
+    }
+
+    // ---------- Waves ----------
+    // WaveStepData.dat: a wave is spawner groups in order. StartWave spawns order 1; the next order spawns once few of the current
+    // one live; after the last order is all dead the wave is cleared (ClearWave). EndWave stops it (its NPCs stay; the scripts
+    // despawn them themselves). The wave spawners wait dormant at map load (GameSession.MapEventsPrepare).
+    // OBSERVED (capture-vm official-20261112-r2, daily dungeon DungeonWave_0001, map 900001): order 1 (Wave_L_21) appeared with the
+    // event join, orders 2-5 in WaveStepData order each ~200 ms after a kill, with 2, 3, 4 and 4 of the current order's 10 alive.
+    // CANDIDATE (#77): the next order at NextOrderAlivePercent or less alive (no single "alive <= N" fits the four triggers), the
+    // clear at the last order all dead (officially the 90 s timer ended first). With no NPC counts (objects, or a host that cannot
+    // count) an order goes on once none of it lives, as before.
+
+    /// <summary>OBSERVED: the next order's monsters appear this long after the kill that brings it.</summary>
+    public const int NextOrderDelayMs = 200;
+    /// <summary>CANDIDATE (#77): the next order comes once at most this share (percent) of the current order lives.</summary>
+    public const int NextOrderAlivePercent = 30;
+    /// <summary>OURS: an order none of whose NPCs came to life within this long counts as done (a spawn that failed must not stall the wave).</summary>
+    const int OrderAppearGraceMs = 5_000;
+
+    readonly Dictionary<string, int> waves = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> clearedWaves = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>When each running wave's current order was spawned, and whether any of its NPCs has lived since.</summary>
+    readonly Dictionary<string, long> waveOrderSpawnedMs = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> waveOrderSeen = new(StringComparer.OrdinalIgnoreCase);
+
+    bool StartsWave(string wave) =>
+        Definition.Stages.SelectMany(st => st.Steps).SelectMany(st => st.Pre.Concat(st.Post).Concat(st.Objectives.SelectMany(o => (o.Pre ?? []).Concat(o.Post ?? []))))
+            .Concat(Definition.Rules?.SelectMany(r => r.Directives) ?? [])
+            .Any(d => d.Type == "StartWave" && string.Equals(d.Value(0), wave, StringComparison.OrdinalIgnoreCase));
+
+    void StartWave(string wave, long now)
+    {
+        if (MapEventTables.Embedded.Wave(wave) is not { Length: > 0 } orders) { Host.Unsupported(this, $"directive StartWave {wave}: not in WaveStepData"); return; }
+        clearedWaves.Remove(wave);
+        waves[wave] = 0;
+        waveOrderSpawnedMs[wave] = now;
+        waveOrderSeen.Remove(wave);
+        foreach (var spawner in orders[0]) Host.Spawn(spawner, 0);
+    }
+
+    /// <summary>Whether the wave's current order lets the next one come (or, the last, clears the wave).</summary>
+    bool OrderDone(string wave, string[] spawners, bool last, long now)
+    {
+        var (living, total) = spawners.Select(Host.SpawnerCount).Aggregate((Living: 0, Total: 0), (a, c) => (a.Living + c.Living, a.Total + c.Total));
+        if (total == 0) return !spawners.Any(Host.SpawnerAlive);
+        if (living > 0) waveOrderSeen.Add(wave);
+        else if (!waveOrderSeen.Contains(wave) && now < waveOrderSpawnedMs.GetValueOrDefault(wave) + OrderAppearGraceMs) return false;   // still to appear
+        return last ? living == 0 : living * 100 <= total * NextOrderAlivePercent;
+    }
+
+    /// <summary>The spawners of one wave's current order, if this run is running it.</summary>
+    public IEnumerable<string> WaveSpawners(string wave) =>
+        waves.TryGetValue(wave, out var at) && MapEventTables.Embedded.Wave(wave) is { } orders && at < orders.Length ? orders[at] : [];
+
+    void WaveTick(long now)
+    {
+        foreach (var (wave, order) in waves.ToList())
+        {
+            if (MapEventTables.Embedded.Wave(wave) is not { } orders) { waves.Remove(wave); continue; }
+            var at = order;
+            while (at < orders.Length && OrderDone(wave, orders[at], at == orders.Length - 1, now))
+            {
+                if (++at >= orders.Length) break;
+                waveOrderSpawnedMs[wave] = now;
+                waveOrderSeen.Remove(wave);
+                foreach (var spawner in orders[at]) Host.Spawn(spawner, NextOrderDelayMs);
+                Host.ScriptBeat(this, "wave-order", $"{wave} {at + 1}/{orders.Length}", now);
+            }
+            if (at < orders.Length) { waves[wave] = at; continue; }
+            waves.Remove(wave);
+            clearedWaves.Add(wave);
+            Apply(o => o.Type == "ClearWave" && string.Equals(o.Value(0), wave, StringComparison.OrdinalIgnoreCase), now);
+        }
     }
 
     // ---------- Events from the world ----------
@@ -556,10 +793,24 @@ public sealed class MapEventRun
         return false;
     }
 
-    /// <summary>Any step of the event uses this env spawner on a UseEnvObj objective.</summary>
-    public static bool ReferencesUseEnvObj(MapEventDefinition definition, string spawnName) =>
+    /// <summary>
+    /// A name a UseEnvObj goal lists names this placed object: exactly its spawn entry or exactly its EnvObjData name
+    /// (CANDIDATE, from the client's tables: of the 2232 UseEnvObj names of map-events.json, the exact rule finds placed objects
+    /// for the same 2000 as the spawn-name prefix, without the prefix's 59 extra matches of other EnvObjData rows, such as
+    /// E_Draconic_005_Easy_BUFF_01 taking its _Portal or AbyssStone_01 its V01/V02 variants). Munihelle's second firewood
+    /// (E_D0_FireWood_002 spawned as E_D0_FireWood_001_2) answers to its own name. Without an EnvObjData name, the spawn-name
+    /// rule of NPCs (<see cref="NameMatches"/>).
+    /// </summary>
+    internal static bool ObjectNamed(string goal, string spawnName, string? dataName) => dataName is null ? NameMatches(goal, spawnName)
+        : string.Equals(goal, dataName, StringComparison.OrdinalIgnoreCase) || string.Equals(goal, spawnName, StringComparison.OrdinalIgnoreCase);
+
+    internal static bool NamesObject(MapEventObjective o, string spawnName, string? dataName) =>
+        o.Names.Any(n => ObjectNamed(n, spawnName, dataName));
+
+    /// <summary>Any step of the event uses this env object (spawn entry, EnvObjData name) on a UseEnvObj objective.</summary>
+    public static bool ReferencesUseEnvObj(MapEventDefinition definition, string spawnName, string? dataName = null) =>
         definition.Stages.SelectMany(s => s.Steps).SelectMany(st => st.Objectives)
-            .Any(o => o.Type == "UseEnvObj" && o.Names.Any(n => NameMatches(n, spawnName)));
+            .Any(o => o.Type == "UseEnvObj" && NamesObject(o, spawnName, dataName));
 
     /// <summary>
     /// A kill the player already landed, before this step opened, fills the step. The stone in the forest can die
@@ -603,16 +854,30 @@ public sealed class MapEventRun
 
     static bool Names(MapEventObjective o, string spawnName) => o.Names.Any(n => NameMatches(n, spawnName));
 
-    /// <summary>An NPC of this instance died (its NpcData id, spawn entry name); <paramref name="spawnerAlive"/>: others of its spawner still live.</summary>
-    public bool Killed(int npcId, string spawnName, bool hostile, bool spawnerAlive, long now)
+    /// <summary>
+    /// An NPC of this instance died (its NpcData id, spawn entry name, NpcData NpcSubType when known); <paramref name="spawnerAlive"/>:
+    /// others of its spawner still live.
+    /// </summary>
+    public bool Killed(int npcId, string spawnName, bool hostile, bool spawnerAlive, long now, string subType = "")
     {
-        var changed = Apply(o => o.Type switch
+        bool Counts(MapEventObjective o) => o.Type switch
         {
             "KillNpc" => (o.Npcs ?? []).Contains(npcId) || Names(o, spawnName),
             "KillSpawner" => Names(o, spawnName) && !spawnerAlive,
-            "KillNpcRelationshipEntity" or "KillNpcSubtype" or "KillNpcCreatureType" => hostile,
+            // KillNpcSubtype names the NpcData NpcSubType (DungeonWave_0001: NormalMonster kills fill the gauge, EliteMonster ones the
+            // optional 100); a kill whose subtype is unknown counts as before.
+            "KillNpcSubtype" => hostile && (subType.Length == 0 || o.Value(0).Length == 0 || string.Equals(o.Value(0), subType, StringComparison.OrdinalIgnoreCase)),
+            "KillNpcRelationshipEntity" or "KillNpcCreatureType" => hostile,
             _ => false,
-        }, now);
+        };
+        // "Collect points" (UnifiedObjectives steps): each matching kill of the UnifiedObjectivesList gives its value 1 in points
+        // (Arkanis' Grade1 elites 2, NormalMonster 1); AchieveUnifiedObjectivesScore counts them up to its score. CANDIDATE: from the
+        // client's step data (zaraza87's fork), no recording of a score step.
+        var step = Step;
+        var points = !Finished && step is { Unified: { Length: > 0 } unified } ? unified.Where(Counts).Sum(o => o.Count) : 0;
+        var changed = Apply(Counts, now);
+        // The points are this step's (a kill that also ended the step does not score in the next one).
+        if (points > 0 && ReferenceEquals(Step, step)) changed |= Apply(o => o.Type == "AchieveUnifiedObjectivesScore", now, points);
         // A non-player kill never ran MapEventHp; death is 0% HP and must satisfy HpRemaining (Belgor / DQ1202013 step 8).
         return changed | HpChanged(npcId, spawnName, 0, now);
     }
@@ -634,16 +899,33 @@ public sealed class MapEventRun
         Apply(o => o.Type == (close ? "CloseNpc" : "AskNpc") && ((o.Npcs ?? []).Contains(npcId) || Names(o, spawnName))
                    && (index is not { } i || Step!.Objectives.Length <= i || ReferenceEquals(Step.Objectives[i], o)), now);
 
-    public bool UsedObject(string spawnName, long now) => Apply(o => o.Type == "UseEnvObj" && Names(o, spawnName), now);
+    /// <summary>
+    /// The player used a placed object (its spawn entry and EnvObjData name, <see cref="ObjectNamed"/>). A used object went through
+    /// Occupied (while used) to Finish: UpdateEnvObjState objectives on those states count it too (zaraza87's fork; before, they
+    /// waited for the 30 s fallback: Dungeon_L_0017's Od collectors, Seal_Altgard_043's tablets, EP7_5's stone door).
+    /// </summary>
+    public bool UsedObject(string spawnName, long now, string? dataName = null)
+    {
+        var state = Apply(o => o.Type == "UpdateEnvObjState" && o.Value(1) is "Finish" or "Occupied" && NamesObject(o, spawnName, dataName), now);
+        return Apply(o => o.Type == "UseEnvObj" && NamesObject(o, spawnName, dataName), now) | state;
+    }
 
-    /// <summary>Whether a UseEnvObj objective of the current step still counts this spawner (the object despawns once used: OBSERVED for the phoenix eggs).</summary>
-    public bool WantsObject(string spawnName) =>
-        !Finished && Step is { } step && step.Objectives.Where((o, i) => i < Goals.Length && Goals[i] < o.Count && o.Type == "UseEnvObj" && Names(o, spawnName)).Any();
+    /// <summary>An object the player destroyed (EnvObj_Destroy hits, bombs): its uses, and UpdateEnvObjState "Dead" (Dungeon_D_0001's
+    /// stone wall, E_Dungeon_D_0001_StoneWall_001 Dead, and EP2_1's E_D1_FQ_StoneWall_02 waited for the 30 s fallback before).</summary>
+    public bool Destroyed(string spawnName, long now, string? dataName = null)
+    {
+        var dead = Apply(o => o.Type == "UpdateEnvObjState" && string.Equals(o.Value(1), "Dead", StringComparison.OrdinalIgnoreCase)
+                              && NamesObject(o, spawnName, dataName), now);
+        return UsedObject(spawnName, now, dataName) | dead;
+    }
 
-    /// <summary>Whether this spawner name appears on any UseEnvObj objective of the run (open or not yet reached).</summary>
-    public bool ReferencesUseEnvObj(string spawnName) =>
-        Definition.Stages.SelectMany(s => s.Steps).SelectMany(st => st.Objectives)
-            .Any(o => o.Type == "UseEnvObj" && Names(o, spawnName));
+    /// <summary>Whether a UseEnvObj objective of the current step still counts this object (the object despawns once used: OBSERVED for the phoenix eggs).</summary>
+    public bool WantsObject(string spawnName, string? dataName = null) =>
+        !Finished && Step is { } step && step.Objectives.Where((o, i) => i < Goals.Length && Goals[i] < o.Count && o.Type == "UseEnvObj"
+                                                                          && NamesObject(o, spawnName, dataName)).Any();
+
+    /// <summary>Whether this object appears on any UseEnvObj objective of the run (open or not yet reached).</summary>
+    public bool ReferencesUseEnvObj(string spawnName, string? dataName = null) => ReferencesUseEnvObj(Definition, spawnName, dataName);
 
     /// <summary>Where the player stands: EnterVolumePC (trigger names) and EnterSubZone objectives.</summary>
     public bool PositionAt(Func<string, bool> insideTrigger, Func<string, bool> insideSubzone, long now) =>
@@ -676,12 +958,18 @@ public sealed class MapEventRun
 
     // ---------- Steps ----------
 
-    void CheckStep(long now)
+    /// <summary>The current step's required objectives (all of them when none is required) reached their counts.</summary>
+    bool StepGoalsMet()
     {
-        if (Finished || stepObjectivesDone || Step is not { } step) return;
+        if (Step is not { } step) return false;
         var required = step.Objectives.Select((o, i) => (o, i)).Where(x => !x.o.Optional).ToList();
         if (required.Count == 0) required = step.Objectives.Select((o, i) => (o, i)).ToList();
-        if (required.Any(x => Goals[x.i] < x.o.Count)) return;
+        return required.All(x => x.i < Goals.Length && Goals[x.i] >= x.o.Count);
+    }
+
+    void CheckStep(long now)
+    {
+        if (Finished || stepObjectivesDone || Step is not { } step || !StepGoalsMet()) return;
         stepObjectivesDone = true;
         if (step.Post.Length > 0) sequences.Add(new Sequence(step.Post, stepSerial));
         Tick(now);
@@ -736,10 +1024,18 @@ public sealed class MapEventRun
             {
                 while (!sequence.Done && now >= sequence.WaitUntil)
                 {
-                    var d = sequence.List[sequence.Index++];
+                    var d = sequence.List[sequence.Index];
+                    if (Holds(sequence, d, now)) break;
+                    sequence.Index++;
+                    sequence.FightSince = null;
                     if (d.Repeats) { repeaters.Add(new Repeater(d, d.PreDelay ? now + d.Interval : now)); continue; }
                     if (d.Type == "Delay") { sequence.WaitUntil = now + d.Int(0); progressed = true; break; }
-                    if (Holds(d.Conditions, now)) Execute(d, now);
+                    if (d.Type == "ChangeRelationshipEntity") sequence.Released.UnionWith(Split(d.Value(0)));
+                    if (Holds(d.Conditions, now))
+                    {
+                        Execute(d, now);
+                        if (d.Type == "PlayNpcTalk") sequence.TalkUntil = now + TalkMs(d.Value(0));
+                    }
                     progressed = true;
                 }
                 if (sequence.Done) sequences.Remove(sequence);
@@ -754,15 +1050,20 @@ public sealed class MapEventRun
             }
             if (!progressed) break;
         }
+        if (!Finished && waves.Count > 0) WaveTick(now);
+        if (Finished) return;
+        HeldTick(now);
         if (Finished) return;
         // Client-side and untracked objectives time out as done.
         if (Step is { } step)
-            for (var i = 0; i < step.Objectives.Length && i < fallbackAt.Length; i++)
+            for (var i = 0; i < step.Objectives.Length && i < fallbackAt.Length && i < Goals.Length; i++)
                 if (fallbackAt[i] != 0 && now >= fallbackAt[i] && Goals[i] < step.Objectives[i].Count)
                 {
                     fallbackAt[i] = 0;
                     Host.Unsupported(this, $"objective {step.Objectives[i].Type} {step.Objectives[i].Value(0)} finished by timeout");
                     Apply(o => ReferenceEquals(o, step.Objectives[i]), now, whole: true);
+                    // Completing the objective can finish the step: Goals and fallbackAt are then the next step's arrays.
+                    if (!ReferenceEquals(Step, step) || Finished) break;
                 }
         if (Definition.Rules is { } rules)
             for (var i = 0; i < rules.Length; i++)
@@ -772,7 +1073,10 @@ public sealed class MapEventRun
                     sequences.Add(new Sequence(rules[i].Directives, stepSerial));
                 }
         // A stage fails once per spell of its conditions (a death fails it when it happens, not every tick until the revival).
-        if (Stage is { Fail.Length: > 0 } stage)
+        // A step whose objectives are done goes on first: FierceHornCave_Normal's wave stage fails on "Lycan totem out of combat"
+        // and its last step is the totem's kill, so the kill itself failed the stage and the wave began again (OURS, zaraza87's
+        // fork: the order of the two in one tick is not in the client data).
+        if (Stage is { Fail.Length: > 0 } stage && !stepObjectivesDone && !StepGoalsMet())
         {
             var failing = Holds(stage.Fail, now);
             if (failing && !stageFailing) { stageFailing = true; FailStage(stage, now); return; }
@@ -888,6 +1192,8 @@ public sealed class MapEventRun
             case "StartFocusCamera": Host.FocusCamera(d.Value(0), d.Value(2)); break;
             case "EnvObjChangePhase": Host.EnvObjChangePhase(d.Value(0), d.Int(1)); break;
             case "SetEnvObjCanInteract": Host.SetEnvObjCanInteract(d.Value(0), d.Flag(1)); break;
+            case "StartWave": StartWave(d.Value(0), now); break;
+            case "EndWave": waves.Remove(d.Value(0)); break;
             case "CameraShake": case "PlayAct": case "ChangeBT": case "NpcMoveforSeamlessCutscene": case "NpcChangePhase":
                 break;   // client-side presentation, or NPC details the server does not model; the event goes on
             default: Host.Unsupported(this, $"directive {d.Type} {d.Value(0)}"); break;

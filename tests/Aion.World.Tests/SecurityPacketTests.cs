@@ -38,8 +38,8 @@ public sealed class SecurityPacketTests
         store.Items.Add(FakeCharacterStore.BagItem(LifePotion, 5, 10));
         await session.InventoryChangesAsync(default);
         var potion = Bag(store, LifePotion);
-        var huge = new PacketWriter().U16(GameSession.TradeSellRq).U64((ulong)potion.WireId).U64(long.MaxValue).I32(GameSession.KinaItemId)
-            .U64(1).I32(0).I32(0).I32(TradeServer).ToArray();
+        var huge = new PacketWriter().U16(GameSession.TradeSellRq).U64((ulong)potion.WireId).U64(long.MaxValue).U8(93)
+            .U64(1).I64(0).I64(0).I32(TradeServer).ToArray();
         var reply = await session.HandleAsync(huge, Now + 1);
         Assert.Equal(GameSession.TradeSellRs, GameSessionTestHelpers.Op(reply[0]));
         Assert.Equal(1, BitConverter.ToUInt16(reply[0], 2));

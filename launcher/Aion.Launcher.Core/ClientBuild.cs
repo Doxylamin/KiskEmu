@@ -12,8 +12,8 @@ public sealed record BuildFile(
     [property: JsonPropertyName("quick")] bool Quick);
 
 /// <summary>
-/// A client build a server supports (tools/launcher_build.py): the embedded supported-build.json, or one a server
-/// serves by its fingerprint (/api/launcher/builds/{fingerprint}), checked with <see cref="Parse"/>. It lists what the
+/// A client build a server supports (tools/launcher_build.py, launcher/builds/&lt;game version&gt;.json): the embedded one
+/// (3527, the fallback for servers that name none), or one a server serves by its fingerprint (/api/launcher/builds/{fingerprint}), checked with <see cref="Parse"/>. It lists what the
 /// player's own copy must hold; the game files themselves never come from a server.
 /// </summary>
 public sealed record SupportedBuild(
@@ -24,7 +24,8 @@ public sealed record SupportedBuild(
     [property: JsonPropertyName("fingerprint")] string Fingerprint,
     [property: JsonPropertyName("fileCount")] int FileCount,
     [property: JsonPropertyName("totalBytes")] long TotalBytes,
-    [property: JsonPropertyName("files")] IReadOnlyList<BuildFile> Files)
+    [property: JsonPropertyName("files")] IReadOnlyList<BuildFile> Files,
+    [property: JsonPropertyName("gameVersion")] int GameVersion = 0)
 {
     public static SupportedBuild Embedded { get; } = Load();
 

@@ -11,8 +11,8 @@ public sealed partial class GameSession
         var destMap = profileRace == 2 ? 1010 : 1110;
         var point = profileRace == 2 ? "RiftPortal_D1_to_L1_Teleport_1" : "RiftPortal_L1_to_D1_Teleport_1";
         if (data.MapPoints(destMap).TryGetValue(point, out var p))
-            return Teleport(destMap, new Vector3d(p[0], p[1], p[2]), now);
-        return data.MapStart(destMap) is { } start ? Teleport(destMap, start.Position, now) : [];
+            return PcTeleport(destMap, new Vector3d(p[0], p[1], p[2]), now);
+        return data.MapStart(destMap) is { } start ? PcTeleport(destMap, start.Position, now) : [];
     }
 
     /// <summary>Quest UseEnvObj credit must be persisted before any self-action teleport (portal, MoveMap, rift).</summary>

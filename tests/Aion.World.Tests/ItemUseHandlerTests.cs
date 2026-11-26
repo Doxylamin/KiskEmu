@@ -40,7 +40,7 @@ public sealed class ItemUseHandlerTests
         // 0x5614: uid, item id, use count 3 (live 22 bytes).
         var replies = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseByIdRq).I64(882).I32(chest).I64(3).ToArray(), Now + 1);
         var rs = replies.First(p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseByIdRs);
-        Assert.Equal((ushort)0, BitConverter.ToUInt16(rs, 2));
+        Assert.Equal((ushort)RidePackets.ItemUseSuccess, BitConverter.ToUInt16(rs, 2));
         Assert.Equal(3L, BitConverter.ToInt64(rs, 16));
         Assert.Equal(before + 150_000, FakeCharacterStore.KinaIn(store));
         Assert.Equal(2, store.Items.Where(i => i.TemplateId == chest).Sum(i => i.Quantity));

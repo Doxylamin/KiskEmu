@@ -89,6 +89,22 @@ public static class GameSessionTestHelpers
         return session;
     }
 
+    /// <summary>Logs the store's existing character back in on a new shared world, with the options of <see cref="EnterFreshSharedWorldAsync"/>.</summary>
+    public static async Task<GameSession> ReenterFreshSharedWorldAsync(FakeCharacterStore store, long now, int race, Random? rng = null, bool trainingDummy = true)
+    {
+        var data = LiveGameData;
+        var shared = new SharedWorld(data);
+        var session = new GameSession(data,
+            new GameSessionOptions { World = shared, CharacterLevel = 1, WorldId = store.WorldId, TrainingDummy = trainingDummy, LevelCap = data.MaxLevel },
+            rng ?? new Random(race == 2 ? 22 : 21))
+        { Store = store };
+        await session.HandleAsync(Login(), now);
+        var wireId = store.States[0].WireId;
+        await session.HandleAsync(new PacketWriter().U16(0x361f).Varint((uint)wireId << 16).I32(0).Vec3(Vector3d.Zero).ToArray(), now);
+        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), now);
+        return session;
+    }
+
     /// <summary>Shared world with a Dark hero (Ishalgen map events).</summary>
     public static async Task<GameSession> EnterSharedDarkWorldAsync(FakeCharacterStore store, long now, int level = 55, Random? rng = null)
     {

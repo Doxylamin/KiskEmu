@@ -100,6 +100,8 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<string> RestoreItemAsync(Guid character, Guid item, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, CancellationToken ct) => Task.FromResult("failed");
     Task<bool> MoveBagItemAsync(Guid character, Guid item, long revision, int slot, CancellationToken ct) => Task.FromResult(false);
     Task<bool> MoveItemToContainerAsync(Guid character, Guid item, long revision, string location, int slot, CancellationToken ct) => Task.FromResult(false);
+    Task<bool> StoreItemsInContainerAsync(Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct) => Task.FromResult(false);
+    Task<bool> TakeItemsFromContainerAsync(Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct) => Task.FromResult(false);
     Task<IReadOnlyList<PostRecord>> PostsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<PostRecord>>([]);
     Task<PostRecord?> SendPostAsync(Guid toCharacter, int dataId, string parameters, IReadOnlyList<(int TemplateId, long Count)> attachments, int tab, CancellationToken ct) => Task.FromResult<PostRecord?>(null);
     Task<bool> MarkPostsAsync(Guid character, IReadOnlyList<long> ids, bool delete, CancellationToken ct) => Task.FromResult(false);
@@ -126,13 +128,15 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<bool> SaveDaevanionAsync(Guid character, DaevanionProgress progress, CancellationToken ct) => Task.FromResult(false);
     Task<IReadOnlyList<BossChallengeRecord>> BossChallengesAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<BossChallengeRecord>>([]);
     Task<bool> SaveBossChallengeAsync(Guid character, BossChallengeRecord record, CancellationToken ct) => Task.FromResult(false);
-    Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(Guid character, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<(int, string, int)>>([]);
-    Task<bool> SaveExpeditionTicketsAsync(Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct) =>
+    Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ContentTicketRecord>>([]);
+    Task<bool> SaveContentTicketsAsync(Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct) =>
         Task.FromResult(false);
     Task<AbyssRecord?> AbyssAsync(Guid character, CancellationToken ct) => Task.FromResult<AbyssRecord?>(null);
     Task<bool> SaveAbyssAsync(Guid character, AbyssRecord record, CancellationToken ct) => Task.FromResult(false);
     Task AddPendingSiegeApForGuildAsync(long guildId, int ap, IReadOnlyList<Guid> onlineCharacterIds, CancellationToken ct) => Task.CompletedTask;
+    /// <summary>This world's Abyss ranking of a race (at least <paramref name="minPoint"/> points, best first).</summary>
+    Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int race, int minPoint, CancellationToken ct) => Task.FromResult<IReadOnlyList<AbyssRankRow>>([]);
     Task<AirspaceWorldRecord> AirspaceWorldAsync(CancellationToken ct) => Task.FromResult(new AirspaceWorldRecord([], []));
     Task SaveAirspaceWorldAsync(AirspaceWorldRecord record, CancellationToken ct) => Task.CompletedTask;
     Task<WorldResetCursorRecord> ResetCursorsAsync(CancellationToken ct) => Task.FromResult(new WorldResetCursorRecord(0, 0));
@@ -157,6 +161,10 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<IReadOnlyDictionary<string, JsonElement>> CharacterSettingsAsync(Guid character, CancellationToken ct) =>
         Task.FromResult<IReadOnlyDictionary<string, JsonElement>>(new Dictionary<string, JsonElement>());
     Task<bool> SaveCharacterSettingAsync(Guid character, string name, JsonElement value, CancellationToken ct) => Task.FromResult(false);
+    /// <summary>Per-account settings by name, shared by the signed-in account's characters (the account warehouse's expansions).</summary>
+    Task<IReadOnlyDictionary<string, JsonElement>> AccountSettingsAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<string, JsonElement>>(new Dictionary<string, JsonElement>());
+    Task<bool> SaveAccountSettingAsync(string name, JsonElement value, CancellationToken ct) => Task.FromResult(false);
     /// <summary>Grants looted items.</summary>
     Task<bool> GrantLootAsync(Guid character, IReadOnlyList<(int TemplateId, long Count)> items, CancellationToken ct) => Task.FromResult(false);
     /// <summary>Stores level and experience (per level).</summary>
@@ -221,9 +229,19 @@ public interface INativeCharacterStore : IAsyncDisposable
     Task<IReadOnlyList<int>> TeleportArtifactsAsync(Guid character, CancellationToken ct);
     /// <summary>Records a bound Kibelisk; false when it was already bound.</summary>
     Task<bool> EngraveTeleportArtifactAsync(Guid character, int artifactId, CancellationToken ct);
+    /// <summary>Monolith resonance counts (migration 111): Monolith id -> tokens resonated.</summary>
+    Task<IReadOnlyDictionary<int, int>> MonolithsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>());
+    /// <summary>Uses up the token stacks, moves the Monolith's count from <paramref name="previous"/> to <paramref name="count"/> and grants the level rewards, atomically.</summary>
+    Task<bool> ResonateMonolithAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int monolith, int previous, int count,
+        IReadOnlyList<(int TemplateId, long Count)> rewards, CancellationToken ct) => Task.FromResult(false);
     /// <summary>The stored skills with their levels (skill levels bought with skill points).</summary>
     Task<IReadOnlyList<SkillState>> SkillsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<SkillState>>([]);
     Task<bool> SetSkillLevelAsync(Guid character, int skillId, int level, int purchased, CancellationToken ct) => Task.FromResult(false);
+    /// <summary>The parts equipped on the character's mastery skills (specialisation).</summary>
+    Task<IReadOnlyList<SkillPartRecord>> SkillPartsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<SkillPartRecord>>([]);
+    /// <summary>Replaces one skill's equipped parts when they still equal <paramref name="expected"/>; false otherwise.</summary>
+    Task<bool> ReplaceSkillPartsAsync(Guid character, int skillId, IReadOnlyList<SkillPartRecord> expected, IReadOnlyList<SkillPartRecord> parts, CancellationToken ct) =>
+        Task.FromResult(false);
     /// <summary>Titles, skins and masteries (read at character selection).</summary>
     Task<CharacterExtras> ExtrasAsync(Guid character, CancellationToken ct) => Task.FromResult(CharacterExtras.None);
     Task<bool> GrantTitleAsync(Guid character, int titleId, CancellationToken ct) => Task.FromResult(false);
@@ -243,6 +261,9 @@ public interface INativeCharacterStore : IAsyncDisposable
         CancellationToken ct) => Task.FromResult(false);
     Task<bool> SocketGodstoneAsync(Guid character, Guid equip, long equipRevision, Guid material, long materialRevision, IReadOnlyList<int> godstones,
         CancellationToken ct) => Task.FromResult(false);
+    /// <summary>All or nothing: the costs (bag or warehouse stacks) are consumed and <paramref name="patch"/> is merged into the item's upgrades.</summary>
+    Task<bool> UpgradeItemAsync(Guid character, Guid item, long revision, IReadOnlyList<(Guid Item, long Revision, int Count)> costs,
+        System.Text.Json.JsonElement patch, CancellationToken ct) => Task.FromResult(false);
     Task<IReadOnlyDictionary<int, int>> GodstoneCollectionAsync(Guid character, CancellationToken ct) =>
         Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>());
     Task<bool> UpsertGodstoneCollectionAsync(Guid character, IReadOnlyList<(int GodstoneId, int Delta)> updates, CancellationToken ct) =>

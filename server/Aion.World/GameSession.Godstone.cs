@@ -4,13 +4,16 @@ using Aion.Protocol.Native;
 
 namespace Aion.World;
 
-// Godstones (Theostones): socket into weapon godstone slots (0x3777 ItemEnchantGodstone_RQ),
+// Godstones (Theostones): socket into weapon godstone slots (0x5635 ItemEnchantGodstone_RQ),
 // proc on weapon hits (GodStone.dat via tools/data/godstones.json). GodstoneList_NT 0x5633
-// tracks owned stones (collection). Combine 0x377A/B consumes same-grade materials from the bag.
+// tracks owned stones (collection). Combine 0x5638/9 consumes same-grade materials from the bag.
+// Live opcodes: the usmap's 0x3776-0x377b + 0x1ebe, the run GodstoneList_NT 0x5633 (OBSERVED) sits in; the broadcast 0x5637 is
+// OBSERVED in the A2Core fork's recordings (zaraza87/A2Core GameSession.Godstones.cs) with our body. The client never sends the
+// usmap numbers we used before (#74).
 public sealed partial class GameSession
 {
-    public const ushort ItemEnchantGodstoneRq = 0x3777, ItemEnchantGodstoneRs = 0x3778, ItemEnchantGodstoneNt = 0x3779,
-        CombineGodstoneRq = 0x377A, CombineGodstoneRs = 0x377B, GodstoneUpdateNt = 0x3776, GodstoneListNt = 0x5633;
+    public const ushort ItemEnchantGodstoneRq = 0x5635, ItemEnchantGodstoneRs = 0x5636, ItemEnchantGodstoneNt = 0x5637,
+        CombineGodstoneRq = 0x5638, CombineGodstoneRs = 0x5639, GodstoneUpdateNt = 0x5634, GodstoneListNt = 0x5633;
 
     static GodstoneTables Godstones => GodstoneTables.Embedded;
     static GodstoneCombineTables GodstoneCombine => GodstoneCombineTables.Embedded;
@@ -53,7 +56,7 @@ public sealed partial class GameSession
         return w.ToArray();
     }
 
-    /// <summary>0x3776 GodstoneUpdate_NT after collection changes (reason EGodstoneModifyReason, CANDIDATE 1 combine/acquire).</summary>
+    /// <summary>0x5634 GodstoneUpdate_NT after collection changes (reason EGodstoneModifyReason, CANDIDATE 1 combine/acquire).</summary>
     byte[] GodstoneUpdatePacket(byte reason, IReadOnlyList<(int Id, int Count)> updates)
     {
         var w = PacketWriter.Opcode(GodstoneUpdateNt).U8(reason).Varint((uint)updates.Count);
@@ -115,7 +118,7 @@ public sealed partial class GameSession
         }
     }
 
-    /// <summary>0x377A: combine godstones of one grade (map template id → count from bag).</summary>
+    /// <summary>0x5638: combine godstones of one grade (map template id → count from bag).</summary>
     async Task<List<byte[]>> CombineGodstoneAsync(byte[] plain, CancellationToken ct)
     {
         byte[] Reply(int result, int materialGrade, IReadOnlyList<int> rewardIds, IReadOnlyList<(int Id, int Count)> updates)
@@ -160,7 +163,7 @@ public sealed partial class GameSession
         return replies;
     }
 
-    /// <summary>0x3777: engrave a godstone item into an equip instance (consumes one stack from bag).</summary>
+    /// <summary>0x5635: engrave a godstone item into an equip instance (consumes one stack from bag).</summary>
     async Task<List<byte[]>> EnchantGodstoneAsync(byte[] plain, CancellationToken ct)
     {
         if (plain.Length < 18) return [];

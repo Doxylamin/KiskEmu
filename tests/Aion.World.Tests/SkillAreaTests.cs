@@ -17,7 +17,7 @@ public sealed class SkillAreaTests
         var centre = new Vector3d(1000, 0, 0);
         Assert.True(area.Contains(centre, 0, new Vector3d(1350, 0, 0)));
         Assert.False(area.Contains(centre, 0, new Vector3d(1500, 0, 0)));
-        Assert.Equal(140, area.FlightMs(700));   // Speed 5000 cm/s
+        Assert.Equal((100, 150), area.Flight(700));   // Target type, Speed 5000 cm/s: 140 ms in 50 ms steps, the hit a tick later
     }
 
     [Fact]

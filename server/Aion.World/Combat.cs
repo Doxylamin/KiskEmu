@@ -29,6 +29,25 @@ public sealed class Target
     public long DisplacedUntil { get; set; }
     /// <summary>Immune through a scripted abnormal: the players' hits land for nothing.</summary>
     public bool Immune { get; set; }
+    /// <summary>
+    /// NpcData says players cannot hit it (bCanBeAttacked false or NpcTargetAble not Able): area hits, spirits and companions leave it
+    /// alone; a target the player picks itself stays hittable (map events need some killed). OBSERVED: 0 of 9,127 player hits on NPCs
+    /// landed on one (2026-11-04, -11-12, -11-15).
+    /// </summary>
+    public bool Untouchable { get; init; }
+    /// <summary>What a player's side picks to hit by itself (spirits, companions, area hits): hostile and not untouchable.</summary>
+    public bool Attackable => Hostile && !Untouchable;
+    /// <summary>
+    /// NpcData bHitCountBased: 7 HP (5 for a summon) and every hit takes 1, never critical (OBSERVED: templates 2100969, 2100584,
+    /// 2100614, 2290057 on 2026-11-04 and 2290030 on 2026-11-15 appear with 7/7 HP in 0x3641; 46 of 46 player hits did 1, hit type 2,
+    /// HP stepping 6..0 in 0x8d00).
+    /// </summary>
+    public bool HitCount { get; init; }
+    /// <summary>The hits as they land on this NPC: one HP each, normal, on a hit-count NPC; unchanged on any other.</summary>
+    public IReadOnlyList<Hit> Landed(IReadOnlyList<Hit> hits) =>
+        HitCount ? hits.Select(h => h with { Amount = Math.Min(1, h.Amount), Critical = false }).ToList() : hits;
+    /// <summary>One damage as it lands on this NPC (as <see cref="Landed(IReadOnlyList{Hit})"/>).</summary>
+    public int Landed(int damage) => HitCount ? Math.Min(1, damage) : damage;
     /// <summary>Its spawn height was put on the ground (navmesh floor or terrain) once the map's geometry was loaded.</summary>
     public bool Snapped { get; set; }
     public bool Aggressive { get; init; }        // NpcData AggroType Aggro_A
@@ -59,19 +78,18 @@ public sealed class Target
     public NpcRoute? Route { get; init; }
     /// <summary>Walking its route now (the appear says move_state Walk).</summary>
     public bool Walking { get; set; }
-    /// <summary>Accumulated stagger gauge damage toward <see cref="StaggerGaugeMax"/> (shared map state).</summary>
-    public int StaggerGauge { get; set; }
-    /// <summary>Gauge capacity; 0 until first stagger hit (then default 100).</summary>
-    public int StaggerGaugeMax { get; set; }
-    /// <summary>Unix ms while the target is in Stagger (EAbnormalEffectType), after the gauge breaks.</summary>
+    /// <summary>Unix ms while the NPC is groggy (Stagger) after its groggy guard broke (Stagger.cs, NpcData GroggyTime).</summary>
     public long StaggerUntil { get; set; }
     /// <summary>Class skill id that spawned this PC summon (Spiritmaster 16100000…); 0 for ordinary NPCs.</summary>
     public int SummonSourceSkill { get; set; }
     public string SubType { get; init; } = "NormalMonster";
     public int Grade { get; init; } = 3;
-    /// <summary>Boss groggy guard (0 = none); sent with 0xe005 UpdateGroggyInfo_NT.</summary>
-    public int GroggyMax { get; set; }
-    public int GroggyEnergy { get; set; }
+    /// <summary>
+    /// The groggy guard's energy (Stagger.cs, 0xe005) once a player's skill drained it; null while full or after a respawn. 0 = broken.
+    /// </summary>
+    public int? GroggyEnergy { get; set; }
+    /// <summary>When a broken guard refills (the break + NpcData GroggyTime; Stagger.Refill).</summary>
+    public long GroggyRefillAt { get; set; }
 
     /// <summary>A custom NPC (staff dashboard: NPCs) this target places; null for every other NPC.</summary>
     public Aion.Application.Gameplay.CustomNpc? Custom { get; init; }
@@ -155,6 +173,23 @@ public static class Combat
             hits.Add(new Hit(amount, critical, row.EffectId));
         }
         return hits;
+    }
+
+    /// <summary>
+    /// One Dot_NormalCalc tick of a player's abnormal: its flat and ratio read as a Damage row's (SkillAbnormalEffect values [3]/[4]
+    /// flat, [5]/[6] ratio of 10000), no critical, the target's defense. CANDIDATE (the official formula is not known); it fits the
+    /// fork's community recordings (the Spiritmaster's 1614000011 {148, 15000} ticked 762-804 on monsters). Ported from addiboii's
+    /// fork, commit 74fed9b.
+    /// </summary>
+    public static int DotTick(GameData data, string? className, int level, int? weaponItem, int targetDefense, Random rng,
+        int flatMin, int flatMax, int ratioMin, int ratioMax)
+    {
+        var weapon = data.WeaponStatsOf(weaponItem);
+        var attack = rng.Next(Math.Min(weapon.Min, weapon.Max), Math.Max(weapon.Min, weapon.Max) + 1)
+            + data.BaseStats(className, level).GetValueOrDefault("FixingDamage");
+        var raw = rng.Next(Math.Min(flatMin, flatMax), Math.Max(flatMin, flatMax) + 1)
+            + attack * (double)rng.Next(Math.Min(ratioMin, ratioMax), Math.Max(ratioMin, ratioMax) + 1) / 10_000;
+        return Math.Max(1, (int)Math.Round(raw * DefenseScale / (DefenseScale + Math.Max(0, targetDefense))));
     }
 
     public const int HpBaseUnit = 133;
@@ -272,10 +307,9 @@ public static class Combat
                 Function = spawn.Function, Aggro = spawn.Aggro, Skills = spawn.Skills ?? [], NoRotation = spawn.NoRotation,
                 UniqueKey = spawn.UniqueKey, SocialAction = spawn.SocialAction, SocialStart = spawn.SocialAction != 0 ? StartedAt : 0, Route = spawn.Route,
                 Air = spawn.Air, AirMonster = spawn.Air && spawn.SubType.EndsWith("Monster", StringComparison.Ordinal), DamageScale = DamageScale(spawn.SubType, spawn.Grade),
-                SubType = spawn.SubType, Grade = spawn.Grade,
+                SubType = spawn.SubType, Grade = spawn.Grade, Untouchable = spawn.Untouchable, HitCount = spawn.HitCount,
                 Defense = NpcDefense(spawn.Level, spawn.SubType, spawn.Grade, data.BaseStats("Gladiator", spawn.Level).GetValueOrDefault("Defense")),
             };
-            NpcAi.InitGroggy(targets[key]);
         }
         return targets;
     }

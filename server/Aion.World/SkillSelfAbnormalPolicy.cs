@@ -37,6 +37,7 @@ public static class SkillSelfAbnormalPolicy
             case SelfAbnormalPath.Dodge:
             case SelfAbnormalPath.Item:
             case SelfAbnormalPath.SkillCondGrant:
+            case SelfAbnormalPath.Toggle:
                 return true;
             case SelfAbnormalPath.FriendlyReceive:
                 if (skillId == 0) return true;

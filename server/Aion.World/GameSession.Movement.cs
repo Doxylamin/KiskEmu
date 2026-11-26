@@ -148,6 +148,12 @@ public sealed partial class GameSession
     public const double AirApproach = 200;
     /// <summary>Official inner points were 1300 to 12000 apart; OURS: at most this far.</summary>
     public const double AirStep = 6000;
+    /// <summary>
+    /// OURS: the most cruise points one route gets (64 * AirStep = 384 km, beyond any map). The step count came straight from the
+    /// client's target: a 0x3719 aimed at 1e30 saturated it to int.MaxValue and the route ran the world process out of memory.
+    /// A longer route keeps this many points, just further apart.
+    /// </summary>
+    public const int MaxAirSteps = 64;
 
     /// <summary>
     /// The flight route for 0x3745, ordered as the official one: target, the target's grid cell just above it, cruise points on
@@ -163,7 +169,8 @@ public sealed partial class GameSession
         var points = new List<Vector3d> { target, new(Snap(target.X), Snap(target.Y), target.Z + AirApproach) };
         var dx = start.X - target.X;
         var dy = start.Y - target.Y;
-        var steps = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(dx * dx + dy * dy) / AirStep));
+        var span = Math.Sqrt(dx * dx + dy * dy) / AirStep;
+        var steps = double.IsFinite(span) ? (int)Math.Clamp(Math.Ceiling(span), 1, MaxAirSteps) : 1;
         for (var i = 0; i <= steps; i++)
         {
             var p = new Vector3d(Snap(target.X + dx * i / steps), Snap(target.Y + dy * i / steps), cruise);

@@ -44,7 +44,7 @@ public sealed class PlaythroughSideQuestTests(ITestOutputHelper output)
         Assert.Equal(codes.Length, rewarded);
     }
 
-    [Theory]
+    [LongPlaythroughTheory]
     [InlineData(1)]
     [InlineData(2)]
     [Trait("Category", "LongPlaythrough")]

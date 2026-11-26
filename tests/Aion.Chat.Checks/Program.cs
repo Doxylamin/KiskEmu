@@ -160,6 +160,27 @@ Check(legionSaid.Deliveries.Select(d => d.SessionToken).Order().SequenceEqual(ne
 world.Enter(accountB, bram, "12");
 Rejected(() => accounts.Send(bramToken, legionRoom, Message("still here?")), "a character that left its legion cannot speak in the legion room");
 world.Enter(accountB, bram with { GuildId = 7 }, "12");
+// Party chat: a PARTY room (client ECommunityChatType PARTY, key prefix PA) needs a party; a message reaches the sender's
+// party members in any PARTY room of the server key only (the key is not relied on), not another party's.
+clock.Advance(TimeSpan.FromSeconds(6));
+var partyRoom = new ChatRoomKey("PARTY", "1204", "PA3");
+Rejected(() => accounts.Join(elyraToken, partyRoom), "a character without a party cannot join a party room");
+world.Enter(accountA, elyra with { GuildId = 7, PartyId = 3 }, "11");
+world.Enter(accountB, bram with { GuildId = 7, PartyId = 3 }, "12");
+world.Enter(accountC, altOne with { GuildId = 8, PartyId = 4 }, "21");
+accounts.Join(elyraToken, partyRoom);
+accounts.Join(bramToken, partyRoom);
+accounts.Join(altToken, new ChatRoomKey("PARTY", "1204", "PA4"));
+Rejected(() => accounts.Join(elyraToken, new ChatRoomKey("PARTY", "1361", "PA3")), "party rooms of another server key");
+var partySaid = accounts.Send(elyraToken, partyRoom, Message("party hello"));
+Check(partySaid.Deliveries.Select(d => d.SessionToken).Order().SequenceEqual(new[] { elyraToken, bramToken }.Order()),
+    "a party message reaches the party's members, not another party's");
+world.Enter(accountB, bram with { GuildId = 7 }, "12");
+Rejected(() => accounts.Send(bramToken, partyRoom, Message("still here?")), "a character that left its party cannot speak in the party room");
+Check(accounts.Send(elyraToken, partyRoom, Message("alone")).Deliveries.Single().SessionToken == elyraToken, "a former member no longer receives party messages");
+world.Enter(accountA, elyra with { GuildId = 7 }, "11");
+world.Enter(accountB, bram with { GuildId = 7 }, "12");
+world.Enter(accountC, altOne with { GuildId = 8 }, "21");
 // Moderation: a muted account is refused (room and whisper), commands still run; delivered messages are logged.
 var moderation = new FakeModeration();
 accounts.Moderation = moderation;

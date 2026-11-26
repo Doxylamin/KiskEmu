@@ -118,27 +118,50 @@ public sealed class EconomyPacketTests
         storeB.Items.Add(FakeCharacterStore.BagItem(GameSession.KinaItemId, 5000, 90));
         await seller.InventoryChangesAsync(default);
         var wire = storeS.Items.Single(i => i.TemplateId == LifePotion).WireId;
-        var list = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeSellRq).I64(wire).I64(1).I32(GameSession.KinaItemId).I64(200)
-            .I32(500).I32(10).I32(TradeServer).ToArray(), Now + 20);
-        Assert.Equal(0, BitConverter.ToUInt16(list[0], 2));
+        // usmap layout: item key i64, count i64, ECurrencyCategory u8, price i64, fee rate i64, fee min i64, trade server (u16 here).
+        var list = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeSellRq).I64(wire).I64(1).U8(93).I64(200)
+            .I64(500).I64(10).U16(TradeServer).ToArray(), Now + 20);
+        Assert.Equal(GameSession.TradeSellRs, GameSessionTestHelpers.Op(list[0]));
         var saleId = storeS.TradeListings.Single().SaleId;
+        var saleText = GameSession.TradeIdText(saleId);
+        // OBSERVED shape: 0000 | GUID (36 chars) | 41 zero bytes | trade server u16.
+        Assert.Equal(new PacketWriter().U16(GameSession.TradeSellRs).U16(0).String(saleText).Zeros(41).U16(TradeServer).ToArray(), list[0]);
+        Assert.Equal(36, saleText.Length);
+        Assert.Equal(saleId, GameSession.ParseSaleId(saleText));
         Assert.DoesNotContain(storeS.Items, i => i.Location == "bag" && i.TemplateId == LifePotion);
-        var buy = await buyer.HandleAsync(new PacketWriter().U16(GameSession.TradePurchaseRq).String(saleId.ToString()).I32(LifePotion).I64(1).I32(TradeServer).ToArray(), Now + 21);
-        Assert.Equal(0, BitConverter.ToUInt16(buy[0], 2));
+        // The trade server as i32 is read too.
+        var buy = await buyer.HandleAsync(new PacketWriter().U16(GameSession.TradePurchaseRq).String(saleText).I32(LifePotion).I64(1).I32(TradeServer).ToArray(), Now + 21);
+        Assert.Equal(new PacketWriter().U16(GameSession.TradePurchaseRs).U16(0).String(saleText).Zeros(12).U16(TradeServer).ToArray(), buy[0]);
         Assert.Single(storeB.Items, i => i.TemplateId == LifePotion && i.Location == "bag");
         Assert.Equal(4800, Kina(storeB));
-        var payout = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeDeliveryCompleteRq).String(storeS.TradeDeliveries.Single().DeliveryId.ToString())
-            .I32(LifePotion).I32(TradeServer).ToArray(), Now + 22);
-        Assert.Equal(0, BitConverter.ToUInt16(payout[0], 2));
+        var deliveryText = GameSession.TradeIdText(storeS.TradeDeliveries.Single().DeliveryId);
+        var payout = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeDeliveryCompleteRq).String(deliveryText)
+            .I32(LifePotion).U16(TradeServer).ToArray(), Now + 22);
+        Assert.Equal(new PacketWriter().U16(GameSession.TradeDeliveryCompleteRs).U16(0).String(deliveryText).U16(TradeServer).ToArray(), payout[0]);
         Assert.True(Kina(storeS) > 9900);
         storeS.Items.Add(FakeCharacterStore.BagItem(LifePotion, 1, 82));
         await seller.InventoryChangesAsync(default);
         var wire2 = storeS.Items.Single(i => i.WireId == 82).WireId;
-        await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeSellRq).I64(wire2).I64(1).I32(GameSession.KinaItemId).I64(100).I32(500).I32(10).I32(TradeServer).ToArray(), Now + 30);
-        var sale2 = storeS.TradeListings.Last().SaleId;
-        var cancel = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeCancelSaleRq).String(sale2.ToString()).I32(LifePotion).I64(1).I32(TradeServer).ToArray(), Now + 31);
-        Assert.Equal(0, BitConverter.ToUInt16(cancel[0], 2));
+        await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeSellRq).I64(wire2).I64(1).U8(93).I64(100).I64(500).I64(10).U16(TradeServer).ToArray(), Now + 30);
+        var sale2 = GameSession.TradeIdText(storeS.TradeListings.Last().SaleId);
+        var cancel = await seller.HandleAsync(new PacketWriter().U16(GameSession.TradeCancelSaleRq).String(sale2).I32(LifePotion).I64(1).U16(TradeServer).ToArray(), Now + 31);
+        // OBSERVED r2 shape: 0000 | GUID | 20 zero bytes | trade server u16.
+        Assert.Equal(new PacketWriter().U16(GameSession.TradeCancelSaleRs).U16(0).String(sale2).Zeros(20).U16(TradeServer).ToArray(), cancel[0]);
         Assert.Single(storeS.Items, i => i.TemplateId == LifePotion && i.Location == "bag");
+    }
+
+    [Fact]
+    public void Broker_and_godstone_opcodes_are_the_live_runs()
+    {
+        // #74: the usmap numbers + 0xa6fb (broker; 0xe267/69/6b/6d OBSERVED in our r2 capture) and + 0x1ebe (godstones, beside 0x5633).
+        Assert.Equal(0xe264, GameSession.TradeSellRq);
+        Assert.Equal(0xe26b, GameSession.TradeExpireSaleRs);
+        Assert.Equal(0xe272, GameSession.TradeGetSummaryRs);
+        Assert.Equal(0x5635, GameSession.ItemEnchantGodstoneRq);
+        Assert.Equal(0x5637, GameSession.ItemEnchantGodstoneNt);
+        Assert.Equal(0x5639, GameSession.CombineGodstoneRs);
+        Assert.Equal(17, GameSession.ParseSaleId("17"));
+        Assert.Equal(0, GameSession.ParseSaleId("not an id"));
     }
 
     [Fact]
@@ -178,5 +201,67 @@ public sealed class EconomyPacketTests
         var back = await session.HandleAsync(new PacketWriter().U16(GameSession.ItemMoveRq).I32(0).U8(InventoryItem.Bag).I64(key).I32(3).ToArray(), Now + 2);
         Assert.Equal(0, BitConverter.ToUInt16(back[0], 2));
         Assert.Equal("bag", store.Items.Single(i => i.WireId == key).Location);
+    }
+
+    static ushort StoreResult(List<byte[]> replies, ushort opcode) => BitConverter.ToUInt16(replies.First(b => BitConverter.ToUInt16(b, 0) == opcode), 2);
+
+    static byte[] ItemStore(ushort opcode, int npc, byte container, params (long Key, long Count)[] map)
+    {
+        var w = new PacketWriter().U16(opcode).I32(npc).Varint(map.Length);
+        foreach (var (key, count) in map) w.I64(key).I64(count);
+        return w.U8(container).ToArray();
+    }
+
+    [Fact]
+    public async Task Item_store_refuses_a_full_warehouse()
+    {
+        // Live 2026-11-15: the character warehouse took 81 stacks in 80 slots. Default 5 lines = 25 slots, all taken.
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, Now);
+        for (var i = 0; i < GameSession.StorageDefaultLines * GameSession.SlotsPerLine; i++)
+            store.Items.Add(FakeCharacterStore.StorageItem(LifePotion, 1, 500 + i, i));
+        store.Items.Add(FakeCharacterStore.BagItem(LifePotion, 10, 88, 0));
+        await session.InventoryChangesAsync(default);
+        var key = store.Items.Single(i => i.Location == "bag").WireId;
+        var full = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.Storage, (key, 10)), Now);
+        Assert.NotEqual(GameSession.ItemStored, StoreResult(full, GameSession.ItemStoreRs));
+        Assert.Equal("bag", store.Items.Single(i => i.WireId == key).Location);
+    }
+
+    [Fact]
+    public async Task Item_store_deposits_and_takes_back_warehouse_and_account_storage()
+    {
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, Now);
+        store.Items.Add(FakeCharacterStore.BagItem(LifePotion, 10, 88, 0));
+        await session.InventoryChangesAsync(default);
+        var key = store.Items.Single(i => i.Location == "bag").WireId;
+
+        // 0x5642 ItemStore: the whole stack is deposited into the personal warehouse. The reply follows the item change
+        // (0x561b): u16 result (1024 stored) + npc i32 + echoed map + container (official 2026-11-12 r1 and 11-15, #70).
+        var toStorage = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.Storage, (key, 10)), Now);
+        Assert.Equal(0x561b, BitConverter.ToUInt16(toStorage[0], 0));
+        Assert.Equal(GameSession.ItemStored, StoreResult(toStorage, GameSession.ItemStoreRs));
+        Assert.Equal(InventoryItem.Storage, toStorage.First(b => BitConverter.ToUInt16(b, 0) == GameSession.ItemStoreRs)[^1]);
+        Assert.Equal("storage", store.Items.Single(i => i.WireId == key).Location);
+
+        // 0x5644 ItemTakeOut: part of the stack comes back into the bag, splitting it. Its reply flag byte is 0x10.
+        var back = await session.HandleAsync(ItemStore(GameSession.ItemTakeOutRq, 0, InventoryItem.Storage, (key, 4)), Now + 1);
+        Assert.Equal(GameSession.ItemTakenOut, StoreResult(back, GameSession.ItemTakeOutRs));
+        Assert.Equal(6, store.Items.Single(i => i.WireId == key).Quantity);
+        Assert.Contains(store.Items, i => i.Location == "bag" && i.TemplateId == LifePotion && i.Quantity == 4);
+
+        // The rest comes back to the bag, then the whole stack is deposited into account storage (container 2).
+        var rest = await session.HandleAsync(ItemStore(GameSession.ItemTakeOutRq, 0, InventoryItem.Storage, (key, 6)), Now + 2);
+        Assert.Equal(GameSession.ItemTakenOut, StoreResult(rest, GameSession.ItemTakeOutRs));
+        Assert.Equal("bag", store.Items.Single(i => i.WireId == key).Location);
+        var account = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.AccountStorage, (key, 6)), Now + 3);
+        Assert.Equal(GameSession.ItemStored, StoreResult(account, GameSession.ItemStoreRs));
+        Assert.Equal(InventoryItem.AccountStorage, account.First(b => BitConverter.ToUInt16(b, 0) == GameSession.ItemStoreRs)[^1]);
+        Assert.Equal("account_storage", store.Items.Single(i => i.WireId == key).Location);
+
+        // An unknown container is refused with a non-zero result.
+        var bad = await session.HandleAsync(ItemStore(GameSession.ItemStoreRq, 0, InventoryItem.Bag, (key, 1)), Now + 5);
+        Assert.NotEqual(GameSession.ItemStored, StoreResult(bad, GameSession.ItemStoreRs));
     }
 }

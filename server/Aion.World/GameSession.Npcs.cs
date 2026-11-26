@@ -33,13 +33,13 @@ public sealed partial class GameSession
         {
             seenNpcs.UnionWith(targets.Keys);
             // A removed corpse stays out of sight until its respawn (0x3641 then).
-            return targets.Values.Where(t => !t.CorpseRemoved).Select(t => GamePackets.NpcAppear(QuestGatedAppear(Grounded(t)))).ToList();
+            return targets.Values.Where(t => !t.CorpseRemoved).SelectMany(t => Stagger.WithGuard(GamePackets.NpcAppear(QuestGatedAppear(Grounded(t))), t)).ToList();
         }
         var replies = NpcVisibility(at);
         foreach (var t in targets.Values.Where(t => !t.CorpseRemoved && QuestForcesNpcStream(t) && !seenNpcs.Contains(t.Key)))
         {
             seenNpcs.Add(t.Key);
-            replies.Add(GamePackets.NpcAppear(QuestGatedAppear(Grounded(t))));
+            replies.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(QuestGatedAppear(Grounded(t))), t));
         }
         return replies;
     }
@@ -79,7 +79,7 @@ public sealed partial class GameSession
             if (!seen && !t.CorpseRemoved && d2 <= NpcViewRange * NpcViewRange)
             {
                 seenNpcs.Add(t.Key);
-                replies.Add(GamePackets.NpcAppear(QuestGatedAppear(Grounded(t))));
+                replies.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(QuestGatedAppear(Grounded(t))), t));
             }
             else if (seen && d2 > NpcForgetRange * NpcForgetRange)
             {
@@ -91,7 +91,7 @@ public sealed partial class GameSession
             else if (!seen && !t.CorpseRemoved && QuestForcesNpcStream(t))
             {
                 seenNpcs.Add(t.Key);
-                replies.Add(GamePackets.NpcAppear(QuestGatedAppear(Grounded(t))));
+                replies.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(QuestGatedAppear(Grounded(t))), t));
             }
         }
         return replies;
@@ -109,7 +109,7 @@ public sealed partial class GameSession
             var dy = t.Position.Y - at.Y;
             if (dx * dx + dy * dy > NpcViewRange * NpcViewRange) continue;
             seenNpcs.Add(t.Key);
-            replies.Add(GamePackets.NpcAppear(SessionAppear(Grounded(t))));
+            replies.AddRange(Stagger.WithGuard(GamePackets.NpcAppear(SessionAppear(Grounded(t))), t));
         }
         return replies;
     }

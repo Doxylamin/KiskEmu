@@ -97,7 +97,8 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
     /// <summary>
     /// The private copy's folder, on the same drive as its source so placing it is a hard link or a
     /// move (no extra space): under %LOCALAPPDATA% on the system drive, else &lt;drive&gt;:\KiskPrivate.
-    /// The embedded build keeps the folder name launchers always used (AION2); another build gets its own.
+    /// The embedded build keeps the folder name launchers always used (AION2); another build gets its own, named by its game
+    /// version (AION2-3533), or by its fingerprint when its reference names no version.
     /// </summary>
     public string TargetFor(string source)
     {
@@ -106,7 +107,11 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
         return Path.Combine(root, CopyName);
     }
 
-    string CopyName => Build.Fingerprint.Equals(SupportedBuild.Embedded.Fingerprint, StringComparison.OrdinalIgnoreCase) ? "AION2" : "AION2-" + Build.Fingerprint[..12];
+    string CopyName => Build.Fingerprint.Equals(SupportedBuild.Embedded.Fingerprint, StringComparison.OrdinalIgnoreCase) ? "AION2"
+        : Build.GameVersion > 0 ? $"AION2-{Build.GameVersion}" : "AION2-" + Build.Fingerprint[..12];
+
+    /// <summary>The game version the server runs, for the player ("game version 3533"), or null when its reference names none.</summary>
+    public string? GameVersionText => Build.GameVersion > 0 ? $"game version {Build.GameVersion}" : null;
 
     public static long FreeBytes(string folder) => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace;
 
@@ -131,19 +136,40 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
     public long StillNeeded(string folder) => Build.TotalBytes - (Directory.Exists(folder) ? ClientFiles.PresentBytes(folder, Build) : 0);
 
     /// <summary>
-    /// Where the download goes: the folder of an interrupted download, else %LOCALAPPDATA% on the
-    /// system drive when it has room, else &lt;drive&gt;:\KiskPrivate\AION2 on the fixed drive with the
-    /// most free space. Null when no drive has room.
+    /// Where the download goes: the folder of an interrupted download, else the folder the player chose, else %LOCALAPPDATA%
+    /// on the system drive when it has room, else &lt;drive&gt;:\KiskPrivate\AION2 on the fixed drive with the most free space.
+    /// Null when no drive has room.
     /// </summary>
     public string? DownloadFolder()
     {
         if (settings.DownloadFolder is { } previous && Build.Fingerprint.Equals(settings.DownloadBuild, StringComparison.OrdinalIgnoreCase)) return previous;
+        if (settings.DownloadChoice is { } chosen && Build.Fingerprint.Equals(settings.DownloadChoiceBuild, StringComparison.OrdinalIgnoreCase)) return chosen;
         const long reserve = 2L << 30;
         var local = TargetFor(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
         if (FreeBytes(local) > Build.TotalBytes + reserve) return local;
         var best = DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
             .OrderByDescending(d => d.AvailableFreeSpace).FirstOrDefault();
         return best is not null && best.AvailableFreeSpace > Build.TotalBytes + reserve ? Path.Combine(PrivateFolder.Resolve(best.RootDirectory.FullName), CopyName) : null;
+    }
+
+    /// <summary>Whether <paramref name="folder"/>'s drive has room for what is still to download.</summary>
+    public bool HasRoom(string folder) => FreeBytes(folder) > StillNeeded(folder);
+
+    /// <summary>
+    /// The player's own download folder: the chosen folder itself when it is empty or already holds this version, else a
+    /// folder named for the version inside it (choosing D:\Games gives D:\Games\AION2-3533).
+    /// </summary>
+    public string ChooseDownloadFolder(string chosen)
+    {
+        chosen = Path.GetFullPath(chosen);
+        var empty = Directory.Exists(chosen) && !Directory.EnumerateFileSystemEntries(chosen).Any();
+        var folder = empty || File.Exists(Path.Combine(chosen, Build.Executable))
+            || Path.GetFileName(Path.TrimEndingDirectorySeparator(chosen)).Equals(CopyName, StringComparison.OrdinalIgnoreCase)
+            ? chosen : Path.Combine(chosen, CopyName);
+        settings.DownloadChoice = folder;
+        settings.DownloadChoiceBuild = Build.Fingerprint;
+        settings.Save();
+        return folder;
     }
 
     /// <summary>
@@ -205,6 +231,8 @@ sealed class Workflow(ServerEntry server, LauncherSettings settings)
         // The Steam sign-in was only kept to resume the download.
         settings.DownloadFolder = null;
         settings.DownloadBuild = null;
+        settings.DownloadChoice = null;
+        settings.DownloadChoiceBuild = null;
         settings.SetSteamSignIn(null);
         settings.Save();
     }

@@ -162,6 +162,11 @@ def convert(event, npc_ids):
             if fail:
                 entry['fail'] = fail
                 entry['faildir'] = _directives(step.get('FailDirectives'))
+            # "Collect points" steps (UnifiedObjectives): the UnifiedObjectivesList kills each give their value 1 in points, the step's
+            # AchieveUnifiedObjectivesScore objectives wait for their score of them (zaraza87's fork).
+            if step.get('UnifiedObjectives') and step.get('UnifiedObjectivesList'):
+                entry['uobj'] = [_objective(o, npc_ids) for o in step['UnifiedObjectivesList']]
+                entry['score'] = int(step.get('UnifiedObjectiveScore') or 0)
             record['steps'].append(entry)
         stages.append(record)
     out['stages'] = stages
@@ -224,6 +229,14 @@ def _item_ids(catalog=CATALOG):
     return ids
 
 
+def collect_items(events, catalog=CATALOG):
+    """Item.dat internal name -> item id for the items CollectItem objectives name (Quest_UseItem_NoEffect_Key_A_c_01a_b)."""
+    ids = _item_ids(catalog)
+    names = {node['v'][0] for event in events.values() for node in _walk(event)
+             if isinstance(node, dict) and node.get('t') == 'CollectItem' and node.get('v')}
+    return {name: ids[name] for name in sorted(names) if name in ids}
+
+
 def cube_rewards(names, cubes=CUBES, reward_items=REWARD_ITEMS, catalog=CATALOG):
     """RewardOdEnergyCube name -> {'boss': final boss NpcData id, 'rewards': {npc id: [[item, prob of 1e8, min, max], ...]}}
     (RewardCommon for the final boss, RewardMiddleBossList for the mid bosses; RewardItem rows resolved to Item ids)."""
@@ -271,6 +284,10 @@ def dungeons(table=DUNGEONS, names=None, entrances=ENTRANCES, reward_dungeon=REW
                  'hold': int(row.get('CompleteStateHoldingTime') or 0),
                  'limit': int(row.get('ProcessStateHoldingTime') or 0),
                  'group': row.get('DungeonGroupName') or 'None'}
+        # Revive limit per run (Dungeon.dat bUseRebirthLimit, RebirthLimitCount; OBSERVED in the table, build 26262663: 3 for
+        # the four party _Hard dungeons, 2 for the raids).
+        if row.get('bUseRebirthLimit') and int(row.get('RebirthLimitCount') or 0) > 0:
+            entry['rebirth_limit'] = int(row['RebirthLimitCount'])
         gate = gates.get(row['Name'])
         if gate:
             entry.update({'min_level': int(gate.get('MinLevel') or 0), 'max_level': int(gate.get('MaxLevel') or 0),
@@ -401,6 +418,7 @@ def build(raw=RAW, dungeon_table=DUNGEONS, npc_table=NPCDATA, served_types=SERVE
         'deferred': spawners,
         'teleports': teleports,
         'teleport_effects': effects,
+        'items': collect_items(events),
     }
 
 

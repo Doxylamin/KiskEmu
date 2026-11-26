@@ -50,10 +50,10 @@
       "lazy": true
     },
     {
-      "id": "expedition_tickets",
+      "id": "content_tickets",
       "scope": "character",
-      "period": "weekly",
-      "store": "game.character_expedition_tickets",
+      "period": "daily|weekly|cycle",
+      "store": "game.character_content_tickets",
       "lazy": true
     },
     {

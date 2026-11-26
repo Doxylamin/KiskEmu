@@ -4,28 +4,55 @@ using Aion.Protocol.Native;
 
 namespace Aion.World;
 
-// Expedition UI / dungeon room matchmaking (usmap; bodies mostly CANDIDATE — no official captures for 0x3A61/0x3AC*).
+// Expedition UI / dungeon room matchmaking. Live numbers (#74): the room run is usmap 0x3AC1.. + 0x5c3f = 0x9700.. (OBSERVED
+// 0x9701 room lists 2026-11-04, matching the community fork's 0x9701/0x9702/0x970b recordings); the 0x3A6x family is + 0x58ca
+// (OBSERVED 0x9330 "309300" and 0x9331 "319300" at every entry; PartyDungeonEnter 0x932b/0x932c CANDIDATE by the same run).
+// Wire layout OBSERVED (0x9701):
+//   DungeonRoomInfo: key i32 | desc str | limit u8 | dungeon i32 | level u8 | ERace u8 | leader dbid i64 | public bool |
+//     EPartyJoinType u8 | EDungeonState u8 | members varint + member records (every slot, empty ones too) | affixes varint + i32.
+//   DungeonRoomMemberInfo: presence mask u8 (bit 0 conqueror level i32, bit 1 ready, bit 2 born server u16, bit 3 current server
+//     u16, bit 4 rebirth item count i64; an optional field is only written when not its default) | slot number u8 (1-based) |
+//     dbid i64 | name str | pc id i32 | level i32 | [conqueror] | equip item level i32 | [ready bool] | login bool | [born server]
+//     | [current server] | EPartyRole u8 | combat power i64 | tickets map varint | [rebirth] | EMentoringRole u8 | latency u8.
+//     Empty slot: mask 0, its number, zeros, role 4 (All). Bools pack across records (PacketWriter.Bool).
+//   List_RS: result u16 | dungeon i32 | my room (none: zeros, public, join 2) | rooms varint + rooms.
+//   InstantJoin_RS `0000 00000000`, Ready_RS `0000 01`, Leave_RS `0000`, Kickout_NT `00` (fork recordings). Results are u16.
+//   EDungeonRoomInfoUpdateReason: 2 Join, 4 LeaveMember OBSERVED; 1 Create, 5 Kick CANDIDATE (fork).
 // Flow (OURS): create or join a waiting room → optional apply/invite → PartyDungeonEnter or Start moves every member into
 // the same instance copy (SharedWorld instance key = room key) and forms a party; each member spends an expedition ticket.
+// From the community fork zaraza87/A2Core (#72), all CANDIDATE: the client's PartyDungeonRoom EResult codes for refusals, each
+// member's picked EPartyRole and combat power in its record, single-byte wanted roles in InstantJoin_RQ, Start_RQ waiting for
+// every member's ready, private rooms refusing Join_RQ, a 40 character description limit, and Refresh 0x9735/0x9736.
 public sealed partial class GameSession
 {
-    public const ushort PartyDungeonEnterRq = 0x3A61, PartyDungeonEnterRs = 0x3A62, BookmarkedContentListNt = 0x3A66, PartyDungeonChallengeNt = 0x3A67,
-        DungeonRoomListRq = 0x3AC1, DungeonRoomListRs = 0x3AC2, DungeonRoomInfoNt = 0x3AC3,
-        DungeonRoomCreateRq = 0x3AC4, DungeonRoomCreateRs = 0x3AC5, DungeonRoomJoinRq = 0x3AC6, DungeonRoomJoinRs = 0x3AC7,
-        DungeonRoomApplyNt = 0x3AC8, DungeonRoomApplyResponseRq = 0x3AC9, DungeonRoomApplyResponseRs = 0x3ACA, DungeonRoomApplyResponseNt = 0x3ACB,
-        DungeonRoomAddMemberNt = 0x3ACC, DungeonRoomInviteRq = 0x3ACD, DungeonRoomInviteRs = 0x3ACE, DungeonRoomInviteNt = 0x3ACF,
-        DungeonRoomInviteResponseRq = 0x3AD0, DungeonRoomInviteResponseRs = 0x3AD1, DungeonRoomLeaveRq = 0x3ADD, DungeonRoomLeaveRs = 0x3ADE,
-        DungeonRoomLeaveNt = 0x3ADC, DungeonRoomKickMemberRq = 0x3AE9, DungeonRoomKickMemberRs = 0x3AEA, DungeonRoomKickoutNt = 0x3AEB,
-        DungeonRoomInstantJoinRq = 0x3AD3, DungeonRoomInstantJoinRs = 0x3AD4,
-        DungeonRoomReadyRq = 0x3AD5, DungeonRoomReadyRs = 0x3AD6, DungeonRoomReadyNt = 0x3AD7,
-        DungeonRoomStartRq = 0x3AD8, DungeonRoomStartRs = 0x3AD9, DungeonRoomDisbandNt = 0x3ADB, DungeonRoomNewLeaderNt = 0x3ADA,
-        DungeonRoomDisconnectMemberNt = 0x3ADF,
-        DungeonRoomEditSettingRq = 0x3AE1, DungeonRoomEditSettingRs = 0x3AE2, DungeonRoomSettingUpdatedNt = 0x3AE3,
-        DungeonRoomRetryRq = 0x3AEF, DungeonRoomRetryRs = 0x3AF0, DungeonRoomAskRetryNt = 0x3AF1,
-        DungeonRoomRetryResponseRq = 0x3AF2, DungeonRoomRetryResponseRs = 0x3AF3, DungeonRoomRetryResponseNt = 0x3AF4, DungeonRoomRetryFailNt = 0x3AF5;
+    public const ushort PartyDungeonEnterRq = 0x932b, PartyDungeonEnterRs = 0x932c, BookmarkedContentListNt = 0x9330, PartyDungeonChallengeNt = 0x9331,
+        DungeonRoomListRq = 0x9700, DungeonRoomListRs = 0x9701, DungeonRoomInfoNt = 0x9702,
+        DungeonRoomCreateRq = 0x9703, DungeonRoomCreateRs = 0x9704, DungeonRoomJoinRq = 0x9705, DungeonRoomJoinRs = 0x9706,
+        DungeonRoomApplyNt = 0x9707, DungeonRoomApplyResponseRq = 0x9708, DungeonRoomApplyResponseRs = 0x9709, DungeonRoomApplyResponseNt = 0x970a,
+        DungeonRoomAddMemberNt = 0x970b, DungeonRoomInviteRq = 0x970c, DungeonRoomInviteRs = 0x970d, DungeonRoomInviteNt = 0x970e,
+        DungeonRoomInviteResponseRq = 0x970f, DungeonRoomInviteResponseRs = 0x9710, DungeonRoomLeaveRq = 0x971c, DungeonRoomLeaveRs = 0x971d,
+        DungeonRoomLeaveNt = 0x971b, DungeonRoomKickMemberRq = 0x9728, DungeonRoomKickMemberRs = 0x9729, DungeonRoomKickoutNt = 0x972a,
+        DungeonRoomInstantJoinRq = 0x9712, DungeonRoomInstantJoinRs = 0x9713,
+        DungeonRoomReadyRq = 0x9714, DungeonRoomReadyRs = 0x9715, DungeonRoomReadyNt = 0x9716,
+        DungeonRoomStartRq = 0x9717, DungeonRoomStartRs = 0x9718, DungeonRoomDisbandNt = 0x971a, DungeonRoomNewLeaderNt = 0x9719,
+        DungeonRoomDisconnectMemberNt = 0x971e,
+        DungeonRoomEditSettingRq = 0x9720, DungeonRoomEditSettingRs = 0x9721, DungeonRoomSettingUpdatedNt = 0x9722,
+        DungeonRoomRetryRq = 0x972e, DungeonRoomRetryRs = 0x972f, DungeonRoomAskRetryNt = 0x9730,
+        DungeonRoomRetryResponseRq = 0x9731, DungeonRoomRetryResponseRs = 0x9732, DungeonRoomRetryResponseNt = 0x9733, DungeonRoomRetryFailNt = 0x9734,
+        // CANDIDATE (the fork's run order, never recorded): Refresh_RQ {} -> Refresh_RS {result u16}, then the room again.
+        DungeonRoomRefreshRq = 0x9735, DungeonRoomRefreshRs = 0x9736;
 
     const int RoomFailed = 1;
-    const byte RoomInfoCreate = 0, RoomInfoJoin = 1, RoomInfoLeave = 2, RoomInfoKick = 3, RoomInfoDisband = 4;
+    // The client's EResult codes for a refused room request (usmap kPartyDungeonRoom_Fail_* / kDungeonRoom_Fail_*, numbered as the
+    // community fork's generated table; its neighbours 828, 1280 and 15437 match ours). CANDIDATE: only result 0 was ever recorded.
+    // The client picks the system message by the code; RoomFailed (1, generic Fail) stays for refusals no code names.
+    internal const int RoomAlreadyInRoom = 15360, RoomNotFound = 15361, RoomFull = 15366, RoomNotLeader = 15370, RoomNotMember = 15374,
+        RoomNotReadyAll = 15377, RoomInvalidDungeonId = 15386, RoomPrivate = 15392, RoomInvalidDescLength = 15394,
+        RoomTargetNotMember = 16018;
+    /// <summary>OURS (the fork's limit, nothing recorded): the longest room description accepted.</summary>
+    const int RoomDescMax = 40;
+    const byte RoomInfoCreate = 1, RoomInfoJoin = 2, RoomInfoLeave = 4, RoomInfoKick = 5, RoomInfoDisband = 4;
+    const byte RoomRoleAll = 4;
     const byte ApplyAccept = 0, ApplyRefuse = 1;
     const byte InviteAccept = 0, RetryAccept = 0, RetryRefuse = 1;
     const long RoomInviteMs = 30_000, RoomApplyMs = 30_000;
@@ -78,32 +105,72 @@ public sealed partial class GameSession
         catch (ProtocolException) { return null; }
     }
 
-    (int ContentDungeonId, byte DungeonLevel, byte Race)? ParseInstantJoin(byte[] plain)
+    /// <summary>
+    /// Where a room request's dungeon id starts: right after the opcode, or one byte later when only that offset names a known
+    /// dungeon or expedition group. CANDIDATE (community fork ChanAge 9962b83): a 3533 client sent one extra byte before the
+    /// id in the room create (`00 c2 27 09` = 600002 one byte later), and the fork reads list and instant join the same way.
+    /// The create request already handles this through its level-first check.
+    /// </summary>
+    internal static int DungeonIdOffset(byte[] plain)
+    {
+        static bool Known(int id) => id > 0
+            && (ExpeditionTables.Embedded.GroupForContent(id) is not null || MapEventData.Dungeon(id) is not null);
+        if (plain.Length < 6 || Known(BitConverter.ToInt32(plain, 2))) return 2;
+        return plain.Length >= 7 && Known(BitConverter.ToInt32(plain, 3)) ? 3 : 2;
+    }
+
+    /// <summary>DungeonRoomInstantJoin_RQ {dungeon i32, wanted roles (varint count, one EPartyRole u8 each), level u8, race u8}.
+    /// CANDIDATE: the community fork's client trace `FF270900 01 02 01 03` (600063, role 2, level 1, race 3); the roles are single
+    /// bytes here, not the (role, count) pairs of Create/EditSetting.</summary>
+    internal static (int ContentDungeonId, byte DungeonLevel, byte Race, byte Role)? ParseInstantJoin(byte[] plain)
     {
         if (plain.Length < 7) return null;
         try
         {
-            var reader = new PacketReader(plain) { Offset = 2 };
+            var reader = new PacketReader(plain) { Offset = DungeonIdOffset(plain) };
             var dungeonId = reader.I32();
-            if (reader.Remaining > 0) SkipWantedRole(reader);
+            var role = RoomRoleAll;
+            if (reader.Remaining > 0)
+            {
+                var count = reader.Varint();
+                if (count > 8) throw new ProtocolException($"wanted role list of {count}");
+                for (var i = 0; i < count; i++)
+                {
+                    var wanted = reader.U8();
+                    if (i == 0) role = RoomRole(wanted);
+                }
+            }
             var level = reader.Remaining > 0 ? reader.U8() : (byte)0;
             var race = reader.Remaining > 0 ? reader.U8() : (byte)0;
-            return (dungeonId, level, race);
+            return (dungeonId, level, race, role);
         }
         catch (ProtocolException) { return null; }
     }
 
+    /// <summary>EPartyRole 1..4 as picked; anything else is 4 (All).</summary>
+    static byte RoomRole(byte role) => role is >= 1 and <= RoomRoleAll ? role : RoomRoleAll;
+
+    /// <summary>
+    /// 0x9703 body. Game version 3533 sends the level byte before the dungeon id (OBSERVED 2026-11-14, our test server's
+    /// client trace: <c>00 C2270900 03 0C"Leaving now." 01 01 04 0204 0304 0404 0504 00</c> = level 0, dungeon 600002,
+    /// race 3, desc, public, join type, four wanted roles, no invite). The 2.0.6 usmap lists the dungeon id first, as the
+    /// fork and our tests send it; that order is kept for a body whose level-first reading names no known dungeon.
+    /// </summary>
     (int ContentDungeonId, byte DungeonLevel, byte Race, string Desc, bool Public, byte JoinType, List<int> Affixes)? ParseCreate(byte[] plain)
     {
         if (plain.Length < 7) return null;
+        var levelFirst = plain[2] < 0x10
+            && MapEventData.Dungeon(Expeditions.ResolveDungeonId(BitConverter.ToInt32(plain, 3), plain[2])) is not null;
         try
         {
             var reader = new PacketReader(plain) { Offset = 2 };
+            var level = levelFirst ? reader.U8() : (byte)0;
             var dungeonId = reader.I32();
-            var level = reader.Remaining > 0 ? reader.U8() : (byte)0;
+            if (!levelFirst) level = reader.Remaining > 0 ? reader.U8() : (byte)0;
             var race = reader.Remaining > 0 ? reader.U8() : (byte)0;
             var desc = reader.Remaining > 0 ? ReadFString(reader) : "";
-            var pub = reader.Remaining > 0 && reader.Bool();
+            // A shorter body (dungeon and level only) opens a public room, as the fork does: a private room takes no Join_RQ.
+            var pub = reader.Remaining == 0 || reader.Bool();
             var join = reader.Remaining > 0 ? reader.U8() : PartyOptions.JoinFree;
             if (reader.Remaining > 0) SkipWantedRole(reader);
             if (reader.Remaining > 0) reader.Bool();
@@ -116,19 +183,40 @@ public sealed partial class GameSession
     static void WriteInvitation(PacketWriter w, InvitationInfo i) =>
         w.I32(i.PcId).I32(i.Level).I32(i.EquipItemLevel).String(i.Nickname).I32(i.ServerId).I32(i.ConquerorLevel).I64(i.CombatPower).U8(i.MentoringRole);
 
-    void WriteDungeonRoomMember(PacketWriter w, WorldPlayer member, byte number, bool ready)
+    /// <summary>One DungeonRoomMemberInfo (OBSERVED layout, see the top). Optional fields go only when set: no conqueror level or
+    /// rebirth items here; the servers are this host's.</summary>
+    internal static void WriteDungeonRoomMember(PacketWriter w, byte number, long dbId, string name, int pcId, int level, int equipItemLevel,
+        bool ready, int server, byte role = 0, long combatPower = 0)
     {
-        var session = member.Session;
-        w.U8(number).I64(session.DbId).String(session.StoredName).I32(session.Profile()?.PcId ?? 1).I32(session.level).I32(0)
-            .I32(session.EquipItemLevel()).Bool(ready).Bool(true).I32(ServerId).I32(ServerId).U8(0).I64(0).Varint(0).I64(0).U8(0).U8(0);
+        var mask = (ready ? 0x02 : 0) | (server != 0 ? 0x0c : 0);
+        w.U8(mask).U8(number).I64(dbId).String(name).I32(pcId).I32(level).I32(equipItemLevel);
+        if (ready) w.Bool(true);
+        w.Bool(dbId != 0);
+        if (server != 0) w.U16(server).U16(server);
+        w.U8(role).I64(combatPower).Varint(0).U8(dbId != 0 ? 1 : 0).U8(dbId != 0 ? 1 : 0);
+    }
+
+    internal static void WriteEmptyDungeonRoomMember(PacketWriter w, byte number) =>
+        WriteDungeonRoomMember(w, number, 0, "", 0, 0, 0, false, 0, RoomRoleAll);
+
+    /// <summary>A member's record: the EPartyRole the member picked (4 All when none) and the member's combat power (as the
+    /// community fork sends; the official records carry both).</summary>
+    void WriteDungeonRoomMember(PacketWriter w, DungeonRoom room, WorldPlayer member, byte number, bool ready)
+    {
+        var s = member.Session;
+        WriteDungeonRoomMember(w, number, s.DbId, s.StoredName, s.Profile()?.PcId ?? 1, s.level, s.EquipItemLevel(), ready, ServerId,
+            room.Roles.GetValueOrDefault(member.Key, RoomRoleAll), s.CombatPower);
     }
 
     void WriteDungeonRoomInfo(PacketWriter w, DungeonRoom room, byte dungeonState = 0)
     {
         w.I32(room.RoomKey).String(room.Desc).U8((byte)Math.Min(room.Limit, 255)).I32(room.ContentDungeonId).U8(room.DungeonLevel)
             .U8(room.Race).I64(room.Leader.Session.DbId).Bool(room.Public).U8(room.JoinType).U8(dungeonState)
-            .Varint((uint)room.Members.Count);
-        for (var i = 0; i < room.Members.Count; i++) WriteDungeonRoomMember(w, room.Members[i], (byte)i, room.Ready.Contains(room.Members[i].Key));
+            .Varint((uint)Math.Max(room.Limit, room.Members.Count));
+        // OBSERVED: every slot is listed; the leader is never marked ready.
+        for (var i = 0; i < room.Members.Count; i++)
+            WriteDungeonRoomMember(w, room, room.Members[i], (byte)(i + 1), room.Members[i] != room.Leader && room.Ready.Contains(room.Members[i].Key));
+        for (var i = room.Members.Count; i < room.Limit; i++) WriteEmptyDungeonRoomMember(w, (byte)(i + 1));
         w.Varint((uint)room.AffixList.Count);
         foreach (var affix in room.AffixList) w.I32(affix);
     }
@@ -140,14 +228,14 @@ public sealed partial class GameSession
         return w.U8(reason).ToArray();
     }
 
-    static int TicketFailId(DungeonInfo room) => Expeditions.TicketFor(room)?.Id ?? 0;
+    int TicketFailId(DungeonInfo room, long now) => MissingContentTicket(MapEventData.DungeonIdOfMap(room.Map), now);
 
     bool RoomEntryAllowed(DungeonInfo room, long now, out int ticketId, bool allowInCopy = false)
     {
         ticketId = 0;
         if ((!allowInCopy && instanceKey != 0) || resources is null || reloading || dead) return false;
         if (MapEventData.Dungeon(room.Map) is null || room.Type != "Party") return false;
-        if (!IsAdmin && !MeetsEntry(room, now, out _)) { ticketId = TicketFailId(room); return false; }
+        if (!IsAdmin && !MeetsEntry(room, now, out _)) { ticketId = TicketFailId(room, now); return false; }
         return true;
     }
 
@@ -160,12 +248,13 @@ public sealed partial class GameSession
     void BroadcastRoomInfo(DungeonRoom room, byte reason, WorldPlayer? except = null) =>
         BroadcastRoom(room, DungeonRoomInfoPacket(room, reason), except);
 
-    /// <summary>0x3AC1 DungeonRoomList_RQ {dungeon id, level}: waiting rooms for the expedition window.</summary>
+    /// <summary>0x9700 DungeonRoomList_RQ {dungeon id, level}: waiting rooms for the expedition window.</summary>
     List<byte[]> DungeonRoomList(byte[] plain)
     {
         if (plain.Length < 7) return [];
-        var contentId = BitConverter.ToInt32(plain, 2);
-        var level = plain.Length > 6 ? plain[6] : (byte)0;
+        var at = DungeonIdOffset(plain);
+        var contentId = BitConverter.ToInt32(plain, at);
+        var level = plain.Length > at + 4 ? plain[at + 4] : (byte)0;
         var resolved = Expeditions.ResolveDungeonId(contentId, level);
         if (MapEventData.Dungeon(resolved) is not { Type: "Party" })
             return [DungeonRoomListReply(RoomFailed, contentId, null, [])];
@@ -178,25 +267,28 @@ public sealed partial class GameSession
 
     byte[] DungeonRoomListReply(int result, int contentId, DungeonRoom? mine, IReadOnlyList<DungeonRoom> rooms)
     {
-        var w = PacketWriter.Opcode(DungeonRoomListRs).I32(result).I32(contentId);
+        var w = PacketWriter.Opcode(DungeonRoomListRs).U16(result).I32(contentId);
         if (mine is null) WriteEmptyDungeonRoomInfo(w); else WriteDungeonRoomInfo(w, mine);
         w.Varint((uint)rooms.Count);
         foreach (var room in rooms) WriteDungeonRoomInfo(w, room);
         return w.ToArray();
     }
 
-    static void WriteEmptyDungeonRoomInfo(PacketWriter w) =>
-        w.I32(0).String("").U8(0).I32(0).U8(0).U8(0).I64(0).Bool(false).U8(0).U8(0).Varint(0).Varint(0);
+    /// <summary>OBSERVED my_room of a player in no room: zeros, public set, join type 2.</summary>
+    internal static void WriteEmptyDungeonRoomInfo(PacketWriter w) =>
+        w.I32(0).String("").U8(0).I32(0).U8(0).U8(0).I64(0).Bool(true).U8(2).U8(0).Varint(0).Varint(0);
 
-    /// <summary>0x3AC4 DungeonRoomCreate_RQ: open a waiting room for an expedition tier.</summary>
+    /// <summary>0x9703 DungeonRoomCreate_RQ: open a waiting room for an expedition tier.</summary>
     List<byte[]> DungeonRoomCreate(byte[] plain, long now)
     {
-        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomCreateRs).I32(result).I32(ticketId).ToArray();
+        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomCreateRs).U16(result).I32(ticketId).ToArray();
         if (ParseCreate(plain) is not { } settings || Social is not { } social || worldPlayer is null)
             return [Reply(RoomFailed)];
+        if (MyRoom is not null) return [Reply(RoomAlreadyInRoom)];
+        if (settings.Desc.Length > RoomDescMax) return [Reply(RoomInvalidDescLength)];
         var resolved = Expeditions.ResolveDungeonId(settings.ContentDungeonId, settings.DungeonLevel);
-        if (MapEventData.Dungeon(resolved) is not { } room || MyRoom is not null)
-            return [Reply(RoomFailed)];
+        if (MapEventData.Dungeon(resolved) is not { } room)
+            return [Reply(RoomInvalidDungeonId)];
         if (!Expeditions.AffixesAllowed(settings.ContentDungeonId, settings.DungeonLevel, settings.Affixes))
             return [Reply(RoomFailed)];
         if (!RoomEntryAllowed(room, now, out var ticketId))
@@ -219,15 +311,16 @@ public sealed partial class GameSession
         return w.ToArray();
     }
 
-    /// <summary>0x3AD3 auto-match: join a public free room or open one.</summary>
+    /// <summary>0x9712 auto-match: join a public free room or open one.</summary>
     List<byte[]> DungeonRoomInstantJoin(byte[] plain, long now)
     {
-        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomInstantJoinRs).I32(result).I32(ticketId).ToArray();
-        if (ParseInstantJoin(plain) is not { } req || Social is not { } social || worldPlayer is null || MyRoom is not null)
+        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomInstantJoinRs).U16(result).I32(ticketId).ToArray();
+        if (ParseInstantJoin(plain) is not { } req || Social is not { } social || worldPlayer is null)
             return [Reply(RoomFailed)];
+        if (MyRoom is not null) return [Reply(RoomAlreadyInRoom)];
         var resolved = Expeditions.ResolveDungeonId(req.ContentDungeonId, req.DungeonLevel);
         if (MapEventData.Dungeon(resolved) is not { Type: "Party" } dungeon)
-            return [Reply(RoomFailed)];
+            return [Reply(RoomInvalidDungeonId)];
         if (!RoomEntryAllowed(dungeon, now, out var ticketId))
             return [Reply(RoomFailed, ticketId)];
         var room = social.DungeonRooms.Values
@@ -236,35 +329,38 @@ public sealed partial class GameSession
             .OrderByDescending(r => r.Members.Count)
             .FirstOrDefault();
         if (room is not null)
-            return AddRoomMember(room, worldPlayer, now, [Reply(0)]);
+            return AddRoomMember(room, worldPlayer, now, [Reply(0)], req.Role);
         var key = checked((int)social.NextId());
         room = new DungeonRoom(key, worldPlayer, req.ContentDungeonId, req.DungeonLevel, resolved)
         {
             Public = true, JoinType = PartyOptions.JoinFree, Race = req.Race,
         };
+        room.Roles[worldPlayer.Key] = req.Role;
         social.DungeonRooms[key] = room;
         return [Reply(0), DungeonRoomInfoPacket(room, RoomInfoCreate)];
     }
 
-    /// <summary>0x3AD5 toggle ready in the expedition waiting room.</summary>
+    /// <summary>0x9714 toggle ready in the expedition waiting room.</summary>
     List<byte[]> DungeonRoomReady(byte[] plain)
     {
-        byte[] Reply(int result, bool ready) => PacketWriter.Opcode(DungeonRoomReadyRs).I32(result).I32(ready ? 1 : 0).ToArray();
-        if (plain.Length < 3 || MyRoom is not { } room || worldPlayer is null)
-            return [Reply(RoomFailed, false)];
+        byte[] Reply(int result, bool ready) => PacketWriter.Opcode(DungeonRoomReadyRs).U16(result).Bool(ready).ToArray();
+        if (plain.Length < 3 || worldPlayer is null) return [Reply(RoomFailed, false)];
+        if (MyRoom is not { } room) return [Reply(RoomNotMember, plain[2] != 0)];
         var ready = plain[2] != 0;
         if (ready) room.Ready.Add(playerKey); else room.Ready.Remove(playerKey);
-        var notice = PacketWriter.Opcode(DungeonRoomReadyNt).I64(DbId).I32(ready ? 1 : 0).ToArray();
+        var notice = PacketWriter.Opcode(DungeonRoomReadyNt).I64(DbId).Bool(ready).ToArray();
         BroadcastRoom(room, notice, worldPlayer);
         return [Reply(0, ready), notice];
     }
 
-    /// <summary>0x3AE1 leader edits room settings.</summary>
+    /// <summary>0x9720 leader edits room settings.</summary>
     List<byte[]> DungeonRoomEditSetting(byte[] plain)
     {
-        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomEditSettingRs).I32(result).ToArray();
-        if (ParseEditSetting(plain) is not { } settings || MyRoom is not { Leader: var leader } room || leader != worldPlayer)
-            return [Reply(RoomFailed)];
+        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomEditSettingRs).U16(result).ToArray();
+        if (ParseEditSetting(plain) is not { } settings) return [Reply(RoomFailed)];
+        if (MyRoom is not { Leader: var leader } room) return [Reply(RoomNotMember)];
+        if (leader != worldPlayer) return [Reply(RoomNotLeader)];
+        if (settings.Desc.Length > RoomDescMax) return [Reply(RoomInvalidDescLength)];
         if (!Expeditions.AffixesAllowed(room.ContentDungeonId, room.DungeonLevel, settings.Affixes))
             return [Reply(RoomFailed)];
         room.Desc = settings.Desc;
@@ -279,38 +375,44 @@ public sealed partial class GameSession
         return [Reply(0), updated];
     }
 
-    /// <summary>0x3AC6 DungeonRoomJoin_RQ: enter a public room or apply when approval is required.</summary>
+    /// <summary>0x9705 DungeonRoomJoin_RQ: enter a public room or apply when approval is required.</summary>
     List<byte[]> DungeonRoomJoin(byte[] plain, long now)
     {
         byte[] Reply(int result, byte joinType = PartyOptions.JoinFree, int ticketId = 0) =>
-            PacketWriter.Opcode(DungeonRoomJoinRs).I32(result).U8(joinType).I32(ticketId).ToArray();
-        if (plain.Length < 6 || Social is not { } social || worldPlayer is null || MyRoom is not null)
+            PacketWriter.Opcode(DungeonRoomJoinRs).U16(result).U8(joinType).I32(ticketId).ToArray();
+        if (plain.Length < 6 || Social is not { } social || worldPlayer is null)
             return [Reply(RoomFailed)];
+        if (MyRoom is not null) return [Reply(RoomAlreadyInRoom)];
         var roomKey = BitConverter.ToInt32(plain, 2);
+        // Join_RQ {room key i32, EPartyRole u8} (the fork's reading; our tests send the role byte too).
+        var role = RoomRole(plain.Length > 6 ? plain[6] : RoomRoleAll);
         if (!social.DungeonRooms.TryGetValue(roomKey, out var room))
-            return [Reply(RoomFailed)];
+            return [Reply(RoomNotFound)];
+        // A private room is not listed; only an invitation brings a player in (CANDIDATE, the fork's refusal).
+        if (!room.Public) return [Reply(RoomPrivate, room.JoinType)];
         if (MapEventData.Dungeon(room.ResolvedDungeonId) is not { } dungeon)
-            return [Reply(RoomFailed)];
+            return [Reply(RoomInvalidDungeonId)];
         if (!RoomEntryAllowed(dungeon, now, out var ticketId))
             return [Reply(RoomFailed, room.JoinType, ticketId)];
         if (room.Members.Count >= room.Limit)
-            return [Reply(RoomFailed, room.JoinType)];
+            return [Reply(RoomFull, room.JoinType)];
         if (room.JoinType == PartyOptions.JoinApproval)
         {
             room.PendingApply[playerKey] = now + RoomApplyMs;
+            room.Roles[playerKey] = role;
             var applyW = PacketWriter.Opcode(DungeonRoomApplyNt).I32(room.RoomKey).I64(DbId);
             WriteInvitation(applyW, Invitation());
             var apply = applyW.I64(now + RoomApplyMs).ToArray();
             room.Leader.Send(apply);
             return [Reply(0, room.JoinType)];
         }
-        return AddRoomMember(room, worldPlayer, now, [Reply(0, room.JoinType)]);
+        return AddRoomMember(room, worldPlayer, now, [Reply(0, room.JoinType)], role);
     }
 
-    /// <summary>0x3AC9 leader answers a join application.</summary>
+    /// <summary>0x9708 leader answers a join application.</summary>
     List<byte[]> DungeonRoomApplyResponse(byte[] plain, long now)
     {
-        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomApplyResponseRs).I32(result).ToArray();
+        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomApplyResponseRs).U16(result).ToArray();
         if (plain.Length < 14 || Social is not { } social || worldPlayer is null || MyRoom is not { Leader: var leader } room || leader != worldPlayer)
             return [Reply(RoomFailed)];
         var roomKey = BitConverter.ToInt32(plain, 2);
@@ -322,7 +424,7 @@ public sealed partial class GameSession
             return [Reply(RoomFailed)];
         var notice = PacketWriter.Opcode(DungeonRoomApplyResponseNt).I32(room.RoomKey).U8(accept ? ApplyAccept : ApplyRefuse).ToArray();
         applicant.Send(notice);
-        if (!accept) return [Reply(0)];
+        if (!accept) { room.Roles.Remove(applicant.Key); return [Reply(0)]; }
         if (room.Members.Count >= room.Limit || MyRoom is not null && applicant != worldPlayer)
             return [Reply(RoomFailed)];
         if (MapEventData.Dungeon(room.ResolvedDungeonId) is not { } dungeon || !applicant.Session.RoomEntryAllowed(dungeon, now, out _))
@@ -330,10 +432,10 @@ public sealed partial class GameSession
         return AddRoomMember(room, applicant, now, [Reply(0)]);
     }
 
-    /// <summary>0x3ACD invite a player by name into the leader's room.</summary>
+    /// <summary>0x970c invite a player by name into the leader's room.</summary>
     List<byte[]> DungeonRoomInvite(byte[] plain, long now)
     {
-        byte[] Fail(int ticketId = 0) => PacketWriter.Opcode(DungeonRoomInviteRs).I32(RoomFailed).I32(ServerId).String("").I32(0).I32(0).I64(0).I32(ticketId).ToArray();
+        byte[] Fail(int ticketId = 0) => PacketWriter.Opcode(DungeonRoomInviteRs).U16(RoomFailed).I32(ServerId).String("").I32(0).I32(0).I64(0).I32(ticketId).ToArray();
         if (Social is not { } social || worldPlayer is null || MyRoom is not { Leader: var leader } room || leader != worldPlayer)
             return [Fail()];
         try
@@ -360,10 +462,10 @@ public sealed partial class GameSession
         catch (ProtocolException) { return [Fail()]; }
     }
 
-    /// <summary>0x3AD0 answer a dungeon-room invitation.</summary>
+    /// <summary>0x970f answer a dungeon-room invitation.</summary>
     List<byte[]> DungeonRoomInviteResponse(byte[] plain, long now)
     {
-        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomInviteResponseRs).I32(result).I32(ticketId).ToArray();
+        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomInviteResponseRs).U16(result).I32(ticketId).ToArray();
         if (plain.Length < 10 || Social is not { } social || worldPlayer is null)
             return [Reply(RoomFailed)];
         try
@@ -388,12 +490,13 @@ public sealed partial class GameSession
         catch (ProtocolException) { return [Reply(RoomFailed)]; }
     }
 
-    List<byte[]> AddRoomMember(DungeonRoom room, WorldPlayer member, long now, List<byte[]> replies)
+    List<byte[]> AddRoomMember(DungeonRoom room, WorldPlayer member, long now, List<byte[]> replies, byte? role = null)
     {
         room.Members.Add(member);
         room.Ready.Remove(member.Key);
+        if (role is { } picked) room.Roles[member.Key] = picked;
         var addW = PacketWriter.Opcode(DungeonRoomAddMemberNt);
-        WriteDungeonRoomMember(addW, member, (byte)(room.Members.Count - 1), false);
+        WriteDungeonRoomMember(addW, room, member, (byte)room.Members.Count, false);
         var added = addW.ToArray();
         BroadcastRoom(room, added, member);
         replies.Add(added);
@@ -402,34 +505,44 @@ public sealed partial class GameSession
         return replies;
     }
 
-    /// <summary>0x3ADD leave the expedition waiting room.</summary>
+    /// <summary>0x971c leave the expedition waiting room.</summary>
     List<byte[]> DungeonRoomLeave()
     {
-        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomLeaveRs).I32(result).ToArray();
-        if (MyRoom is not { } room) return [Reply(RoomFailed)];
+        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomLeaveRs).U16(result).ToArray();
+        if (MyRoom is not { } room) return [Reply(RoomNotMember)];
         return LeaveDungeonRoom(room, RoomInfoLeave, [Reply(0)]);
     }
 
-    /// <summary>0x3AE9 leader removes a member.</summary>
+    /// <summary>0x9728 leader removes a member.</summary>
     List<byte[]> DungeonRoomKick(byte[] plain)
     {
-        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomKickMemberRs).I32(result).ToArray();
-        if (plain.Length < 10 || MyRoom is not { Leader: var leader } room || leader != worldPlayer)
-            return [Reply(RoomFailed)];
+        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomKickMemberRs).U16(result).ToArray();
+        if (plain.Length < 10) return [Reply(RoomFailed)];
+        if (MyRoom is not { Leader: var leader } room) return [Reply(RoomNotMember)];
+        if (leader != worldPlayer) return [Reply(RoomNotLeader)];
         var targetDbId = BitConverter.ToInt64(plain, 2);
         var kicked = room.Members.FirstOrDefault(m => m.Session.DbId == targetDbId && m != leader);
-        if (kicked is null) return [Reply(RoomFailed)];
+        if (kicked is null) return [Reply(RoomTargetNotMember)];
         kicked.Send(PacketWriter.Opcode(DungeonRoomKickoutNt).Bool(false).ToArray());
         return LeaveDungeonRoom(room, RoomInfoKick, [Reply(0)], kicked);
     }
 
-    /// <summary>0x3AD8 or 0x3A61: move everyone in the room into the same dungeon copy.</summary>
+    /// <summary>0x9717 or 0x932b: move everyone in the room into the same dungeon copy.</summary>
     List<byte[]> PartyDungeonEnter(long now) => DungeonRoomStart(now);
 
-    List<byte[]> DungeonRoomStart(long now)
+    /// <summary>0x9735 DungeonRoomRefresh_RQ (CANDIDATE, after the fork): RS {0} and, for a room member, the room again (reason 0).</summary>
+    List<byte[]> DungeonRoomRefresh()
     {
-        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomStartRs).I32(result).ToArray();
-        byte[] EnterReply(int result) => PacketWriter.Opcode(PartyDungeonEnterRs).I32(result).ToArray();
+        var reply = PacketWriter.Opcode(DungeonRoomRefreshRs).U16(0).ToArray();
+        return MyRoom is { } room ? [reply, DungeonRoomInfoPacket(room, 0)] : [reply];
+    }
+
+    /// <summary>requireReady: the room's own Start_RQ waits for every other member's ready (CANDIDATE, the fork's NotReadyAll);
+    /// PartyDungeonEnter keeps moving the room as it is.</summary>
+    List<byte[]> DungeonRoomStart(long now, bool requireReady = false)
+    {
+        byte[] Reply(int result) => PacketWriter.Opcode(DungeonRoomStartRs).U16(result).ToArray();
+        byte[] EnterReply(int result) => PacketWriter.Opcode(PartyDungeonEnterRs).U16(result).ToArray();
         if (MyRoom is not { Leader: var leader } room)
         {
             if (pendingPartyDungeonId != 0)
@@ -438,9 +551,11 @@ public sealed partial class GameSession
                 pendingPartyDungeonId = 0;
                 return solo.Count > 0 ? [EnterReply(0), .. solo] : [EnterReply(RoomFailed)];
             }
-            return [EnterReply(RoomFailed), Reply(RoomFailed)];
+            return [EnterReply(RoomFailed), Reply(RoomNotMember)];
         }
-        if (leader != worldPlayer) return [EnterReply(RoomFailed), Reply(RoomFailed)];
+        if (leader != worldPlayer) return [EnterReply(RoomNotLeader), Reply(RoomNotLeader)];
+        if (requireReady && room.Members.Any(m => m != leader && !room.Ready.Contains(m.Key)))
+            return [Reply(RoomNotReadyAll)];
         if (MapEventData.Dungeon(room.ResolvedDungeonId) is not { } dungeon)
             return [EnterReply(RoomFailed), Reply(RoomFailed)];
         foreach (var member in room.Members)
@@ -492,6 +607,7 @@ public sealed partial class GameSession
         if (leaving is null) return replies;
         room.Members.Remove(leaving);
         room.Ready.Remove(leaving.Key);
+        room.Roles.Remove(leaving.Key);
         room.PendingApply.Remove(leaving.Key);
         leaving.Send(PacketWriter.Opcode(DungeonRoomLeaveNt).I32(room.RoomKey).ToArray());
         if (room.Members.Count == 0)
@@ -516,10 +632,10 @@ public sealed partial class GameSession
         social.DungeonRooms.Remove(room.RoomKey);
     }
 
-    /// <summary>0x3AEF party leader asks to re-run the expedition (everyone must accept).</summary>
+    /// <summary>0x972e party leader asks to re-run the expedition (everyone must accept).</summary>
     List<byte[]> DungeonRoomRetry(long now)
     {
-        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomRetryRs).I32(result).I32(ticketId).ToArray();
+        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomRetryRs).U16(result).I32(ticketId).ToArray();
         if (Social is not { } social || worldPlayer is null || Social.PartyOf(worldPlayer) is not { Leader: var leader } party || leader != worldPlayer)
             return [Reply(RoomFailed)];
         if (MapEventData.DungeonOfMap(worldMap) is not { Type: "Party" } dungeon)
@@ -545,10 +661,10 @@ public sealed partial class GameSession
         return replies;
     }
 
-    /// <summary>0x3AF2 answer an in-dungeon retry vote.</summary>
+    /// <summary>0x9731 answer an in-dungeon retry vote.</summary>
     List<byte[]> DungeonRoomRetryResponse(byte[] plain, long now)
     {
-        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomRetryResponseRs).I32(result).I32(ticketId).ToArray();
+        byte[] Reply(int result, int ticketId = 0) => PacketWriter.Opcode(DungeonRoomRetryResponseRs).U16(result).I32(ticketId).ToArray();
         if (plain.Length < 3 || Social is not { } social || worldPlayer is null || Social.PartyOf(worldPlayer) is not { } party)
             return [Reply(RoomFailed)];
         if (!social.DungeonRetries.TryGetValue(party.Key, out var pending) || pending.ExpiresMs < now)
@@ -560,7 +676,7 @@ public sealed partial class GameSession
         if (!accept)
         {
             social.DungeonRetries.Remove(party.Key);
-            var fail = PacketWriter.Opcode(DungeonRoomRetryFailNt).I32(RoomFailed).ToArray();
+            var fail = PacketWriter.Opcode(DungeonRoomRetryFailNt).U16(RoomFailed).ToArray();
             foreach (var member in party.Members) member.Send(fail);
             return [Reply(0), notice, fail];
         }
@@ -578,10 +694,10 @@ public sealed partial class GameSession
         foreach (var member in party.Members.ToList())
         {
             if (!member.Session.RoomEntryAllowed(dungeon, now, out _, allowInCopy: true))
-                return [PacketWriter.Opcode(DungeonRoomRetryFailNt).I32(RoomFailed).ToArray()];
+                return [PacketWriter.Opcode(DungeonRoomRetryFailNt).U16(RoomFailed).ToArray()];
             var moved = member.Session.EnterDungeon(pending.DungeonId, now, pending.CopyKey, consumeTicket: true);
             if (moved.Count == 0)
-                return [PacketWriter.Opcode(DungeonRoomRetryFailNt).I32(RoomFailed).ToArray()];
+                return [PacketWriter.Opcode(DungeonRoomRetryFailNt).U16(RoomFailed).ToArray()];
             member.Send(moved);
             if (member == worldPlayer) replies.AddRange(moved);
         }

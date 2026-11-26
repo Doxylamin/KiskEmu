@@ -4,7 +4,7 @@ namespace Aion.World;
 
 // Destructible environment objects (EnvObjData RelationshipEntity EnvObj_Destroy, 2752 placements: boxes, seals, Dredgion
 // remains). The client targets them as enemies and casts / auto-attacks them (0x3833, 0x3830, 0x3800) instead of sending
-// InteractEnvObj_RQ; each landed hit counts towards EnvObjData HitLimit (0x39ce), the last one kills it (0x3940, then 0x3635
+// InteractEnvObj_RQ; each landed hit counts towards EnvObjData HitLimit (0x8d93), the last one kills it (0x8d05, then 0x3635
 // state Dead reason Dead) and pays what using it pays: UseEnvObj quest objectives, map events, achievements.
 partial class GameSession
 {
@@ -45,7 +45,7 @@ partial class GameSession
     {
         if (DestructibleEnvObjIndex(request.TargetKey) is not { } index) return false;
         var o = WorldObjects.ObjectsOn(worldMap)[index];
-        var flight = CastArea(skill)?.FlightMs(Math.Sqrt(o.At.DistanceSquared(position ?? request.Location))) ?? 0;
+        var flight = CastArea(skill)?.Flight(Math.Sqrt(o.At.DistanceSquared(position ?? request.Location)), rng).Arrival ?? 0;
         var hits = PlayerSkillHits(skill, 0);
         for (var i = 0; i < hits.Count; i++)
             pendingCombatHits.Add(new(skill, request, actionUid, request.TargetKey, hits[i], i + 1,
@@ -69,7 +69,7 @@ partial class GameSession
         return [GamePackets.EnvObjHitCount(key, taken), .. BreakEnvObj(index, o, now), .. dropped];
     }
 
-    /// <summary>The object breaks: gone for <see cref="BrokenEnvObjRespawnMs"/>, its use credit still to be paid (QuestKillsAsync); 0x3940 and 0x3635 state Dead.</summary>
+    /// <summary>The object breaks: gone for <see cref="BrokenEnvObjRespawnMs"/>, its use credit still to be paid (QuestKillsAsync); 0x8d05 and 0x3635 state Dead.</summary>
     List<byte[]> BreakEnvObj(int index, WorldObject o, long now)
     {
         var key = WorldObjects.FirstKey + index;
@@ -91,8 +91,8 @@ partial class GameSession
         {
             if (questLog is not null)
                 replies.AddRange(await Stored(() => QuestChangesAsync(questLog.UsedObject(o.Env, level), ct)));
-            if (map == worldMap && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(EventName(o)))) usedObjects.Add(index);
-            replies.AddRange(MapEventUsedObject(EventName(o), at));
+            if (map == worldMap && (CopyOwner ?? this).mapEventRuns.Any(r => r.WantsObject(o.Name, o.EnvDataName))) usedObjects.Add(index);
+            replies.AddRange(MapEventUsedObject(o.Name, at, o.EnvDataName, destroyed: true));
             replies.AddRange(Achieve("UseEnvObjSpawnerName", 1, e => e.Has(o.Name), at));
             replies.AddRange(Achieve("UseEnvObj", 1, e => e.Envs?.Contains(o.Env) == true, at));
         }

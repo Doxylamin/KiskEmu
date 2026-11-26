@@ -7,7 +7,7 @@ namespace Aion.World;
 // the items are granted (stored), answered 0x5621 ItemLooting_RS per drop, removed with 0x561f
 // DropItemRemove_NT, and auto-use items (pet souls) are used at once. Unlooted drops vanish after
 // DropLifetimeMs. Opcodes: catalogue 340-343 + 0x54ca (the 0x56 run, OBSERVED around 0x5610/0x5612/0x5646);
-// layouts are the usmap structs, no official sample (CANDIDATE).
+// layouts OBSERVED from official samples (see LootPackets).
 public sealed partial class GameSession
 {
     internal sealed record GroundDrop(int Key, long Uid, int ItemId, long Count, Vector3d Center, Vector3d At, long ExpiresAt,
@@ -24,12 +24,36 @@ public sealed partial class GameSession
     public const double LootRange = 1500;
     const byte IncreaseDropItemGet = 5;   // EIncreaseReason kDropItemGet
     public IReadOnlyCollection<long> GroundDrops => drops.Keys;
+    internal IEnumerable<GroundDrop> GroundDropItems => drops.Values;
 
     internal void RegisterGroundDrop(GroundDrop drop) => drops[drop.Uid] = drop;
     internal void RemoveGroundDrop(long uid) => drops.Remove(uid);
 
-    /// <summary>The loot of a killed monster: the drops for the killer (0x561e), or nothing.</summary>
-    List<byte[]> DropLoot(Target target, long now)
+    /// <summary>The loot of a killed monster: the drops for the killer (0x561e), or nothing; plus the participant rewards.</summary>
+    List<byte[]> DropLoot(Target target, long now) => [.. DropKillLoot(target, now), .. DropParticipantLoot(target, now)];
+
+    /// <summary>
+    /// A field boss's (or field elite's) *_participant_all table, rolled once for every player on its hate table who is
+    /// on this map: the killer's personal drops come back here, the others' go to their own sessions, owned by them.
+    /// Not multiplied by drop events (it holds a 100% bound chest), and not shared out through the party. Who counts
+    /// (hate table, same map, no range or death check) and the delivery as personal ground drops are OURS.
+    /// </summary>
+    List<byte[]> DropParticipantLoot(Target target, long now)
+    {
+        if (!LootTables.Embedded.HasParticipantLoot(target.NpcId)) return [];
+        var mine = DropLootSolo(target, now, LootTables.Embedded.RollParticipant(target.NpcId, profileRace, rng), []);
+        if (worldPlayer?.Map is not { } map) return mine;
+        foreach (var key in ai.HateKeys(target))
+            if (key != playerKey && map.Players.TryGetValue(key, out var other) && other.Session is var session && session != this)
+                other.Send(session.ParticipantLoot(target, now));
+        return mine;
+    }
+
+    /// <summary>This player's participant roll of a monster another player killed, as its own ground drops.</summary>
+    List<byte[]> ParticipantLoot(Target target, long now) =>
+        DropLootSolo(target, now, LootTables.Embedded.RollParticipant(target.NpcId, profileRace, rng), []);
+
+    List<byte[]> DropKillLoot(Target target, long now)
     {
         // Drop events (SharedWorld.DropRate) roll the table more often: x2.5 = two rolls and a third half the time.
         var rate = options.World?.DropRate ?? 1;
@@ -66,11 +90,12 @@ public sealed partial class GameSession
         var taken = new List<GroundDrop>();
         foreach (var uid in uids.Distinct())
         {
-            var ok = drops.TryGetValue(uid, out var drop) && now < drop.ExpiresAt && !dead
-                && (position is not { } p || (p.X - drop.At.X) * (p.X - drop.At.X) + (p.Y - drop.At.Y) * (p.Y - drop.At.Y) <= LootRange * LootRange)
-                && CanPickupDrop(drop);
+            var gone = !drops.TryGetValue(uid, out var drop) || now >= drop.ExpiresAt;
+            var ok = !gone && !dead
+                && (position is not { } p || (p.X - drop!.At.X) * (p.X - drop.At.X) + (p.Y - drop.At.Y) * (p.Y - drop.At.Y) <= LootRange * LootRange)
+                && CanPickupDrop(drop!);
             if (ok) taken.Add(drop!);
-            else replies.Add(LootPackets.LootReply(1, uid, auto));
+            else replies.Add(LootPackets.LootReply(gone ? LootPackets.LootGone : 1, uid, auto));
         }
         if (taken.Count == 0) return replies;
         if (Store is { } store && CharacterId is { } character)

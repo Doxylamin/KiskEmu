@@ -134,7 +134,7 @@ public sealed class UgarosSuppliesQuestTests
         await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 60_100);
         var replies = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(wire).ToArray(), Now + 60_200);
         Assert.True(GameSessionTestHelpers.HasOpcode(replies, RidePackets.ItemUseRs));
-        Assert.Equal(0, BitConverter.ToUInt16(replies.First(p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseRs), 2));
+        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(replies.First(p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseRs), 2));
         Assert.Contains(TitleId, session.OwnedTitles);
     }
 

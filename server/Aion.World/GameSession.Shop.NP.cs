@@ -18,15 +18,26 @@ public sealed partial class GameSession
     public const ushort TrustLimitInfoRq = 0xe260, TrustLimitInfoRs = 0xe261, TrustLimitInfoNt = 0xe262;
 
     /// <summary>
-    /// 0xe260 TrustLimitInfo_RQ: TrustLimitInfo_NT {trust_daily_limit_use bool, limit_info map (empty: count 0),
-    /// bmshop_purchase_enable bool = 1, update_time i64, trust_step i32} then TrustLimitInfo_RS result 0. Field order and
-    /// widths from the usmap; the empty map as a zero count is CANDIDATE (arrays use a varint count).
+    /// 0xe260 TrustLimitInfo_RQ: TrustLimitInfo_NT then TrustLimitInfo_RS result 0.
     /// </summary>
-    static List<byte[]> TrustLimitInfo(long now) =>
-    [
-        PacketWriter.Opcode(TrustLimitInfoNt).U8(0).Varint(0).U8(1).I64(now).I32(0).ToArray(),
-        PacketWriter.Opcode(TrustLimitInfoRs).U16(0).ToArray(),
-    ];
+    static List<byte[]> TrustLimitInfo(long now) => [TrustLimitInfoNotice(now), PacketWriter.Opcode(TrustLimitInfoRs).U16(0).ToArray()];
+
+    /// <summary>The trust step the official account had (2026-11-12); with step 0 the client locked the enhancement window
+    /// ("This content is currently unavailable due to account restrictions.", live 2026-11-12).</summary>
+    public const int TrustStep = 5;
+
+    /// <summary>
+    /// 0xe262 TrustLimitInfo_NT, sent at world entry and on 0xe260. OBSERVED official (2026-11-12, 120 B, identical at entry and
+    /// on every request): packed bools byte `07`, limit_info map varint 4 × {key u8, type u8 (= key), usage i64, limit i64,
+    /// reset time i64} for types 2..5, update_time i64, trust_step i32 5. The official type 2 limit is 500,000,000 (`0065cd1d00000000`); ours are all
+    /// -1 (no limit, as the official 3..5).
+    /// </summary>
+    static byte[] TrustLimitInfoNotice(long now)
+    {
+        var w = PacketWriter.Opcode(TrustLimitInfoNt).Bool(true).Bool(true).Bool(true).Varint(4);
+        for (var type = 2; type <= 5; type++) w.U8(type).U8(type).I64(0).I64(-1).I64(now);
+        return w.I64(now).I32(TrustStep).ToArray();
+    }
 
     async Task<List<byte[]>> NPShopGameMoneyLimitAsync(byte[] plain, long now, CancellationToken ct)
     {

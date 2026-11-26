@@ -1,3 +1,4 @@
+using Aion.Application.Gameplay;
 using Aion.Protocol.Native;
 using Aion.World;
 using Xunit;
@@ -59,6 +60,30 @@ public sealed class TravelParityTests
     }
 
     [Fact]
+    public async Task Flight_ring_refills_the_gauge_over_two_point_six_seconds()
+    {
+        var session = await EnterAscendedAsync(new FakeCharacterStore(), Now);
+        await session.HandleAsync(new PacketWriter().U16(0x370a).U8(0).ToArray(), Now);
+        var max = session.Resource.FpMax;
+        Assert.True(max > 0);
+        session.SetResource('F', max - 67_000);
+
+        // OBSERVED (capture 20261019-231752): 183000 back to 250000 within 2.6 s, not at once (#37).
+        var ring = session.FlyThroughRing(GameSession.FlightRingAbnormal, Now + 50);
+        Assert.Equal(max - 67_000, session.Resource.Fp);
+        Assert.DoesNotContain(ring, p => GameSessionTestHelpers.Op(p) == 0x8d00);
+
+        await session.TickAsync(Now + 1_350);
+        var halfway = session.Resource.Fp;
+        Assert.InRange(halfway, max - 67_000 + 20_000, max - 20_000);
+        await session.TickAsync(Now + 2_650);
+        Assert.Equal(max, session.Resource.Fp);
+        // After the window the flight drains again.
+        await session.TickAsync(Now + 3_500);
+        Assert.True(session.Resource.Fp < max);
+    }
+
+    [Fact]
     public async Task Glide_reports_skip_speed_anti_cheat()
     {
         var session = await EnterAscendedAsync(new FakeCharacterStore(), Now);
@@ -103,6 +128,32 @@ public sealed class TravelParityTests
         Assert.Equal(target, path[0].Point);                // official order: target first, start last
         Assert.Equal(start, path[^1].Point);
         Assert.All(path, p => Assert.Equal(8, p.Terrain));
+    }
+
+    [Fact]
+    public async Task Air_path_to_a_far_off_target_stays_bounded_and_answers()
+    {
+        // A 0x3719 aimed at 1e30 saturated the step count to int.MaxValue and ran the process out of memory.
+        var start = new Vector3d(1000, 2000, 300);
+        var path = GameSession.AirPath(start, new Vector3d(1e30, 1e30, 300));
+        Assert.Equal(GameSession.MaxAirSteps + 4, path.Count);   // target, approach, steps + 1 cruise points, start
+        Assert.Equal(start, path[^1].Point);
+        Assert.Equal(5, GameSession.AirPath(start, new Vector3d(double.NaN, 0, 0)).Count);   // one step: two cruise points
+
+        var store = new FakeCharacterStore();
+        var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
+        var here = session.Position!.Value;
+        var rq = new PacketWriter().U16(0x3719).Bool(false).Vec3(here).Vec3(new Vector3d(1e30, 1e30, here.Z)).ToArray();
+        var reply = Assert.Single(await session.HandleAsync(rq, Now + 1));
+        Assert.Equal(0x3745, GameSessionTestHelpers.Op(reply));
+    }
+
+    [Fact]
+    public void Air_path_within_a_map_keeps_its_6000_steps()
+    {
+        var start = new Vector3d(0, 0, 0);
+        var path = GameSession.AirPath(start, new Vector3d(60_000, 0, 0));
+        Assert.Equal(14, path.Count);   // 10 steps: target, approach, 11 cruise points, start
     }
 
     [Fact]
@@ -210,6 +261,23 @@ public sealed class TravelParityTests
     }
 
     [Fact]
+    public async Task A_wind_stream_ride_refills_flight_points()
+    {
+        // OBSERVED 2026-11-15: entered at half a bar, the gauge kept rising until the landing.
+        var session = await EnterAscendedAsync(new FakeCharacterStore(), Now);
+        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 1);
+        await session.HandleAsync(new PacketWriter().U16(0x3706).ToArray(), Now + 2);
+        await DrainFlightFpAsync(session, Now + 2);
+        Assert.Equal(0, session.Resource.Fp);
+        const long rideAt = Now + 200_000;
+        var at = session.Position!.Value;
+        var ride = new PacketWriter().U16(0x3712).U8(0).Vec3(at).Vec3(at).F32(0).I64(0x20d8407262271328).U16(1).Varint(0).I32(0).ToArray();
+        await session.HandleAsync(ride, rideAt);
+        await session.TickAsync(rideAt + 5_000);
+        Assert.True(session.Resource.Fp >= 4 * GameSession.FpRegenRest, $"FP {session.Resource.Fp}");
+    }
+
+    [Fact]
     public async Task Flight_fp_regen_allows_glide_again()
     {
         var session = await EnterAscendedAsync(new FakeCharacterStore(), Now);
@@ -264,6 +332,54 @@ public sealed class TravelParityTests
     }
 
     [Fact]
+    public async Task Legion_hall_scroll_casts_then_moves_to_the_hall_and_answers_after_the_appearance()
+    {
+        // OBSERVED official 2026-11-15 (item 530559490): 0x5617, 2 s, 0x5619, own 0x3647 `02 62` + 0x3621 effect 98 to map 902;
+        // after the load 0x3633 (effect byte), 0x3646, then 0x5613 (772) and 0x561b. No 0x5613 at the start, no 0x5616.
+        const long t = Now + 120_000;
+        var store = new FakeCharacterStore();
+        store.GuildRow = new GuildView(7, "Hall", 1, 0, 0, 0, "", "", "", DateTimeOffset.UnixEpoch, [], AgitId: 1, AgitEndMs: long.MaxValue);
+        var session = await EnterAscendedAsync(store, t);
+        store.Items.Add(FakeCharacterStore.BagItem(530559490, 2, 88));
+        await GameSessionTestHelpers.LoadInventoryAsync(session, t);
+        var start = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(88).ToArray(), t + 100);
+        Assert.Contains(start, p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseStartedNt);
+        Assert.DoesNotContain(start, p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseRs);
+        var done = await session.TickAsync(t + 2_200);
+        Assert.Contains(done, p => GameSessionTestHelpers.Op(p) == RidePackets.ItemUseCompletedNt);
+        Assert.DoesNotContain(done, p => GameSessionTestHelpers.Op(p) is RidePackets.ItemUseRs or RidePackets.ItemUseNt);
+        Assert.Contains(done, p => p.SequenceEqual(PlayerPackets.CharDisappear(session.PlayerKey, 2, 98)));
+        var load = done.Single(p => GameSessionTestHelpers.Op(p) == 0x3621);
+        Assert.Equal(902, BitConverter.ToInt32(load, 6));
+        Assert.Equal(98, load[^3]);
+        var entry = await session.HandleAsync(new PacketWriter().U16(0x3622).I32(2).ToArray(), t + 2_500);
+        var ops = entry.Select(GameSessionTestHelpers.Op).ToList();
+        var appear = ops.IndexOf(0x3633);
+        var reply = ops.IndexOf(RidePackets.ItemUseRs);
+        Assert.True(appear >= 0 && reply > appear, string.Join(",", ops.Select(o => o.ToString("x4"))));
+        Assert.Equal(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(entry[reply], 2));
+        Assert.Equal(0x561b, ops[reply + 1]);
+        var at = 2;
+        while ((entry[appear][at++] & 0x80) != 0) { }
+        Assert.Equal(0x1000u, BitConverter.ToUInt32(entry[appear], at) & 0x1000u);   // the appearance repeats the effect (mask bit 12)
+        Assert.Contains(store.Items, i => i.TemplateId == 530559490 && i.Quantity == 1);
+    }
+
+    [Fact]
+    public async Task Legion_hall_scroll_is_refused_without_a_hall()
+    {
+        const long t = Now + 130_000;
+        var store = new FakeCharacterStore();
+        var session = await EnterAscendedAsync(store, t);
+        store.Items.Add(FakeCharacterStore.BagItem(530559490, 1, 89));
+        await GameSessionTestHelpers.LoadInventoryAsync(session, t);
+        var start = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(89).ToArray(), t + 100);
+        Assert.Single(start);
+        Assert.Equal(RidePackets.ItemUseRs, GameSessionTestHelpers.Op(start[0]));
+        Assert.NotEqual(RidePackets.ItemUseSuccess, BitConverter.ToUInt16(start[0], 2));
+    }
+
+    [Fact]
     public async Task Return_scroll_cast_cancels_when_player_moves()
     {
         const long t = Now + 200_000;
@@ -295,7 +411,7 @@ public sealed class TravelParityTests
         Assert.True(session.Dead);
         var rebirth = await session.HandleAsync(new PacketWriter().U16(RidePackets.UseRebirthRq).U8(1).ToArray(), t + 2000);
         Assert.Contains(rebirth, p => p.SequenceEqual(RidePackets.UseRebirthReply(0, true)));
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 2100);
+        Assert.DoesNotContain(rebirth, p => GameSessionTestHelpers.Op(p) == 0x3621);   // in place: no map load to complete
         Assert.False(session.Dead);
         Assert.Equal(fell, session.Position);
         session.NpcHitsPlayer(session.Resource.HpMax * 10, t + 3000, killerKey: 2001);
@@ -308,7 +424,7 @@ public sealed class TravelParityTests
         var stone = await session.HandleAsync(new PacketWriter().U16(RidePackets.RespawnRq).U8(RidePackets.RespawnItem).I64(82).ToArray(), t + 6000);
         Assert.Contains(stone, p => p.SequenceEqual(RidePackets.RespawnReply(0)));
         Assert.False(session.Dead);
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 6100);
+        Assert.DoesNotContain(stone, p => GameSessionTestHelpers.Op(p) == 0x3621);
         Assert.Equal(fellAgain, session.Position);
         Assert.DoesNotContain(store.Items, i => i.TemplateId == 502760001 && i.Quantity > 0);
     }
@@ -333,22 +449,34 @@ public sealed class TravelParityTests
     }
 
     [Fact]
-    public async Task World_map_teleport_to_engraved_kibelisk_uses_a_scroll_and_crosses_maps()
+    public async Task World_map_teleport_crosses_maps_and_answers_with_the_teleport_item_after_the_appearance()
     {
+        // OBSERVED official 2026-11-15: 0x3647 `02 00` + 0x3621, the load, then after 0x3633/0x3646 0x9237 {0, artifact} and
+        // 0x561b using one teleport item 530559489 (decrease 56). No Kina, and the Return Scroll stays.
         const long t = Now + 450_000;
         var store = new FakeCharacterStore();
         store.TeleportArtifacts.Add(1051035);
         var session = await EnterAscendedAsync(store, t, mapId: 1010);
         store.Items.Add(FakeCharacterStore.BagItem(530560001, 2, 86));
+        store.Items.Add(FakeCharacterStore.BagItem(530559489, 35, 87));
         await GameSessionTestHelpers.LoadInventoryAsync(session, t);
         var replies = await session.HandleAsync(Convert.FromHexString("36929B091000"), t);
-        Assert.True(replies[0].SequenceEqual(GamePackets.UseTeleportArtifactReply(1051035)));
+        Assert.DoesNotContain(replies, p => GameSessionTestHelpers.Op(p) is 0x9237 or 0x561b);
+        Assert.Contains(replies, p => p.SequenceEqual(PlayerPackets.CharDisappear(session.PlayerKey, 2, 0)));
         var load = replies.FirstOrDefault(p => GameSessionTestHelpers.Op(p) == 0x3621);
         Assert.NotNull(load);
         Assert.Equal(1000, BitConverter.ToInt32(load, 6));
         var arrival = GameData.Embedded.MapPoints(1000)["TeleportArtifact_Poeta_Region_03_1"];
         Assert.Equal(new Vector3d(arrival[0], arrival[1], arrival[2]), session.Position);
-        Assert.Contains(store.Items, i => i.TemplateId == 530560001 && i.Quantity == 1);
+        var entry = await session.HandleAsync(new PacketWriter().U16(0x3622).I32(2).ToArray(), t + 500);
+        var ops = entry.Select(GameSessionTestHelpers.Op).ToList();
+        var reply = ops.IndexOf(0x9237);
+        Assert.True(reply > ops.IndexOf(0x3633) && ops.IndexOf(0x3633) >= 0, string.Join(",", ops.Select(o => o.ToString("x4"))));
+        Assert.True(entry[reply].SequenceEqual(GamePackets.UseTeleportArtifactReply(1051035)));
+        Assert.Equal(0x561b, ops[reply + 1]);
+        Assert.Equal(56, entry[reply + 1][^2]);
+        Assert.Contains(store.Items, i => i.TemplateId == 530559489 && i.Quantity == 34);
+        Assert.Contains(store.Items, i => i.TemplateId == 530560001 && i.Quantity == 2);
     }
 
     [Fact]

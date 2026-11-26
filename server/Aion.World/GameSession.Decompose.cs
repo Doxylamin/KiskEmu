@@ -82,6 +82,12 @@ public sealed class DecomposeTables
 public sealed partial class GameSession
 {
     public const ushort ItemDecomposeRq = 0x5640, ItemDecomposeRs = 0x5641;
+    /// <summary>
+    /// 0x5641 starts with a u16 EResult, 0x0260 on success, and follows the item changes (0x561b). OBSERVED official 2026-11-15
+    /// i=735857 `4156 6002 00 27000000 27000000 01 37337037 da0c0000 0b ...` right after its 0x561b (#70, as the A2Core fork
+    /// reads it). Refusal 1: CANDIDATE.
+    /// </summary>
+    public const ushort ItemDecomposed = 0x0260;
     const byte DecreaseDecompose = 9, IncreaseDecompose = 10;   // EDecreaseReason / EIncreaseReason kItemDecompose (usmap)
     static DecomposeTables Decompose => DecomposeTables.Embedded;
 
@@ -98,7 +104,7 @@ public sealed partial class GameSession
         catch (ProtocolException) { return [Reply(1, 0, [], [])]; }
         byte[] Reply(int result, int done, IReadOnlyList<(int ItemId, long Count)> rewards, IReadOnlyList<int> skinIds)
         {
-            var w = PacketWriter.Opcode(ItemDecomposeRs).I32(result).Bool(auto).I32(done).I32(uids.Count).Varint((uint)rewards.Count);
+            var w = PacketWriter.Opcode(ItemDecomposeRs).U16((ushort)result).Bool(auto).I32(done).I32(uids.Count).Varint((uint)rewards.Count);
             foreach (var (item, count) in rewards) w.I32(item).I32((int)Math.Min(count, int.MaxValue));
             w.Varint((uint)skinIds.Count);
             foreach (var skin in skinIds) w.I32(skin);
@@ -134,9 +140,9 @@ public sealed partial class GameSession
         var achieve = new List<byte[]>();
         foreach (var grade in decomposedGrades)
             achieve.AddRange(Achieve("DecomposeItem", 1, e => e.Values.Length == 0 || (grade is not null && e.Has(grade))));
-        var replies = new List<byte[]> { Reply(done > 0 ? 0 : 1, done, merged, skinReply) };
         // One diff against the client's last view: in-loop InventoryChangesAsync would Remember() without sending 0x561b.
-        replies.AddRange(await InventoryChangesAsync(ct, IncreaseDecompose, DecreaseDecompose));
+        var replies = await InventoryChangesAsync(ct, IncreaseDecompose, DecreaseDecompose);
+        replies.Add(Reply(done > 0 ? ItemDecomposed : 1, done, merged, skinReply));
         if (skinReply.Count > 0) replies.AddRange(await AcquireSkinsAsync(skinReply, ct));
         replies.AddRange(achieve);
         return replies;

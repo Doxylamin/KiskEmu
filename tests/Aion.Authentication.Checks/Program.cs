@@ -67,7 +67,13 @@ await Denied(appSource, "SELECT token_hash FROM auth.sessions", "game role canno
 await using var authSource = NpgsqlDataSource.Create(authConnection);
 await Denied(authSource, "UPDATE auth.accounts SET disabled_at=NULL WHERE false", "auth role cannot unban");
 await Denied(authSource, "DELETE FROM auth.account_roles WHERE false", "auth role cannot change GM roles");
-await Denied(authSource, "SELECT * FROM game.characters", "auth role cannot read gameplay");
+// The realm has no gameplay tables (093): aion_auth reads the character index and its game.characters view (the
+// Accounts page finds accounts by character name, 099), and nothing else in game; it changes no character.
+await using (var names = authSource.CreateCommand("SELECT count(*) FROM game.characters"))
+    Check(await names.ExecuteScalarAsync() is long, "auth role reads the character index view");
+await Denied(authSource, "UPDATE game.character_index SET level=level WHERE false", "auth role cannot change characters");
+await Denied(authSource, "SELECT * FROM game.quna_ledger", "auth role cannot read the Quna ledger");
+await Denied(authSource, "SELECT * FROM game.sanctions", "auth role cannot read sanctions");
 var persistent = await auth.SignInAsync("race", password, default) ?? throw new Exception("Session missing");
 var launch = await auth.AuthorizeLaunchAsync(persistent.Token, 1204, default) ?? throw new Exception("Launch missing");
 Check(await auth.AuthorizeLaunchAsync(persistent.Token, 1205, default) is null, "launch world restriction");

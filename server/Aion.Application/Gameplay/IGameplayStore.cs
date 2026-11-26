@@ -10,6 +10,8 @@ public sealed record ItemState(Guid InstanceId, string BuildId, int TemplateId, 
 /// <summary>A stored skill: <paramref name="Level"/> is the level the client shows; <paramref name="Purchased"/> is the level bought with
 /// skill points through SkillLevelUp (0 = none). Only the purchase counts as spent points, never the kit or auto-granted level.</summary>
 public sealed record SkillState(int SkillId, int Level, int? Slot, int Purchased = 0);
+/// <summary>A part equipped on a mastery skill's specialisation slot (migration 113).</summary>
+public sealed record SkillPartRecord(int SkillId, int Slot, int PartId);
 // Legions: a member (grade EGuildMemberGrade 0 Master, 1 Officer, 2 Member) and a legion with its members.
 public sealed record GuildMember(Guid CharacterId, string Name, int Level, int Grade, string Comment, int CreationId, DateTimeOffset Joined,
     long Reputation = 0, long WeeklyReputation = 0, long DonationReputation = 0, long WeeklyDonationReputation = 0, int DonationsToday = 0);
@@ -67,6 +69,8 @@ public sealed record BossChallengeRecord(int GroupId, int ClearLevel, long BestP
 /// <summary>Abyss entry pool and ranking (migration 043; 050 pending siege AP and rift PvP flag).</summary>
 public sealed record AbyssRecord(long EntryRemainingMs, long ApAcc, int RankingPoint, int RankingGrade, DateTimeOffset WeeklyResetAt, DateTimeOffset UpdatedAt,
     long PendingSiegeAp = 0, int RiftPvpOn = 0);
+/// <summary>A character of the Abyss season ranking: its ranking point (character_abyss) with the name, legion and class the list shows.</summary>
+public sealed record AbyssRankRow(Guid CharacterId, long WireId, string Name, string Guild, int GuildEmblem, int Level, int ClassId, long Point);
 /// <summary>Fortress owner and siege applicants for a world host (migration 047).</summary>
 public sealed record AirspaceOwnerRecord(int AirspaceId, long GuildId, string Name, int Emblem, string MasterName);
 public sealed record AirspaceApplyRecord(int BattleId, int AirspaceId, long GuildId);
@@ -75,6 +79,8 @@ public sealed record AirspaceWorldRecord(IReadOnlyList<AirspaceOwnerRecord> Owne
 public sealed record WorldResetCursorRecord(long DailyBoundaryMs, long WeeklyBoundaryMs);
 /// <summary>ContentsReset reward limit counter (migration 081).</summary>
 public sealed record RewardLimitRecord(int LimitType, string Period, int Count);
+/// <summary>A content ticket's count and when it held, Unix ms; recharges since are added on read (migration 110).</summary>
+public sealed record ContentTicketRecord(int TicketId, int Remaining, long UpdatedMs);
 /// <summary>Instance lockout until Unix ms (migration 082).</summary>
 public sealed record DungeonCooltimeRecord(int DungeonId, long UntilMs);
 /// <summary>Craft recipe periodic limit (migration 083): target 1 char, 2 account, 3 world.</summary>
@@ -103,8 +109,26 @@ public sealed record AdminClass(int CreationId, string Name);
 public sealed record AdminProfile(IReadOnlyList<string> Roles, string? BuildId);
 /// <summary>An audit event for the staff activity log: who did what to which character, with the event's details (JSON).</summary>
 public sealed record AdminAuditEntry(long Id, DateTimeOffset At, string Action, Guid? CharacterId, string? CharacterName, string? ActorName, string Details);
+/// <param name="Deleted">On the graveyard account (a completed deletion, migration 024).</param>
+/// <param name="PendingDeleteAt">A deletion the owner asked for that is not due yet.</param>
+/// <param name="Blocked">Deactivated by staff (migration 107): cannot enter the world.</param>
 public sealed record AdminCharacter(Guid CharacterId, string Name, Guid AccountId, string AccountName,
-    int WorldId, int Level, int Race, int Gender, int CreationId, bool AccountDisabled, IReadOnlyList<string>? AccountRoles = null, bool Staff = false);
+    int WorldId, int Level, int Race, int Gender, int CreationId, bool AccountDisabled, IReadOnlyList<string>? AccountRoles = null, bool Staff = false,
+    bool Deleted = false, DateTimeOffset? PendingDeleteAt = null, bool Blocked = false, string? BlockReason = null);
+/// <summary>
+/// A staff action on a stored character (dashboard Characters): <c>delete</c> (now, as a due lobby deletion),
+/// <c>cancel_delete</c> (a pending one), <c>block</c> / <c>unblock</c> (deactivate: no world entry), <c>transfer</c> (to
+/// <paramref name="TargetAccount"/> in the same world, into its first free lobby slot). Repeatable by the request id.
+/// </summary>
+public sealed record AdminCharacterAction(Guid RequestId, Guid CharacterId, string Action, Guid? TargetAccount = null, string? Reason = null);
+/// <summary>
+/// A character exported for another world: its <c>game.characters</c> row and the rows of every table that hangs off it by
+/// <c>character_id</c> (except what stays in the world: legion, mail, purchase ledger, audit), each as <c>to_jsonb</c>.
+/// </summary>
+public sealed record CharacterMovePackage(Guid RequestId, int SourceWorld, Guid CharacterId, string Name, int Race,
+    JsonElement Character, IReadOnlyDictionary<string, JsonElement> Tables);
+public sealed record CharacterMoveImport(Guid RequestId, Guid Actor, Guid TargetAccount, string? NewName, string? Reason, CharacterMovePackage Package);
+public sealed record CharacterMoveResult(Guid CharacterId, string Name, Guid AccountId, int WorldId, int LobbySlot);
 /// <summary>A catalogue item for the staff dashboard (latest build): grade and level from the item facts.</summary>
 public sealed record AdminCatalogItem(int TemplateId, string Name, string? Category, string? Grade, int? Level);
 public sealed record AdminCatalogPage(IReadOnlyList<AdminCatalogItem> Items, int Total, IReadOnlyList<string> Categories);
@@ -135,6 +159,15 @@ public interface IGameplayStore
     Task<IReadOnlyList<int>?> TeleportArtifactsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default);
     // Records a bound Kibelisk; false when already bound or not owned.
     Task<bool> EngraveTeleportArtifactAsync(VerifiedAccount account, Guid character, int artifactId, CancellationToken ct = default);
+    /// <summary>The character's Monolith resonance counts (migration 111): Monolith id -> tokens resonated.</summary>
+    Task<IReadOnlyDictionary<int, int>> MonolithsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>());
+    /// <summary>
+    /// Uses up the token stacks (revision-checked), moves the Monolith's count from <paramref name="previous"/> to <paramref name="count"/>
+    /// (false when it is no longer <paramref name="previous"/>) and grants the rewards, in one transaction.
+    /// </summary>
+    Task<bool> ResonateMonolithAsync(VerifiedAccount account, Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int monolith,
+        int previous, int count, IReadOnlyList<(int TemplateId, long Count)> rewards, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>A title acquired (false when owned already or the character is not the account's).</summary>
     Task<bool> GrantWingAsync(VerifiedAccount account, Guid character, int wingId, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>Enchant level per registered wing (game.character_wings.enchant_level); null when not owned.</summary>
@@ -155,6 +188,11 @@ public interface IGameplayStore
     Task<bool> SetSkinEquipsAsync(VerifiedAccount account, Guid character, IReadOnlyDictionary<int, int> equips, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>A learned skill's level (a skill level bought with skill points).</summary>
     Task<bool> SetSkillLevelAsync(VerifiedAccount account, Guid character, int skillId, int level, int purchased, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>The parts equipped on the character's mastery skills (migration 113).</summary>
+    Task<IReadOnlyList<SkillPartRecord>> SkillPartsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<SkillPartRecord>>([]);
+    /// <summary>Replaces one skill's equipped parts when they still equal <paramref name="expected"/>; false otherwise.</summary>
+    Task<bool> ReplaceSkillPartsAsync(VerifiedAccount account, Guid character, int skillId, IReadOnlyList<SkillPartRecord> expected, IReadOnlyList<SkillPartRecord> parts,
+        CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>A mastery's level and exp.</summary>
     Task<bool> SaveMasteryAsync(VerifiedAccount account, Guid character, string kind, int category, int level, long exp, CancellationToken ct = default) => Task.FromResult(false);
     // Friends, requests and blocks of an owned character; null when not owned.
@@ -261,8 +299,12 @@ public interface IGameplayStore
     Task<int> ExtendedCharacterSlotsAsync(VerifiedAccount account, CancellationToken ct = default) => Task.FromResult(0);
     /// <summary>Moves a bag item to a bag slot; an item already there takes the moved item's old slot.</summary>
     Task<bool> MoveBagItemAsync(VerifiedAccount account, Guid character, Guid item, long revision, int slot, CancellationToken ct = default);
-    /// <summary>Moves a bag or warehouse item to a slot of 'bag' or 'storage' (the item on that slot takes the old one).</summary>
+    /// <summary>Moves a bag or warehouse item to a slot of 'bag', 'storage' or 'account_storage' (the item on that slot takes the old one).</summary>
     Task<bool> MoveItemToContainerAsync(VerifiedAccount account, Guid character, Guid item, long revision, string location, int slot, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>0x5642 ItemStore: bag stacks move into the personal ('storage') or account ('account_storage') warehouse, lowest free slots.</summary>
+    Task<bool> StoreItemsInContainerAsync(VerifiedAccount account, Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>0x5644 ItemTakeOut: warehouse or account-storage stacks (by wire key) move back into this character's bag.</summary>
+    Task<bool> TakeItemsFromContainerAsync(VerifiedAccount account, Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>The character's mail, newest first (deleted ones left out).</summary>
     Task<IReadOnlyList<PostRecord>> PostsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<PostRecord>>([]);
     /// <summary>Trusted server call (staff): a mail to any character; returns the stored post.</summary>
@@ -311,14 +353,17 @@ public interface IGameplayStore
     Task<bool> SaveDaevanionAsync(VerifiedAccount account, Guid character, DaevanionProgress progress, CancellationToken ct = default) => Task.FromResult(false);
     Task<IReadOnlyList<BossChallengeRecord>> BossChallengesAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<BossChallengeRecord>>([]);
     Task<bool> SaveBossChallengeAsync(VerifiedAccount account, Guid character, BossChallengeRecord record, CancellationToken ct = default) => Task.FromResult(false);
-    /// <summary>Expedition contents tickets consumed this period (ticket id, period key, count used).</summary>
-    Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<(int, string, int)>>([]);
-    /// <summary>Replaces the character's stored expedition ticket rows (in-memory flush from the world session).</summary>
-    Task<bool> SaveExpeditionTicketsAsync(VerifiedAccount account, Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct = default) =>
+    /// <summary>The character's content ticket counts (ContentsTicket.dat Count tickets).</summary>
+    Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ContentTicketRecord>>([]);
+    /// <summary>Stores these content ticket rows (insert or replace by ticket id; other rows are kept).</summary>
+    Task<bool> SaveContentTicketsAsync(VerifiedAccount account, Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct = default) =>
         Task.FromResult(false);
     Task<AbyssRecord?> AbyssAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) => Task.FromResult<AbyssRecord?>(null);
     Task<bool> SaveAbyssAsync(VerifiedAccount account, Guid character, AbyssRecord record, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>A world's Abyss ranking of a race: the characters with at least <paramref name="minPoint"/> ranking points, best first.</summary>
+    Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int worldId, int race, int minPoint, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<AbyssRankRow>>([]);
     /// <summary>Credit offline legion members after fortress siege (migration 050 pending_siege_ap).</summary>
     Task AddPendingSiegeApForGuildAsync(long guildId, int ap, IReadOnlyList<Guid> onlineCharacterIds, CancellationToken ct = default) => Task.CompletedTask;
     Task<AirspaceWorldRecord> AirspaceWorldAsync(int worldId, CancellationToken ct = default) =>
@@ -350,6 +395,10 @@ public interface IGameplayStore
     Task<IReadOnlyDictionary<string, JsonElement>?> CharacterSettingsAsync(VerifiedAccount account, Guid character, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<string, JsonElement>?>(new Dictionary<string, JsonElement>());
     Task<bool> SaveCharacterSettingAsync(VerifiedAccount account, Guid character, string name, JsonElement value, CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>Per-account settings by name (game.account_settings), shared by the account's characters on this world.</summary>
+    Task<IReadOnlyDictionary<string, JsonElement>?> AccountSettingsAsync(VerifiedAccount account, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<string, JsonElement>?>(new Dictionary<string, JsonElement>());
+    Task<bool> SaveAccountSettingAsync(VerifiedAccount account, string name, JsonElement value, CancellationToken ct = default) => Task.FromResult(false);
     /// <summary>Stores a hotbar slot (replacing it), or clears it when <paramref name="slot"/> is null for that number.</summary>
     Task<bool> SaveQuickSlotAsync(VerifiedAccount account, Guid character, int number, QuickSlotRecord? slot, CancellationToken ct = default);
     /// <summary>Grants looted items (the latest catalogue build; unknown templates are skipped). False when the character is not the account's.</summary>
@@ -416,6 +465,12 @@ public interface IGameplayStore
     Task<bool> ExceedEnchantItemAsync(VerifiedAccount account, Guid character, Guid item, long revision,
         IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int surpassLevel, int surpassBonus, CancellationToken ct = default);
     Task<bool> SetRolledStatsAsync(VerifiedAccount account, Guid character, Guid item, long revision, JsonElement rolled, CancellationToken ct = default);
+    /// <summary>
+    /// Mana stone imprint and soul bind steps, all or nothing: the costs (bag or warehouse stacks, at their revisions) are
+    /// consumed and the object <paramref name="patch"/> is merged into the item's upgrades (item at its revision).
+    /// </summary>
+    Task<bool> UpgradeItemAsync(VerifiedAccount account, Guid character, Guid item, long revision,
+        IReadOnlyList<(Guid Item, long Revision, int Count)> costs, JsonElement patch, CancellationToken ct = default);
     /// <summary>Socket a godstone item into equipment: consumes material, sets upgrades.godstones.</summary>
     Task<bool> SocketGodstoneAsync(VerifiedAccount account, Guid character, Guid equip, long equipRevision, Guid material, long materialRevision,
         IReadOnlyList<int> godstones, CancellationToken ct = default);
@@ -429,7 +484,26 @@ public interface IGameplayStore
     Task<bool> AscendAsync(VerifiedAccount account, Guid character, int grade, CancellationToken ct = default) => Task.FromResult(false);
     // Throw GameplayException("forbidden") unless the actor holds gamemaster or admin.
     Task<AdminProfile> AdminProfileAsync(VerifiedAccount actor, CancellationToken ct = default);
-    Task<IReadOnlyList<AdminCharacter>> AdminFindCharactersAsync(VerifiedAccount actor, string query, CancellationToken ct = default);
+    /// <param name="includeDeleted">false: characters on the graveyard account are left out (the dashboard's default).</param>
+    Task<IReadOnlyList<AdminCharacter>> AdminFindCharactersAsync(VerifiedAccount actor, string query, CancellationToken ct = default, bool includeDeleted = true);
+    /// <summary>
+    /// Runs one <see cref="AdminCharacterAction"/>; delete and transfer need ManageAccounts, the others EditCharacters, and a
+    /// staff account's character ManageStaff. Recorded in audit.events (<c>staff_character_&lt;action&gt;</c>). The caller
+    /// refuses a character that is in the world.
+    /// </summary>
+    Task<JsonElement> AdminCharacterActionAsync(VerifiedAccount actor, AdminCharacterAction action, CancellationToken ct = default) =>
+        throw new GameplayException("unsupported");
+    // Moving a character to another world (docs/STAFF_CHARACTERS.md). The realm runs the three steps over the worlds' control
+    // ports and has checked the staff permission; each step is repeatable by the request id.
+    /// <summary>Source world: blocks the character (reason <c>transfer:&lt;request id&gt;</c>) and returns it with its rows.</summary>
+    Task<CharacterMovePackage> ExportCharacterAsync(Guid requestId, Guid actor, Guid character, int targetWorld, string? reason, CancellationToken ct = default) =>
+        throw new GameplayException("unsupported");
+    /// <summary>Target world (<paramref name="world"/>): a new character from the package on the target account, with new ids.</summary>
+    Task<CharacterMoveResult> ImportCharacterAsync(CharacterMoveImport input, int world, CancellationToken ct = default) =>
+        throw new GameplayException("unsupported");
+    /// <summary>Source world: <paramref name="movedTo"/> set deletes the original as the lobby does; null cancels the move (unblocks it).</summary>
+    Task FinishCharacterMoveAsync(Guid requestId, Guid actor, Guid character, Guid? movedTo, CancellationToken ct = default) =>
+        throw new GameplayException("unsupported");
     Task<AdminCharacterDetail?> AdminCharacterAsync(VerifiedAccount actor, Guid character, CancellationToken ct = default);
     // Latest catalogue build: exact template ID or name substring, at most five rows (GM chat command).
     Task<IReadOnlyList<(int TemplateId, string Name)>> AdminSearchItemsAsync(VerifiedAccount actor, string query, CancellationToken ct = default);

@@ -17,17 +17,25 @@
          tools/class_skills.py, tools/world_npcs.py, tools/map_geometry.py, tools/map_points.py and tools/dev_menu.py; one copy, shared with the Python tools. -->
     <EmbeddedResource Include="../../tools/data/starter-skills.json" LogicalName="starter-skills.json" />
     <EmbeddedResource Include="../../tools/data/class-skills.json" LogicalName="class-skills.json" />
+    <EmbeddedResource Include="../../tools/data/stigma-skills.json" LogicalName="stigma-skills.json" />
+    <EmbeddedResource Include="../../tools/data/specialized-skills.json" LogicalName="specialized-skills.json" />
     <EmbeddedResource Include="../../tools/data/pc-summons.json" LogicalName="pc-summons.json" />
     <EmbeddedResource Include="../../tools/data/elemental-summons.json" LogicalName="elemental-summons.json" />
     <EmbeddedResource Include="../../tools/data/pc-traps.json" LogicalName="pc-traps.json" />
     <EmbeddedResource Include="../../tools/data/pc-zones.json" LogicalName="pc-zones.json" />
     <EmbeddedResource Include="../../tools/data/skill-areas.json" LogicalName="skill-areas.json" />
+    <EmbeddedResource Include="../../tools/data/toggle-skills.json" LogicalName="toggle-skills.json" />
+    <EmbeddedResource Include="../../tools/data/projectiles.json" LogicalName="projectiles.json" />
+    <!-- tools/stagger_data.py (build 26262663 tables): groggy guard drains per skill, guarded NPCs and their GroggyTime. -->
+    <EmbeddedResource Include="../../tools/data/stagger.json" LogicalName="stagger.json" />
     <EmbeddedResource Include="../../tools/data/skill-cast-ranges.json" LogicalName="skill-cast-ranges.json" />
     <EmbeddedResource Include="../../tools/data/wings.json" LogicalName="wings.json" />
     <EmbeddedResource Include="../../tools/data/items.json" LogicalName="items.json" />
     <EmbeddedResource Include="../../tools/data/item-stat-wire.json" LogicalName="item-stat-wire.json" />
     <EmbeddedResource Include="../../tools/data/decompose.json" LogicalName="decompose.json" />
     <EmbeddedResource Include="../../tools/data/achievements.json" LogicalName="achievements.json" />
+    <!-- The duty mission board's random reward packages (client RewardPackage tables via zaraza87's tools/duty_data.py). -->
+    <EmbeddedResource Include="../../tools/data/duty-rewards.json" LogicalName="duty-rewards.json" />
     <EmbeddedResource Include="../../tools/data/abyss.json" LogicalName="abyss.json" />
     <EmbeddedResource Include="../../tools/data/pvp.json" LogicalName="pvp.json" />
     <EmbeddedResource Include="../../tools/data/collections.json" LogicalName="collections.json" />
@@ -43,12 +51,14 @@
     <EmbeddedResource Include="../../tools/data/enchant.json" LogicalName="enchant.json" />
     <EmbeddedResource Include="../../tools/data/exceed_enchant.json" LogicalName="exceed_enchant.json" />
     <EmbeddedResource Include="../../tools/data/godstones.json" LogicalName="godstones.json" />
+    <EmbeddedResource Include="../../tools/data/item_enhance.json" LogicalName="item_enhance.json" />
     <EmbeddedResource Include="../../tools/data/daevanion.json" LogicalName="daevanion.json" />
     <EmbeddedResource Include="../../tools/data/godstone_combine.json" LogicalName="godstone_combine.json" />
     <EmbeddedResource Include="../../tools/data/item-sets.json" LogicalName="item-sets.json" />
     <EmbeddedResource Include="../../tools/data/item-stats.json" LogicalName="item-stats.json" />
     <EmbeddedResource Include="../../tools/data/instances.json" LogicalName="instances.json" />
     <EmbeddedResource Include="../../tools/data/crafts.json" LogicalName="crafts.json" />
+    <EmbeddedResource Include="../../tools/data/gather-grades.json" LogicalName="gather-grades.json" />
     <EmbeddedResource Include="../../tools/data/guilds.json" LogicalName="guilds.json" />
     <EmbeddedResource Include="../../tools/data/agit_deco.json" LogicalName="agit_deco.json" />
     <EmbeddedResource Include="../../tools/data/world-npcs.json" LogicalName="world-npcs.json" />
@@ -59,11 +69,15 @@
     <EmbeddedResource Include="../../tools/data/teleport-artifacts.json" LogicalName="teleport-artifacts.json" />
     <EmbeddedResource Include="../../tools/data/subzones.json" LogicalName="subzones.json" />
     <EmbeddedResource Include="../../tools/data/world-objects.json" LogicalName="world-objects.json" />
-    <EmbeddedResource Include="../../tools/data/monolith-table.json" LogicalName="monolith-table.json" />
+    <EmbeddedResource Include="../../tools/data/monoliths.json" LogicalName="monoliths.json" />
     <EmbeddedResource Include="../../tools/data/map-events.json" LogicalName="map-events.json" />
+    <!-- tools/daily_dungeon_data.py: the daily dungeons' countdown wave, kill points and point rewards. -->
+    <EmbeddedResource Include="../../tools/data/daily-dungeons.json" LogicalName="daily-dungeons.json" />
+    <EmbeddedResource Include="../../tools/data/npc-talks.json" LogicalName="npc-talks.json" />
     <EmbeddedResource Include="../../tools/data/expedition.json" LogicalName="expedition.json" />
     <EmbeddedResource Include="../../tools/data/resets.json" LogicalName="resets.json" />
     <EmbeddedResource Include="../../tools/data/titles.json" LogicalName="titles.json" />
+    <EmbeddedResource Include="../../tools/data/sealstones.json" LogicalName="sealstones.json" />
     <EmbeddedResource Include="../../tools/data/skins.json" LogicalName="skins.json" />
     <EmbeddedResource Include="../../tools/data/skin_extraction.json" LogicalName="skin_extraction.json" />
     <EmbeddedResource Include="../../tools/data/item-decompose-skins.json" LogicalName="item-decompose-skins.json" />

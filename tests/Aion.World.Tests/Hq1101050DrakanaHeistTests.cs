@@ -89,6 +89,8 @@ public sealed class Hq1101050DrakanaHeistTests(ITestOutputHelper output)
         var now = Now + 30_000;
         for (var i = 0; i < 400 && !run!.Finished; i++, now += 1000)
         {
+            // The script's kills move the session's harness clock on; tick from there, not behind it.
+            now = MapEventScenarioHelpers.HarnessNow(session, now);
             for (var k = 1; k < 10; k++)
             {
                 await session.TickAsync(now + k * 100);

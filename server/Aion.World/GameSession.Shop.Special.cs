@@ -70,8 +70,18 @@ public sealed partial class GameSession
         var shop = Shops.CoinShopName(dataId) ?? Shops.CoinShopName(openCoinShop ?? -1);
         if (shop is null || Store is not { } store || CharacterId is not { } character || entries.Count == 0) return [Reply(1)];
         DebugShop($"CoinShopBuy_RQ dataId={dataId} lines={string.Join(',', entries.Select(e => $"{e.Goods}x{e.Count}"))}");
-        return await BuyShopEntriesAsync("coin", shop, entries, now, ct, Reply, store, character);
+        var replies = await BuyShopEntriesAsync("coin", shop, entries, now, ct, Reply, store, character);
+        // A purchase answers 0x8c09 with 1536 after the item changes (the A2Core fork's recordings, addiboii 28315c6; not in
+        // ours, #70), like the NPC shop's 0x8c03. The shared buy path puts a 0 reply first, which the guild shop relies on.
+        if (replies is [var first, ..] && BitConverter.ToUInt16(first, 0) == CoinShopBuyRs && BitConverter.ToUInt16(first, 2) == 0)
+        {
+            replies.RemoveAt(0);
+            replies.Add(Reply(CoinShopBought));
+        }
+        return replies;
     }
+
+    public const ushort CoinShopBought = 1536;
 
     async Task<List<byte[]>> BuyGuildShopAsync(byte[] plain, long now, CancellationToken ct)
     {

@@ -99,6 +99,29 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(summary['messages'], 1)
         self.assertEqual(summary['skipped_packets'], {})
 
+    def test_classic_pcap_and_markers_beside_it(self):
+        a, b = frame(b'\x00\x8d' + bytes(4)), frame(b'\x42\x36' + bytes(5))
+        records = [(tcp(5000, a, server_to_client=True), 100.0), (tcp(5000 + len(a), b, server_to_client=True), 102.5)]
+        pcap = struct.pack('<IHHiIII', 0xa1b2c3d4, 2, 4, 0, 0, 65535, 1) + b''.join(
+            struct.pack('<IIII', int(t), round(t % 1 * 1_000_000), len(f), len(f)) + f for f, t in records)
+        markers = [{'utc_ms': 101_000, 'n': 1, 'note': 'gathered the node', 'screenshot': 'session-x-marker-001.png'},
+                   {'utc_ms': 103_000, 'n': 2, 'note': '', 'screenshot': None}]
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'session-x.pcap'
+            path.write_bytes(pcap)
+            (Path(temp) / 'session-x-markers.jsonl').write_text(''.join(json.dumps(m) + '\n' for m in markers), encoding='utf-8')
+            summary, out = capture_timeline.decode(path)
+            lines = [json.loads(line) for line in (out / 'timeline.jsonl').read_text(encoding='utf-8').splitlines()]
+            _, plain_out = capture_timeline.decode(path, out=Path(temp) / 'plain', markers=False)
+            plain = (plain_out / 'timeline.jsonl').read_text(encoding='utf-8').splitlines()
+        self.assertEqual(summary['messages'], 2)
+        self.assertEqual((summary['markers']['count'], summary['markers']['outside_capture']), (2, 0))
+        self.assertEqual([l.get('op') or l['text'] for l in lines],
+                         ['0x8d00', '== MARKER 1: gathered the node (session-x-marker-001.png) ==', '0x3642', '== MARKER 2 =='])
+        self.assertEqual([l.get('i') for l in lines], [0, None, 1, None])
+        self.assertEqual((lines[1]['ms'], lines[1]['t']), (1000, '1970-01-01T00:01:41.000+00:00'))
+        self.assertEqual(len(plain), 2)
+
 
 if __name__ == '__main__':
     unittest.main()

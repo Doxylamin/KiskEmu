@@ -77,7 +77,6 @@ public sealed class ItemStatTables
         {
             foreach (var field in file.RolledFields ?? [])
                 if (upgrades.TryGetProperty(field, out var node)) total += SumNode(node, stat);
-            if (upgrades.TryGetProperty("magicstones", out var stones)) total += SumNode(stones, stat);
         }
         return total;
     }

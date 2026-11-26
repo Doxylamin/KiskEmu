@@ -19,6 +19,13 @@ public sealed partial class GameSession
         DaevanionOpenRouteNodeRq = 0xe2f0, DaevanionOpenRouteNodeRs = 0xe2f1;
     /// <summary>Live client (2026-10-31): node learn moved +0x2db from 0xe227; body is OpenRouteNode wire (board i32, node path).</summary>
     public const ushort DaevanionOpenNodeRqLive = 0xe502, DaevanionOpenNodeRsLive = 0xe503;
+    /// <summary>
+    /// Live client: "acquire all nodes" on a board. 0xe502 carries the OpenRouteNode_RQ body, so the live run puts the usmap's
+    /// OpenRouteNode_RQ at 0xe502 and OpenAllNode_RQ/RS (two structs before it) at 0xe500/0xe501. Live 2026-11-12 the button
+    /// sent 0xe500 with 6 bytes (opcode + board id i32), as OpenAllNode_RQ. CANDIDATE: the reply is OpenAllNode_RS per the
+    /// usmap (result i32, board i32, opened node ids); no official sample (the capture's client direction is not decrypted).
+    /// </summary>
+    public const ushort DaevanionOpenAllNodeRqLive = 0xe500, DaevanionOpenAllNodeRsLive = 0xe501;
 
     /// <summary>EContentsUnlockType::Daevanion (20): the client keeps board tabs locked until this is in 0xe257/0xe258.</summary>
     public const byte DaevanionContentsUnlock = 20;
@@ -115,7 +122,7 @@ public sealed partial class GameSession
         var (stats, hpMax) = StatSheet();
         resources.HpMax = hpMax;
         resources.MpMax = MpMax;
-        resources.SpMax = GamePackets.SpawnSp + BuffStat("SPMax");
+        resources.SpMax = GamePackets.SpawnSp + BuffStat("SPMax") + MonolithStat("SPMax");
         resources.ApMax = PlayerApPools.ApMax(data, className, level, Profile()?.Resource);
         resources.Hp = Math.Min(resources.Hp, hpMax);
         resources.Mp = Math.Min(resources.Mp, resources.MpMax);
@@ -342,18 +349,25 @@ public sealed partial class GameSession
         ];
     }
 
-    async Task<List<byte[]>> DaevanionOpenAllNodeAsync(byte[] plain, CancellationToken ct)
+    async Task<List<byte[]>> DaevanionOpenAllNodeAsync(byte[] plain, CancellationToken ct) =>
+        await DaevanionOpenAllNodeAsync(plain, DaevanionOpenAllNodeRs, ct);
+
+    async Task<List<byte[]>> DaevanionOpenAllNodeAsync(byte[] plain, ushort rsOpcode, CancellationToken ct)
     {
         if (plain.Length < 6) return [];
         var boardId = BitConverter.ToInt32(plain, 2);
-        byte[] Reply(int result, IReadOnlyList<int> ids) => DaevanionBatchOpenReply(DaevanionOpenAllNodeRs, result, boardId, ids);
+        byte[] Reply(int result, IReadOnlyList<int> ids) => DaevanionBatchOpenReply(rsOpcode, result, boardId, ids);
         if (!BoardAllowed(boardId)) return [Reply(1, [])];
         var opened = CollectOpenAll(boardId);
-        if (opened.Count == 0)
+        // All or nothing: the button names the crystals for the whole board (live 2026-11-15 "Required amount of crystals
+        // to obtain... 120" in red with fewer) and opening what the points paid for left the player with a partial board.
+        if (Daevanion.NodesOfBoard(boardId).Any(id => !daevanionNodes.Contains(id)))
         {
-            var pending = Daevanion.NodesOfBoard(boardId).Any(id => !daevanionNodes.Contains(id));
-            return [Reply(pending ? 1 : 0, [])];
+            foreach (var id in opened.OrderByDescending(i => i))
+                if (Daevanion.NodeOf(id) is { } node) RollbackOpenNode(id, node);
+            return [Reply(1, [])];
         }
+        if (opened.Count == 0) return [Reply(0, [])];
         var tail = await FinishBatchOpenAsync(opened, ct);
         if (tail.Count == 0) return [Reply(1, [])];
         return [Reply(0, opened), .. tail];
@@ -393,15 +407,44 @@ public sealed partial class GameSession
         if (plain.Length < 6) return [];
         var nodeId = BitConverter.ToInt32(plain, 2);
         byte[] Reply(int result) => PacketWriter.Opcode(DaevanionCloseNodeRs).U16(result).I32(nodeId).ToArray();
-        if (Daevanion.NodeOf(nodeId) is not { } node || node.Type == 0 || !daevanionNodes.Remove(nodeId)) return [Reply(1)];
+        if (Daevanion.NodeOf(nodeId) is not { } node || node.Type == 0 || !daevanionNodes.Contains(nodeId)) return [Reply(1)];
+        if (Store is not { } store || CharacterId is not { } character) return [Reply(1)];
+        if (CostStacks(KinaItemId, DaevanionRefundKina) is not { } costs) return [Reply(SlotExtendFailNotEnoughKina)];
+        daevanionNodes.Remove(nodeId);
+        var used = daevanionUsed.ToDictionary(p => p.Key, p => p.Value);
         if (node.Cost > 0 && Daevanion.BoardOf(node.BoardId) is { } board)
         {
             daevanionUsed[board.PointType] = Math.Max(0, daevanionUsed.GetValueOrDefault(board.PointType) - node.Cost);
             if (daevanionUsed[board.PointType] == 0) daevanionUsed.Remove(board.PointType);
         }
-        if (!await PersistDaevanionAsync(ct)) return [Reply(1)];
-        return [Reply(0), DaevanionBoardInfo(), DaevanionPointUpdate(), .. DaevanionOpenStatPackets([node])];
+        void Undo()
+        {
+            daevanionNodes.Add(nodeId);
+            daevanionUsed.Clear();
+            foreach (var (type, points) in used) daevanionUsed[type] = points;
+        }
+        if (!await PersistDaevanionAsync(ct)) { Undo(); return [Reply(1)]; }
+        var paid = await Stored(async () =>
+        {
+            foreach (var (item, revision, count) in costs)
+                if (!await store.ConsumeItemAsync(character, item, revision, count, ct)) return [];
+            return [[]];
+        });
+        if (paid.Count == 0)
+        {
+            Undo();
+            await PersistDaevanionAsync(ct);
+            return [Reply(1), .. await InventoryChangesAsync(ct, 0, 0)];
+        }
+        // Official order (OBSERVED 2026-11-15, one refund): 0xe22e points, 0x364a stats, 0x561d, 0x3656 combat power (not
+        // ours), 0x561b Kina -500 (reason 71), then 0xe22b `0000 <node i32>`. No 0xe226 board list.
+        return [DaevanionPointUpdate(), .. DaevanionOpenStatPackets([node]), .. await InventoryChangesAsync(ct, 0, DecreaseDaevanionRefund), Reply(0)];
     }
+
+    /// <summary>Kina for refunding one Daevanion node (OBSERVED 2026-11-15: 500 for a class-board node; whether it scales with
+    /// the node or the board is not known). EDecreaseReason 71 as the 0x561b carried it.</summary>
+    public const long DaevanionRefundKina = 500;
+    const byte DecreaseDaevanionRefund = 71;
 
     async Task<List<byte[]>> DaevanionResetBoardAsync(byte[] plain, CancellationToken ct)
     {
@@ -438,12 +481,25 @@ public sealed partial class GameSession
         if (consumed.Count == 0) return null;
         daevanionBonus[g.PointType] = daevanionBonus.GetValueOrDefault(g.PointType) + g.Amount;
         if (!await PersistDaevanionAsync(ct)) return null;
-        return
-        [
-            .. Used(row, reply),
-            PacketWriter.Opcode(UpdateItemDaevanionPointNt).U8(1).U8((byte)g.PointType).I32(g.Amount).ToArray(),
-            DaevanionPointUpdate(),
-        ];
+        // OBSERVED official 2026-11-04 (i=153515-153517, 303467-303469): the 0x561b with decrease reason 70, the item-use reply,
+        // then 0xe22f with every point type's item-bonus total, and nothing after (#70, as the A2Core fork found, 7265c13).
+        var replies = await InventoryChangesAsync(ct, 0, DecreaseDaevanionItem);
+        replies.AddRange(Used(row, reply));
+        replies.Add(UpdateItemDaevanionPoint());
+        return replies;
+    }
+
+    const byte DecreaseDaevanionItem = 70;
+
+    /// <summary>
+    /// 0xe22f UpdateItemDaevanionPoint_NT {varint count, {u8 point type, u16 item-bonus total}} for the five point types. OBSERVED
+    /// `2fe2 05 010a00 020000 030000 040000 050000` (official 2026-11-04 i=153517: type 1 at 10 after a crystal; 11, 12 later).
+    /// </summary>
+    byte[] UpdateItemDaevanionPoint()
+    {
+        var w = PacketWriter.Opcode(UpdateItemDaevanionPointNt).Varint(5);
+        for (byte type = 1; type <= 5; type++) w.U8(type).U16((ushort)Math.Clamp(daevanionBonus.GetValueOrDefault(type), 0, ushort.MaxValue));
+        return w.ToArray();
     }
 
     /// <summary>Summed EStat wire bonuses from stat nodes (values are basis points for % stats).</summary>

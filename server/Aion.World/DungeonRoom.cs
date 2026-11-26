@@ -17,6 +17,8 @@ public sealed class DungeonRoom(int roomKey, WorldPlayer leader, int contentDung
     public List<int> AffixList { get; } = [];
     public List<WorldPlayer> Members { get; } = [leader];
     public HashSet<int> Ready { get; } = [];
+    /// <summary>The EPartyRole each member picked (Join_RQ's role byte, InstantJoin_RQ's first wanted role); 4 All when none.</summary>
+    public Dictionary<int, byte> Roles { get; } = [];
     public Dictionary<int, long> PendingApply { get; } = [];
     public Dictionary<int, long> PendingInvite { get; } = [];
     public int Limit => MapEventTables.Embedded.Dungeon(ResolvedDungeonId)?.MaxMember is { } cap and > 0 ? cap : Party.Limit;

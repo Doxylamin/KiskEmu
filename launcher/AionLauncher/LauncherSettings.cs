@@ -74,6 +74,9 @@ sealed class LauncherSettings
     /// <summary>Folder of a started (possibly interrupted) Steam download, and the build it is for.</summary>
     public string? DownloadFolder { get; set; }
     public string? DownloadBuild { get; set; }
+    /// <summary>The folder the player chose for a download not started yet, and the build it is for.</summary>
+    public string? DownloadChoice { get; set; }
+    public string? DownloadChoiceBuild { get; set; }
     public string? SteamAccount { get; set; }
     /// <summary>Steam refresh token, DPAPI-protected (current Windows user), base64.</summary>
     public string? SteamToken { get; set; }

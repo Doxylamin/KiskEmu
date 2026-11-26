@@ -646,16 +646,21 @@ sealed class MainForm : Form
     void ShowDownload(string? message = null)
     {
         var resuming = workflow.Settings.DownloadFolder is not null;
-        Page(GameStep, resuming ? "Continue the download" : "Download the game", "This server runs one specific version of the game (about 88 GB). "
+        var version = workflow.GameVersionText is { } named ? named : "one specific version of the game";
+        Page(GameStep, resuming ? "Continue the download" : "Download the game", $"This server runs {version} ({Gb(workflow.Build.TotalBytes)}). "
             + "KiskLauncher downloads it from Steam with your own Steam account. Your normal Steam copy of the game is not changed.");
         var folder = workflow.DownloadFolder();
+        var room = folder is not null && workflow.HasRoom(folder);
         var spaceRow = AddRequirement(null);
-        spaceRow.Set(folder is not null, folder is null
-            ? $"No drive has {Gb(workflow.Build.TotalBytes)} free. Free up space, then press Check again."
-            : $"Saving to {folder} ({Gb(workflow.StillNeeded(folder))} to download, {Gb(Workflow.FreeBytes(folder))} free).");
+        spaceRow.Set(room, folder is null
+            ? $"No drive has {Gb(workflow.Build.TotalBytes)} free. Free up space or choose another folder, then press Check again."
+            : $"Saving to {folder} ({Gb(workflow.StillNeeded(folder))} to download, {Gb(Workflow.FreeBytes(folder))} free)."
+              + (room ? "" : " Not enough space there: choose another folder."));
         var start = AddButton(resuming ? "Continue download" : "Sign in to Steam and download", primary: true, null, wide: true);
-        start.Visible = folder is not null;
-        if (folder is null) AddButton("Check again", primary: false, () => { ShowDownload(); return Task.CompletedTask; });
+        start.Visible = room;
+        if (!room) AddButton("Check again", primary: false, () => { ShowDownload(); return Task.CompletedTask; });
+        // A started download stays where it is (its files are there); before that the player may pick the folder.
+        if (!resuming) AddLink("Choose another download folder", ChooseDownloadFolder);
         AddLabel("You sign in by scanning a QR code with the Steam app on your phone. KiskLauncher never sees your Steam password.", muted: true);
         AddLink("I already have this version in another folder", ChooseExistingCopy);
         // Steam moves past the server's build with every official patch; the server may also allow the Steam copy as-is.
@@ -763,6 +768,18 @@ sealed class MainForm : Form
             for (var x = 0; x < matrix.Count; x++)
                 if (matrix[y][x]) g.FillRectangle(Brushes.Black, x * scale, y * scale, scale, scale);
         return bitmap;
+    }
+
+    Task ChooseDownloadFolder()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = $"Choose where to download the game ({Gb(workflow.Build.TotalBytes)}). A folder named for the version is made inside it.",
+            UseDescriptionForTitle = true,
+        };
+        if (dialog.ShowDialog(this) == DialogResult.OK) workflow.ChooseDownloadFolder(dialog.SelectedPath);
+        ShowDownload();
+        return Task.CompletedTask;
     }
 
     async Task ChooseExistingCopy()

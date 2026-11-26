@@ -16,9 +16,10 @@ public sealed class SkillChainHotbarTests
     static byte[] Cast(int skill, int target = Combat.TrainingDummyKey) =>
         new PacketWriter().U16(0x3800).U16(0).I32(skill).U8(2).Varint(target).F32(0).F32(100).F32(200).F32(300).ToArray();
 
-    static async Task<GameSession> RangerAsync(int level = 45)
+    static async Task<GameSession> RangerAsync(int level = 45, Action<FakeCharacterStore>? setup = null)
     {
         var store = new FakeCharacterStore { Progress = (level, 0) };
+        setup?.Invoke(store);
         var session = new GameSession(GameSessionTestHelpers.LiveGameData,
             new GameSessionOptions { CharacterLevel = level, WorldId = store.WorldId, TrainingDummy = true },
             new Random(2)) { Store = store };
@@ -68,7 +69,12 @@ public sealed class SkillChainHotbarTests
         const int defiance = 14_260_010;
         const int follow = 14_370_010;
         const int selfAbnormal = 100_200_001;
-        var session = await RangerAsync();
+        // 14260010 is Defiance's specialisation child: cast only with its part on (SkillSpecializationTests).
+        var session = await RangerAsync(setup: store =>
+        {
+            store.Skills.Add(new Aion.Application.Gameplay.SkillState(14_260_000, 8, null, 8));
+            store.SkillParts.Add(new(14_260_000, 1, defiance));
+        });
         var replies = await session.HandleAsync(
             new PacketWriter().U16(0x3800).U16(0).I32(defiance).U8(2).Varint(session.PlayerKey)
                 .F32(0).F32(100).F32(200).F32(300).ToArray(),
@@ -102,6 +108,7 @@ public sealed class SkillChainHotbarTests
     {
         var session = await AssassinAsync();
         var t = Now + 28_000;
+        await session.TickAsync(t - 1_000);   // the load protection 10002 (5 s) is over
         var before = session.ActiveBuffs.Count;
         var replies = await session.HandleAsync(Cast(13_010_000), t);
         Assert.DoesNotContain(replies, p => GameSessionTestHelpers.Op(p) == 0x382a);
@@ -116,6 +123,7 @@ public sealed class SkillChainHotbarTests
     {
         var session = await RangerAsync();
         var t = Now + 30_000;
+        await session.TickAsync(t - 1_000);   // the load protection 10002 (5 s) is over
         var before = session.ActiveBuffs.Count;
         var replies = await session.HandleAsync(Cast(14_020_000), t);
         Assert.Contains(replies, p => GameSessionTestHelpers.Op(p) == 0x3818);

@@ -20,6 +20,7 @@ public sealed class ShopTables
         [property: JsonPropertyName("goods")] Dictionary<string, long[]> Goods,
         [property: JsonPropertyName("sell")] Dictionary<string, long> Sell,
         [property: JsonPropertyName("coin_shops")] Dictionary<string, string>? CoinShops,
+        [property: JsonPropertyName("coin_shop_goods")] Dictionary<string, Dictionary<string, string[]>>? CoinShopGoods,
         [property: JsonPropertyName("guild_shops")] string[]? GuildShops,
         [property: JsonPropertyName("random_shops")] RandomShopsFile? RandomShops);
 
@@ -57,7 +58,15 @@ public sealed class ShopTables
 
     /// <summary>A goods row listed in a named shop for a race.</summary>
     public GoodsRow? GoodsInShop(string shop, int race, int goodsId) =>
-        file.Shops.TryGetValue(shop, out var races) && races.TryGetValue(Key(race), out var list) && list.Contains(Key(goodsId)) ? Row(goodsId) : null;
+        ShopList(shop, race) is { } list && list.Contains(Key(goodsId)) ? Row(goodsId) : null;
+
+    /// <summary>The goods ids a shop lists for a race: an NPC/guild shop, else a coin shop (its GameShop.dat GoodsList).</summary>
+    string[]? ShopList(string shop, int race) =>
+        (file.Shops.TryGetValue(shop, out var races) || file.CoinShopGoods?.TryGetValue(shop, out races) == true)
+        && races!.TryGetValue(Key(race), out var list) ? list : null;
+
+    /// <summary>How many goods a shop lists for a race (0 for an unknown shop).</summary>
+    public int ShopGoodsCount(string shop, int race) => ShopList(shop, race)?.Length ?? 0;
 
     /// <summary>A goods row the merchant sells to a race; null otherwise.</summary>
     public GoodsRow? Goods(int npcId, int race, int goodsId) =>
@@ -68,7 +77,7 @@ public sealed class ShopTables
         file.Npcs.TryGetValue(Key(npcId), out var shop) ? LimitedGoodsInShop(shop, race) : [];
 
     public IEnumerable<(int GoodsId, GoodsRow Row)> LimitedGoodsInShop(string shop, int race) =>
-        file.Shops.TryGetValue(shop, out var races) && races.TryGetValue(Key(race), out var list)
+        ShopList(shop, race) is { } list
             ? list.Select(id => (Id: int.Parse(id, System.Globalization.CultureInfo.InvariantCulture), Row: GoodsInShop(shop, race, int.Parse(id, System.Globalization.CultureInfo.InvariantCulture))))
                 .Where(x => x.Row is { Limit: > 0 }).Select(x => (x.Id, x.Row!))
             : [];
@@ -93,6 +102,12 @@ public sealed class ShopTables
 // position): restored for what they sold for (CANDIDATE cost), 30 per year (ItemRestorePolicy NpcShopSell).
 public sealed partial class GameSession
 {
+    /// <summary>
+    /// The success results of 0x8c03 and 0x8c05 (OBSERVED 2026-11-15): buy `038c 0006 a3780000 01 bde22306 01000000` = u16 1536,
+    /// NPC key i32, count, {goods i32, count i32}; sell `058c 1006 a3780000 01 {i64 item, i64 count}` = u16 1552. Live results
+    /// are u16 EResult codes, not 0 on success. The refusal codes (1, 2, 3) are still ours.
+    /// </summary>
+    public const int ShopBuyOk = 1536, ShopSellOk = 1552;
     public const ushort ShopOpenRq = 0x8c00, ShopOpenRs = 0x8c01, ShopBuyRq = 0x8c02, ShopBuyRs = 0x8c03, ShopSellRq = 0x8c04, ShopSellRs = 0x8c05,
         RestorableItemsNt = 0xe342, ItemRestoreRq = 0xe344, ItemRestoreRs = 0xe345;
     const byte IncreaseShopBuy = 19, IncreaseShopSell = 20, DecreaseShopBuy = 15, DecreaseShopSell = 16;   // EIncreaseReason / EDecreaseReason
@@ -100,11 +115,19 @@ public sealed partial class GameSession
     public static readonly TimeSpan BuybackKept = TimeSpan.FromHours(72);
     List<ItemState> buyback = [];
 
-    /// <summary>Stacks of an item in the bag covering <paramref name="count"/> (largest first), or null when short.</summary>
+    /// <summary>
+    /// Stacks of an item in the bag covering <paramref name="count"/> (largest first), or null when short. A Kina cost
+    /// (930100001) goes on into the other Kina, 930100031, once 930100001 is spent: OBSERVED R1115 ~i=726572, the 10th bag
+    /// expansion (1,000,000 Kina) emptied 930100001 (959,998 → 0) and took the other 40,002 from 930100031
+    /// (2,180,132 → 2,140,130), both with the same decrease reason.
+    /// </summary>
     List<(Guid Item, long Revision, int Count)>? CostStacks(int itemId, long count, Guid? except = null)
     {
         var costs = new List<(Guid, long, int)>();
-        foreach (var stack in storedItems.Values.Where(i => i.TemplateId == itemId && i.Location == "bag" && i.InstanceId != except).OrderByDescending(i => i.Quantity))
+        IEnumerable<ItemState> Stacks(int template) =>
+            storedItems.Values.Where(i => i.TemplateId == template && i.Location == "bag" && i.InstanceId != except).OrderByDescending(i => i.Quantity);
+        var stacks = itemId == KinaItemId ? Stacks(KinaItemId).Concat(Stacks(ItemCurrencies.KinaNonbinding)) : Stacks(itemId);
+        foreach (var stack in stacks)
         {
             if (count <= 0) break;
             var n = (int)Math.Min(Math.Min(stack.Quantity, count), int.MaxValue);
@@ -206,7 +229,7 @@ public sealed partial class GameSession
         var entries = request?.Entries ?? [];
         byte[] Reply(int result, int npc)
         {
-            var w = PacketWriter.Opcode(ShopBuyRs).U16(result).Varint(npc).Varint(entries.Count);
+            var w = PacketWriter.Opcode(ShopBuyRs).U16(result).I32(npc).Varint(entries.Count);
             foreach (var (goods, count) in entries) w.I32((int)goods).I32((int)count);
             return w.ToArray();
         }
@@ -239,8 +262,9 @@ public sealed partial class GameSession
             DebugShop($"ShopBuy_RS npcKey={npcKey} result={(limits.Count > 0 ? 3 : 1)} (failed)");
             return [Reply(limits.Count > 0 ? 3 : 1, npcKey)];
         }
-        DebugShop($"ShopBuy_RS npcKey={npcKey} result=0 rewards={string.Join(',', rewards.Select(r => $"{r.Item1}x{r.Item2}"))}");
-        return [Reply(0, npcKey), .. await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy)];
+        DebugShop($"ShopBuy_RS npcKey={npcKey} result={ShopBuyOk} rewards={string.Join(',', rewards.Select(r => $"{r.Item1}x{r.Item2}"))}");
+        // Official order (OBSERVED 2026-11-15): the bag change (0x561b) first, then 0x8c03.
+        return [.. await InventoryChangesAsync(ct, IncreaseShopBuy, DecreaseShopBuy), Reply(ShopBuyOk, npcKey)];
     }
 
     /// <summary>0x8c04 NpcShopSellItem_RQ {NPC key, map item key -> count}: items sold for their Item.dat SellPrice in Kina, answered 0x8c05.</summary>
@@ -250,7 +274,7 @@ public sealed partial class GameSession
         var entries = request?.Entries ?? [];
         byte[] Reply(int result, int npc)
         {
-            var w = PacketWriter.Opcode(ShopSellRs).U16(result).Varint(npc).Varint(entries.Count);
+            var w = PacketWriter.Opcode(ShopSellRs).U16(result).I32(npc).Varint(entries.Count);
             foreach (var (key, count) in entries) w.I64(key).I64(count);
             return w.ToArray();
         }
@@ -266,10 +290,11 @@ public sealed partial class GameSession
             var sold = await Stored(async () => await store.SellToMerchantAsync(character, row.InstanceId, row.Revision, (int)count, price * count, ct) ? [[]] : []);
             if (sold.Count == 0) return [Reply(1, npcKey), .. await InventoryChangesAsync(ct, IncreaseShopSell, DecreaseShopSell)];
         }
-        var replies = new List<byte[]> { Reply(0, npcKey) };
-        replies.AddRange(await InventoryChangesAsync(ct, IncreaseShopSell, DecreaseShopSell));
+        // Official order (OBSERVED 2026-11-15): the buyback list (0xe342), the bag change (0x561b), then 0x8c05.
         await Stored(async () => { await LoadBuybackAsync(store, character, ct); return []; });
-        replies.Add(RestorableItems());
+        var replies = new List<byte[]> { RestorableItems() };
+        replies.AddRange(await InventoryChangesAsync(ct, IncreaseShopSell, DecreaseShopSell));
+        replies.Add(Reply(ShopSellOk, npcKey));
         return replies;
     }
 

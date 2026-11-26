@@ -8,7 +8,7 @@ using Aion.Host.Chat;
 namespace Aion.Host.Worlds;
 
 /// <summary>A character in a world process, as that process reports it to the primary host (/internal/world/presence).</summary>
-public sealed record WorldPresenceEntry(Guid CharacterId, Guid AccountId, string Name, string DisplayName, long GuildId, int Race);
+public sealed record WorldPresenceEntry(Guid CharacterId, Guid AccountId, string Name, string DisplayName, long GuildId, int Race, long PartyId = 0);
 
 /// <summary>A chat command forwarded to the world the sender plays on (/internal/world/command).</summary>
 public sealed record WorldCommandRequest(ChatIdentity Sender, string UserName, string Content);
@@ -25,11 +25,15 @@ public sealed record WorldSanctionChange(Guid? KickAccount, string? Reason);
 /// realm-wide actions (bans, scheduled announcements) reach the worlds through it. A world counts while it answers.
 /// </summary>
 public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor, ILogger<WorldLinks> logger, Realm.RealmSocketHub? sockets = null)
+    : IWorldMoveLink
 {
     public const string ControlHeader = "X-World-Control";
     // Over the world's realm socket while it is open, else HTTP to its control port (server/REALM_LINK.md).
     readonly HttpClient Http = new(sockets is null ? new SocketsHttpHandler() : sockets.Handler(new SocketsHttpHandler()))
     { Timeout = TimeSpan.FromSeconds(5) };
+    // A character move carries the character's rows (CharacterWorldMoves): more time than a control call.
+    readonly HttpClient MoveHttp = new(sockets is null ? new SocketsHttpHandler() : sockets.Handler(new SocketsHttpHandler()))
+    { Timeout = TimeSpan.FromSeconds(60) };
 
     /// <summary>The world servers that answer now (on their status port, or a remote one over its realm socket).</summary>
     public async Task<IReadOnlyList<WorldRecord>> RunningAsync(CancellationToken ct) =>
@@ -76,6 +80,38 @@ public sealed class WorldLinks(LoginWorldList worlds, WorldSupervisor supervisor
             return default;
         }
     }
+
+    /// <summary>A step of a character move on one world (/internal/world/characters/{step}): its status and body, never thrown.</summary>
+    public async Task<WorldMoveStep> MoveStepAsync(int worldId, string step, object body, CancellationToken ct)
+    {
+        if (await RunningAsync(worldId, ct) is not { } world)
+            return new(503, System.Text.Json.JsonSerializer.SerializeToElement(new { error = "world_offline", world = worldId }));
+        using var request = Request(world, HttpMethod.Post, "/internal/world/characters/" + step);
+        request.Options.Set(Realm.LinkTunnelHandler.RetrySafe, true);   // every step is repeatable by its request id
+        request.Content = JsonContent.Create(body);
+        try
+        {
+            using var response = await MoveHttp.SendAsync(request, ct);
+            var text = await response.Content.ReadAsStringAsync(ct);
+            System.Text.Json.JsonElement? json = null;
+            try { if (text.Length > 0) json = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(text); }
+            catch (System.Text.Json.JsonException) { }
+            if (!response.IsSuccessStatusCode) logger.LogWarning("World {World} answered {Status} on move {Step}", worldId, (int)response.StatusCode, step);
+            return new((int)response.StatusCode, json);
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning("World {World} unreachable on move {Step}: {Error}", worldId, step, error.Message);
+            return new(0, null);
+        }
+    }
+
+    /// <summary>
+    /// An account's character as its world server keeps it, stored and live (/internal/world/character); null when the
+    /// world does not answer or the account does not own the character there. The realm checked ownership first.
+    /// </summary>
+    public Task<Authentication.CharacterDetails?> CharacterAsync(WorldRecord world, Guid account, Guid character, CancellationToken ct) =>
+        SendAsync<Authentication.CharacterDetails>(world, HttpMethod.Get, $"/internal/world/character?account={account:D}&character={character:D}", null, ct);
 
     public async Task<IReadOnlyList<WorldPresenceEntry>?> PresenceAsync(WorldRecord world, CancellationToken ct) =>
         await SendAsync<List<WorldPresenceEntry>>(world, HttpMethod.Get, "/internal/world/presence", null, ct);
@@ -296,7 +332,7 @@ public sealed class RealmChatDirectory(WorldChatDirectory? local, WorldPresenceM
         };
     }
 
-    static ChatCharacter Character(WorldPresenceEntry entry) => new(entry.CharacterId, entry.Name, entry.DisplayName, entry.GuildId, entry.Race);
+    static ChatCharacter Character(WorldPresenceEntry entry) => new(entry.CharacterId, entry.Name, entry.DisplayName, entry.GuildId, entry.Race, entry.PartyId);
 }
 
 /// <summary>

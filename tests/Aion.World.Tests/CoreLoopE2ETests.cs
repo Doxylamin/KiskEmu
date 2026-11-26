@@ -86,10 +86,10 @@ public sealed class CoreLoopE2ETests
         await session.InventoryChangesAsync(default);
         var torsoKey = store.Items.Single(i => i.WireId == 200).WireId;
         var equip = await session.HandleAsync(new PacketWriter().U16(0xe247).I64(torsoKey).U8(5).ToArray(), t + 1400);
-        Assert.Equal(0, BitConverter.ToUInt16(equip[0], 2));
+        Assert.Equal(1072, BitConverter.ToUInt16(equip.Single(p => GameSessionTestHelpers.Op(p) == 0xe248), 2));
         Assert.Equal("equipment", store.Items.Single(i => i.WireId == torsoKey).Location);
         var unequip = await session.HandleAsync(new PacketWriter().U16(0xe249).I64(torsoKey).U8(5).I32(0).ToArray(), t + 1500);
-        Assert.Equal(0, BitConverter.ToUInt16(unequip[0], 2));
+        Assert.Equal(1087, BitConverter.ToUInt16(unequip.Single(p => GameSessionTestHelpers.Op(p) == 0xe24a), 2));
         Assert.Equal("bag", store.Items.Single(i => i.WireId == torsoKey).Location);
         await session.HandleAsync(new PacketWriter().U16(0xe247).I64(torsoKey).U8(5).ToArray(), t + 1600);
 
@@ -125,7 +125,7 @@ public sealed class CoreLoopE2ETests
         Assert.True(session.Dead);
         var rebirth = await session.HandleAsync(new PacketWriter().U16(RidePackets.UseRebirthRq).U8(1).ToArray(), t + 2100);
         Assert.Contains(rebirth, p => p.SequenceEqual(RidePackets.UseRebirthReply(0, true)));
-        await session.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), t + 2200);
+        Assert.DoesNotContain(rebirth, p => GameSessionTestHelpers.Op(p) == 0x3621);   // in place: no map load to complete
         Assert.False(session.Dead);
         Assert.Equal(fell, session.Position);
 
@@ -133,7 +133,7 @@ public sealed class CoreLoopE2ETests
         await session.InventoryChangesAsync(default);
         var potionsInBag = store.Items.Where(i => i.TemplateId == LifePotion && i.Location == "bag").Sum(i => i.Quantity);
         var potionUse = await session.HandleAsync(new PacketWriter().U16(RidePackets.ItemUseRq).I64(202).ToArray(), t + 2300);
-        Assert.DoesNotContain(potionUse, p => p.Length >= 3 && GameSessionTestHelpers.Op(p) == RidePackets.ItemUseRs && BitConverter.ToUInt16(p, 2) != 0);
+        Assert.DoesNotContain(potionUse, p => p.Length >= 3 && GameSessionTestHelpers.Op(p) == RidePackets.ItemUseRs && BitConverter.ToUInt16(p, 2) != RidePackets.ItemUseSuccess);
         await session.TickAsync(t + 2400);
         await session.TickAsync(t + 11_000);
         Assert.True(store.Items.Where(i => i.TemplateId == LifePotion && i.Location == "bag").Sum(i => i.Quantity) < potionsInBag);
@@ -143,7 +143,7 @@ public sealed class CoreLoopE2ETests
         var potionsBefore = store.Items.Where(i => i.TemplateId == LifePotion).Sum(i => i.Quantity);
         var kinaBefore = FakeCharacterStore.KinaIn(store);
         var buy = await session.HandleAsync(new PacketWriter().U16(GameSession.ShopBuyRq).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(GrocerGoodsId).I32(1).ToArray(), t + 2600);
-        Assert.Equal(0, BitConverter.ToUInt16(buy[0], 2));
+        Assert.Equal(GameSession.ShopBuyOk, BitConverter.ToUInt16(buy[^1], 2));
         Assert.Equal(potionsBefore + 1, store.Items.Where(i => i.TemplateId == LifePotion).Sum(i => i.Quantity));
         Assert.True(FakeCharacterStore.KinaIn(store) < kinaBefore);
         var sellWire = store.Items.First(i => i.TemplateId == LifePotion && i.Location == "bag").WireId;

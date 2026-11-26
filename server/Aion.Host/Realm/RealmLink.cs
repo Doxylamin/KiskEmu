@@ -50,6 +50,7 @@ public sealed record LinkMaintenance(Guid Actor, bool Enabled, string Message);
 public sealed record LinkCharacters(bool Full, IReadOnlyList<IndexedCharacter> Upserts, IReadOnlyList<Guid> Removed);
 public sealed record LinkText(string Text);
 public sealed record LinkCount(int Value);
+public sealed record LinkId(long Value);
 /// <summary>A Quna spend or grant from a world (the realm sets the world from the caller's sign-in).</summary>
 public sealed record LinkQunaChange(Guid Account, string RequestId, long Amount, string Reason, Guid? CharacterId = null,
     System.Text.Json.JsonElement? Details = null);
@@ -141,6 +142,7 @@ public static class RealmLinkEndpoints
             Results.Ok(await tools.SetMaintenanceAsync(new VerifiedAccount(input.Actor), World(ctx).WorldId, input.Enabled, input.Message ?? "", ct)));
         link.MapPost("/tickets", async (LinkTicket input, IStaffTools tools, CancellationToken ct) =>
             Results.Ok(new LinkCount((int)await tools.CreateTicketAsync(input.Account, input.CharacterName, input.Category, input.Content, ct))));
+        MapBugReports(link, ctx => World(ctx).WorldId);
         link.MapPost("/characters", async (LinkCharacters input, HttpContext ctx, IRealmAccounts accounts, CancellationToken ct) =>
         {
             if (input.Upserts.Count > 100_000 || input.Removed.Count > 100_000) return Results.BadRequest(new { error = "too_many" });
@@ -185,6 +187,24 @@ public static class RealmLinkEndpoints
             Results.Ok(await wallet.SpendAsync(Request(input, worldOf(ctx)), ct)));
         link.MapPost("/quna/refund", async (LinkQunaRefund input, HttpContext ctx, IQunaWallet wallet, CancellationToken ct) =>
             Results.Ok(await wallet.RefundAsync(input.Account, input.RequestId ?? "", worldOf(ctx), ct)));
+    }
+
+    /// <summary>
+    /// "/bug" reports (migration 106): the realm records the calling world, whatever the report names. The context (packets,
+    /// nearby spawns) is larger than the host's 16 KB request limit, so the body is read under a limit of its own.
+    /// </summary>
+    public static void MapBugReports(IEndpointRouteBuilder link, Func<HttpContext, int> worldOf)
+    {
+        link.MapPost("/bug-reports", async (HttpContext ctx, IBugReports reports, CancellationToken ct) =>
+        {
+            if (ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+                limit.MaxRequestBodySize = BugReportRules.MaxContextBytes + 64 * 1024;
+            NewBugReport? input;
+            try { input = await ctx.Request.ReadFromJsonAsync<NewBugReport>(ct); }
+            catch (System.Text.Json.JsonException) { input = null; }
+            if (input is null) return Results.BadRequest(new { error = "invalid_bug_report" });
+            return Results.Ok(new LinkId(await reports.CreateAsync(input with { WorldId = worldOf(ctx) }, ct)));
+        });
     }
 
     static QunaRequest Request(LinkQunaChange input, int world) =>
@@ -273,6 +293,7 @@ public sealed class RealmLinkClient
     public Task<LinkRealmState?> StateAsync(CancellationToken ct) => Send<LinkRealmState>(HttpMethod.Get, "state", null, ct);
     public Task<MaintenanceState?> SetMaintenanceAsync(LinkMaintenance input, CancellationToken ct) => Send<MaintenanceState>(HttpMethod.Post, "maintenance", input, ct);
     public Task<LinkCount?> TicketAsync(LinkTicket input, CancellationToken ct) => Send<LinkCount>(HttpMethod.Post, "tickets", input, ct);
+    public Task<LinkId?> BugReportAsync(NewBugReport input, CancellationToken ct) => Send<LinkId>(HttpMethod.Post, "bug-reports", input, ct);
     public Task SyncCharactersAsync(LinkCharacters input, CancellationToken ct) => Send<bool>(HttpMethod.Post, "characters", input, ct, repeatable: true);
     public async Task<int> ChatAsync(string text, CancellationToken ct) => (await Send<LinkCount>(HttpMethod.Post, "chat", new LinkText(text), ct))?.Value ?? 0;
     // The account Quna wallet: every call is repeatable (the request id makes a repeat return the first result).
@@ -562,6 +583,28 @@ public sealed class LinkedStaffTools(PostgresStaffTools local, RealmLinkClient l
     public Task<bool> CancelEventAsync(VerifiedAccount actor, long id, CancellationToken ct = default) => throw RealmOnly();
     public Task<IReadOnlyList<PopulationPoint>> PopulationAsync(VerifiedAccount actor, TimeSpan window, int? worldId = null, CancellationToken ct = default) => throw RealmOnly();
     public Task<RealmStats> RealmStatsAsync(VerifiedAccount actor, CancellationToken ct = default) => throw RealmOnly();
+}
+
+/// <summary>
+/// A world server's bug reports: stored by the realm over the realm link (the realm sets the world). Reading and answering
+/// them is the auth host's (the staff dashboard).
+/// </summary>
+public sealed class LinkedBugReports(RealmLinkClient link) : IBugReports
+{
+    static NotSupportedException RealmOnly() => new("A realm tool: the auth host answers it.");
+
+    public async Task<long> CreateAsync(NewBugReport report, CancellationToken ct = default)
+    {
+        try { return (await link.BugReportAsync(report, ct))?.Value ?? throw new GameplayException("bug_report_failed"); }
+        catch (Exception error) when (error is HttpRequestException or RealmLinkException or TaskCanceledException && !ct.IsCancellationRequested)
+        { throw new GameplayException("bug_report_failed"); }
+    }
+
+    public Task<IReadOnlyList<BugReportSummary>> ListAsync(VerifiedAccount actor, BugReportFilter filter, CancellationToken ct = default) => throw RealmOnly();
+    public Task<BugReport?> GetAsync(VerifiedAccount actor, long id, CancellationToken ct = default) => throw RealmOnly();
+    public Task<bool> UpdateAsync(VerifiedAccount actor, long id, string status, string note, CancellationToken ct = default) => throw RealmOnly();
+    public Task<long?> AttachScreenshotAsync(Guid account, Guid character, BugScreenshot screenshot, CancellationToken ct = default) => throw RealmOnly();
+    public Task<BugScreenshot?> ScreenshotAsync(VerifiedAccount actor, long id, CancellationToken ct = default) => throw RealmOnly();
 }
 
 /// <summary>

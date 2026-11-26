@@ -13,7 +13,8 @@ Sources:
 Objects kept: every placement of an object a quest uses, of Quest-usage objects, of gather nodes
 (Usage GatherSource: UsageValue names a GatherSource row, whose MaterialGroup gives the material, count and bonus
 item; research/local/craft-legion-20261016/tables table-010 GatherSource, table-011 GatherSourceMaterial), and of
-field Monoliths (Usage Monolith: Empyrean Monolith resonate on open maps). Teleport artifacts stay in
+field Monoliths (Usage Monolith: Empyrean Monolith resonate on open maps), plus the Empyrean Traces and Monoliths of
+tools/data/monolith-placements.json (zaraza87/A2Core, #72; merge_monolith_placements). Teleport artifacts stay in
 tools/teleport_artifacts.py. Triggers kept: Quest-function triggers and any a quest names.
 
     python tools/world_objects.py build    # writes tools/data/world-objects.json
@@ -238,6 +239,11 @@ def objects(data, rows, wanted, gathers=None, everything=False, portals=None, ev
                 if row.get('not_have_abnormal_group'):
                     found[-1]['carry'] = {'group': row['not_have_abnormal_group'], 'despawn': row['despawn'],
                                           'finish_duration': row['finish_duration']}
+                # EnvObjData FinishDuration (ms) of an object that dies after use (bDespawn): it times EnvObjDie and the despawn
+                # (OBSERVED in the community fork's recordings: EnvObjDie 50 ms after the use with none, about 650 / 1150 ms
+                # with 500 / 1000; addiboii's fork).
+                if row['despawn'] and row['finish_duration']:
+                    found[-1]['finish_ms'] = row['finish_duration']
                 if row.get('required_combat_power'):
                     found[-1]['required_combat_power'] = row['required_combat_power']
                 if monolith:
@@ -286,7 +292,11 @@ def served_instance_maps(path=ROOT / 'tools/data/map-events.json'):
 
 
 def merge_monolith_placements(maps):
-    """MapData export may be absent locally; committed placements fill field Monolith env objs (tools/data/monolith-placements.json)."""
+    """
+    The Empyrean Traces and Monoliths (tools/data/monolith-placements.json), appended per map after the built objects so the
+    indexes before them stay. Taken from zaraza87/A2Core (#72): every trace with its spawn's UseEnvObjSpawnerName achievement
+    ("achievement", OBSERVED in its 0x3634), the Monoliths of the open maps (Monolith ids: tools/data/monoliths.json).
+    """
     if not MONOLITH_PLACEMENTS.is_file():
         return
     supplement = json.loads(MONOLITH_PLACEMENTS.read_text(encoding='utf-8'))
@@ -322,7 +332,11 @@ def build():
             entry['objects'].extend(placed)
             entry['triggers'].extend(areas)
     merge_monolith_placements(maps)
-    return {'source': 'MapData.dat SpawnInfoList/TriggerActorDataMap + EnvObjData.dat', 'maps': maps}
+    # Map events' UseEnvObj goals name an object by its spawn entry or its EnvObjData name (the server matches either exactly):
+    # every placed object's EnvObjData name, by id.
+    placed = {o['env'] for m in maps.values() for o in m['objects']}
+    env_names = {str(env): rows[env]['name'] for env in sorted(placed) if env in rows and rows[env]['name']}
+    return {'source': 'MapData.dat SpawnInfoList/TriggerActorDataMap + EnvObjData.dat', 'maps': maps, 'env_names': env_names}
 
 
 def main():

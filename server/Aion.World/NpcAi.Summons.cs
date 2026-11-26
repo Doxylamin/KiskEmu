@@ -20,7 +20,7 @@ public sealed partial class NpcAi
     public enum ShotKind { Projectile, Hit, End, CastingStart, SkillStart, Fire, Collision }
 
     public sealed record SummonShot(long DueMs, ShotKind Kind, int SkillId, int ActionSeq, int TargetKey, int Seq,
-        int ProjectileId = 0, int FlightMs = 0, int Damage = 0, int Effect = 0, bool Projectile = false, int Groggy = 0);
+        int ProjectileId = 0, int FlightMs = 0, int Damage = 0, int Effect = 0, bool Projectile = false);
 
     /// <summary>The summon's attacks: its damaging cooldown-free basics, and per skill family its first damaging special.</summary>
     internal (List<(int Id, NpcSkill Skill)> Basics, List<(int Id, NpcSkill Skill)> Specials) SummonRotation(Target summon)
@@ -82,7 +82,7 @@ public sealed partial class NpcAi
         var centre = shape.OnTarget ? victim.Position : summon.Position;
         var yaw = HeadingTo(summon.Position, Flat(victim.Position));
         chosen.AddRange(current.Values
-            .Where(t => t.Key != victim.Key && t.OwnerKey == 0 && t.Hostile && !t.Dead && !t.CorpseRemoved
+            .Where(t => t.Key != victim.Key && t.OwnerKey == 0 && t.Attackable && !t.Dead && !t.CorpseRemoved
                 && shape.Contains(centre, yaw, t.Position, t.Radius))
             .OrderBy(t => t.Position.DistanceSquared(centre)).Take(shape.Max - 1));
         return chosen;
@@ -110,14 +110,14 @@ public sealed partial class NpcAi
         foreach (var (row, index) in rows.Select((r, i) => (r, i)))
         {
             var at = release + index * SummonRowGapMs;
-            var mainFlight = projectile ? area!.FlightMs(Math.Sqrt(summon.Position.DistanceSquared(victim.Position))) : 0;
+            (int Announced, int Arrival) mainFlight = projectile ? area!.Flight(Math.Sqrt(summon.Position.DistanceSquared(victim.Position)), rng) : (0, 0);
             foreach (var t in hitTargets)
             {
-                var flight = projectile ? area!.FlightMs(Math.Sqrt(summon.Position.DistanceSquared(t.Position))) : 0;
+                (int Announced, int Arrival) flight = !projectile ? (0, 0) : t == victim ? mainFlight : area!.Flight(Math.Sqrt(summon.Position.DistanceSquared(t.Position)), rng);
                 var splash = area is { OnTarget: true, IsArea: true } && t != victim;
                 if (projectile && !splash)
-                    brain.Volley.Add(new(at, ShotKind.Projectile, id, seq, t.Key, row + 1, area!.ProjectileFor(row), flight));
-                var lands = at + (splash ? mainFlight : flight);
+                    brain.Volley.Add(new(at, ShotKind.Projectile, id, seq, t.Key, row + 1, area!.ProjectileFor(row), flight.Announced));
+                var lands = at + (splash ? mainFlight.Arrival : flight.Arrival);
                 var defense = Math.Max(0, t.Defense);
                 var damage = Math.Max(1, (int)Math.Round(Damage(summon, skill, t.Level) * 1000.0 / (1000 + defense) / rows.Count));
                 brain.Volley.Add(new(lands, ShotKind.Hit, id, seq, t.Key, row + 1, Damage: damage, Effect: skill.Effect, Projectile: projectile));
@@ -155,11 +155,6 @@ public sealed partial class NpcAi
                 ? GamePackets.ProjectileHit(t.Key, summon.Key, shot.SkillId, shot.Effect, shot.Damage, false, (byte)shot.ActionSeq, shot.Seq)
                 : GamePackets.SkillHit(t.Key, summon.Key, shot.SkillId, shot.Effect, shot.Damage, false, (byte)shot.ActionSeq, shot.Seq));
             replies.AddRange(HitNpc(current, t.Key, summon, shot.Damage, now));
-            if (shot.Seq == 1 && summon.SummonSourceSkill > 0 && data is { } gd)
-            {
-                var gauge = StaggerGaugeCombat.GaugeDamage(gd, summon.SummonSourceSkill);
-                replies.AddRange(StaggerGaugeCombat.AddGaugeDamage(t, gauge, summon.OwnerKey, now, session: null, firstRow: true));
-            }
         }
         return replies;
     }

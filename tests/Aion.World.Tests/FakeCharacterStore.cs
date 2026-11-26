@@ -7,7 +7,7 @@ using Aion.World;
 namespace Aion.World.Tests;
 
 /// <summary>In-memory store for GameSession integration tests (subset of Native.Checks FakeStore).</summary>
-public sealed class FakeCharacterStore : INativeCharacterStore
+public sealed partial class FakeCharacterStore : INativeCharacterStore
 {
     public Guid AccountId { get; }
 
@@ -282,8 +282,41 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
-    public Task<bool> SoulBindItemAsync(Guid character, Guid item, byte count, CancellationToken ct) =>
-        Task.FromResult(false);
+    public Task<bool> SoulBindItemAsync(Guid character, Guid item, byte count, CancellationToken ct)
+    {
+        var index = Items.FindIndex(i => i.InstanceId == item);
+        if (index < 0) return Task.FromResult(false);
+        Items[index] = Items[index] with { Upgrades = MergeUpgrades(Items[index].Upgrades, JsonSerializer.SerializeToElement(new { soul_bind = (int)count })),
+            Revision = Items[index].Revision + 1 };
+        return Task.FromResult(true);
+    }
+
+    /// <summary>Like the Postgres store: costs from bag or warehouse stacks, then upgrades = upgrades || patch.</summary>
+    public Task<bool> UpgradeItemAsync(Guid character, Guid item, long revision, IReadOnlyList<(Guid Item, long Revision, int Count)> costs,
+        JsonElement patch, CancellationToken ct)
+    {
+        var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision);
+        if (index < 0 || costs.Any(c => !Items.Any(i => i.InstanceId == c.Item && i.Revision == c.Revision && i.Location is "bag" or "storage" && i.Quantity >= c.Count)))
+            return Task.FromResult(false);
+        foreach (var (cost, costRevision, count) in costs)
+        {
+            var at = Items.FindIndex(i => i.InstanceId == cost && i.Revision == costRevision);
+            if (Items[at].Quantity == count) Items.RemoveAt(at);
+            else Items[at] = Items[at] with { Quantity = Items[at].Quantity - count, Revision = costRevision + 1 };
+        }
+        index = Items.FindIndex(i => i.InstanceId == item);
+        Items[index] = Items[index] with { Upgrades = MergeUpgrades(Items[index].Upgrades, patch), Revision = revision + 1 };
+        return Task.FromResult(true);
+    }
+
+    static JsonElement MergeUpgrades(JsonElement upgrades, JsonElement patch)
+    {
+        var merged = new Dictionary<string, JsonElement>();
+        if (upgrades.ValueKind == JsonValueKind.Object)
+            foreach (var property in upgrades.EnumerateObject()) merged[property.Name] = property.Value.Clone();
+        foreach (var property in patch.EnumerateObject()) merged[property.Name] = property.Value.Clone();
+        return JsonSerializer.SerializeToElement(merged);
+    }
 
     readonly InMemorySocialGraph socialGraph = new();
     CharacterState? StateByName(string name) =>
@@ -427,6 +460,23 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         if (TeleportArtifacts.Contains(artifactId)) return Task.FromResult(false);
         TeleportArtifacts.Add(artifactId);
         return Task.FromResult(true);
+    }
+
+    /// <summary>Monolith resonance counts (game.character_monoliths).</summary>
+    public Dictionary<int, int> Monoliths { get; } = [];
+
+    public Task<IReadOnlyDictionary<int, int>> MonolithsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<int, int>>(new Dictionary<int, int>(Monoliths));
+
+    public Task<bool> ResonateMonolithAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int monolith, int previous, int count,
+        IReadOnlyList<(int TemplateId, long Count)> rewards, CancellationToken ct)
+    {
+        if (Monoliths.GetValueOrDefault(monolith) != previous || count <= previous) return Task.FromResult(false);
+        if (costs.Any(c => !Items.Any(i => i.InstanceId == c.Item && i.Revision == c.Revision && i.Location == "bag" && i.Quantity >= c.Count)))
+            return Task.FromResult(false);
+        foreach (var (item, revision, n) in costs) Consume(item, revision, n);
+        Monoliths[monolith] = count;
+        return GrantLootAsync(character, rewards, ct);
     }
 
     public Task<bool> GrantLootAsync(Guid character, IReadOnlyList<(int TemplateId, long Count)> items, CancellationToken ct)
@@ -739,7 +789,7 @@ public sealed class FakeCharacterStore : INativeCharacterStore
 
     public Task<bool> SortContainerAsync(Guid character, string location, CancellationToken ct)
     {
-        var bag = Items.Select((item, index) => (item, index)).Where(x => x.item.Location == location).OrderBy(x => x.item.TemplateId).ThenBy(x => x.item.WireId).ToList();
+        var bag = Items.Select((item, index) => (item, index)).Where(x => x.item.Location == location).OrderBy(x => ItemCurrencies.SortRank(x.item.TemplateId)).ThenBy(x => x.item.TemplateId).ThenBy(x => x.item.WireId).ToList();
         for (var n = 0; n < bag.Count; n++)
             Items[bag[n].index] = bag[n].item with { Slot = n, Revision = bag[n].item.Revision + 1 };
         return Task.FromResult(true);
@@ -757,19 +807,29 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
-    public List<(int TicketId, string Period, int Count)> ExpeditionTickets { get; } = [];
+    public List<ContentTicketRecord> ContentTickets { get; } = [];
 
-    public Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(Guid character, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<(int, string, int)>>(ExpeditionTickets.ToList());
+    public Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ContentTicketRecord>>(ContentTickets.ToList());
 
-    public Task<bool> SaveExpeditionTicketsAsync(Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct)
+    public Task<bool> SaveContentTicketsAsync(Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct)
     {
-        ExpeditionTickets.Clear();
-        ExpeditionTickets.AddRange(rows);
+        foreach (var row in rows)
+        {
+            ContentTickets.RemoveAll(r => r.TicketId == row.TicketId);
+            ContentTickets.Add(row);
+        }
         return Task.FromResult(true);
     }
 
+    /// <summary>The stored count of a content ticket, or null without a row.</summary>
+    public int? ContentTicket(int ticketId) => ContentTickets.FirstOrDefault(r => r.TicketId == ticketId)?.Remaining;
+
     public AbyssRecord? Abyss { get; set; }
+    /// <summary>The world's Abyss ranking rows (any race; filtered by race and points like the store).</summary>
+    public List<(int Race, AbyssRankRow Row)> AbyssRanking { get; } = [];
+    public Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int race, int minPoint, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<AbyssRankRow>>(AbyssRanking.Where(r => r.Race == race && r.Row.Point >= minPoint).Select(r => r.Row).OrderByDescending(r => r.Point).ToList());
     public Task<AbyssRecord?> AbyssAsync(Guid character, CancellationToken ct) => Task.FromResult(Abyss);
     public Task<bool> SaveAbyssAsync(Guid character, AbyssRecord record, CancellationToken ct)
     {
@@ -1038,6 +1098,17 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         return Task.FromResult(true);
     }
 
+    public Dictionary<string, JsonElement> AccountSettings { get; } = [];
+
+    public Task<IReadOnlyDictionary<string, JsonElement>> AccountSettingsAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<string, JsonElement>>(AccountSettings);
+
+    public Task<bool> SaveAccountSettingAsync(string name, JsonElement value, CancellationToken ct)
+    {
+        AccountSettings[name] = value.Clone();
+        return Task.FromResult(true);
+    }
+
     public Task<bool> MoveItemToContainerAsync(Guid character, Guid item, long revision, string location, int slot, CancellationToken ct)
     {
         var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location is "bag" or "storage" or "account_storage");
@@ -1047,6 +1118,48 @@ public sealed class FakeCharacterStore : INativeCharacterStore
             if (i != index && Items[i].Location == location && Items[i].Slot == slot)
                 Items[i] = Items[i] with { Location = oldLocation, Slot = oldSlot, Revision = Items[i].Revision + 1 };
         Items[index] = Items[index] with { Location = location, Slot = slot, Revision = revision + 1 };
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> StoreItemsInContainerAsync(Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct)
+    {
+        if (location is not ("storage" or "account_storage") || items.Count == 0) return Task.FromResult(false);
+        var used = Items.Where(i => i.Location == location && i.Slot is not null).Select(i => i.Slot!.Value).ToHashSet();
+        int Free() { var s = 0; while (used.Contains(s)) s++; used.Add(s); return s; }
+        foreach (var (item, revision, count) in items)
+        {
+            var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location == "bag");
+            if (index < 0 || count < 1 || count > Items[index].Quantity) return Task.FromResult(false);
+            var source = Items[index];
+            var slot = Free();
+            if (count == source.Quantity) Items[index] = source with { Location = location, Slot = slot, Revision = source.Revision + 1 };
+            else
+            {
+                Items[index] = source with { Quantity = source.Quantity - count, Revision = source.Revision + 1 };
+                Items.Add(source with { InstanceId = Guid.NewGuid(), WireId = Items.Max(i => i.WireId) + 1, Quantity = count, Location = location, Slot = slot, Revision = 0 });
+            }
+        }
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> TakeItemsFromContainerAsync(Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct)
+    {
+        if (location is not ("storage" or "account_storage") || items.Count == 0) return Task.FromResult(false);
+        var used = Items.Where(i => i.Location == "bag" && i.Slot is not null).Select(i => i.Slot!.Value).ToHashSet();
+        int Free() { var s = 0; while (used.Contains(s)) s++; used.Add(s); return s; }
+        foreach (var (key, count) in items)
+        {
+            var index = Items.FindIndex(i => i.WireId == key && i.Location == location);
+            if (index < 0 || count < 1 || count > Items[index].Quantity) return Task.FromResult(false);
+            var source = Items[index];
+            var slot = Free();
+            if (count == source.Quantity) Items[index] = source with { Location = "bag", Slot = slot, Revision = source.Revision + 1 };
+            else
+            {
+                Items[index] = source with { Quantity = source.Quantity - count, Revision = source.Revision + 1 };
+                Items.Add(source with { InstanceId = Guid.NewGuid(), WireId = Items.Max(i => i.WireId) + 1, Quantity = count, Location = "bag", Slot = slot, Revision = 0 });
+            }
+        }
         return Task.FromResult(true);
     }
 
@@ -1268,6 +1381,21 @@ public sealed class FakeCharacterStore : INativeCharacterStore
         var index = Skills.FindIndex(s => s.SkillId == skillId);
         if (index >= 0) Skills[index] = Skills[index] with { Level = level, Purchased = purchased };
         else Skills.Add(new SkillState(skillId, level, null, purchased));
+        return Task.FromResult(true);
+    }
+
+    /// <summary>Equipped specialisation parts (game.character_skill_parts).</summary>
+    public List<SkillPartRecord> SkillParts { get; } = [];
+
+    public Task<IReadOnlyList<SkillPartRecord>> SkillPartsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<SkillPartRecord>>(SkillParts.OrderBy(p => p.SkillId).ThenBy(p => p.Slot).ToList());
+
+    public Task<bool> ReplaceSkillPartsAsync(Guid character, int skillId, IReadOnlyList<SkillPartRecord> expected, IReadOnlyList<SkillPartRecord> parts, CancellationToken ct)
+    {
+        var current = SkillParts.Where(p => p.SkillId == skillId).OrderBy(p => p.Slot).ToList();
+        if (!current.SequenceEqual(expected.OrderBy(p => p.Slot))) return Task.FromResult(false);
+        SkillParts.RemoveAll(p => p.SkillId == skillId);
+        SkillParts.AddRange(parts);
         return Task.FromResult(true);
     }
 

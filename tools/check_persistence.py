@@ -29,7 +29,8 @@ def main():
     if not assembly.exists():
         raise ValueError('Build tests/Aion.Persistence.Checks/Aion.Persistence.Checks.csproj first')
     name = 'aion_repository_test_' + uuid.uuid4().hex
-    accounts = [str(uuid.uuid4()) for _ in range(3)]
+    # first, second (gamemaster), disabled, admin, moderator, third (a player: staff character actions, migration 107)
+    accounts = [str(uuid.uuid4()) for _ in range(6)]
     disabled_character = str(uuid.uuid4())
     credentials = json.loads((HOME / 'credentials.json').read_text())
     sql(f'CREATE DATABASE {name} OWNER aion_owner;', database='postgres')
@@ -40,7 +41,7 @@ def main():
             sql(f"INSERT INTO auth.accounts(account_id,provider,subject) VALUES('{account}','repository-test','{account}');", database=name)
         sql(f"INSERT INTO game.characters(character_id,account_id,world_id,name,creation_id,race,gender) VALUES('{disabled_character}','{accounts[2]}',1204,'PreviouslyOwned',1,1,1);", database=name)
         sql(f"UPDATE auth.accounts SET disabled_at=now() WHERE account_id='{accounts[2]}';", database=name)
-        sql(f"INSERT INTO auth.account_roles VALUES('{accounts[1]}','gamemaster');", database=name)
+        sql(f"INSERT INTO auth.account_roles VALUES('{accounts[1]}','gamemaster'),('{accounts[3]}','admin'),('{accounts[4]}','moderator');", database=name)
         dark_weapon = starter_weapon('Gladiator', 2)
         if dark_weapon is None:
             raise ValueError('class-skills.json missing Dark Gladiator begin weapon')
@@ -51,10 +52,11 @@ def main():
             characterClass='Gladiator'))
         sql("""
             INSERT INTO catalog.builds VALUES('test','{}',now());
-            INSERT INTO catalog.items VALUES('test',101,'Sword','weapon','{}'),('test',102,'Unknown','unknown','{}'),('test',930100001,'Kinah','currency','{}');
+            INSERT INTO catalog.items VALUES('test',101,'Sword','weapon','{}'),('test',102,'Unknown','unknown','{}'),('test',930100001,'Kinah','currency','{"facts":{"ItemType":"EItemType::Currency"}}'),
+                ('test',530116001,'SortPotionA','consumable','{}'),('test',530126003,'SortPotionB','consumable','{}');
             INSERT INTO catalog.skills VALUES('test',201,'Strike','skill','{}'),('test',202,'Slash','skill','{}'),('test',203,'Whirl','skill','{}'),('test',204,'Shield','skill','{}');
             INSERT INTO game.skill_unlocks VALUES('test',1,201,1,1),('test',1,202,5,1),('test',1,203,12,1),('test',2,201,1,1),('test',2,204,1,1);
-            INSERT INTO game.equipment_rules VALUES('test',101,1,1,ARRAY[1],'synthetic test policy');
+            INSERT INTO game.equipment_rules VALUES('test',101,1,1,ARRAY[1,9],'synthetic test policy');  -- 9: the 'other-race' copy of the profile
             INSERT INTO game.starter_profiles VALUES('test','test',1,1,1,true,
               '{"worldId":1204,"mapId":1000,"position":{"x":1,"y":2,"z":3},"resources":{"hp":1500,"mp":200},"skills":[201],"slots":[[0,201]],"items":[{"templateId":101,"quantity":1,"equipmentSlot":1}],"characterClass":"Gladiator"}');
             INSERT INTO game.starter_profiles SELECT 'broken',build_id,creation_id,race,gender,true,
@@ -75,7 +77,8 @@ def main():
         env['AION_TEST_DAT_WEAPON'] = str(dark_weapon)
         env.update(AION_TEST_DATABASE=f'Host=127.0.0.1;Port={PORT};Database={name};Username=aion_app;Password={credentials["aion_app"]};Maximum Pool Size=4;Timeout=5;Command Timeout=10',
                    AION_TEST_FIRST=accounts[0], AION_TEST_SECOND=accounts[1], AION_TEST_DISABLED=accounts[2],
-                   AION_TEST_DISABLED_CHARACTER=disabled_character)
+                   AION_TEST_DISABLED_CHARACTER=disabled_character,
+                   AION_TEST_ADMIN=accounts[3], AION_TEST_MODERATOR=accounts[4], AION_TEST_THIRD=accounts[5])
         result = subprocess.run(['dotnet', str(assembly)], env=env, cwd=ROOT,
                                 capture_output=True, text=True, encoding='utf-8', timeout=180)
         output = result.stdout + result.stderr

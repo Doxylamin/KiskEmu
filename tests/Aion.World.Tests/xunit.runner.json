@@ -1,8 +1,3 @@
 {
-  "$schema": "https://xunit.net/schema/current/xunit.runner.schema.json",
-  "filters": {
-    "excludedTraits": {
-      "Category": [ "LongPlaythrough" ]
-    }
-  }
+  "$schema": "https://xunit.net/schema/current/xunit.runner.schema.json"
 }

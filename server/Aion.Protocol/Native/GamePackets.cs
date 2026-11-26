@@ -52,7 +52,11 @@ public enum CharPoint : byte { Hp, Mp, Ap, Sp, Dp, Op, Fp, MaxHp, MaxMp, MaxAp, 
 public sealed record InventoryItem(long Key, int ItemId, long Count, byte Container, int Slot, EquipDetail? Detail = null,
     bool Locked = false, string Maker = "", long ExpireTime = 0, bool ExpireFixed = false)
 {
-    public const byte Bag = 1, Storage = 2, AccountStorage = 3, Equipped = 11;
+    // EItemContainerType (usmap): kInventory 1, kStorage 2, kEquipInventory 11, kCharacterStorage 15. OBSERVED live
+    // 2026-11-14 (game version 3533, our server's trace): the client's "server storage" tab deposits and takes out with
+    // container 2, so 2 is the account warehouse (location 'account_storage', shared by the account's characters) and
+    // 15 the character's own warehouse (location 'storage'), as the usmap names them (forge issue #2).
+    public const byte Bag = 1, Storage = 0x0f, AccountStorage = 2, Equipped = 11;
 
     /// <summary>Whether two wire snapshots are the same for 0x561b diffing (ignores reference identity on Detail lists).</summary>
     public bool WireSameAs(InventoryItem other) =>
@@ -64,19 +68,36 @@ public sealed record InventoryItem(long Key, int ItemId, long Count, byte Contai
 /// <summary>Equipment detail of an item: item level and equip slot (1 weapon, 3 helm, 4 shoulder, 5 torso, 6 pants, 7 gloves, 8 boots, 19 cape; 0 in the bag).</summary>
 // Soul bind: the binding character's db id (the DbId of the character list) and the bind count;
 // the client soul-binds an unbound item again on every equip attempt.
+/// <summary>One mana stone slot: the stone item, the EStat it rolled and its grade (1 Low, 2 Mid, 3 High; 0 empty).</summary>
+public readonly record struct MagicStoneSlot(int ItemId, ushort Stat, byte Grade);
+
 public sealed record EquipDetail(
     int ItemLevel, byte EquipSlot, byte EnchantLevel = 0, long SoulBindOwner = 0, byte SoulBindCount = 0,
     byte SurpassEnchantLevel = 0, int EnchantBonusProb = 0, int SurpassEnchantBonusProb = 0, int[]? Godstones = null,
     IReadOnlyList<(int Wire, int Value)>? RolledStats = null,
-    byte SkinExtractionCount = 0)
+    byte SkinExtractionCount = 0, IReadOnlyList<MagicStoneSlot>? MagicStones = null,
+    IReadOnlyList<(int Wire, int Value)>? SoulStats = null)
 {
+    /// <summary>
+    /// _magicstone_slots: one {i32 mana stone item id, u16 EStat, u8 EItemMagicStoneGrade} per slot (official 0x5611 and
+    /// 0x562a, 2026-11-12: every slot of the item is sent, empty ones as zeros). Null keeps the single empty slot.
+    /// </summary>
+    internal static PacketWriter WriteMagicStones(PacketWriter w, EquipDetail d)
+    {
+        if (d.MagicStones is not { Count: > 0 } stones) return w.Varint(1).Zeros(7);
+        w.Varint(stones.Count);
+        foreach (var stone in stones) w.I32(stone.ItemId).U16(stone.Stat).U8(stone.Grade);
+        return w;
+    }
+
     public static bool WireSameAs(EquipDetail? a, EquipDetail? b)
     {
         if (a is null || b is null) return a is null && b is null;
         if (a.ItemLevel != b.ItemLevel || a.EquipSlot != b.EquipSlot || a.EnchantLevel != b.EnchantLevel
             || a.SoulBindOwner != b.SoulBindOwner || a.SoulBindCount != b.SoulBindCount
             || a.SurpassEnchantLevel != b.SurpassEnchantLevel || a.EnchantBonusProb != b.EnchantBonusProb
-            || a.SurpassEnchantBonusProb != b.SurpassEnchantBonusProb || a.SkinExtractionCount != b.SkinExtractionCount)
+            || a.SurpassEnchantBonusProb != b.SurpassEnchantBonusProb || a.SkinExtractionCount != b.SkinExtractionCount
+            || !(a.MagicStones ?? []).SequenceEqual(b.MagicStones ?? []) || !(a.SoulStats ?? []).SequenceEqual(b.SoulStats ?? []))
             return false;
         if (a.Godstones is null || b.Godstones is null)
         {
@@ -117,6 +138,14 @@ public sealed record MyCharacterAppear
     public int CombatLevel { get; init; } = 1;
     /// <summary>EAscensionGrade 1..6 (CANDIDATE: the CharDetail byte after reputation; 1 in the official starter).</summary>
     public int Ascension { get; init; } = 1;
+    /// <summary>Skill and stigma points spent, and those gained from items (Wisdom Stones, Stigma Shards), in the CharDetail point lists.</summary>
+    public int SpentSkillPoints { get; init; }
+    public int SpentStigmaPoints { get; init; }
+    public int ItemSkillPoints { get; init; }
+    public int ItemStigmaPoints { get; init; }
+    /// <summary>Gather mastery (level, exp) and the craft masteries by category 1..5, in the CharDetail mastery lists.</summary>
+    public (int Level, long Exp) GatherMastery { get; init; } = (1, 0);
+    public IReadOnlyDictionary<int, (int Level, long Exp)>? CraftMasteries { get; init; }
     /// <summary>Equipped wing (Wing.dat id; 0 none). Flight and gliding need one: without it the client shows MSG_WING_EQUIP_NOTHING ("Flight available after Ascension").</summary>
     public int WingId { get; init; }
     /// <summary>Flight points (CharState fp / fp_max).</summary>
@@ -218,16 +247,12 @@ public static class GamePackets
             .Except(LaterUnlockedContents).Distinct().Order().ToArray();
 
     /// <summary>
-    /// Full 0xe257 merge at world entry: level and quest gates, ride/Daevanion extras, and Chat/Customizing once their
-    /// quests are done (still withheld from 0xe257 until then so 0xe258 can raise System_ContentsUnlocked on first login).
+    /// Full 0xe257 merge at world entry: level and quest gates, ride/Daevanion extras, and Chat (45) / Customizing (43).
+    /// OBSERVED (official 2026-11-12/13, every entry from character select): 45 is in 0xe257, and the server never sends
+    /// 0xe258 at all. Withheld for a later 0xe258, the client started its chat login only after a teleport (live 2026-11-14).
     /// </summary>
-    public static byte[] WorldEntryContentsUnlocks(int level, IEnumerable<byte> questUnlockTypes, IEnumerable<byte> extraTypes)
-    {
-        var quest = questUnlockTypes as IReadOnlySet<byte> ?? questUnlockTypes.ToHashSet();
-        var withheld = LaterUnlockedContents.Where(t => !quest.Contains(t));
-        return UnlockedContents(level).Concat(questUnlockTypes).Concat(extraTypes)
-            .Except(withheld).Distinct().Order().ToArray();
-    }
+    public static byte[] WorldEntryContentsUnlocks(int level, IEnumerable<byte> questUnlockTypes, IEnumerable<byte> extraTypes) =>
+        UnlockedContents(level).Concat(LaterUnlockedContents).Concat(questUnlockTypes).Concat(extraTypes).Distinct().Order().ToArray();
 
     /// <summary>
     /// PCLevelQuickSlot.dat level-1 rows (identical for all 8 classes, AscensionGrade_1): consumable bar slot -> item.
@@ -413,17 +438,29 @@ public static class GamePackets
     public static byte[] LoadComplete(int ticket, Vector3d position, int frame = 2, int charKey = 1) =>
         PacketWriter.Opcode(0x3623).U16(0).I32(ticket).Vec3(position).I32(frame).U16(charKey).ToArray();
 
-    static void WriteSpawnDetailTail(PacketWriter w, int ascension = 1)
+    static void WriteSpawnDetailTail(PacketWriter w, int ascension = 1, MyCharacterAppear? a = null)
     {
-        // Observed starter layout (official offsets 66..183); semantics partly unknown.
-        w.U8(1).I32(1).I64(0).U8(0).U8(0).U8(5);
-        for (var category = 1; category <= 5; category++) w.U8(category).I32(1).I64(0);
+        // The mastery lists, sent on every map load (OBSERVED official 2026-11-12/13, entries and teleports alike; the
+        // level-up packets 0x8d36/0x8d7d come only with a level-up): gather {u16 level, i64 exp, u16 skill points, u16
+        // specialized points} (`01 0200 0f00000000000000 0100 0000`), then 5 x craft {u8 category, u16 level, i64 exp,
+        // u16 skill points}. Level 1 here dropped the client's masteries to level 1 on every teleport.
+        var (gatherLevel, gatherExp) = a?.GatherMastery ?? (1, 0);
+        w.U8(1).U16(Math.Max(1, gatherLevel)).I64(gatherExp).U16(0).U16(0).U8(5);
+        for (var category = 1; category <= 5; category++)
+        {
+            var (level, exp) = a?.CraftMasteries is { } crafts && crafts.TryGetValue(category, out var m) ? m : (1, 0L);
+            w.U8(category).U16(Math.Max(1, level)).I64(exp).U16(0);
+        }
         // Glide/sprint cooldowns, reputation, then the ascension grade (CANDIDATE).
         w.I32(0).I32(0).I64(0).U8(ascension);
-        for (var n = 0; n < 2; n++)
+        // Two CommonSkillPointInfo lists by ESkillPointType (1 Point, 2 Stigma, 3): the points spent, then the points
+        // gained from items (OBSERVED official 2026-11-12, a level-45 Chanter: spent 382 / 34, items 180 / 5; the stigma
+        // value matches the 0x5105 that followed). With zeros the client counted none spent and went negative on purchase.
+        int[][] groups = [[a?.SpentSkillPoints ?? 0, a?.SpentStigmaPoints ?? 0, 0], [a?.ItemSkillPoints ?? 0, a?.ItemStigmaPoints ?? 0, 0]];
+        foreach (var group in groups)
         {
             w.U8(3);
-            for (var pointType = 1; pointType <= 3; pointType++) w.U8(pointType).U16(0);
+            for (var pointType = 1; pointType <= 3; pointType++) w.U8(pointType).U16(Math.Clamp(group[pointType - 1], 0, ushort.MaxValue));
         }
     }
 
@@ -442,7 +479,7 @@ public static class GamePackets
         var w = PacketWriter.Opcode(0x3633).Varint(a.Key).U32(0x2006u | (a.TeleportEffect != 0 ? 0x1000u : 0)).U8(0x37).String(a.Name).U16(a.ServerId)
             .I32(a.PcId).U8(a.Race).I32(a.CharLevel).I32(a.EquipItemLevel).I32(a.HighestTotalItemLevel).I32(a.LevelMax)
             .I64(a.Experience).I32(a.CombatLevel).I64(a.CombatExperience).U8(a.Gender);
-        WriteSpawnDetailTail(w, a.Ascension);
+        WriteSpawnDetailTail(w, a.Ascension, a);
         // CharState (client decoder 0x8498b80, the one 0x3645 uses): u16 presence mask; bit 9 adds
         // _relationship_entity (u8) and bit 12 _wing_id (i32) after fp_max. Without the relationship the client
         // drew ordinary monsters as non-hostile (green names; live 2026-10-16), the official server draws them
@@ -625,11 +662,11 @@ public static class GamePackets
         w.U8(daevanion).U8(0).U8(0).U8(0).U8(0);
 
     /// <summary>
-    /// 0x3822 SkillAutoLoadUpdate_NT (dev 0x36CB + 0x157, usmap order): skill i32 | charge count u8 | time i32 (ms until the
-    /// next charge, 0 when full). CANDIDATE: the live opcode (same +0x157 as the 0x383f/0x3840 neighbours) and the time's unit.
+    /// 0x3822 SkillAutoLoadUpdate_NT: varint n | n × {skill i32, charge count u8} (OBSERVED 2026-11-12 `2238 01 c27d1401 02`, 8 B,
+    /// with a specialty equip; no time field). The leading count as a list count is CANDIDATE (only 1 seen).
     /// </summary>
-    public static byte[] SkillAutoLoadUpdate(int skillId, int count, int timeMs) =>
-        PacketWriter.Opcode(0x3822).I32(skillId).U8(count).I32(timeMs).ToArray();
+    public static byte[] SkillAutoLoadUpdate(int skillId, int count) =>
+        PacketWriter.Opcode(0x3822).Varint(1).I32(skillId).U8(count).ToArray();
 
     /// <summary>
     /// 0x9501 PcSocialActionInfo_NT (dev 0x3682): the owned emote ids, varint count + i32 each. OBSERVED identical at the
@@ -644,14 +681,22 @@ public static class GamePackets
     }
 
     /// <summary>
-    /// 0x3900 (163 B at the official world entry, unnamed in the catalogue): per class active skill i32 id, u8 3, then three
-    /// {u8 slot 1..3, i32 0} option slots (OBSERVED 2026-10-13 with 3 skills, 2026-10-20 with 8). CANDIDATE: skill option slots.
+    /// 0x3900 SpecializedSkillLoad_NT: per class active skill i32 id, u8 3, then three {u8 slot 1..3, i32 equipped part id}
+    /// (OBSERVED 2026-10-13 / 2026-10-20 and both world entries of 2026-11-12: 0 unless a specialty part is equipped).
     /// </summary>
-    public static byte[] SkillOptionSlots(IReadOnlyList<int> skills, IReadOnlyDictionary<int, IReadOnlyList<int>>? optionSkillIds = null)
+    public static byte[] SkillOptionSlots(IReadOnlyList<int> skills, IReadOnlyDictionary<int, IReadOnlyList<int>>? optionSkillIds = null,
+        IReadOnlyDictionary<int, IReadOnlyList<(int Slot, int SkillId)>>? specialized = null)
     {
         var w = PacketWriter.Opcode(0x3900).Varint(skills.Count);
         foreach (var skill in skills)
         {
+            // A stigma lists its five slots with its parts (OBSERVED official 2026-11-12: 17400000 {1 17400010, ..., 4 17400040, 5 0}).
+            if (specialized?.GetValueOrDefault(skill) is { } slots)
+            {
+                w.I32(skill).U8((byte)slots.Count);
+                foreach (var (slot, id) in slots) w.U8((byte)slot).I32(id);
+                continue;
+            }
             w.I32(skill).U8(3);
             var options = optionSkillIds?.GetValueOrDefault(skill);
             for (var i = 0; i < 3; i++)
@@ -696,15 +741,59 @@ public static class GamePackets
 
     /// <summary>
     /// 0x5105 SkillPointUpdate_NT (usmap DevPacketData_GameServer_SkillPointUpdate_NT, wire opcode +0x157 from 0x3746):
-    /// varint count | CommonSkillPointInfo { mask u8 0x01, ESkillPointType u8, _point varint } per entry.
-    /// OBSERVED after official SkillLevelUp (#18470-18472 and 2026-10-31 captures): 15 points left → body 0101010f.
+    /// count u8 | CommonSkillPointInfo { ESkillPointType u8, _point u16 } per entry; no presence mask.
+    /// OBSERVED (official captures 2026-10-13, 11-04, 11-05; 22 of 22 parse this way): the point is the points SPENT, not the
+    /// points left: it rises by the cost on every SkillLevelUp (0101a500 → 0101a900 → 0101ad00 for two level-ups costing 4)
+    /// and falls by the refund on a SkillLevelReset. The client shows its own total (Exp table) minus this value, so the old
+    /// layout (mask 01, type 01, varint left) read as 0x01 + 256 × left spent and showed -256 with 1 point left.
     /// </summary>
-    public static byte[] SkillPointUpdate(int pointsLeft, byte pointType = 1) =>
-        PacketWriter.Opcode(0x5105).Varint(1).AppendSkillPointInfo(pointsLeft, pointType).ToArray();
+    public static byte[] SkillPointUpdate(int pointsSpent, byte pointType = 1) =>
+        PacketWriter.Opcode(0x5105).U8(1).AppendSkillPointInfo(pointsSpent, pointType).ToArray();
 
-    /// <summary>One CommonSkillPointInfo entry (mask 0x01, type, point varint) inside 0x5105, 0x3844._modify_points, etc.</summary>
+    /// <summary>
+    /// 0x3811 UpdateItemSkillPoint_NT (usmap 0x36bb + 0x156): one CommonSkillPointInfo, the points of that type gained from
+    /// items so far. OBSERVED official 2026-11-04: 1138 01 0a00 → 0b00 → 0c00 after each Wisdom Stone (531900001) use.
+    /// </summary>
+    public static byte[] UpdateItemSkillPoint(byte pointType, int itemPoints) =>
+        PacketWriter.Opcode(0x3811).AppendSkillPointInfo(itemPoints, pointType).ToArray();
+
+    /// <summary>
+    /// 0x380f SkillAdd_NT (usmap 0x36b9 + 0x156): flag 1, skill i32, level, original level, five additional-level bytes, ESkillAcquireReason.
+    /// OBSERVED official 2026-11-12: a stigma learned (0f38 01 c0800901 01 01 0000000000 02, SkillPointAdd) and its specialized
+    /// part at stigma level 5 (0f38 01 ca800901 05 05 0000000000 06, ChangeSkill).
+    /// </summary>
+    public static byte[] SkillAdd(int skillId, int level, int originalLevel, byte reason) =>
+        PacketWriter.Opcode(0x380f).U8(1).I32(skillId).U8((byte)level).U8((byte)originalLevel).Zeros(5).U8(reason).ToArray();
+
+    /// <summary>0x3810 SkillDelete_NT (usmap 0x36ba + 0x156): skill i32. OBSERVED official 2026-11-12 for each stigma part on a stigma reset.</summary>
+    public static byte[] SkillDelete(int skillId) => PacketWriter.Opcode(0x3810).I32(skillId).ToArray();
+
+    /// <summary>
+    /// 0x3813 SkillLevelUpdate_NT with several skills at one level (count, {skill i32, flag 1, skill i32, level, original,
+    /// five additional-level bytes} each, reason). OBSERVED official 2026-11-12: the four stigmas to level 0 on a full reset (reason 5).
+    /// </summary>
+    public static byte[] SkillLevelUpdates(IReadOnlyList<int> skills, int level, byte reason)
+    {
+        var w = PacketWriter.Opcode(0x3813).Varint(skills.Count);
+        foreach (var id in skills) w.I32(id).U8(1).I32(id).U8((byte)level).U8((byte)level).Zeros(5);
+        return w.U8(reason).ToArray();
+    }
+
+    /// <summary>
+    /// 0x3907 SpecializedSkillUpdate_NT (usmap _parent_skill_id, _update_infos): parent i32, count u8, {ESpecializedSkillSlotType u8,
+    /// skill i32} each. OBSERVED official 2026-11-12 before a stigma's first level: 0739 c0800901 05 01 ca800901 02 d4800901
+    /// 03 de800901 04 e8800901 05 00000000 (its parts in their initial slots, slot 5 empty).
+    /// </summary>
+    public static byte[] SpecializedSkillUpdate(int parentSkillId, IReadOnlyList<(int Slot, int SkillId)> slots)
+    {
+        var w = PacketWriter.Opcode(0x3907).I32(parentSkillId).U8((byte)slots.Count);
+        foreach (var (slot, id) in slots) w.U8((byte)slot).I32(id);
+        return w.ToArray();
+    }
+
+    /// <summary>One CommonSkillPointInfo entry (type u8, point u16) inside 0x5105 and 0x3844._modify_points.</summary>
     public static PacketWriter AppendSkillPointInfo(this PacketWriter w, int point, byte pointType = 1) =>
-        w.U8(1).U8(pointType).Varint(point);
+        w.U8(pointType).U16(Math.Clamp(point, 0, ushort.MaxValue));
 
     /// <summary>0x5100 skill list: count + ready entries (flag 1, i32 id, level, original level, additional level, cooltime zeros).</summary>
     public static byte[] SkillList(IReadOnlyList<(int SkillId, int Level)> skills, IReadOnlyDictionary<int, int>? originalLevels = null,
@@ -779,13 +868,16 @@ public static class GamePackets
     /// 0x5611 ItemDepotList_RS, the reply to the empty 0x5610 request: u16 0x0210 (unexplained,
     /// both official samples), the items, then six slot-extend counts. Bag items are container 1,
     /// equipped items container 11 with slot = equip slot. Replaces the 0x5611 candidate below,
-    /// which was one byte off (its packed-bool byte came from a later record of the sample).
+    /// which was one byte off (its packed-bool byte came from a later record of the sample). The six counts are the
+    /// slot-line expansions (CANDIDATE order: bag by item, bag by Kina, storage by Kina, storage by item, character storage
+    /// by Kina, character storage by item; all 0 in both samples).
     /// </summary>
-    public static byte[] ItemDepotList(IReadOnlyList<InventoryItem> items)
+    public static byte[] ItemDepotList(IReadOnlyList<InventoryItem> items, IReadOnlyList<int>? slotExtends = null)
     {
         var w = PacketWriter.Opcode(0x5611).U16(0x0210).Varint(items.Count);
         foreach (var item in items) WriteItem(w, item);
-        return w.Zeros(6).ToArray();
+        for (var i = 0; i < 6; i++) w.U8((byte)Math.Clamp(slotExtends is { Count: 6 } s ? s[i] : 0, 0, 255));
+        return w.ToArray();
     }
 
     /// <summary>0x561b ItemModificationList_NT: per entry type (0 add, 1 update; CANDIDATE), the item, increase/decrease/update reasons.</summary>
@@ -805,9 +897,28 @@ public static class GamePackets
         PacketWriter.Opcode(0x562c).U16(result).I64(uid).I64(costUid).I32(costId).ToArray();
     /// <summary>0x562e ItemSoulBindCancel_RS: result, item uid.</summary>
     public static byte[] SoulBindCancel(long uid, int result = 0) => PacketWriter.Opcode(0x562e).U16(result).I64(uid).ToArray();
-    /// <summary>0x5630 ItemSoulBindComplete_RS: result, item uid, bind count, no bound stats or skills.</summary>
-    public static byte[] SoulBindComplete(long uid, byte count = 1, int result = 0) =>
-        PacketWriter.Opcode(0x5630).U16(result).I64(uid).U8(count).Varint(0).Varint(0).ToArray();
+    /// <summary>
+    /// 0x5630 ItemSoulBindComplete_RS: result, item uid, bind count, the bound stats {u16 EStat, i32 value} and skills (none).
+    /// OBSERVED in the community fork (Addiboii 13aa9ef: community recordings 2026-11-04 and 11-06, 3 and 4 stats, every one
+    /// without skills; byte-exact to its #49976). We had {i32, i32} from nothing recorded.
+    /// </summary>
+    public static byte[] SoulBindComplete(long uid, byte count = 1, int result = 0, IReadOnlyList<(int Wire, int Value)>? stats = null)
+    {
+        var w = PacketWriter.Opcode(0x5630).U16(result).I64(uid).U8(count).Varint((stats ?? []).Count);
+        foreach (var (wire, value) in stats ?? []) Stat(w, wire, value);
+        return w.Varint(0).ToArray();
+    }
+
+    /// <summary>
+    /// 0x562a ItemImprint_RS (OBSERVED 2026-11-12): result u16 (0 success, 843..848 failures), equip uid, mana stone item
+    /// id, mana stone uid, then every slot {i32 stone id, u16 EStat, u8 grade}.
+    /// </summary>
+    public static byte[] ItemImprint(int result, long equipUid, int stoneId, long stoneUid, IReadOnlyList<MagicStoneSlot> slots)
+    {
+        var w = PacketWriter.Opcode(0x562a).U16(result).I64(equipUid).I32(stoneId).I64(stoneUid).Varint(slots.Count);
+        foreach (var slot in slots) w.I32(slot.ItemId).U16(slot.Stat).U8(slot.Grade);
+        return w.ToArray();
+    }
 
     /// <summary>0x561d ItemEquipLevelChange_NT: equipped item level total and the highest reached.</summary>
     public static byte[] ItemEquipLevelChange(int level, int highest) => PacketWriter.Opcode(0x561d).I32(level).I32(highest).ToArray();
@@ -827,20 +938,35 @@ public static class GamePackets
             .Bool(item.Locked).String(item.Maker).I64(item.ExpireTime).Bool(item.ExpireFixed);
         if (item.Detail is { } d)
         {
-            w.U8(d.EnchantLevel).I32(0).I32(d.EnchantBonusProb).U8(d.SurpassEnchantLevel).I32(d.SurpassEnchantBonusProb).I32(d.ItemLevel).Bool(false).U8(d.EquipSlot)
-                // One magicstone slot (7 zero bytes observed; usmap id, stat, grade), then
-                // _soul_bind_char_dbid i64 and _soul_bind_count u8 (usmap order; CANDIDATE placement).
-                .Varint(1).Zeros(7).I64(d.SoulBindOwner).U8(d.SoulBindCount);
+            w.U8(d.EnchantLevel).I32(0).I32(d.EnchantBonusProb).U8(d.SurpassEnchantLevel).I32(d.SurpassEnchantBonusProb).I32(d.ItemLevel).Bool(false).U8(d.EquipSlot);
+            // Mana stone slots, then _soul_bind_char_dbid i64 and _soul_bind_count u8 (usmap order; the official
+            // 0x5611 of 2026-11-12 parses with this layout).
+            EquipDetail.WriteMagicStones(w, d).I64(d.SoulBindOwner).U8(d.SoulBindCount);
             var gs = d.Godstones ?? [0, 0, 0];
             w.Varint(3);
             for (var i = 0; i < 3; i++) w.I32(i < gs.Length ? gs[i] : 0);
-            w.Varint(0);
-            var subs = d.RolledStats ?? [];
-            w.Varint(subs.Count);
-            foreach (var (wire, value) in subs) Stat(w, wire, value);
-            w.Varint(0).Varint(0).Varint(0).Varint(0).Varint(0).U8(d.SkinExtractionCount);
+            DetailTail(w, d, d.SkinExtractionCount);
         }
         return w;
+    }
+
+    /// <summary>
+    /// The item detail after the godstones (usmap order): _arcana_main_stats (empty), _sub_stats, _add_sub_stats, the four
+    /// skill arrays (empty) and _skin_extraction_count. _sub_stats are the rolled stats, then the soul-bind stats;
+    /// _add_sub_stats are the soul-bind stats' types at 0. OBSERVED in the community fork (Addiboii 101b443: every 0x561b
+    /// of a soul-bound item in the community recordings of 2026-11-04 and 11-06, 7 of 7, byte-exact to its #49975).
+    /// CANDIDATE: an item with both rolled and soul-bind stats (rolled first; none recorded).
+    /// </summary>
+    public static PacketWriter DetailTail(PacketWriter w, EquipDetail d, byte skinExtractionCount)
+    {
+        var rolled = d.RolledStats ?? [];
+        var soul = d.SoulStats ?? [];
+        w.Varint(0).Varint(rolled.Count + soul.Count);
+        foreach (var (wire, value) in rolled) Stat(w, wire, value);
+        foreach (var (wire, value) in soul) Stat(w, wire, value);
+        w.Varint(soul.Count);
+        foreach (var (wire, _) in soul) Stat(w, wire, 0);
+        return w.Varint(0).Varint(0).Varint(0).Varint(0).U8(skinExtractionCount);
     }
 
     /// <summary>Candidate 0x5611 equipped inventory with one item (observed record widths).</summary>
@@ -874,11 +1000,22 @@ public static class GamePackets
         return PlayerPackets.NpcSkillEffect(targetKey, actorKey, skillId, (byte)actionSeq, effectId, effectSeq, damage, attackSpeed);
     }
 
-    /// <summary>0xe005 UpdateGroggyInfo_NT (dev 0x3b04 + 0xa501): groggy guard energy on a boss (mask 03 max+energy).</summary>
-    public static byte[] UpdateGroggyInfo(int key, int maxEnergy, int energy, bool activated = false, byte state = 1)
+    /// <summary>
+    /// 0xe005 UpdateGroggyInfo_NT (dev 0x3b04 + 0xa501): key | presence u8 (bit 0 max, bit 1 energy) | state u8 | [max i32] |
+    /// [energy i32] | u8. OBSERVED (2.0.6 recording 20261019-231752, boss a2eb01, 9 messages): mask 03 state 01 max 50 with the
+    /// energy falling 50 -> 7 under the player's hits, then mask 00 state 03 once it broke; the last byte was 02 in all nine.
+    /// The last byte is the packed _groggy_activated (bit 1) / _groggy_pause (usmap): OBSERVED 02 on 756 of 762 messages of the
+    /// community recording 2026-11-06 090856 while the guard could be drained, 00 on a final boss outside its windows. We send 02
+    /// always (no deactivated guards yet). CANDIDATE: the state names. Sent by Aion.World.Stagger (SkillEffect.dat
+    /// GroggyGuardDecreaseEnergy drains, the refill after GroggyTime, the guard after a boss's appear).
+    /// Ported from the community fork (Addiboii, c625de5 / 43ff6be).
+    /// </summary>
+    public static byte[] UpdateGroggyInfo(int key, byte state, int? maxEnergy, int? energy, byte tail = 2)
     {
-        var w = PacketWriter.Opcode(0xe005).Varint(key).U8(3).U8(state).I32(maxEnergy).I32(energy);
-        return w.U8(activated ? (byte)2 : (byte)0).ToArray();
+        var w = PacketWriter.Opcode(0xe005).Varint(key).U8((byte)((maxEnergy is null ? 0 : 1) | (energy is null ? 0 : 2))).U8(state);
+        if (maxEnergy is { } max) w.I32(max);
+        if (energy is { } e) w.I32(e);
+        return w.U8(tail).ToArray();
     }
 
     /// <summary>0xe002 GroupRequestProgressed_NT (dev 0x3b01 + 0xa501).</summary>
@@ -1045,6 +1182,11 @@ public static class GamePackets
     public static byte[] WingChangeReply(int wingId, bool skin, int result = 0) => PacketWriter.Opcode(0x5675).U16(result).Bool(skin).I32(wingId).ToArray();
     /// <summary>0x5676 WingChange_NT: character key, packed is_wing_skin, wing id. CANDIDATE.</summary>
     public static byte[] WingChangeNotice(int key, int wingId, bool skin) => PacketWriter.Opcode(0x5676).Varint(key).Bool(skin).I32(wingId).ToArray();
+    /// <summary>
+    /// 0xe295 PresetWingUpdate_NT after a wing change: OBSERVED 2026-11-15 as `01 <wing i32>` after 0x5676 and 0x5675.
+    /// CANDIDATE reading: preset 1 (the one in use; presets are not modelled), the wing.
+    /// </summary>
+    public static byte[] PresetWingUpdate(int wingId) => PacketWriter.Opcode(0xe295).U8(1).I32(wingId).ToArray();
 
     /// <summary>Default wings (items 532400001/532400002 grant them on use): Light 30200600, Dark 40200601.</summary>
     public static int DefaultWing(int race) => race == 2 ? 40200601 : 30200600;
@@ -1184,8 +1326,8 @@ public static class GamePackets
     /// <summary>A message by string key (ShowMessage / BroadCastingMessage directives). CANDIDATE: the caption's layout with ShowMessage.</summary>
     public static byte[] Message(string key) => EventFunc(FuncShowMessage, key, 1);
 
-    /// <summary>0x39cd RelationshipEntityUpdate_NT: key | ERelationshipEntity u8 (usmap fields; the enum byte as in the appears). CANDIDATE: no official sample.</summary>
-    public static byte[] RelationshipUpdate(int key, int relationship) => PacketWriter.Opcode(0x39cd).Varint(key).U8((byte)relationship).ToArray();
+    /// <summary>0x8d92 RelationshipEntityUpdate_NT: key | ERelationshipEntity u8. OBSERVED 2026-11-04 (x10, `928d f4f401 03`); the usmap number 0x39cd never occurs (#74).</summary>
+    public static byte[] RelationshipUpdate(int key, int relationship) => PacketWriter.Opcode(0x8d92).Varint(key).U8((byte)relationship).ToArray();
 
     /// <summary>0x9507 SocialActionStart_NT / 0x9508 SocialActionEnd_NT: NPC key, social action id, 1 start / 2 end, i32 0 (OBSERVED #10524/#10811).</summary>
     public static byte[] SocialAction(int key, int action, bool stop) =>
@@ -1249,12 +1391,19 @@ public static class GamePackets
 
     /// <summary>0x3635 EnvObjDespawn_NT: key, state, reason, despawn act (official sample e4ec03 01 01 00; widths CANDIDATE).</summary>
     public static byte[] EnvObjDespawn(int key, byte state = 1, byte reason = 1) => PacketWriter.Opcode(0x3635).Varint(key).U8(state).U8(reason).Varint(0).ToArray();
-    /// <summary>0x39ce UpdateEnvObjHitCount_NT: object key, the hits it has taken (usmap _key, _hit_count i32). CANDIDATE: no official sample.</summary>
-    public static byte[] EnvObjHitCount(int key, int hitCount) => PacketWriter.Opcode(0x39ce).Varint(key).I32(hitCount).ToArray();
-    /// <summary>0x3940 EnvObjDie_NT: object key (usmap: _key only). CANDIDATE: no official sample.</summary>
-    public static byte[] EnvObjDie(int key) => PacketWriter.Opcode(0x3940).Varint(key).ToArray();
-    /// <summary>0x363e InteractEnvObjStop_RS: result, object key (usmap; answering 0x363d). CANDIDATE.</summary>
+    /// <summary>0x8d93 UpdateEnvObjHitCount_NT: object key, the hits it has taken (i32). OBSERVED 2026-11-04 (x11, `938d bcd801 01000000`); was the usmap number 0x39ce (#74).</summary>
+    public static byte[] EnvObjHitCount(int key, int hitCount) => PacketWriter.Opcode(0x8d93).Varint(key).I32(hitCount).ToArray();
+    /// <summary>0x8d05 EnvObjDie_NT: object key. OBSERVED in all our captures (66x, `058d 8fd701`); was the usmap number 0x3940 (#74).</summary>
+    public static byte[] EnvObjDie(int key) => PacketWriter.Opcode(0x8d05).Varint(key).ToArray();
+    /// <summary>
+    /// 0x363e InteractEnvObjStop_RS: result u16, object key (OBSERVED in the community fork's recordings 2026-11-04 to 06:
+    /// 185000 #6764 `0000 bcef01`; nothing in progress 162208 #5193 `1338 00`).
+    /// </summary>
     public static byte[] InteractEnvObjStopReply(int key, int result = 0) => PacketWriter.Opcode(0x363e).U16(result).Varint(key).ToArray();
+    /// <summary>0x363e's result for a stop with no use in progress (OBSERVED 0x3813, key 0; community fork's recordings).</summary>
+    public const int InteractStopNothing = 0x3813;
+    /// <summary>0x3639 reasons OBSERVED (community fork's recordings): 0x1905 after a hit on the player, 0x1906 with the player's stop. CANDIDATE: the names.</summary>
+    public const int InterruptDamaged = 0x1905, InterruptStopped = 0x1906;
     /// <summary>EnvObjSpawn for a quest object: relationship from EnvObjData (Kibelisks: 8 EnvObj_Light).</summary>
     public static byte[] EnvObjSpawn(int key, int envObjId, Vector3d position, double yaw, long createTime, int uniqueKey, byte relationship) =>
         EnvObjSpawn(key, envObjId, position, yaw, createTime, uniqueKey, relationship, state: 1, canInteract: 1, reason: 1, phase: 0);
@@ -1271,20 +1420,25 @@ public static class GamePackets
 
     /// <summary>0x3638 InteractEnvObjStarted_NT: object key, interactor key, state 1.</summary>
     public static byte[] InteractEnvObjStarted(int key, int interactor) => PacketWriter.Opcode(0x3638).Varint(key).Varint(interactor).U8(1).ToArray();
-    /// <summary>0x363a InteractEnvObjCompleted_NT: object key, interactor key, interaction count, item id.</summary>
-    public static byte[] InteractEnvObjCompleted(int key, int interactor) => PacketWriter.Opcode(0x363a).Varint(key).Varint(interactor).I32(0).I32(0).ToArray();
+    /// <summary>
+    /// 0x363a InteractEnvObjCompleted_NT: object key, interactor key, interaction count, item id. A gather node's count is
+    /// its uses taken so far, which runs its use bar down (OBSERVED 2026-11-12: `3a36 9a8401 884e 01000000 00000000`, then 02).
+    /// </summary>
+    public static byte[] InteractEnvObjCompleted(int key, int interactor, int count = 0) => PacketWriter.Opcode(0x363a).Varint(key).Varint(interactor).I32(count).I32(0).ToArray();
     /// <summary>0x8d6d InteractionEnvObjFinishState_NT: object key (no usmap struct at this index; OBSERVED body = the key varint).</summary>
     public static byte[] InteractEnvObjFinishState(int key) => PacketWriter.Opcode(0x8d6d).Varint(key).ToArray();
     /// <summary>0x363b InteractEnvObjAvailableState_NT: object key.</summary>
     public static byte[] InteractEnvObjAvailableState(int key) => PacketWriter.Opcode(0x363b).Varint(key).ToArray();
 
     /// <summary>
-    /// Gather / interaction refusal on 0x3639 InteractEnvObjInterrupted_NT (DevPacketData_GameServer_InteractEnvObjInterrupted_NT:
-    /// ActionProtocol _key i32, _reason i32, _interactor_key i32, _interaction_count i32). OBSERVED _reason values match
-    /// ESlotRestrictIconType (LackLevel 4, LackMasteryLevel 5, …) when gather level or character level is too low.
+    /// 0x3639 InteractEnvObjInterrupted_NT (usmap DevPacketData_GameServer_InteractEnvObjInterrupted_NT: _key, _reason,
+    /// _interactor_key, _interaction_count): key varint, reason u16, interactor key varint, interaction count i32. The layout is
+    /// OBSERVED in the community fork's recordings 2026-11-04 to 06 (18 samples, e.g. 185000 #5957 `3936 bcef01 0519 d223
+    /// 00000000`); it replaces the usmap's all-i32 reading, which no recording had. Not yet in one of our own captures (#75).
+    /// Gather refusals send ESlotRestrictIconType as the reason (LackLevel 4, LackMasteryLevel 5, …).
     /// </summary>
     public static byte[] InteractEnvObjInterrupted(int key, int reason, int interactorKey, int interactionCount = 0) =>
-        PacketWriter.Opcode(0x3639).I32(key).I32(reason).I32(interactorKey).I32(interactionCount).ToArray();
+        PacketWriter.Opcode(0x3639).Varint(key).U16(reason).Varint(interactorKey).I32(interactionCount).ToArray();
 
     /// <summary>ESlotRestrictIconType values sent as 0x3639 _reason for gather refusals (OBSERVED).</summary>
     public static class EnvObjGatherFailReason
@@ -1296,11 +1450,15 @@ public static class GamePackets
 
     /// <summary>0x3637 InteractEnvObj_RS: result, a zero byte, object key, item key (official sample; field split CANDIDATE).</summary>
     public static byte[] InteractEnvObjReply(int key, int result = 0) => PacketWriter.Opcode(0x3637).U16(result).U8(0).Varint(key).Zeros(8).ToArray();
-    /// <summary>Empyrean Monolith UI (usmap DevPacketData_GameServer_Monolith*).</summary>
-    public const ushort MonolithListNt = 0x3ba9, MonolithInfoNt = 0x3baa, MonolithResonateRq = 0x3bab, MonolithResonateRs = 0x3bac,
-        MonolithUnlockNt = 0x3bdf, SyncMonolithAccountAchievementsRq = 0x3c07, SyncMonolithAccountAchievementsRs = 0x3c08;
+    /// <summary>
+    /// Empyrean Monolith UI (usmap DevPacketData_GameServer_Monolith*). Live opcodes: the usmap's 0x3ba9-0x3bdf and 0x3c07/0x3c08
+    /// + 0xa762 (#74). OBSERVED in our 2026-11-04 and 2026-11-12 captures: 0xe30b MonolithList_NT and 0xe30e MonolithResonate_RS;
+    /// the others are the same run (CANDIDATE, as in zaraza87/A2Core MonolithPackets.cs).
+    /// </summary>
+    public const ushort MonolithListNt = 0xe30b, MonolithInfoNt = 0xe30c, MonolithResonateRq = 0xe30d, MonolithResonateRs = 0xe30e,
+        MonolithUnlockNt = 0xe341, SyncMonolithAccountAchievementsRq = 0xe369, SyncMonolithAccountAchievementsRs = 0xe36a;
 
-    /// <summary>0x3ba9 MonolithList_NT: {monolith_id, resonate_count}[] (Common_MonolithStatus).</summary>
+    /// <summary>0xe30b MonolithList_NT: {monolith_id, resonate_count}[] (Common_MonolithStatus). OBSERVED: `03 e9030000 08010000 …`.</summary>
     public static byte[] MonolithList(IReadOnlyList<(int MonolithId, int ResonateCount)> entries)
     {
         var w = PacketWriter.Opcode(MonolithListNt).Varint(entries.Count);
@@ -1308,27 +1466,58 @@ public static class GamePackets
         return w.ToArray();
     }
 
-    /// <summary>0x3baa MonolithInfo_NT: monolith status + env object wire key.</summary>
+    /// <summary>0xe30c MonolithInfo_NT: monolith status + env object wire key.</summary>
     public static byte[] MonolithInfo(int monolithId, int resonateCount, int envObjKey) =>
         PacketWriter.Opcode(MonolithInfoNt).I32(monolithId).I32(resonateCount).I32(envObjKey).ToArray();
 
-    /// <summary>0x3bdf MonolithUnlock_NT: first sight of a monolith (Common_MonolithStatus).</summary>
+    /// <summary>0xe341 MonolithUnlock_NT: first sight of a monolith (Common_MonolithStatus).</summary>
     public static byte[] MonolithUnlock(int monolithId, int resonateCount) =>
         PacketWriter.Opcode(MonolithUnlockNt).I32(monolithId).I32(resonateCount).ToArray();
 
-    /// <summary>0x3bac MonolithResonate_RS (reward_items: item id, enchant u8, count i32).</summary>
+    /// <summary>
+    /// 0xe30e MonolithResonate_RS: u16 result, monolith i32, token item i32, tokens spent i32, count before i32, count after i32,
+    /// reward_items (item id, enchant u8, count i32). OBSERVED 2026-11-12: `0000 e9030000 6107aa25 06000000 08010000 0e010000 00`
+    /// (six tokens: 264 → 270, no reward items).
+    /// </summary>
     public static byte[] MonolithResonateReply(int result, int monolithId, int itemId, int itemCount, int prevResonateCount, int resonateCount,
         IReadOnlyList<(int ItemId, int Count)> rewardItems)
     {
-        var w = PacketWriter.Opcode(MonolithResonateRs).I32(result).I32(monolithId).I32(itemId).I32(itemCount).I32(prevResonateCount)
+        var w = PacketWriter.Opcode(MonolithResonateRs).U16(result).I32(monolithId).I32(itemId).I32(itemCount).I32(prevResonateCount)
             .I32(resonateCount).Varint(rewardItems.Count);
         foreach (var (id, count) in rewardItems) w.I32(id).U8(0).I32(count);
         return w.ToArray();
     }
 
-    /// <summary>0x3c08 SyncMonolithAccountAchievements_RS: result + reward item list (Common_RewardItem).</summary>
+    /// <summary>
+    /// 0x3634 EnvObjSpawn_NT of an Empyrean Trace: the placed form (<see cref="EnvObjSpawn(int,int,Vector3d,double,long,int,byte)"/>)
+    /// with presence mask 0x0c instead of 4 and _achievement_id_from_spawn_unit (i32, the spawn's UseEnvObjSpawnerName achievement)
+    /// after the phase byte. OBSERVED by zaraza87/A2Core (MonolithPackets.cs, #72), official recording 20261106-105448 #637:
+    /// `3436 e7f501 0c00 81d91300 21d01dc8c3ce97c60076c846 00000000 00807743 010101 da7967a5a1010000 0000000000000000 a5232d2d 09 00
+    /// 22817307 00` (E_D1_GodFragment_01_Ground_129, achievement 125010210). Every recorded trace spawn has state 1 / can interact 1 /
+    /// reason 1, collected or not: the client greys a collected one out itself (EnvObjData InteractCondition NotGetRewardOnce).
+    /// </summary>
+    public static byte[] TraceSpawn(int key, int envObjId, Vector3d position, double yaw, long createTime, int uniqueKey, byte relationship, int achievement) =>
+        PacketWriter.Opcode(0x3634).Varint(key).U8(0x0c).U8(0).I32(envObjId).F32(position.X).F32(position.Y).F32(position.Z)
+            .I32(0).F32(yaw).U8(1).U8(1).U8(1).I64(createTime).Zeros(8).I32(uniqueKey).U8(relationship).U8(0).I32(achievement).U8(0).ToArray();
+
+    /// <summary>
+    /// 0xe33a (no usmap name found): an object's reward right after its 0x363a/0x8d6d - object key i32 | the object's position |
+    /// varint count | {item i32, count i32}; the 0x561b with the items (increase reason 49) follows. OBSERVED by zaraza87/A2Core
+    /// (EnvBoxPackets.cs, #72) in 9 official samples, e.g. an Empyrean Trace: 631900007 x3.
+    /// </summary>
+    public static byte[] EnvObjReward(int key, Vector3d at, IReadOnlyList<(int ItemId, long Count)> items)
+    {
+        var w = PacketWriter.Opcode(0xe33a).I32(key).Vec3(at).Varint(items.Count);
+        foreach (var (item, count) in items) w.I32(item).I32((int)Math.Min(count, int.MaxValue));
+        return w.ToArray();
+    }
+
+    /// <summary>EIncreaseReason of the items an object's 0xe33a reward adds (0x561b; OBSERVED 49 in the fork's three samples).</summary>
+    public const byte IncreaseEnvObjReward = 49;
+
+    /// <summary>0xe36a SyncMonolithAccountAchievements_RS: u16 result + reward item list (Common_RewardItem).</summary>
     public static byte[] SyncMonolithAccountAchievementsReply(int result = 0) =>
-        PacketWriter.Opcode(SyncMonolithAccountAchievementsRs).I32(result).Varint(0).ToArray();
+        PacketWriter.Opcode(SyncMonolithAccountAchievementsRs).U16(result).Varint(0).ToArray();
 
     /// <summary>0x9232 EngravedTeleportArtifactList_NT: the Kibelisks the character has bound to.</summary>
     public static byte[] EngravedTeleportArtifacts(IReadOnlyList<int> ids)
@@ -1453,17 +1642,23 @@ public static class GamePackets
         PacketWriter.Opcode(0x381b).U16(result).I32(skill).ToArray();
 
     /// <summary>
-    /// 0x381c SkillChargingStart_NT (live +0x157, OBSERVED Deadshot 2026-10-31): actor varint | skill i32 | level u8 |
-    /// target mask u8 2 | target varint | yaw f32 | Vec3 | charge rate f32 | act_move u8. The usmap also lists charging_act_id i32, but the recorded message ends after act_move (DeadshotChargingTests).
+    /// 0x381c SkillChargingStart_NT (live +0x157, OBSERVED Deadshot 2026-10-31): actor varint | u8 1 | skill i32 | level u8 |
+    /// target mask u8 2 | target varint | yaw f32 | Vec3 | charge rate f32 | act_move u8. The u8 1 after the actor is in our
+    /// capture (`1C38 B05B 01 90C6D500 ...`) and in the Addiboii fork's community recordings; its meaning is unknown. The usmap
+    /// also lists charging_act_id i32, but the recorded message ends after act_move (DeadshotChargingTests).
     /// </summary>
     public static byte[] SkillChargingStartNotify(int actorKey, int skillId, int skillLevel, int targetKey, float yaw, Vector3d location,
         float chargeRate = 1.236f, byte actMoveType = 1, int chargingActId = 0) =>
-        PacketWriter.Opcode(0x381c).Varint(actorKey).I32(skillId).U8(skillLevel).U8(2).Varint(targetKey).F32(yaw)
+        PacketWriter.Opcode(0x381c).Varint(actorKey).U8(1).I32(skillId).U8(skillLevel).U8(2).Varint(targetKey).F32(yaw)
             .F32((float)location.X).F32((float)location.Y).F32((float)location.Z).F32(chargeRate).U8(actMoveType).ToArray();
 
-    /// <summary>0x381e SkillChargingEnd_RS (OBSERVED): step u8, result u16, skill i32, i32 0, selected skill i32.</summary>
+    /// <summary>
+    /// 0x381e SkillChargingEnd_RS (OBSERVED): u8 1, result u16, charged skill i32, step i32, selected skill i32. Our capture is a
+    /// step-0 release (`1E38 01 0000 90C6D500 00000000 90C6D500`); the Addiboii fork's recordings (2026-11-06) show steps 1-3 with
+    /// the step's ChargeSkillId as the selected skill (`... 03000000 93C6D500`).
+    /// </summary>
     public static byte[] SkillChargingEndReply(int result, int skill, int step, int selectedSkill) =>
-        PacketWriter.Opcode(0x381e).U8(step).U16(result).I32(skill).I32(0).I32(selectedSkill).ToArray();
+        PacketWriter.Opcode(0x381e).U8(1).U16(result).I32(skill).I32(step).I32(selectedSkill).ToArray();
 
     /// <summary>0x3820 SkillChargingStop_RS: result i32.</summary>
     public static byte[] SkillChargingStopReply(int result = 0) => PacketWriter.Opcode(0x3820).I32(result).ToArray();
@@ -1491,26 +1686,57 @@ public static class GamePackets
     }
 
     /// <summary>
-    /// 0x3801 for a dodge: result u16, the skill, u8 0 and nothing else (OBSERVED, 9 bytes at all 100 official dodges of
-    /// 2026-10-19, the sprint's dash included: the skill is CombatDodge 11000100 even when the start is NormalDodge 11000101).
-    /// Result 1 is the refusal (DashVariant 6). The flags-first 11-byte cast reply reads as a failure to this client and drops the sprint.
+    /// 0x3801 for a dodge: `u8 0, u16 result, i32 skill` (9 bytes), the cast reply with no optional bytes. OBSERVED at all 1771
+    /// official 0x3801 of our recordings, 114 of them dodges (2026-11-15: `01 38 00 0000 e4a81201`, CombatDodge 18000100). The
+    /// skill is CombatDodge even when the start is NormalDodge. Result 1 is the refusal (DashVariant 6). Ours wrote `u16, i32, u8 0`
+    /// until #70.
     /// </summary>
-    /// <summary>0x3801 9-byte form for any skill: result u16, skill i32, change toggle u8 (the dodge's observed shape).</summary>
-    public static byte[] CastResult(int skill, int result = 0, byte changeToggle = 0) =>
-        PacketWriter.Opcode(0x3801).U16(result).I32(skill).U8(changeToggle).ToArray();
+    public static byte[] DodgeResult(int skill, int result = 0) => CastResult(skill, result);
 
-    public static byte[] DodgeResult(int skill, int result = 0) => PacketWriter.Opcode(0x3801).U16(result).I32(skill).U8(0).ToArray();
+    /// <summary>0x3801 9-byte form for any skill: flags u8 0, result u16, skill i32 (<see cref="CastReply(bool, int, byte, bool, int, bool, ushort)"/> with no optional bytes).</summary>
+    public static byte[] CastResult(int skill, int result = 0) => PacketWriter.Opcode(0x3801).U8(0).U16(result).I32(skill).ToArray();
 
     /// <summary>
     /// 0x3804 with switch 00: a self skill's effect (OBSERVED 50-60 ms after all 36 official CombatDodge starts): target, 00 00, actor,
     /// skill, the start's action uid, 02, effect id (skill x 100 + 13 for the dodge), i32 1, attack speed 10000, 01, 00.
+    /// The same form carries a skill's groggy-guard drain on its hit (OBSERVED in the fork's 2.0.6 recording 20261019-231752 #31014: effect
+    /// 1119000022, the hit's seq 3 in both the u32 and the u8 where the dodge has 1; fork c625de5).
     /// </summary>
-    public static byte[] SkillEffect(int targetKey, int actorKey, int skill, int actionUid, int effectId) =>
-        PacketWriter.Opcode(0x3804).Varint(targetKey).U8(0).U8(0).Varint(actorKey).U32((uint)skill).U8((byte)actionUid).U8(2)
-            .U32((uint)effectId).U32(1).Varint(10000).U8(1).U8(0).ToArray();
+    public static byte[] SkillEffect(int targetKey, int actorKey, int skill, int actionUid, int effectId, int seq = 1)
+    {
+        if (seq is < 0 or > 255) throw new ArgumentException("Hit sequence must fit one byte");
+        return PacketWriter.Opcode(0x3804).Varint(targetKey).U8(0).U8(0).Varint(actorKey).U32((uint)skill).U8((byte)actionUid).U8(2)
+            .U32((uint)effectId).U32((uint)seq).Varint(10000).U8((byte)seq).U8(0).ToArray();
+    }
 
-    /// <summary>0x3806 skill end: key, skill, action uid, u8 0 (OBSERVED 200 ms after every official dodge and sprint dash, before the abnormal's 0x382c).</summary>
-    public static byte[] SkillEnd(int key, int skill, int actionUid) => PacketWriter.Opcode(0x3806).Varint(key).I32(skill).U8((byte)actionUid).U8(0).ToArray();
+    /// <summary>
+    /// 0x3802 for an item's skill on the user, with no location (OBSERVED 2026-11-12 r2, 21 bytes: Superior Speed Scroll
+    /// `0238 dd08 00 38b92100 7f 00 dd08 035f4042 904e01 00`, Fruit Salad the same form): actor, 0, skill, action uid, 0, target,
+    /// yaw f32, attack speed 10000, 1, cooldown 0 (as <see cref="SkillStart"/> ends).
+    /// </summary>
+    public static byte[] ItemSkillStart(int key, int skill, int actionUid, double yaw) =>
+        PacketWriter.Opcode(0x3802).Varint(key).U8(0).I32(skill).U8((byte)actionUid).U8(0).Varint(key).F32(yaw).Varint(10000).U8(1).Varint(0).ToArray();
+
+    /// <summary>
+    /// 0x3804 for an item's skill on the user (OBSERVED 2026-11-12 r2: Superior Speed Scroll `0438 dd08 0000 dd08 38b92100 7f 02
+    /// eb592c0d 01000000 904e01 00`, Fruit Salad the same with 2160401): <see cref="SkillEffect"/> on the user with effect id
+    /// skill x 100 + 11.
+    /// </summary>
+    public static byte[] ItemSkillEffect(int key, int skill, int actionUid) => SkillEffect(key, key, skill, actionUid, skill * 100 + 11);
+
+    /// <summary>
+    /// 0x3806 skill end: key, skill, action uid, u8 reason. 0 for a natural end (OBSERVED 200 ms after every official dodge and sprint
+    /// dash, before the abnormal's 0x382c); <see cref="SkillEndCut"/> when the actor's next cast cuts the running skill.
+    /// </summary>
+    public static byte[] SkillEnd(int key, int skill, int actionUid, byte reason = 0) =>
+        PacketWriter.Opcode(0x3806).Varint(key).I32(skill).U8((byte)actionUid).U8(reason).ToArray();
+
+    /// <summary>
+    /// 0x3806 reason 0x0c: the actor's next cast cut its still-running skill, sent right before that cast's 0x3802 (OBSERVED, same
+    /// timestamp in 739 of 747 on 2026-11-04 and 347 of 360 on 2026-11-15; i=8583 `0638 b016 80020401 0a 0c`). 0x0f, 0x02 and 0x03 also
+    /// occur, unexplained.
+    /// </summary>
+    public const byte SkillEndCut = 0x0c;
 
     // ---------- NPC movement (official 0x371a-c) ----------
 
@@ -1532,13 +1758,18 @@ public static class GamePackets
     /// dz left out when 0), 0x20 the dead-reckoning bool (97,882 records); the heading pair is always present, and a walk
     /// ends with 01 as 0x371b/0x371c do. Example walk `2e ff 1f ff 5066 5066 01`
     /// (12.6 units = 126/s), run `2f 03 e9 aa fc 51b5 51b5` (Robin at 875/s).
+    /// dx and dy are left out like dz when 0 (OBSERVED, recording 2026-11-15: of 77,498 deltas both 71,084, dx only 1,987,
+    /// dy only 1,677, neither 82, and a present delta byte is never 0; 2026-11-04 `1d37 8fbd01 22 f7 d07c d07c 01` has no dy,
+    /// `1d37 949701 24 0c 9c3e 9c3e 01` no dx, `1d37 e1d701 20 14ed 14ed 01` neither).
     /// </summary>
     public static byte[] NpcMoveDelta(int key, int dx, int dy, int dz, double heading, bool run)
     {
         var angle = HeadingU16(heading);
-        var w = PacketWriter.Opcode(0x371d).Varint(key).U8((run ? 0x01 : 0) | 0x20 | 0x02 | 0x04 | (dz != 0 ? 0x08 : 0));
+        var w = PacketWriter.Opcode(0x371d).Varint(key)
+            .U8((run ? 0x01 : 0) | 0x20 | (dx != 0 ? 0x02 : 0) | (dy != 0 ? 0x04 : 0) | (dz != 0 ? 0x08 : 0));
         if (run) w.U8(3);
-        w.U8((byte)(sbyte)dx).U8((byte)(sbyte)dy);
+        if (dx != 0) w.U8((byte)(sbyte)dx);
+        if (dy != 0) w.U8((byte)(sbyte)dy);
         if (dz != 0) w.U8((byte)(sbyte)dz);
         w.U16(angle).U16(angle);
         if (!run) w.U8(1);

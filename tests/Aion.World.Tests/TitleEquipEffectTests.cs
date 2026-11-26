@@ -18,8 +18,10 @@ public sealed class TitleEquipEffectTests
 
         var replies = await session.HandleAsync(new PacketWriter().U16(GameSession.TitleEquipRq).U8(3).I32(Title).ToArray(), Now);
 
-        Assert.Equal(new PacketWriter().U16(GameSession.TitleEquipRs).U16(0).U8(3).I32(Title).ToArray(), replies[0]);
-        Assert.Equal(new PacketWriter().U16(GameSession.TitleEquipChangeNt).U8(3).I32(Title).ToArray(), replies[1]);
+        // Official order (OBSERVED 2026-11-15): 0x5681, 0xe294 `01 01 03 <title>`, then 0x5680.
+        Assert.Equal(new PacketWriter().U16(GameSession.TitleEquipChangeNt).U8(3).I32(Title).ToArray(), replies[0]);
+        Assert.Equal(new PacketWriter().U16(GameSession.PresetTitleUpdateNt).U8(1).U8(1).U8(3).I32(Title).ToArray(), replies[1]);
+        Assert.Equal(new PacketWriter().U16(GameSession.TitleEquipRs).U16(0).U8(3).I32(Title).ToArray(), replies[2]);
         Assert.Equal(Title, store.TitleEquips[3]);
         Assert.Equal(300, session.TitleStat("HPMax"));
     }
@@ -34,7 +36,7 @@ public sealed class TitleEquipEffectTests
 
         var replies = await session.HandleAsync(new PacketWriter().U16(GameSession.TitleEquipRq).U8(3).I32(0).ToArray(), Now);
 
-        Assert.Equal(new PacketWriter().U16(GameSession.TitleEquipChangeNt).U8(3).I32(0).ToArray(), replies[1]);
+        Assert.Equal(new PacketWriter().U16(GameSession.TitleEquipChangeNt).U8(3).I32(0).ToArray(), replies[0]);
         Assert.False(store.TitleEquips.ContainsKey(3));
     }
 

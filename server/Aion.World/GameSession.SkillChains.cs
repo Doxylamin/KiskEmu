@@ -221,7 +221,8 @@ public sealed partial class GameSession
     /// `06 01 D008E500` = slot 6, index 1, skill 15010000). The Skill Order window sends every edit as this one request:
     /// index 0 is the slot's own skill (skill 0 empties the slot, `07 00 00000000`), indexes 1-3 the rows under it. A skill
     /// already placed elsewhere in the bar swaps with the one it displaces. Answered 0x5608 {result u16, request echo,
-    /// is_swap, swap slot, swap index, displaced skill} (field widths CANDIDATE), then the bar as 0x5600.
+    /// is_swap, swap slot, swap index, displaced skill} (field widths CANDIDATE), then the bar as 0x5600; an edit on a skill preset
+    /// slot first sends PresetSkillUpdate_NT 0xe293 (OBSERVED, GameSession.SkillPresets.cs).
     /// </summary>
     async Task<List<byte[]>> UpdateQuickSlotContextAsync(byte[] plain, CancellationToken ct)
     {
@@ -294,6 +295,8 @@ public sealed partial class GameSession
             if (record is null) quickSlots.Remove(number);
             else quickSlots[number] = record;
         }
-        return [Rs(0, swapped, swapSlot, swapContext, swapped ? displaced : 0), Hotbar(profile.DefaultBar())];
+        // OBSERVED (R1112b i=48688, i=49554): an edit on a preset slot announces the current skill preset (0xe293) before 0x5608.
+        var preset = changes.Any(c => SkillPresetSlots.Contains(c.Slot)) ? [CurrentSkillPresetUpdate()] : Array.Empty<byte[]>();
+        return [.. preset, Rs(0, swapped, swapSlot, swapContext, swapped ? displaced : 0), Hotbar(profile.DefaultBar())];
     }
 }

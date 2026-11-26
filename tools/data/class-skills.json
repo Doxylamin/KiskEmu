@@ -7948,7 +7948,8 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 12090000
+      "group_cooldown_id": 12090000,
+      "charge": 12090000
     },
     "12100000": {
       "name": "Shield Smite",
@@ -10037,7 +10038,8 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 14010000
+      "group_cooldown_id": 14010000,
+      "charge": 14010000
     },
     "14020000": {
       "name": "Snipe",
@@ -11249,7 +11251,8 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 15060000
+      "group_cooldown_id": 15060000,
+      "charge": 15060000
     },
     "15090000": {
       "name": "Ice Chain",
@@ -12060,9 +12063,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16040000,
-      "stagger_gauge": 3,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16040000
     },
     "16070000": {
       "name": "Soul's Cry",
@@ -12108,9 +12109,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16070000,
-      "stagger_gauge": 15,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16070000
     },
     "16100000": {
       "name": "Summon: Fire Spirit",
@@ -12133,9 +12132,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16100000,
-      "stagger_gauge": 7,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16100000
     },
     "16110000": {
       "name": "Summon: Water Spirit",
@@ -12158,9 +12155,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16110000,
-      "stagger_gauge": 7,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16110000
     },
     "16120000": {
       "name": "Summon: Wind Spirit",
@@ -12183,9 +12178,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16120000,
-      "stagger_gauge": 7,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16120000
     },
     "16130000": {
       "name": "Summon: Earth Spirit",
@@ -12208,9 +12201,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16130000,
-      "stagger_gauge": 7,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16130000
     },
     "16140000": {
       "name": "Jointstrike: Curse",
@@ -12286,9 +12277,7 @@
         "Earth",
         "Ancient"
       ],
-      "use_condition_source": "override",
-      "stagger_gauge": 10,
-      "stagger_gauge_source": "override"
+      "use_condition_source": "override"
     },
     "16200000": {
       "name": "Defiance",
@@ -12472,9 +12461,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16300000,
-      "stagger_gauge": 10,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16300000
     },
     "16300001": {
       "name": "Elemental Fusion",
@@ -12543,9 +12530,7 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 16330000,
-      "stagger_gauge": 5,
-      "stagger_gauge_source": "override"
+      "group_cooldown_id": 16330000
     },
     "16340000": {
       "name": "Rapid Scattershot",
@@ -13105,7 +13090,8 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 17060000
+      "group_cooldown_id": 17060000,
+      "charge": 17060000
     },
     "17070000": {
       "name": "Chain of Torment",
@@ -15228,7 +15214,8 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 19150000
+      "group_cooldown_id": 19150000,
+      "charge": 19160000
     },
     "19170000": {
       "name": "???",
@@ -15342,7 +15329,8 @@
       "chain_window_ms": 0,
       "chain_deactivate": "None",
       "context_register": "All",
-      "group_cooldown_id": 19190000
+      "group_cooldown_id": 19190000,
+      "charge": 19200000
     },
     "19230000": {
       "name": "???",
@@ -109428,6 +109416,1006 @@
       "chain_next": [
         19111450
       ]
+    },
+    "12090001": {
+      "name": "Punishment",
+      "icon": "Skill/ICON_TE_SKILL_009",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Sword"
+      ],
+      "cooldown_ms": 30000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1952,
+            1952
+          ],
+          "ratio": [
+            60270,
+            60270
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              489,
+              489
+            ],
+            "ratio": [
+              15100,
+              15100
+            ]
+          },
+          "effect_id": 1209000111
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 12090000,
+      "sealstone": 1
+    },
+    "12090002": {
+      "name": "Punishment",
+      "icon": "Skill/ICON_TE_SKILL_009",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Sword"
+      ],
+      "cooldown_ms": 30000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            2789,
+            2789
+          ],
+          "ratio": [
+            86100,
+            86100
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              548,
+              548
+            ],
+            "ratio": [
+              16925,
+              16925
+            ]
+          },
+          "effect_id": 1209000211
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 12090000,
+      "sealstone": 1
+    },
+    "12090003": {
+      "name": "Punishment",
+      "icon": "Skill/ICON_TE_SKILL_009",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Sword"
+      ],
+      "cooldown_ms": 30000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            4184,
+            4184
+          ],
+          "ratio": [
+            129150,
+            129150
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              722,
+              722
+            ],
+            "ratio": [
+              22300,
+              22300
+            ]
+          },
+          "effect_id": 1209000311
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 12090000,
+      "sealstone": 1
+    },
+    "14010001": {
+      "name": "Deadshot",
+      "icon": "Skill/ICON_RA_SKILL_002",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Bow"
+      ],
+      "cooldown_ms": 20000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            839,
+            839
+          ],
+          "ratio": [
+            26355,
+            26355
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              459,
+              459
+            ],
+            "ratio": [
+              14420,
+              14420
+            ]
+          },
+          "effect_id": 1401000111
+        },
+        {
+          "flat": [
+            1132,
+            1132
+          ],
+          "ratio": [
+            35579,
+            35579
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              551,
+              551
+            ],
+            "ratio": [
+              17330,
+              17330
+            ]
+          },
+          "effect_id": 1401000112
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 14010000,
+      "sealstone": 1
+    },
+    "14010002": {
+      "name": "Deadshot",
+      "icon": "Skill/ICON_RA_SKILL_002",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Bow"
+      ],
+      "cooldown_ms": 20000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1198,
+            1198
+          ],
+          "ratio": [
+            37650,
+            37650
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              517,
+              517
+            ],
+            "ratio": [
+              16270,
+              16270
+            ]
+          },
+          "effect_id": 1401000211
+        },
+        {
+          "flat": [
+            1618,
+            1618
+          ],
+          "ratio": [
+            50828,
+            50828
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              624,
+              624
+            ],
+            "ratio": [
+              19602,
+              19602
+            ]
+          },
+          "effect_id": 1401000212
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 14010000,
+      "sealstone": 1
+    },
+    "14010003": {
+      "name": "Deadshot",
+      "icon": "Skill/ICON_RA_SKILL_002",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Bow"
+      ],
+      "cooldown_ms": 20000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1798,
+            1798
+          ],
+          "ratio": [
+            56475,
+            56475
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              684,
+              684
+            ],
+            "ratio": [
+              21500,
+              21500
+            ]
+          },
+          "effect_id": 1401000311
+        },
+        {
+          "flat": [
+            2427,
+            2427
+          ],
+          "ratio": [
+            76241,
+            76241
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              825,
+              825
+            ],
+            "ratio": [
+              25920,
+              25920
+            ]
+          },
+          "effect_id": 1401000312
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 14010000,
+      "sealstone": 1
+    },
+    "15060001": {
+      "name": "Hellfire",
+      "icon": "Skill/ICON_SO_SKILL_006",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Magicbook"
+      ],
+      "cooldown_ms": 45000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1592,
+            1592
+          ],
+          "ratio": [
+            47495,
+            47495
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              740,
+              740
+            ],
+            "ratio": [
+              22075,
+              22075
+            ]
+          },
+          "effect_id": 1506000111
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 15060000,
+      "sealstone": 1
+    },
+    "15060002": {
+      "name": "Hellfire",
+      "icon": "Skill/ICON_SO_SKILL_006",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Magicbook"
+      ],
+      "cooldown_ms": 45000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            2274,
+            2274
+          ],
+          "ratio": [
+            67850,
+            67850
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              848,
+              848
+            ],
+            "ratio": [
+              25300,
+              25300
+            ]
+          },
+          "effect_id": 1506000211
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 15060000,
+      "sealstone": 1
+    },
+    "15060003": {
+      "name": "Hellfire",
+      "icon": "Skill/ICON_SO_SKILL_006",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Magicbook"
+      ],
+      "cooldown_ms": 45000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 200,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            3412,
+            3412
+          ],
+          "ratio": [
+            101775,
+            101775
+          ],
+          "value4": "2",
+          "pvp": {
+            "flat": [
+              1245,
+              1245
+            ],
+            "ratio": [
+              37150,
+              37150
+            ]
+          },
+          "effect_id": 1506000311
+        },
+        {
+          "flat": [
+            3412,
+            3412
+          ],
+          "ratio": [
+            101775,
+            101775
+          ],
+          "value4": "2",
+          "pvp": {
+            "flat": [
+              1245,
+              1245
+            ],
+            "ratio": [
+              37150,
+              37150
+            ]
+          },
+          "effect_id": 1506000321
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 15060000,
+      "sealstone": 1
+    },
+    "17060001": {
+      "name": "Bolt",
+      "icon": "Skill/ICON_CL_SKILL_006",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Mace"
+      ],
+      "cooldown_ms": 45000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 300,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1383,
+            1383
+          ],
+          "ratio": [
+            45875,
+            45875
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              490,
+              490
+            ],
+            "ratio": [
+              16270,
+              16270
+            ]
+          },
+          "effect_id": 1706000111
+        },
+        {
+          "flat": [
+            1383,
+            1383
+          ],
+          "ratio": [
+            45875,
+            45875
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              490,
+              490
+            ],
+            "ratio": [
+              16270,
+              16270
+            ]
+          },
+          "effect_id": 1706000112
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 17060000,
+      "sealstone": 1
+    },
+    "17060002": {
+      "name": "Bolt",
+      "icon": "Skill/ICON_CL_SKILL_006",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Mace"
+      ],
+      "cooldown_ms": 45000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 300,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1975,
+            1975
+          ],
+          "ratio": [
+            65520,
+            65520
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              544,
+              544
+            ],
+            "ratio": [
+              18070,
+              18070
+            ]
+          },
+          "effect_id": 1706000211
+        },
+        {
+          "flat": [
+            1975,
+            1975
+          ],
+          "ratio": [
+            65520,
+            65520
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              544,
+              544
+            ],
+            "ratio": [
+              18070,
+              18070
+            ]
+          },
+          "effect_id": 1706000212
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 17060000,
+      "sealstone": 1
+    },
+    "17060003": {
+      "name": "Bolt",
+      "icon": "Skill/ICON_CL_SKILL_006",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Mace"
+      ],
+      "cooldown_ms": 45000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 300,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            2963,
+            2963
+          ],
+          "ratio": [
+            98280,
+            98280
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              711,
+              711
+            ],
+            "ratio": [
+              23600,
+              23600
+            ]
+          },
+          "effect_id": 1706000311
+        },
+        {
+          "flat": [
+            2963,
+            2963
+          ],
+          "ratio": [
+            98280,
+            98280
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              711,
+              711
+            ],
+            "ratio": [
+              23600,
+              23600
+            ]
+          },
+          "effect_id": 1706000312
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 17060000,
+      "sealstone": 1
+    },
+    "19160001": {
+      "name": "???",
+      "icon": "Skill/ICON_GT_SKILL_016",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Gauntlet"
+      ],
+      "cooldown_ms": 30000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 0,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            873,
+            873
+          ],
+          "ratio": [
+            25200,
+            25200
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              569,
+              569
+            ],
+            "ratio": [
+              16425,
+              16425
+            ]
+          },
+          "effect_id": 1916000111
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 19150000,
+      "sealstone": 1
+    },
+    "19160002": {
+      "name": "???",
+      "icon": "Skill/ICON_GT_SKILL_016",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Gauntlet"
+      ],
+      "cooldown_ms": 30000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 0,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1247,
+            1247
+          ],
+          "ratio": [
+            36000,
+            36000
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              634,
+              634
+            ],
+            "ratio": [
+              18300,
+              18300
+            ]
+          },
+          "effect_id": 1916000211
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 19150000,
+      "sealstone": 1
+    },
+    "19160003": {
+      "name": "???",
+      "icon": "Skill/ICON_GT_SKILL_016",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Gauntlet"
+      ],
+      "cooldown_ms": 30000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 0,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1871,
+            1871
+          ],
+          "ratio": [
+            54000,
+            54000
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              721,
+              721
+            ],
+            "ratio": [
+              20825,
+              20825
+            ]
+          },
+          "effect_id": 1916000311
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 19150000,
+      "sealstone": 1
+    },
+    "19200001": {
+      "name": "???",
+      "icon": "Skill/ICON_GT_SKILL_020",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Gauntlet"
+      ],
+      "cooldown_ms": 10000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 0,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            498,
+            498
+          ],
+          "ratio": [
+            18900,
+            18900
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              364,
+              364
+            ],
+            "ratio": [
+              13800,
+              13800
+            ]
+          },
+          "effect_id": 1920000111
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 19190000,
+      "sealstone": 1
+    },
+    "19200002": {
+      "name": "???",
+      "icon": "Skill/ICON_GT_SKILL_020",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Gauntlet"
+      ],
+      "cooldown_ms": 10000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 0,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            712,
+            712
+          ],
+          "ratio": [
+            27000,
+            27000
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              404,
+              404
+            ],
+            "ratio": [
+              15325,
+              15325
+            ]
+          },
+          "effect_id": 1920000211
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 19190000,
+      "sealstone": 1
+    },
+    "19200003": {
+      "name": "???",
+      "icon": "Skill/ICON_GT_SKILL_020",
+      "type": "Active",
+      "target": "MainTarget",
+      "weapons": [
+        "Gauntlet"
+      ],
+      "cooldown_ms": 10000,
+      "casting_ms": 0,
+      "cost": {
+        "mp": 0,
+        "hp": 0,
+        "sp": 0
+      },
+      "damage": [
+        {
+          "flat": [
+            1069,
+            1069
+          ],
+          "ratio": [
+            40500,
+            40500
+          ],
+          "value4": "1",
+          "pvp": {
+            "flat": [
+              458,
+              458
+            ],
+            "ratio": [
+              17375,
+              17375
+            ]
+          },
+          "effect_id": 1920000311
+        }
+      ],
+      "chain_prev": 0,
+      "chain_rate": 0,
+      "chain_window_ms": 0,
+      "chain_deactivate": "None",
+      "context_register": "All",
+      "group_cooldown_id": 19190000,
+      "sealstone": 1
     }
   },
   "levels": {
@@ -118750,7 +119738,8 @@
     "client_build": "Steam build 26262663: stats, cooldowns, casting, costs and damage values from PcStatLevel/Skill/SkillEffect (tools/client_build_update.py)",
     "damage_source": "chain follow-ups without exported SkillEffect rows carry improvised Damage rows scaled from their parent (damage_source: override, tools/data/skill-damage-overrides.json)",
     "use_conditions": "Skill.dat CanUseWhenElementalSummonSpawned / CanUseWhenPeaceState / CanUseSkillCostType; 16140000: Jointstrike: Curse needs a summoned spirit; CanUseWhenElementalSummonSpawned groups not in committed export (any spirit counts, OURS).; use_condition_source \"override\" marks OURS.",
-    "skill_cond": "SkillCond.dat SkillCondTableItem (CondType, CondAbnormalGroupId, CondAbnormalEffectType, CondSkillList, CondSelectTarget); grants from ToggleOnAbnormalId; self Abnormal_True on caster filters is applied from skill-areas caster_debuffs at hit time; skill_cond_*_source \"override\" marks OURS. 14070000: Suppressing Arrow tooltip: while Precision is active; Marking Shot grants Precision (client skill text, 10s).; 14090000: Marking Shot grants Precision for 10s (SkillEffect Abnormal_True group not in committed skill-areas.json).; 16340000: Rapid Scattershot: target afflicted with Stagger (SkillCond.dat HasAbnormalEffectType, CondSelectTarget Target)."
+    "skill_cond": "SkillCond.dat SkillCondTableItem (CondType, CondAbnormalGroupId, CondAbnormalEffectType, CondSkillList, CondSelectTarget); grants from ToggleOnAbnormalId; self Abnormal_True on caster filters is applied from skill-areas caster_debuffs at hit time; skill_cond_*_source \"override\" marks OURS. 14070000: Suppressing Arrow tooltip: while Precision is active; Marking Shot grants Precision (client skill text, 10s).; 14090000: Marking Shot grants Precision for 10s (SkillEffect Abnormal_True group not in committed skill-areas.json).; 16340000: Rapid Scattershot: target afflicted with Stagger (SkillCond.dat HasAbnormalEffectType, CondSelectTarget Target).",
+    "charges": "SkillCharge.dat ChargeMinTime, bMovableInCharge, SkillChargeDataList {ChargeTime, ChargeSkillId} of client 3533 (rows taken from the Addiboii fork d6ef0ed: no SkillCharge.dat export here yet); a cast row has charge = its Skill.dat ChargeId; the step skills are added as cast rows"
   },
   "skill_customizing": {
     "11000000": [
@@ -119029,7 +120018,6 @@
     ]
   },
   "meta": {
-    "stagger_gauge": "Stagger gauge damage per skill (global client tooltip bands). OURS when SkillEffect stagger rows are not exported; tools/stagger_gauge.py patches class-skills.json stagger_gauge. Evidence: The Games Wiki spiritmaster-skills and stagger-gauge pages (Oct 2026).",
     "ap_costs": "Skill.dat NeedCostAp; skill-ap-cost-overrides.json when export missing."
   },
   "bar_context_by_default_skill": {
@@ -119065,5 +120053,115 @@
       18060000,
       18120000
     ]
+  },
+  "charges": {
+    "12090000": {
+      "min_ms": 300,
+      "movable": false,
+      "steps": [
+        [
+          500,
+          12090001
+        ],
+        [
+          1000,
+          12090002
+        ],
+        [
+          1500,
+          12090003
+        ]
+      ]
+    },
+    "14010000": {
+      "min_ms": 300,
+      "movable": false,
+      "steps": [
+        [
+          500,
+          14010001
+        ],
+        [
+          1000,
+          14010002
+        ],
+        [
+          1500,
+          14010003
+        ]
+      ]
+    },
+    "15060000": {
+      "min_ms": 300,
+      "movable": false,
+      "steps": [
+        [
+          500,
+          15060001
+        ],
+        [
+          1000,
+          15060002
+        ],
+        [
+          1500,
+          15060003
+        ]
+      ]
+    },
+    "17060000": {
+      "min_ms": 300,
+      "movable": true,
+      "steps": [
+        [
+          500,
+          17060001
+        ],
+        [
+          1000,
+          17060002
+        ],
+        [
+          1500,
+          17060003
+        ]
+      ]
+    },
+    "19160000": {
+      "min_ms": 300,
+      "movable": false,
+      "steps": [
+        [
+          500,
+          19160001
+        ],
+        [
+          1000,
+          19160002
+        ],
+        [
+          1500,
+          19160003
+        ]
+      ]
+    },
+    "19200000": {
+      "min_ms": 210,
+      "movable": true,
+      "steps": [
+        [
+          350,
+          19200001
+        ],
+        [
+          700,
+          19200002
+        ],
+        [
+          1050,
+          19200003
+        ]
+      ]
+    }
   }
 }

@@ -204,6 +204,20 @@ var inner = Lz4Block.Decode(envelope.AsSpan(6), BitConverter.ToInt32(envelope, 2
 Check(NativeFraming.Split(inner, out _).Single().AsSpan(0, 2).SequenceEqual(new byte[] { 0x15, 0x36 }), "0xffff envelope holds a framed 0x3615");
 var rc4a = new Rc4(key); var whole = new Rc4(key).Crypt(new byte[64]);
 Check(rc4a.Crypt(new byte[20]).Concat(rc4a.Crypt(new byte[44])).SequenceEqual(whole), "RC4 keystream continues across bodies");
+// 100 two-byte frames in one read: 64 this tick, 36 the next, all deciphered in order (live 2026-11-12 the extra ones were
+// dropped undeciphered and every later request read as a random opcode). Past the capacity frames drop, still deciphered.
+var sender = new Rc4(key);
+var sent = Enumerable.Range(0, 100).Select(n => new byte[] { (byte)n, 0x37 }).ToList();
+var backlog = new ClientFrameBacklog(new Rc4(key));
+backlog.Add(sent.Select(f => sender.Crypt(f)).ToList());
+var tick1 = backlog.Take(64); var tick2 = backlog.Take(64);
+Check(tick1.Count == 64 && tick2.Count == 36 && backlog.Count == 0
+      && tick1.Concat(tick2).Select((f, n) => f.SequenceEqual(sent[n])).All(x => x), "client frames past 64 wait a tick, deciphered in order");
+var small = new ClientFrameBacklog(new Rc4(key), capacity: 4); var smallSender = new Rc4(key);
+var smallDropped = small.Add(sent.Take(6).Select(f => smallSender.Crypt(f)).ToList());
+small.Take(4);
+small.Add([smallSender.Crypt(sent[6])]);
+Check(smallDropped == 2 && small.Take(4).Single().SequenceEqual(sent[6]), "frames past the backlog drop but keep the keystream in step");
 var greeting = Greeting(0x3610, modulus, 3);
 Check(NativeHandshake.ReadGreeting(greeting, NativeHandshake.GameGreeting) == rsa, "greeting DER public key");
 Rejects(() => NativeHandshake.ReadGreeting(greeting, NativeHandshake.LoginGreeting), "greeting tag must match the port");
@@ -308,17 +322,21 @@ Check(Convert.ToHexStringLower(GamePackets.ClientEnvSetting()) == "448d01fffffff
 }
 var entered = await game.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
 var opcodes = entered.Select(b => b[0] | b[1] << 8).ToList();
-Check(opcodes.Take(8).SequenceEqual(new[] { 0x3623, 0x3746, 0x8d00, 0x3633, 0x3646, 0x382a, 0x364a, 0x3657 }) && opcodes.Contains(0x5100) && opcodes.Contains(0xe257), "world entry burst");
+Check(opcodes.Take(9).SequenceEqual(new[] { 0x3623, 0x3746, 0x8d00, 0x3633, 0x3646, 0x382a, 0x382a, 0x364a, 0x3657 }) && opcodes.Contains(0x5100) && opcodes.Contains(0xe257), "world entry burst");
+// The load protection 10002 for 5000 ms after the passives, right before 0x364a (official #542: abnormal uid 4).
+Check(entered[6].AsSpan().IndexOf(Convert.FromHexString("1227000088130000")) > 0, "world entry: abnormal 10002 for 5000 ms right before 0x364a");
 // The class passives as permanent abnormals (official world entry: 110000001, duration -1, expire 2100): the Gladiator's
 // WeaponEquipable Greatsword/Guarder is what lets the client equip greatswords.
-var passives = entered.Single(b => b[0] == 0x2a && b[1] == 0x38);
+var passives = entered.First(b => b[0] == 0x2a && b[1] == 0x38);
 Check(Convert.ToHexStringLower(passives).Contains(Convert.ToHexStringLower(BitConverter.GetBytes(110000001)) + "ffffffffffffffff" + Convert.ToHexStringLower(BitConverter.GetBytes(4_102_412_400_000L))),
       "world entry announces the class passives (0x382a: Equip Gladiator Weapon 110000001, permanent)");
 Check(opcodes.Count(o => o == 0x3641) == 1 + data.Spawns(1000).Count && data.Spawns(1000).Count > 200, "training dummy and every Poeta NPC appear");
-Check(entered.Any(b => b.SequenceEqual(GamePackets.ContentsUnlockList(GamePackets.UnlockedContents(game.Level)))), "world entry unlocks the contents of the character's level");
+Check(entered.Any(b => b[0] == 0x57 && b[1] == 0xe2 && b.Skip(3).Contains((byte)45) && GamePackets.UnlockedContents(game.Level).All(t => b.Skip(3).Contains(t))),
+      "world entry unlocks the contents of the character's level, chat (45) included (OBSERVED: official 0xe257 carries 45)");
 Check(!GamePackets.UnlockedContents(3).Contains((byte)2) && GamePackets.UnlockedContents(4).Contains((byte)2) && !GamePackets.UnlockedContents(99).Contains((byte)45),
-      "the skill window (2) unlocks at level 4 (ContentsUnlock.dat); chat stays for 0xe258");
-Check((await game.HandleAsync([0x1c, 0x8a], Now)).Select(b => b[0] | b[1] << 8).SequenceEqual(new[] { 0x8a1d, 0xe258 }), "last world-entry query carries the chat unlock");
+      "the skill window (2) unlocks at level 4 (ContentsUnlock.dat); chat (45) is added by WorldEntryContentsUnlocks");
+Check(!opcodes.Contains(0xe258), "no 0xe258 at world entry (OBSERVED: the official server never sends it)");
+Check((await game.HandleAsync([0x1c, 0x8a], Now)).Select(b => b[0] | b[1] << 8).SequenceEqual(new[] { 0x8a1d }), "the last world-entry query answers alone (no unlock packets)");
 // Skill levels for skill points (official #18470-18472): a level-10 development Gladiator buys Rending Blow level 2 for one of its 16 points.
 var pointed = new GameSession(data, new GameSessionOptions { CharacterLevel = 10 }, new Random(11));
 await pointed.HandleAsync(Strings(0x3613, Session, "", "t", "").Concat(new byte[9]).ToArray(), Now);
@@ -331,8 +349,8 @@ var boughtLevel = await pointed.HandleAsync(new PacketWriter().U16(0x383f).I32(1
 Check(SkillMasteryCoreOpcodes(boughtLevel).SequenceEqual([0x3656, 0x3840, 0x3813, 0x5105])
       && boughtLevel[1].SequenceEqual(Convert.FromHexString("4038" + "0000" + "D0FFA700"))
       && boughtLevel[2].SequenceEqual(Convert.FromHexString("1338" + "01" + "D0FFA700" + "01" + "D0FFA700" + "0202" + "0000000000" + "03"))   // original = the bought level (2)
-      && boughtLevel[3].SequenceEqual(Convert.FromHexString("05510101010f")) && pointed.SkillLevel(11010000) == 2,
-      "SkillLevelUp_RQ 0x383f: 0x3656 then 0x3840, 0x3813 and 0x5105 laid out as recorded (level 2 for one point, 15 remaining)");
+      && boughtLevel[3].SequenceEqual(Convert.FromHexString("055101010100")) && pointed.SkillLevel(11010000) == 2,
+      "SkillLevelUp_RQ 0x383f: 0x3656 then 0x3840, 0x3813 and 0x5105 laid out as recorded (level 2 for one point; 0x5105 carries the 1 point spent)");
 Check((await pointed.HandleAsync(new PacketWriter().U16(0x383f).I32(99999999).ToArray(), Now))[0].AsSpan(2, 2).SequenceEqual(BitConverter.GetBytes((ushort)GameSession.SkillAcquireNotFoundData))
       && (await game.HandleAsync(new PacketWriter().U16(0x383f).I32(11010000).ToArray(), Now))[0].AsSpan(2, 2).SequenceEqual(BitConverter.GetBytes((ushort)GameSession.SkillAcquireNotEnoughSkillPoint)),
       "an unknown skill is refused (EResult 6185 kSkill_Acquire_NotFoundData); without skill points, 6191 NotEnoughSkillPoint");
@@ -579,9 +597,9 @@ await game.HandleAsync(Cast(basic, Combat.TrainingDummyKey, pos), killAt);
 var kill = await game.TickAsync(landAt);
 Check(dummy.Dead && kill.Any(b => b.SequenceEqual(GamePackets.NpcHp(Combat.TrainingDummyKey, 0))), "HP 0 is the kill");
 Check(game.Level == 1 && game.Experience == 0 && !kill.Any(b => b[0] == 0x07 && b[1] == 0x8d),
-      "field kills grant no experience (official capture 20261030/31)");
-Check(game.KillExperience(1) == 0 && new GameSession(data, new GameSessionOptions { CharacterLevel = 30 }, new Random(1)).KillExperience(10) == 0,
-      "KillExperience is always zero");
+      "a level-1 character gets no kill experience (none below level 10, CANDIDATE from the A2Core fork of addiboii)");
+Check(game.KillExperience(1) == 0 && new GameSession(data, new GameSessionOptions { CharacterLevel = 30 }, new Random(1)).KillExperience(25) == GameSession.KillReward(30, 25, 3, false),
+      "kill experience follows GameSession.KillReward (none below level 10)");
 var respawn = await game.TickAsync(landAt + GameSession.RespawnMs + 50);
 Check(respawn.Any(b => b.SequenceEqual(GamePackets.Death(Combat.TrainingDummyKey))) && dummy.Hp == dummy.HpMax, "corpse respawns at full HP");
 Check((await game.HandleAsync([0x30, 0x36], Now)).Single().SequenceEqual(GamePackets.Logout()), "logout reply");
@@ -851,7 +869,10 @@ Check(patrolPackets.Count(b => (b[0] | b[1] << 8) == 0x371c) > 30 && patrolPacke
       && patrolPackets.Count(b => (b[0] | b[1] << 8) == 0x371d) > 200,
       "only walk updates (no start or stop): a full 0x371c about once a second and 0x371d deltas every 100 ms between (observed)");
 var deltas = patrolPackets.Where(b => (b[0] | b[1] << 8) == 0x371d).ToList();
-Check(deltas.All(b => b[^1] == 1 && (b[4] & 0x26) == 0x26 && (b[4] & 0x01) == 0), "the walk deltas carry dx, dy and the heading pair and end with 01, as the official walk deltas");
+Check(deltas.All(b => b[^1] == 1 && (b[4] & 0x20) == 0x20 && (b[4] & 0x01) == 0
+                     && b.Length == 5 + ((b[4] & 0x02) != 0 ? 1 : 0) + ((b[4] & 0x04) != 0 ? 1 : 0) + ((b[4] & 0x08) != 0 ? 1 : 0) + 5)
+      && deltas.Any(b => (b[4] & 0x06) == 0x06),
+      "the walk deltas carry the non-zero dx / dy, the heading pair and end with 01, as the official walk deltas");
 // A companion (Robin in the HQ001 layer: Function Companion, aggressive, relationship 13) attacks a monster near it on its
 // own, then follows its player again once the monster is gone (official: Robin ran to the Cherubim and cast first).
 var companion = new Target { Key = 2150, Name = "N_L0_Starter_HQ001_Robin_01", Hp = 100, HpMax = 100, Position = new Vector3d(0, 0, 0), WalkSpeed = 126, RunSpeed = 500,
@@ -1023,19 +1044,20 @@ Check(storedCreate.Single()[0] == 0x1c && store.Created.Single().Name == "Player
     Check(renamed.Single().SequenceEqual(new PacketWriter().U16(0x362d).U16(0).Varint(firstKey).String("Renamed").I32(632100001).I64(1).ToArray())
           && lobbyStore.States[0].Summary.Name == "Renamed", "rename: stored and answered 0x362d result 0");
     Check(BitConverter.ToUInt16((await lobbySession.HandleAsync(new PacketWriter().U16(0x362c).Varint(firstKey).String("Second").ToArray(), Now)).Single(), 2) == 8235, "rename to a name in use: kCharChangeName_InvalidCharName");
-    // A level-1 character is deleted at once: 0x3628 then CharDelete_NT 0x362b, and it leaves the list.
-    var deleted = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now);
-    var gone = lobbyStore.States.Count;
-    await lobbyStore.CharacterDeletionsAsync(default);   // as the lobby list does
-    Check(deleted.Count == 2 && deleted[0][0] == 0x28 && deleted[0][2] == 0 && deleted[1].SequenceEqual(new PacketWriter().U16(0x362b).Varint(firstKey).ToArray())
-          && lobbyStore.Deleted.Count == 1 && lobbyStore.States.Count == 1, "a low-level character is deleted at once (0x3628, 0x362b)");
-    // Level 20+: pending for 24 h (shown in the list), cancellable.
-    lobbyStore.States[0] = lobbyStore.States[0] with { Progress = lobbyStore.States[0].Progress with { Level = 30 } };
-    var secondKey = (uint)lobbyStore.States[0].WireId << 16;
-    var pendingDelete = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(secondKey).ToArray(), Now);
-    Check(pendingDelete.Single()[0] == 0x28 && lobbyStore.PendingDeletes.Values.Single() == DateTimeOffset.FromUnixTimeMilliseconds(Now) + GameSession.DeleteDelay, "a level-30 character waits 7 days before deletion");
-    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3629).Varint(secondKey).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x362a).U16(0).Varint(secondKey).ToArray())
+    // Every level waits 7 days (OBSERVED 2026-11-15 for a level-1 character): 0x3628 result 0, the key, the time; no 0x362b.
+    var pendingDelete = await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now);
+    Check(pendingDelete.Single().SequenceEqual(new PacketWriter().U16(0x3628).U16(0).Varint(firstKey).I64(Now + (long)GameSession.DeleteDelay.TotalMilliseconds).ToArray())
+          && lobbyStore.PendingDeletes.Values.Single() == DateTimeOffset.FromUnixTimeMilliseconds(Now) + GameSession.DeleteDelay
+          && lobbyStore.Deleted.Count == 0, "a level-1 character waits 7 days before deletion");
+    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3629).Varint(firstKey).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x362a).U16(0).Varint(firstKey).ToArray())
           && lobbyStore.PendingDeletes.Count == 0, "the pending deletion is cancelled (0x362a)");
+    // In a legion: refused with kCharPendingDelete_InGuild and time 0 (OBSERVED 2026-11-15 `4320 <key> 0000000000000000`).
+    lobbyStore.GuildRow = new GuildView(7, "Legion", 1, 0, 0, 0, "", "", "", DateTimeOffset.UnixEpoch,
+        [new GuildMember(lobbyStore.States[0].Summary.CharacterId, "Renamed", 1, 0, "", 1, DateTimeOffset.UnixEpoch)], 0, 0, []);
+    Check((await lobbySession.HandleAsync(new PacketWriter().U16(0x3627).Varint(firstKey).ToArray(), Now)).Single()
+              .SequenceEqual(new PacketWriter().U16(0x3628).U16(8259).Varint(firstKey).I64(0).ToArray())
+          && lobbyStore.PendingDeletes.Count == 0, "a character in a legion is not deleted (0x3628 8259)");
+    lobbyStore.GuildRow = null;
 }
 bool Refused(List<byte[]> r, int code) => r.Count == 1 && r[0][0] == 0x1c && r[0][1] == 0x36 && BitConverter.ToInt32(r[0], 2) == code;
 Check(Refused(await stored.HandleAsync(create.Append((byte)0).ToArray(), Now), GamePackets.CreateInvalidCustomizing) && store.Created.Count == 1 && stored.PersistenceErrors.Count == 1,
@@ -1077,7 +1099,9 @@ Check(BitConverter.ToUInt16((await stored.HandleAsync(NameRequest("Player1"), No
 var picked = await stored.HandleAsync(new PacketWriter().U16(0x361f).Varint(store.States[0].WireId << 16).I32(0).Vec3(Vector3d.Zero).ToArray(), Now);
 // SelectCharacter_RS: tag, u16 result, varint key, i32 last_using_pc_id, then the i64 dbid.
 var pickedKey = new PacketWriter().Varint(store.States[0].WireId << 16).ToArray();
-Check(picked.Count == 3 && picked[0].AsSpan(4, pickedKey.Length).SequenceEqual(pickedKey)
+// Then ClientEnvSetting, 0xe257 with chat (45) and 0x3621 (OBSERVED: the unlock list before the map load).
+Check(picked.Count == 4 && picked[2][0] == 0x57 && picked[2][1] == 0xe2 && picked[2].Skip(3).Contains((byte)45) && picked[3][0] == 0x21 && picked[3][1] == 0x36
+      && picked[0].AsSpan(4, pickedKey.Length).SequenceEqual(pickedKey)
       && BitConverter.ToInt64(picked[0], 4 + pickedKey.Length + 4) == store.States[0].WireId, "shifted selection key resolves the stored character");
 await stored.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
 await stored.HandleAsync(moved, Now);
@@ -1141,6 +1165,9 @@ byte[] NameRequest(string name) => Strings(0x3619, name).Append((byte)1).ToArray
 Check((await staffSession.HandleAsync(NameRequest("GM_Elyra"), Now)).Single().SequenceEqual(GamePackets.NameCheck("GM_Elyra")), "staff accounts may take GM names");
 Check((await stored.HandleAsync(NameRequest("GM_Elyra"), Now)).Single().SequenceEqual(GamePackets.NameCheck("GM_Elyra", GamePackets.NameBannedWord))
       && (await stored.HandleAsync(NameRequest("Gmork"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Gmork")), "players may not");
+// A character outside the allowed set: kCharCheckName_InvalidCharset (OBSERVED 2026-11-15 `2220 <name> 01` for an o with a macron).
+Check((await stored.HandleAsync(NameRequest("Madōshi"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Madōshi", GamePackets.NameInvalidCharset))
+      && (await stored.HandleAsync(NameRequest("Madoshi"), Now)).Single().SequenceEqual(GamePackets.NameCheck("Madoshi")), "a name with a non-ASCII letter is refused (8226)");
 await staffSession.HandleAsync(create, Now);
 // A new character on a staff account is a player until it is flagged by hand (migration 035; the dashboard's "staff" command).
 {
@@ -1187,8 +1214,9 @@ Check(staffEntry.Any(b => b.SequenceEqual(GamePackets.WingList([(30200600, 0)]))
 Check(staffSession.AcquireAllWings()[0].SequenceEqual(GamePackets.WingList(GamePackets.LightWings.Select(id => (id, (byte)0)).ToList())),
       "AcquireWingAll sends every Light wing (42) as the WingList, then the stats with the owned wings");
 var wingChange = await staffSession.HandleAsync(new PacketWriter().U16(0x5674).U8(0).I32(30100300).ToArray(), Now);
-Check(wingChange.Count >= 2 && wingChange[0].SequenceEqual(GamePackets.WingChangeReply(30100300, false))
-      && wingChange[1].SequenceEqual(GamePackets.WingChangeNotice(1, 30100300, false)), "changing to a registered wing (0x5674 -> 0x5675 + 0x5676)");
+Check(wingChange.Count >= 3 && wingChange[0].SequenceEqual(GamePackets.WingChangeNotice(1, 30100300, false))
+      && wingChange[1].SequenceEqual(GamePackets.WingChangeReply(30100300, false)) && wingChange[2].SequenceEqual(Convert.FromHexString("95E2" + "01" + "4C4BCB01")),
+      "changing to a registered wing (0x5674 -> 0x5676, 0x5675, 0xe295 as the official order)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5674).U8(0).I32(40100300).ToArray(), Now)).Single()
       .SequenceEqual(GamePackets.WingChangeReply(40100300, false, 1)), "an unregistered wing is refused");
 // Quests: a character without quests starts on HQ1101010 (opening quest skipped), which the world entry lists.
@@ -1298,9 +1326,9 @@ Check((await staffSession.HandleAsync(new PacketWriter().U16(0x562b).I64(999).I6
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5a0a).I64(13).U8(5).ToArray(), Now)).Count == 0
       && staffStore.Items.Single(i => i.WireId == 13).Location == "bag", "an 11-byte request on another opcode is not an equip");
 var equipReply = await staffSession.HandleAsync(new PacketWriter().U16(0xe247).I64(13).U8(5).ToArray(), Now);
-Check(equipReply[0].SequenceEqual(new PacketWriter().U16(0xe248).U16(0).I64(13).U8(5).ToArray()) && staffSession.EquipOpcode == 0xe247
+Check(equipReply[^1].SequenceEqual(new PacketWriter().U16(0xe248).U16(1072).I64(13).U8(5).ToArray()) && staffSession.EquipOpcode == 0xe247
       && equipReply.Any(b => b[0] == 0x1b && b[1] == 0x56) && staffStore.Items.Single(i => i.WireId == 13).Location == "equipment",
-      "equip request: stored in slot 5, answered on the next opcode, item update sent");
+      "equip request: stored in slot 5, item update sent, answered last on the next opcode with 1072 (official 2026-11-12)");
 // A non-starter weapon becomes the combat weapon at once; armour adds its Item.dat HPMax and the stats are resent.
 var hpUnarmoured = staffSession.Resource.HpMax;
 staffStore.Items.AddRange([Stored(110120003, 1, "bag", null, 14), Stored(210130001, 1, "bag", null, 15)]);
@@ -1354,11 +1382,11 @@ staffStore.Items.Add(Stored(530116001, 3, "bag", null, 17));
 await staffSession.InventoryChangesAsync(default);
 staffSession.SetResource('H', 10);
 var serum = await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now);
-Check(serum[0].SequenceEqual(RidePackets.ItemUseReply(0, 17, 530116001)) && staffSession.Resource.Hp >= 10 + 15 + staffSession.Resource.HpMax * 5 / 100 - 1
-      && staffStore.Items.Single(i => i.WireId == 17).Quantity == 2 && serum.Any(b => b[0] == 0x02 && b[1] == 0x38) && serum.Any(b => b[0] == 0x16 && b[1] == 0x56),
-      "Life Serum: ItemUse_RS 0, skill start on the player, HP healed (15 + 5% max), one used (0x5616)");
+Check(Op(serum[0]) == 0x3802 && serum[1].SequenceEqual(RidePackets.ItemUseReply(0, 17, 530116001)) && staffSession.Resource.Hp >= 10 + 15 + staffSession.Resource.HpMax * 5 / 100 - 1
+      && staffStore.Items.Single(i => i.WireId == 17).Quantity == 2 && !serum.Any(b => Op(b) == 0x5616),
+      "Life Serum: skill start on the player, ItemUse_RS 772, HP healed (15 + 5% max), one used (no 0x5616, #13)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 1000)).Single()[2] == 1, "the potion cooldown group refuses a second use");
-Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 31_000))[0][2] == 0, "usable again after its 30 s cooldown");
+Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(17).ToArray(), Now + 31_000))[1].AsSpan(2, 2).SequenceEqual(new byte[] { 0x04, 0x03 }), "usable again after its 30 s cooldown");
 // Souls: a soul item adds soul points to a ride not acquired yet; NeedSoul (5) of them acquire it (0x9007), and
 // soul points level an acquired ride (VehicleLevel: 25 for level 2).
 var soulRide = new[] { 1002, 1003, 1004 }.First(r => r != pet);
@@ -1415,16 +1443,17 @@ Check(staffSession.Resource.Hp > 10 && tick.Count(b => b[0] == 0x05 && b[1] == 0
 var ended = await staffSession.TickAsync(Now + 80_100);
 Check(ended.Any(b => b.SequenceEqual(PlayerPackets.AbnormalRemove(staffSession.PlayerKey, [(1, 1)])) || (b[0] == 0x2c && b[1] == 0x38)) && !staffSession.ActiveBuffs.Contains(20111011),
       "the potion buff expires after 10 s (0x382c reason 1)");
-// Superior Speed Scroll (MoveSpeed 1500): 0x364b {205, 1500}, then {205, 0} when it ends.
+// Speed scroll (MoveSpeed 1500): 0x364a {205, 1500}, then {205, 0} when it ends; no 0x364b or 0x5616 (#13).
 var speed = await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(22).ToArray(), Now + 81_000);
-Check(speed.Any(b => b.SequenceEqual(PlayerPackets.MoveSpeedUpdate(staffSession.PlayerKey, [(205, 1500)]))), "speed scroll: 0x364b MoveSpeed 1500");
+Check(speed.Any(b => b.SequenceEqual(GamePackets.CharStatsUpdate(staffSession.PlayerKey, [(205, 1500)], 0))) && !speed.Any(b => Op(b) is 0x364b or 0x5616),
+      "speed scroll: 0x364a MoveSpeed 1500, no 0x364b or 0x5616");
 // White Dragon's Chopped Steak: HPMax +140 while it lasts (food buff), stats resent.
 var hpUnfed = staffSession.Resource.HpMax;
 var steak = await staffSession.HandleAsync(new PacketWriter().U16(0x5612).I64(23).ToArray(), Now + 82_000);
 Check(staffSession.Resource.HpMax == hpUnfed + 140 && steak.Any(b => b[0] == 0x4a && b[1] == 0x36), "food: HPMax +140 and 0x364a");
 var later = await staffSession.TickAsync(Now + 82_000 + 300_100);
-Check(later.Any(b => b.SequenceEqual(PlayerPackets.MoveSpeedUpdate(staffSession.PlayerKey, [(205, 0)]))) && staffSession.Resource.HpMax == hpUnfed
-      && staffSession.ActiveBuffs.Count == 0, "after 300 s the speed returns (0x364b 0) and the food's HPMax goes");
+Check(later.Any(b => b.SequenceEqual(GamePackets.CharStatsUpdate(staffSession.PlayerKey, [(205, 0)], 0))) && staffSession.Resource.HpMax == hpUnfed
+      && staffSession.ActiveBuffs.Count == 0, "after 300 s the speed returns (0x364a 0) and the food's HPMax goes");
 // Soul crystals: a crystal item adds crystals of its type (0x9011 reason 2); crystallizing turns a ride's soul
 // points into crystals of its type (0x9010/0x900e/0x9011); crystals pay for a ride when souls are missing.
 var loadRides = typeof(GameSession).GetMethod("LoadRidesAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
@@ -1459,8 +1488,8 @@ staffSession.NpcHitsPlayer(staffSession.Resource.HpMax * 10, Now + 411_000, kill
 Check(staffSession.Dead && staffSession.CanRebirth, "the rebirth buff survives death");
 var reborn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d24).U8(1).ToArray(), Now + 412_000);
 Check(reborn[0].SequenceEqual(RidePackets.UseRebirthReply(0, true)) && !staffSession.Dead && !staffSession.CanRebirth && staffSession.Position == fellAt
-      && reborn.Any(b => b[0] == 0x21 && b[1] == 0x36), "UseRebirth revives in place (0x8d25, map load where the player fell) and uses the buff");
-await staffSession.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 412_100);
+      && !reborn.Any(b => b[0] == 0x21 && b[1] == 0x36) && reborn.Any(b => b[0] == 0x26 && b[1] == 0x8d),
+      "UseRebirth revives in place (0x8d25, 0x8d26, no map load) and uses the buff");
 staffSession.NpcHitsPlayer(staffSession.Resource.HpMax * 10, Now + 413_000, killerKey: 2001);
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x8d24).U8(1).ToArray(), Now + 413_500))[0][2] == 1, "no rebirth buff: UseRebirth refused");
 var respawned = await staffSession.HandleAsync(new PacketWriter().U16(0x8d22).U8(2).I64(0).ToArray(), Now + 414_000);
@@ -1471,7 +1500,9 @@ var fellAgain = staffSession.Position!.Value;
 var stone = await staffSession.HandleAsync(new PacketWriter().U16(0x8d22).U8(3).I64(25).ToArray(), Now + 416_000);
 Check(stone[0].SequenceEqual(RidePackets.RespawnReply(0)) && !staffSession.Dead && staffSession.Position == fellAgain && staffStore.Items.Single(i => i.WireId == 25).Quantity == 1,
       "CharRespawn type 3 with a spiritstone revives in place and uses one");
-await staffSession.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 416_100);
+Check(stone.FindIndex(b => b[0] == 0x2a && b[1] == 0x38) is > 0 and var reviveAbnormal && stone.FindIndex(b => b[0] == 0x26 && b[1] == 0x8d) > reviveAbnormal
+      && !stone.Any(b => b[0] == 0x21 && b[1] == 0x36),
+      "the spiritstone revive in the recorded order: 0x8d23, abnormal 10003, 0x8d26, the bars, the item change; no map load");
 // Creature boards: acquiring rides fed their type's board (500 exp per acquire, NeedExp 500 at level 1 -> level 2,
 // two slots per panel); rolling a slot costs crystals + Kina and gives a graded option; locked slots are kept.
 loadRides.Invoke(staffSession, [staffStore, staffSession.CharacterId!.Value, CancellationToken.None]);
@@ -1516,12 +1547,13 @@ var bagMove = await staffSession.HandleAsync(new PacketWriter().U16(0x563a).I32(
 Check(bagMove[0][0] == 0x3b && bagMove[0][1] == 0x56 && bagMove[0][2] == 0 && staffStore.Items.Single(i => i.WireId == 40).Slot == 30
       && bagMove.Any(b => b[0] == 0x1b && b[1] == 0x56), "ItemMove puts the item on bag slot 30 (0x563b result 0, 0x561b)");
 var discard = await staffSession.HandleAsync(new PacketWriter().U16(0x563c).Varint(1).I64(40).I64(3).Varint(0).ToArray(), Now);
-Check(discard[0][0] == 0x3d && discard[0][2] == 0 && staffStore.Items.Single(i => i.WireId == 40).Quantity == 7, "ItemRemove discards 3 of the 10 (0x563d)");
+Check(discard[0][0] == 0x3d && BitConverter.ToUInt16(discard[0], 2) == GameSession.ItemRemoved && staffStore.Items.Single(i => i.WireId == 40).Quantity == 7, "ItemRemove discards 3 of the 10 (0x563d result 0x0300)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x563c).Varint(1).I64(40).I64(99).Varint(0).ToArray(), Now))[0][2] == 1, "discarding more than the stack is refused");
 var sortReply = await staffSession.HandleAsync(new PacketWriter().U16(0x563e).I32(0).U8(1).ToArray(), Now);
 var sortedBag = staffStore.Items.Where(i => i.Location == "bag").OrderBy(i => i.Slot).ToList();
-Check(sortReply[0][0] == 0x3f && sortReply[0][2] == 0 && sortedBag.Select(i => i.TemplateId).SequenceEqual(sortedBag.Select(i => i.TemplateId).Order()),
-      "ItemSort orders the bag by item (0x563f)");
+Check(sortReply[^1][0] == 0x3f && BitConverter.ToUInt16(sortReply[^1], 2) == 576
+      && sortedBag.Select(i => i.TemplateId).SequenceEqual(sortedBag.Select(i => i.TemplateId).OrderBy(ItemCurrencies.SortRank).ThenBy(t => t)),
+      "ItemSort orders the bag (currencies first) and answers 0x563f 576 after the items");
 // Hotbar: QuickSlotSet (0x5601, the live 27-byte request) stores a slot and echoes it (0x5602); a stored bar replaces
 // the class's default at world entry; QuickSlotReset (0x5603) clears it.
 var quickSet = new PacketWriter().U16(0x5601).U8(0).U8(5).U8(1).I64(41).I32(530126003).I32(0).U8(0).I32(0).U8(0).ToArray();
@@ -1574,7 +1606,9 @@ Check(shopOpen.Single().SequenceEqual(new PacketWriter().U16(0x8c01).U16(0).Vari
 var potionsBefore = staffStore.Items.Where(i => i.TemplateId == 530126003).Sum(i => i.Quantity);
 var shopKina = KinaTotal();
 var shopBought = await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103015101).I32(2).ToArray(), Now);
-Check(shopBought[0][0] == 0x03 && shopBought[0][1] == 0x8c && shopBought[0][2] == 0 && KinaTotal() == shopKina - 500
+// Official (OBSERVED 2026-11-15): the bag change first, then 0x8c03 with u16 1536 and the NPC key as an i32.
+Check(shopBought[^1][0] == 0x03 && shopBought[^1][1] == 0x8c && BitConverter.ToUInt16(shopBought[^1], 2) == 1536
+      && BitConverter.ToInt32(shopBought[^1], 4) == grocer.Key && KinaTotal() == shopKina - 500
       && staffStore.Items.Where(i => i.TemplateId == 530126003).Sum(i => i.Quantity) == potionsBefore + 2, "buying 2 Life Potions costs 500 Kina (0x8c03)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103055110).I32(1).ToArray(), Now))[0][2] == 1
       && (await staffSession.HandleAsync(new PacketWriter().U16(0x8c02).Varint(1).Varint((uint)grocer.Key).Varint(1).I32(103065101).I32(1).ToArray(), Now))[0][2] == 1,
@@ -1588,7 +1622,7 @@ staffStore.Items.Add(bigKina);
 await staffSession.InventoryChangesAsync(default);
 var shopPotion = staffStore.Items.First(i => i.TemplateId == 530126003 && i.Location == "bag");
 var soldReply = await staffSession.HandleAsync(new PacketWriter().U16(0x8c04).Varint((uint)grocer.Key).Varint(1).I64(shopPotion.WireId).I64(1).ToArray(), Now);
-Check(soldReply[0][0] == 0x05 && soldReply[0][1] == 0x8c && soldReply[0][2] == 0
+Check(soldReply[^1][0] == 0x05 && soldReply[^1][1] == 0x8c && BitConverter.ToUInt16(soldReply[^1], 2) == 1552 && soldReply[0][0] == 0x42 && soldReply[0][1] == 0xe3
       && KinaTotal() == shopKina - 498, "selling a Life Potion pays its SellPrice of 2 Kina (0x8c05)");
 // The sold potion waits for buyback (0xe342 after the sale); restoring it (0xe344) costs its 2 Kina and returns it.
 var soldPotion = staffStore.Items.Single(i => i.Location == "buyback");
@@ -1612,9 +1646,10 @@ staffStore.Items.AddRange([Stored(110260001, 1, "bag", null, 60), Stored(9301000
 await staffSession.InventoryChangesAsync(default);
 var enchantKina = KinaTotal();
 var enchanted = await staffSession.HandleAsync(new PacketWriter().U16(0x5622).I64(60).Varint(0).ToArray(), Now);
-Check(enchanted[0].SequenceEqual(new PacketWriter().U16(0x5623).U16(0).I64(60).U8(1).I32(110260001).ToArray())
-      && KinaTotal() == enchantKina - 125 && staffStore.Items.Single(i => i.WireId == 61).Quantity == 95
-      && enchanted.Any(b => b[0] == 0x1b && b[1] == 0x56), "enchant +0 -> +1: 125 Kina, 5 coins, 0x5623 then the item update (0x561b)");
+Check(enchanted[0][0] == 0x1b && enchanted[0][1] == 0x56
+      && enchanted[1].SequenceEqual(new PacketWriter().U16(0x5623).U16(GameSession.EnchantSuccess).I64(60).U8(1).I32(110260001).ToArray())
+      && KinaTotal() == enchantKina - 125 && staffStore.Items.Single(i => i.WireId == 61).Quantity == 95,
+      "enchant +0 -> +1: 125 Kina, 5 coins, the item update (0x561b) then 0x5623 with 828 (official order 2026-11-12)");
 foreach (var _ in Enumerable.Range(0, 4)) await staffSession.HandleAsync(new PacketWriter().U16(0x5622).I64(60).Varint(0).ToArray(), Now);
 Check(staffStore.Items.Single(i => i.WireId == 60).Upgrades.GetProperty("enchant").GetInt32() == 5, "four more attempts reach +5 (always succeed below +10)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x5622).I64(60).Varint(0).ToArray(), Now))[0][2] == 2, "beyond the Common maximum (+5): result 2");
@@ -1632,6 +1667,24 @@ Check(guildMembers[0] == 0x05 && guildMembers[2] == 0 && guildMembers[4] == 1, "
 Check((await staffSession.HandleAsync([0x0a, 0x8a], Now)).Single()[2] == 2, "the master cannot leave (result 2)");
 var disbanded = await staffSession.HandleAsync([0x34, 0x8a], Now);
 Check(disbanded[0][0] == 0x35 && disbanded[0][2] == 0 && staffSession.Guild is null && disbanded.Any(b => b[0] == 0x33 && b[1] == 0x8a), "the master disbands it (0x8a35); the tag clears");
+// The live 3533 client (2026-11-14) ends 0x8a00 after the emblem: no intro string (11 bytes after the opcode with a 4-letter name).
+var liveCreate = new PacketWriter().U16(0x8a00).String("Test").U8(0).String("").I32(1).ToArray();
+var liveCreated = await staffSession.HandleAsync(liveCreate, Now);
+Check(liveCreate.Length == 2 + 11 && liveCreated.Count > 0 && liveCreated[0][0] == 0x01 && liveCreated[0][1] == 0x8a && liveCreated[0][2] == 0
+      && staffSession.Guild?.Name == "Test", "0x8a00 without the intro string (live 3533 body) still creates the legion (0x8a01 result 0)");
+await staffSession.HandleAsync([0x34, 0x8a], Now);
+// The live 3533 body of 2026-11-14: `07 "KiskEmu" 00 00 01 00 00`, three bytes after the password (emblem u16, empty intro).
+var liveCreate2 = Convert.FromHexString("008A" + "074B69736B456D75" + "0000010000");
+var liveCreated2 = await staffSession.HandleAsync(liveCreate2, Now);
+Check(liveCreated2.Count > 0 && liveCreated2[0][0] == 0x01 && liveCreated2[0][1] == 0x8a && liveCreated2[0][2] == 0 && staffSession.Guild?.Name == "KiskEmu",
+      "the live 0x8a00 with a 3-byte tail (emblem u16, empty intro) creates the legion");
+await staffSession.HandleAsync([0x34, 0x8a], Now);
+// The live body of 2026-11-15 with an intro: emblem u16 then the intro string (an i32 emblem ate the intro's length).
+var liveCreate3 = Convert.FromHexString("008A074B69736B456D75000001000D54686973206973204B69736B21");
+var liveCreated3 = await staffSession.HandleAsync(liveCreate3, Now);
+Check(liveCreated3.Count > 0 && liveCreated3[0][0] == 0x01 && liveCreated3[0][1] == 0x8a && liveCreated3[0][2] == 0 && staffSession.Guild?.Name == "KiskEmu",
+      "the live 0x8a00 with an intro (emblem u16, intro string) creates the legion");
+await staffSession.HandleAsync([0x34, 0x8a], Now);
 // Gathering: a map 1010 gather node (an EnvObj spawned with 0x3634) used with 0x3636: after its 3 s the material is
 // granted, GatherSourceCompleted_NT 0x8d33, and the node is used up for this player (0x3635; refused until it is back).
 var nodes = WorldObjects.ObjectsOn(1010);
@@ -1655,7 +1708,30 @@ Check(gatherStart.Any(b => b[0] == 0x38 && b[1] == 0x36), "using a gather node s
 staffSession.GatherBonusRoll = () => 0;
 var gatherDone = await staffSession.TickAsync(Now + node.InteractTime + 10);
 Check(gatherDone.Any(b => b[0] == 0x33 && b[1] == 0x8d && b[2] == 0) && staffStore.Items.Any(i => i.TemplateId == node.Gather![0])
-      && gatherDone.Any(b => b.SequenceEqual(GamePackets.EnvObjDespawn(nodeKey))), $"gathered material {node.Gather![0]} (0x8d33), the node despawns (0x3635)");
+      && !gatherDone.Any(b => Op(b) is 0x3635 or 0x8d05), $"gathered material {node.Gather![0]} (0x8d33); the node is not removed at once");
+// Every gather takes one of the node's uses (InteractCount, 3 when unset; OBSERVED in game: Farming Odyle gathers three
+// times); the node stays available until the last.
+var nodeUses = node.Gather is { Length: >= 7 } nodeGather && nodeGather[6] > 0 ? (int)nodeGather[6] : 3;
+Check(gatherDone.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(nodeKey))) && staffSession.GatherAttemptsLeft(nodeIndex) == nodeUses - 1,
+      $"one gather leaves the node available with {nodeUses - 1} of its {nodeUses} uses");
+var gatheredAt = Now + node.InteractTime + 10;
+for (var use = 1; use < nodeUses; use++)
+{
+    gatheredAt += 100;
+    await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)nodeKey).ToArray(), gatheredAt);
+    gatheredAt += node.InteractTime + 10;
+    await staffSession.TickAsync(gatheredAt);
+}
+// The node's way out after its last use (OBSERVED in the community fork's recordings: EnvObjDie 0x8d05 about 50 ms after the
+// use, FinishDuration + 150 ms with one, then 0x3635 state 4 reason 3 50 ms later).
+var (nodeDie, nodeGone) = GameSession.RemovalDelays(node.FinishMs);
+var nodeDying = await staffSession.TickAsync(gatheredAt + nodeDie);
+var nodeLeaving = await staffSession.TickAsync(gatheredAt + nodeGone);
+Check(nodeDying.Any(b => b.SequenceEqual(GamePackets.EnvObjDie(nodeKey))) && !nodeDying.Any(b => Op(b) == 0x3635)
+      && nodeLeaving.Any(b => b.SequenceEqual(GamePackets.EnvObjDespawn(nodeKey, 4, 3))) && !nodeLeaving.Any(b => Op(b) == 0x8d05),
+      "the gathered node dies (0x8d05) on its timing, then despawns with state 4 reason 3 (as recorded)");
+Check(GameSession.RemovalDelays(0) == (50, 100) && GameSession.RemovalDelays(500) == (650, 700) && GameSession.RemovalDelays(1000) == (1150, 1200),
+      "removal delays: 50 ms with no FinishDuration, FinishDuration + 150 ms (the recorded 650 and 1150 ms)");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint((uint)nodeKey).ToArray(), Now + 5000))[0][2] == 1, "a used-up node refuses another gather");
 // The mini-game on GatherSourceStart_RQ 0x8d30: the attempt's turns go in 0x8d31; a lost attempt costs one of the node's tries.
 var node2Index = nodes.Select((o, i) => (o, i)).Where(x => x.o.Gather is not null).Skip(1).First().i;
@@ -1666,15 +1742,18 @@ await staffSession.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), 
 staffSession.GatherRoll = () => 9999;   // every turn fails
 var lostTurn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d30).Varint((uint)node2Key).ToArray(), Now + 6100);
 // The end waits for the turns to play out on the client (OBSERVED ~1.3 s a turn), not the start.
-var lostEnd = await staffSession.TickAsync(Now + 6100 + GameSession.GatherRaceMs(12) + 10);
-Check(lostTurn[0][0] == 0x31 && lostTurn[0][1] == 0x8d && lostTurn[0][2] == 0 && !lostTurn.Any(b => b[0] == 0x33 && b[1] == 0x8d)
-      && lostEnd.Any(b => b[0] == 0x33 && b[1] == 0x8d && b[2] == 2)
+var lostEnd = await staffSession.TickAsync(Now + 6100 + GameSession.GatherRaceMs(30) + 10);
+// OBSERVED order: 0x3638 then 0x8d31; the end 0x363a (uses taken), 0x363b, the exp, 0x8d33 result 2, 0x8d34.
+Check(lostTurn[0][0] == 0x38 && lostTurn[0][1] == 0x36 && lostTurn[1][0] == 0x31 && lostTurn[1][1] == 0x8d && lostTurn[1][2] == 0 && !lostTurn.Any(b => b[0] == 0x33 && b[1] == 0x8d)
+      && lostEnd.Any(b => b[0] == 0x33 && b[1] == 0x8d && b[2] == 2) && lostEnd.Any(b => b[0] == 0x34 && b[1] == 0x8d)
+      && lostEnd.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjCompleted(node2Key, staffSession.PlayerKey, 1)))
       && lostEnd.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(node2Key))) && staffSession.GatherAttemptsLeft(node2Index) == (int)node2.Gather![6] - 1,
       "a lost attempt: 0x8d31 with failing turns; after they play out 0x8d33 result 2, the node available again, one try fewer");
 staffSession.GatherRoll = () => 0;   // every turn an epic success
-var wonTurn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d30).Varint((uint)node2Key).ToArray(), Now + 6100 + GameSession.GatherRaceMs(12) + 100);
-Check(wonTurn[0][0] == 0x31 && wonTurn[0][1] == 0x8d && wonTurn[0][2] == 0 && wonTurn[0][4 + NativeVarint.Encode(node2Key).Length + 4] == 1
-      && wonTurn.Any(b => b[0] == 0x38 && b[1] == 0x36), "a won attempt: 0x8d31 says success and the node's interaction starts (0x3638)");
+staffSession.GatherDiscoveryRoll = () => 9_999;   // no discovery: the bool byte holds _is_success alone
+var wonTurn = await staffSession.HandleAsync(new PacketWriter().U16(0x8d30).Varint((uint)node2Key).ToArray(), Now + 6100 + GameSession.GatherRaceMs(30) + 100);
+Check(wonTurn[1][0] == 0x31 && wonTurn[1][1] == 0x8d && wonTurn[1][2] == 0 && wonTurn[1][4 + NativeVarint.Encode(node2Key).Length + 4] == 1
+      && wonTurn[0][0] == 0x38 && wonTurn[0][1] == 0x36, "a won attempt: 0x8d31 says success and the node's interaction starts (0x3638)");
 gatherLevelField.SetValue(staffSession, levelBeforeGather);
 Check(CraftTables.Embedded.Of(115016001) is { } ingotRecipe && CraftTables.Embedded.Rate(ingotRecipe, 0) < CraftTables.Embedded.Rate(ingotRecipe, 30)
       && CraftTables.Embedded.Rate(ingotRecipe, 500) == CraftTables.Embedded.Rate(ingotRecipe, 99), "craft success rises with the mastery gap along the CraftRecipeRate curve");
@@ -1862,6 +1941,23 @@ Check(BitConverter.ToUInt16(toDepot[0], 2) == 0 && staffStore.Items.First(i => i
       && toDepot.Any(b => Op(b) == 0x561b), "a bag item moves into the warehouse (container 2, slot 3) and the change is sent (0x561b)");
 var fromDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemMoveRq).I32(0).U8(InventoryItem.Bag).I64(parkedKey).I32(7).ToArray(), Now + 7510);
 Check(BitConverter.ToUInt16(fromDepot[0], 2) == 0 && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag", Slot: 7 }, "and back into the bag");
+
+// ItemStore 0x5642 / ItemTakeOut 0x5644: the real client deposit path (npc key, item map uid->count, container byte); 4-byte result.
+var parkedQty = staffStore.Items.First(i => i.WireId == parkedKey).Quantity;
+var storeDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.Storage).ToArray(), Now + 7520);
+// Reply (official 2026-11-12 r1 and 11-15): after the 0x561b, u16 result (1024 stored, 1040 taken out), npc i32, echoed map, container last.
+byte[] DepotReply(List<byte[]> replies, ushort op) => replies.First(b => Op(b) == op);
+bool DepotAfterChange(List<byte[]> replies, ushort op) => replies.FindIndex(b => Op(b) == 0x561b) is >= 0 and var at && at < replies.FindIndex(b => Op(b) == op);
+Check(BitConverter.ToUInt16(DepotReply(storeDepot, GameSession.ItemStoreRs), 2) == GameSession.ItemStored && DepotReply(storeDepot, GameSession.ItemStoreRs)[^1] == InventoryItem.Storage
+      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "storage" } && DepotAfterChange(storeDepot, GameSession.ItemStoreRs),
+      "0x5642 ItemStore deposits a bag stack into the warehouse: the change (0x561b), then 0x5643 result 1024");
+var takeDepot = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemTakeOutRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.Storage).ToArray(), Now + 7530);
+Check(BitConverter.ToUInt16(DepotReply(takeDepot, GameSession.ItemTakeOutRs), 2) == GameSession.ItemTakenOut && DepotReply(takeDepot, GameSession.ItemTakeOutRs)[^1] == InventoryItem.Storage
+      && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "bag" } && DepotAfterChange(takeDepot, GameSession.ItemTakeOutRs),
+      "0x5644 ItemTakeOut returns the stack to the bag: the change, then 0x5645 result 1040");
+var storeAccount = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemStoreRq).I32(0).Varint(1).I64(parkedKey).I64(parkedQty).U8(InventoryItem.AccountStorage).ToArray(), Now + 7540);
+Check(BitConverter.ToUInt16(DepotReply(storeAccount, GameSession.ItemStoreRs), 2) == GameSession.ItemStored && DepotReply(storeAccount, GameSession.ItemStoreRs)[^1] == InventoryItem.AccountStorage && staffStore.Items.First(i => i.WireId == parkedKey) is { Location: "account_storage" },
+      "0x5642 ItemStore deposits into account storage (container 2)");
 // Mail: staff mail (the builder's Mail command) stores a post for a character by name; LoadPost lists it, TakePost grants
 // the attachment once, DeletePost removes it afterwards.
 var mailed = await staffSession.SendMailAsync(staffSession.CharacterName!, "Welcome aboard", "Welcome aboard", [(530126003, 2)], CancellationToken.None);
@@ -1884,11 +1980,13 @@ staffStore.Items.Add(Stored(930100001, 5000, "bag", 10, 941));
 await staffSession.HandleAsync(new PacketWriter().U16(0x5610).ToArray(), Now + 7560);
 var dismantleKinaBefore = staffStore.Items.Where(i => i.TemplateId == 930100001).Sum(i => i.Quantity);
 var dismantled = await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(940).ToArray(), Now + 7570);
-Check(Op(dismantled[0]) == GameSession.ItemDecomposeRs && BitConverter.ToInt32(dismantled[0], 2) == 0 && BitConverter.ToInt32(dismantled[0], 7) == 1
+var dismantleReply = dismantled.First(b => Op(b) == GameSession.ItemDecomposeRs);
+Check(BitConverter.ToUInt16(dismantleReply, 2) == GameSession.ItemDecomposed && BitConverter.ToInt32(dismantleReply, 5) == 1
+      && dismantled.FindIndex(b => Op(b) == 0x561b) < dismantled.IndexOf(dismantleReply)
       && staffStore.Items.All(i => i.WireId != 940) && staffStore.Items.Where(i => i.TemplateId == 930100001).Sum(i => i.Quantity) == dismantleKinaBefore - 1000
       && DecomposeTables.Embedded.Of(110160001) is { Cost: 1000, Groups.Length: 2 },
       "ItemDecompose_RQ: the sword is gone, 1000 kina paid, the reply counts one dismantled item");
-Check(BitConverter.ToInt32((await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(13).ToArray(), Now + 7580))[0], 2) == 1,
+Check(BitConverter.ToUInt16((await staffSession.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(13).ToArray(), Now + 7580)).First(b => Op(b) == GameSession.ItemDecomposeRs), 2) == 1,
       "a potion cannot be dismantled (result 1)");
 // Crafting at map 1010's Blacksmith worktable (2910003): recipe 115016001 (2 ore + 1 additive -> an ingot). A success
 // grants the product (0x8d6f, 0x8d71); a failure uses up the components without a product. World entry lists recipes.
@@ -1897,20 +1995,32 @@ staffSession.Teleport(1010, worktable.Position with { X = worktable.Position.X +
 var craftEntry = await staffSession.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now);
 Check(craftEntry.Any(b => b[0] == 0x7e && b[1] == 0x8d && b[2] > 0) && craftEntry.Any(b => b[0] == 0x8c && b[1] == 0x8d && b[2] == 113)
       && craftEntry.Any(b => b.SequenceEqual(Convert.FromHexString("378D0000000000"))), "world entry lists the recipes (0x8d7e), conversions (0x8d8c, 113) and gather skills (0x8d37)");
+// The entry lists in the recorded order (our 2026-11-12 entries; GameSession.EntryConstants.cs), the after-load part after the hotbar.
+ushort[] entryOrder = [0xe263, 0x8d53, 0x8d58, 0x5648, 0x564b, 0x5679, 0x5682, 0x5683, 0x5633, 0x8aaf, 0xe28c, 0x8d5b, 0xe22e, 0xe226, 0xe237,
+    0x9330, 0x610b, 0x8d7e, 0x8d37, 0x8d8c, 0xe224, 0xe32a, 0x9331, 0xe33b, 0xe33e, 0xffae, 0x6103, 0xe324, 0x56b6, 0xe256, 0xffa5, 0xffa7, 0xe262,
+    0xe25c, 0xe342, 0xe343, 0x572d, 0x5600, 0xe251, 0x400a, 0xe200, 0xffab, 0xe223, 0x6000, 0x570f];
+var entrySeen = craftEntry.Select(Op).Where(op => entryOrder.Contains(op)).ToList();
+Check(entrySeen.SequenceEqual(entryOrder), $"world entry lists in the recorded order (0xe263 .. 0x572d, hotbar, 0xe251 .. 0x570f); got {string.Join(' ', entrySeen.Select(o => o.ToString("x4")))}");
+Check(craftEntry.Single(b => Op(b) == 0x400a) is { Length: 11 } matching && matching[2] == 1 && matching[3] == 1 && matching[4] == 2 && matching[7] == 1 && matching[10] == 2
+      && craftEntry.Any(b => b.SequenceEqual(Convert.FromHexString("2d5700"))),
+      "ArenaMatchingInfo_NT for this world and 0x572d `00` at entry");
 staffStore.Items.AddRange([Stored(610620013, 4, "bag", null, 70), Stored(630541001, 2, "bag", null, 71)]);
 await staffSession.InventoryChangesAsync(default);
 staffSession.CraftRoll = () => 0;
 byte[] CraftRq() => new PacketWriter().U16(0x8d6e).Varint((uint)worktable.Key).I32(115016001).Varint(0).I32(0).I32(0).Varint(0).ToArray();
-var crafted = await staffSession.HandleAsync(CraftRq(), Now);
-Check(crafted[0][0] == 0x6f && crafted[0][1] == 0x8d && crafted[0][2] == 0 && staffStore.Items.Any(i => i.TemplateId == 610710001)
+// The craft ends once its turns have played out on the client (OBSERVED 2026-11-15, about 1.75 s a turn).
+var craftStarted = await staffSession.HandleAsync(CraftRq(), Now);
+var crafted = await staffSession.TickAsync(Now + GameSession.CraftRaceMs(40) + 10);
+Check(craftStarted.Any(b => b[0] == 0x6f && b[1] == 0x8d && b[2] == 0) && staffStore.Items.Any(i => i.TemplateId == 610710001)
       && staffStore.Items.Single(i => i.WireId == 70).Quantity == 2 && crafted.Any(b => b[0] == 0x71 && b[1] == 0x8d), "a craft succeeds: the ingot, 2 ore used (0x8d6f, 0x8d71)");
 staffSession.CraftRoll = () => 99_999_999;
 var ingots = staffStore.Items.Where(i => i.TemplateId == 610710001).Sum(i => i.Quantity);
-await staffSession.HandleAsync(CraftRq(), Now);
+await staffSession.HandleAsync(CraftRq(), Now + 100_000);
+await staffSession.TickAsync(Now + 100_000 + GameSession.CraftRaceMs(40) + 10);
 Check(staffStore.Items.Where(i => i.TemplateId == 610710001).Sum(i => i.Quantity) == ingots && !staffStore.Items.Any(i => i.WireId == 70), "a failed craft uses up the components");
-Check((await staffSession.HandleAsync(CraftRq(), Now))[0][2] == 3, "no components left: result 3");
-// Craft mastery: the successful craft paid exp (0x8d7c); SetMastery announces a level and widens the recipe list.
-Check(crafted.Any(b => b[0] == 0x7c && b[1] == 0x8d && b[2] == 1) && staffSession.CraftMastery(1).Exp > 0 && staffStore.Masteries.Any(m => m is { Kind: "craft", Category: 1 }),
+Check((await staffSession.HandleAsync(CraftRq(), Now + 200_000))[0][2] == 3, "no components left: result 3");
+// Craft mastery: the successful craft paid exp (0x8d7c); with 20 + 6 (success, fail) level 1's 26 is reached. SetMastery announces a level and widens the recipe list.
+Check(crafted.Any(b => b[0] == 0x7c && b[1] == 0x8d && b[2] == 1) && staffSession.CraftMastery(1) is { Exp: > 0 } or { Level: > 1 } && staffStore.Masteries.Any(m => m is { Kind: "craft", Category: 1 }),
       "a craft pays Blacksmithing mastery exp (0x8d7c, saved)");
 var recipesBefore = Convert.ToInt32(staffSession.CraftMastery(1).Level);
 var masterySet = await staffSession.SetMasteryAsync("craft", 1, 20, default);
@@ -1929,12 +2039,13 @@ Check(titled.Count > 0 && titled[0].SequenceEqual(Convert.FromHexString("7D56" +
 Check((await staffSession.AcquireTitleAsync(11010002, default)).Count == 0 && (await staffSession.AcquireTitleAsync(21010001, default)).Count == 0,
       "a title twice, or one of the other race, is refused");
 var titleEquip = await staffSession.HandleAsync(new PacketWriter().U16(0x567f).U8(3).I32(11010002).ToArray(), Now);
-Check(titleEquip[0].SequenceEqual(Convert.FromHexString("8056" + "0000" + "03" + "D2FFA700")) && staffSession.TitleStat("HPMax") == 300 && staffStore.TitleEquips[3] == 11010002,
-      "TitleEquip_RQ in its category (Etc): 0x5680 result 0, its EquipStatList (HPMax 300) applies");
+Check(titleEquip[0].SequenceEqual(Convert.FromHexString("8156" + "03" + "D2FFA700")) && titleEquip[1].SequenceEqual(Convert.FromHexString("94E2" + "010103" + "D2FFA700"))
+      && titleEquip[2].SequenceEqual(Convert.FromHexString("8056" + "0000" + "03" + "D2FFA700")) && staffSession.TitleStat("HPMax") == 300 && staffStore.TitleEquips[3] == 11010002,
+      "TitleEquip_RQ in its category (Etc): 0x5681, 0xe294, then 0x5680 result 0 (official order); its EquipStatList (HPMax 300) applies");
 Check((await staffSession.HandleAsync(new PacketWriter().U16(0x567f).U8(1).I32(11010002).ToArray(), Now))[0][2] == 1, "the wrong category is refused");
 var titleShown = await staffSession.HandleAsync(new PacketWriter().U16(0x567a).I32(11010002).ToArray(), Now);
-Check(titleShown.Count == 2 && titleShown[0].SequenceEqual(Convert.FromHexString("7B56" + "0000" + "D2FFA700")) && titleShown[1][0] == 0x7c && titleShown[1][1] == 0x56
-      && staffSession.ShownTitle == 11010002, "TitleChange_RQ: 0x567b result 0, 0x567c to those nearby, the shown title");
+Check(titleShown.Count == 2 && titleShown[1].SequenceEqual(Convert.FromHexString("7B56" + "0000" + "D2FFA700")) && titleShown[0][0] == 0x7c && titleShown[0][1] == 0x56
+      && staffSession.ShownTitle == 11010002, "TitleChange_RQ: 0x567c to those nearby, then 0x567b result 0 (official order), the shown title");
 // Skins: the collection (0x8d5c), equipping an owned skin on a slot (0x8d5f), an unknown one refused.
 var skinned = await staffSession.AcquireSkinsAsync([30067101], default);
 Check(skinned.Count == 1 && skinned[0][0] == 0x5c && skinned[0][1] == 0x8d && staffSession.OwnedSkins[30067101] == 1 && staffStore.Skins[30067101] == 1, "AcquireSkin: SkinUpdate_NT 0x8d5c, in the collection (saved)");
@@ -1945,18 +2056,36 @@ var wornWeapon = staffStore.Items.First(i => i.Location == "equipment" && i.Slot
 staffStore.Items.Add(Stored(930100023, 600, "bag", null, 62));
 await staffSession.InventoryChangesAsync(default);
 var wornEnchant = await staffSession.HandleAsync(new PacketWriter().U16(0x5622).I64(wornWeapon.WireId).Varint(0).ToArray(), Now);
-Check(wornEnchant[0][2] == 0 && wornEnchant.Any(b => b[0] == 0x26 && b[1] == 0x56) && wornEnchant.Any(b => b[0] == 0x1c && b[1] == 0x56),
+Check(wornEnchant.Any(b => b[0] == 0x23 && b[1] == 0x56 && BitConverter.ToUInt16(b, 2) == GameSession.EnchantSuccess) && wornEnchant.Any(b => b[0] == 0x26 && b[1] == 0x56) && wornEnchant.Any(b => b[0] == 0x1c && b[1] == 0x56),
       $"the equipped weapon ({wornWeapon.TemplateId}) enchants and is shown (0x561c, 0x5626)");
 // Kibelisk: binding the Poeta Kibelisk (key 900000) stores it, sends the official order and 0x9233 once.
 var bind = await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(Kibelisks.FirstKey).I64(0).I32(1200081).ToArray(), Now);
 var firstKibelisk = Kibelisks.OnMap(staffSession.MapId!.Value)[0].ArtifactId;
-var nearObject = WorldObjects.ObjectsOn(staffSession.MapId!.Value).Select((o, i) => (o, i)).First(x => x.o.InteractTime > 0);
+var nearObject = WorldObjects.ObjectsOn(staffSession.MapId!.Value).Select((o, i) => (o, i))
+    .First(x => x.o.InteractTime > 0 && x.o.Gather is null && x.o.Carry is null && x.o.Achievement == 0);
+var nearKey = WorldObjects.FirstKey + nearObject.i;
 await staffSession.HandleAsync(new PacketWriter().U16(0x3700).U8(2).Vec3(nearObject.o.At).U16(0).F32(0).U8(1).U64(1).ToArray(), Now + 600_000);
-var useStart = await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(WorldObjects.FirstKey + nearObject.i).I64(0).I32(nearObject.o.Env).ToArray(), Now + 600_000);
+var useStart = await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(nearKey).I64(0).I32(nearObject.o.Env).ToArray(), Now + 600_000);
 var useDone = await staffSession.TickAsync(Now + 600_000 + nearObject.o.InteractTime);
-Check(useStart.Single().SequenceEqual(GamePackets.InteractEnvObjStarted(WorldObjects.FirstKey + nearObject.i, staffSession.PlayerKey))
-      && useDone.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjCompleted(WorldObjects.FirstKey + nearObject.i, staffSession.PlayerKey))),
-      "a timed quest object: 0x3638 at once, 0x363a after its InteractTime");
+Check(useStart.Count == 2 && useStart[0].SequenceEqual(GamePackets.InteractEnvObjStarted(nearKey, staffSession.PlayerKey)) && useStart[1].SequenceEqual(GamePackets.InteractEnvObjReply(nearKey))
+      && useDone.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjCompleted(nearKey, staffSession.PlayerKey))) && !useDone.Any(b => b.SequenceEqual(GamePackets.InteractEnvObjReply(nearKey)))
+      && useDone.Count(b => b.SequenceEqual(GamePackets.InteractEnvObjFinishState(nearKey)) || b.SequenceEqual(GamePackets.InteractEnvObjAvailableState(nearKey))) == 1,
+      "a timed object: 0x3638 and the 0x3637 reply at once, 0x363a with 0x8d6d or 0x363b after its InteractTime (community recordings 2026-11)");
+var useStopped = await staffSession.HandleAsync(new PacketWriter().U16(0x363d).Varint(nearKey).ToArray(), Now + 610_000);
+Check(useStopped.Single().SequenceEqual(Convert.FromHexString("3e36" + "1338" + "00")), "a stop with no use in progress: 0x363e {0x3813, key 0} (162208 #5193)");
+await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(nearKey).I64(0).I32(nearObject.o.Env).ToArray(), Now + 611_000);
+useStopped = await staffSession.HandleAsync(new PacketWriter().U16(0x363d).Varint(nearKey).ToArray(), Now + 611_100);
+Check(useStopped.Count == 2 && useStopped[0].SequenceEqual(GamePackets.InteractEnvObjStopReply(nearKey)) && useStopped[1].SequenceEqual(GamePackets.InteractEnvObjInterrupted(nearKey, 0x1906, staffSession.PlayerKey))
+      && !(await staffSession.TickAsync(Now + 611_000 + nearObject.o.InteractTime)).Any(b => b[0] == 0x3a && b[1] == 0x36),
+      "the player's stop: 0x363e {0, key} and 0x3639 reason 0x1906; the use does not complete (185000 #6763-#6764)");
+await staffSession.HandleAsync(new PacketWriter().U16(0x3636).Varint(nearKey).I64(0).I32(nearObject.o.Env).ToArray(), Now + 620_000);
+var hitWhileUsing = staffSession.NpcHitsPlayer(1, Now + 620_100, killerKey: 2001);
+Check(hitWhileUsing.Count >= 2 && hitWhileUsing[^2].SequenceEqual(GamePackets.InteractEnvObjAvailableState(nearKey))
+      && hitWhileUsing[^1].SequenceEqual(Convert.FromHexString("3936" + Convert.ToHexString(NativeVarint.Encode((uint)nearKey)) + "0519" + Convert.ToHexString(NativeVarint.Encode((uint)staffSession.PlayerKey)) + "00000000"))
+      && !(await staffSession.TickAsync(Now + 620_000 + nearObject.o.InteractTime)).Any(b => b[0] == 0x3a && b[1] == 0x36),
+      "a hit ends the use: 0x363b, then 0x3639 reason 0x1905 (234912 #10314-#10315); it does not complete");
+Check(GamePackets.InteractEnvObjInterrupted(0x7bc, 0x1905, 0x11d2).SequenceEqual(Convert.FromHexString("3936bc0f0519d22300000000")),
+      "0x3639 layout: key varint, reason u16, interactor varint, count i32 (as the community recordings)");
 Check(bind.Count >= 4 && bind[0].SequenceEqual(GamePackets.InteractEnvObjStarted(Kibelisks.FirstKey, staffSession.PlayerKey))
       && bind[3].SequenceEqual(GamePackets.EngravedTeleportArtifactAdd(firstKibelisk)) && staffStore.Artifacts.SequenceEqual([firstKibelisk]),
       "binding a Kibelisk (0x3636 -> 0x3638, 0x363a, 0x3637, 0x9233) stores it once");
@@ -2059,8 +2188,9 @@ Check(ranking.Length == 2 + 66 && ranking[0] == 0x57 && ranking[1] == 0x8d && ra
 Check((await bob.HandleAsync(new PacketWriter().U16(0x8c06).I32(7).ToArray(), Now)).Single().SequenceEqual(new PacketWriter().U16(0x8c07).U16(0).I32(7).Varint(0).I64(Now).ToArray()),
       "coin shop 7 opens (0x8c07 result 0, Christmas event shop from shops.json)");
 var contextReply = await bob.HandleAsync(new PacketWriter().U16(0x5607).U8(3).U8(1).I32(11010000).ToArray(), Now);
-Check(contextReply[0].AsSpan(0, 10).SequenceEqual(new PacketWriter().U16(0x5608).U16(0).U8(3).U8(1).I32(11010000).ToArray()) && contextReply[1][1] == 0x56 && contextReply[1][0] == 0x00,
-      "a hotbar context skill is accepted (0x5608, then the bar as 0x5600)");
+Check(contextReply[0][0] == 0x93 && contextReply[0][1] == 0xe2 && contextReply[1].AsSpan(0, 10).SequenceEqual(new PacketWriter().U16(0x5608).U16(0).U8(3).U8(1).I32(11010000).ToArray())
+      && contextReply[2][1] == 0x56 && contextReply[2][0] == 0x00,
+      "a hotbar context skill is accepted (0xe293 for the skill preset, 0x5608, then the bar as 0x5600)");
 Check(GameSession.SilentRequests.Contains(0x3601) && GameSession.SilentRequests.Contains(0xffa1) && (await bob.HandleAsync(new PacketWriter().U16(0x3601).I64(5).ToArray(), Now)).Count == 0,
       "client time and the 30 s 0xffa1 report are silent, not unanswered");
 // Instance layer: walking into Poeta's L_Starter_InstanceLayer_2 trigger moves the player into its own copy of map
@@ -2131,7 +2261,7 @@ var layerJoined = layer.FirstOrDefault(b => Op(b) == 0x922e);
 Check(layerJoined is not null && Encoding.ASCII.GetString(layerJoined, 7, 30) == "World_L_Starter_HQ001_MapEvent" && eve.MapEventRuns.Count == 1 && eve.InstanceKey == eve.PlayerKey,
       "inside: MapEventJoin_NT 0x922e names the layer's event; a private copy");
 var layerOps = layer.Select(Op).ToList();
-Check(layerOps.Contains(0x3746) && layerOps.Contains(0xe257) && layerOps.Contains(0x5100) && layerOps.Contains(0xe258) && !layerOps.Contains(0x4001),
+Check(layerOps.Contains(0x3746) && layerOps.Contains(0xe257) && layerOps.Contains(0x5100) && !layerOps.Contains(0xe258) && !layerOps.Contains(0x4001),
       "a layer load is the full set without the map environment (the live-tested default pieces)");
 var layerLoad = layer.First(b => Op(b) == 0x3623);
 var layerSelf = layer.First(b => Op(b) == 0x3633);
@@ -2213,7 +2343,7 @@ Check(GameSession.AscensionQuests.Select(c => book.Find(c)!).ToList() is [var li
 jo.ExitSharedWorld();
 Check(layer.TakeWhile(b => Op(b) != 0x3623).Any(b => Op(b) == 0x3642 && b[^1] == 1) && !layer.Any(b => Op(b) == 0x3642 && KeyOf(b) == guide.Key) && layerOps.IndexOf(0x3623) >= 0,
       "the layer shares Poeta's level: the base map's other NPCs are removed before the load reply (0x3642 flag 1, as observed; Robin not twice)");
-Check(layer.Any(b => Op(b) == GameSession.DungeonStateNt && BitConverter.ToInt32(b, 2) == 96 && b[6] == GameSession.DungeonStateProcess && b.Length == 24)
+Check(layer.Any(b => Op(b) == GameSession.DungeonStateNt && BitConverter.ToInt32(b, 2) == 96 && b[6] == GameSession.DungeonStateProcess && b.Length == 23)
       && layerOps.IndexOf(GameSession.DungeonStateNt) < layerOps.IndexOf(GameSession.DungeonDeathLimitNt)
       && layerOps.IndexOf(GameSession.DungeonDeathLimitNt) < layerOps.IndexOf(GameSession.DungeonClearKillNpcNt) && layerOps.IndexOf(GameSession.DungeonClearKillNpcNt) < layerOps.IndexOf(0x922e),
       "the layer's state: 0x6100 dungeon 96 running, 0x6109, 0x6108, then the event join (the observed order)");
@@ -2265,11 +2395,11 @@ eventHost.Abnormal(10000017, -1, "N_L0_Starter_HQ001_Elvan_01", false);
 eventHost.ShowNote("Note_D2_DQ2203030_01");
 eventHost.Abnormal(44000501, -1, "", false);
 var scripted = await eve.TickAsync(Now + 91_000);
-Check(scripted.Any(b => b.SequenceEqual(GamePackets.RelationshipUpdate(elvan.Key, 6))) && elvan.Relationship == 6 && elvan.Hostile, "ChangeRelationshipEntity Monster: Elvan turns hostile (0x39cd)");
+Check(scripted.Any(b => b.SequenceEqual(GamePackets.RelationshipUpdate(elvan.Key, 6))) && elvan.Relationship == 6 && elvan.Hostile, "ChangeRelationshipEntity Monster: Elvan turns hostile (0x8d92)");
 Check(scripted.Any(b => Op(b) == 0x382a && KeyOf(b) == elvan.Key) && elvan.Held && elvan.Immune, "AddAbnormal 10000017 (stun and immunity) on Elvan: 0x382a on his key; held and immune");
 Check(scripted.Any(b => Op(b) == 0x8d15 && b[3] == 15 && Encoding.ASCII.GetString(b, 5, 20) == "Note_D2_DQ2203030_01"), "ShowNote: 0x8d15 EventFuncAction ShowNote (15) with the note's name");
 Check(scripted.Any(b => Op(b) == 0x382a && KeyOf(b) == eve.PlayerKey) && scripted.Any(b => Op(b) == 0x3655) && scripted.Any(b => b.SequenceEqual(GamePackets.RelationshipUpdate(eve.PlayerKey, 23)))
-      && eve.ActiveBuffs.Contains(44000501) && eve.FriendlyToAll, "AddAbnormal 44000501 on the player: the Krall transformation (0x382a, polymorph 0x3655) and PC_FriendlyToAll (0x39cd 23)");
+      && eve.ActiveBuffs.Contains(44000501) && eve.FriendlyToAll, "AddAbnormal 44000501 on the player: the Krall transformation (0x382a, polymorph 0x3655) and PC_FriendlyToAll (0x8d92 23)");
 eve.Teleport(100010, elvan.Position with { X = elvan.Position.X + 120 }, Now + 96_000);
 await eve.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 96_050);
 var immuneCast = Now + 96_100;
@@ -2281,7 +2411,7 @@ eventHost.Abnormal(44000501, 0, "", true);
 var released = await eve.TickAsync(Now + 97_000);
 Check(released.Any(b => Op(b) == 0x382c && KeyOf(b) == elvan.Key) && !elvan.Held && !elvan.Immune, "RemoveAbnormal on Elvan: 0x382c; released");
 Check(released.Any(b => Op(b) == 0x382c && KeyOf(b) == eve.PlayerKey) && released.Any(b => b.SequenceEqual(GamePackets.RelationshipUpdate(eve.PlayerKey, 1))) && !eve.ActiveBuffs.Contains(44000501),
-      "RemoveAbnormal on the player: the transformation ends (0x382c, 0x3655 own form, 0x39cd own relationship)");
+      "RemoveAbnormal on the player: the transformation ends (0x382c, 0x3655 own form, 0x8d92 own relationship)");
 eve.ExitSharedWorld();
 MapEventChecks.Run(Check);
 var mpFar = GamePackets.SpawnPosition with { X = GamePackets.SpawnPosition.X + SharedWorld.VisibleRange + 1000 };
@@ -2320,15 +2450,16 @@ var carol = await WorldSession("Carol");
 var dave = await WorldSession("Dave");
 await carol.TickAsync(Now + 200); await dave.TickAsync(Now + 200);
 var invite = await carol.HandleAsync(SocialRequests.EncodeServerAndName(SocialOpcodes.PartyInviteRq, 1204, dave.CharacterName!), Now + 210);
-Check(invite[0][0] == (SocialOpcodes.PartyInviteRs & 0xff) && invite.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInfoNt), "inviting creates the party (PartyInfo_NT Create) and replies");
+Check(invite.Select(b => b[0] | b[1] << 8).SequenceEqual([SocialOpcodes.PartyInfoNt, SocialOpcodes.PartyInviteRs, SocialOpcodes.PartyInviteStartNt]),
+      "inviting creates the party: PartyInfo_NT Create, PartyInvite_RS, PartyInviteStart_NT (official order 2026-11-12)");
 var davesInvite = await dave.TickAsync(Now + 220);
 var inviteNotice = davesInvite.Single(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInviteNt);
 var partyKey = BitConverter.ToInt64(inviteNotice, 2);
 var joined = await dave.HandleAsync(SocialRequests.EncodePartyInviteResponse([new PartyInviteReply(partyKey, PartyInviteAnswer.Accept)]), Now + 230);
 Check(joined.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInfoNt) && shared.Social.Parties[partyKey].Members.Count == 2, "accepting joins the party (PartyInfo_NT Join)");
 var carolHears = await carol.TickAsync(Now + 240);
-Check(carolHears.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyAddMemberNt) && carolHears.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInviteResponseNt),
-      "the leader hears the answer and the new member");
+Check(carolHears.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyAddMemberNt) && !carolHears.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyInviteResponseNt),
+      "on an accept the leader hears only the new member (PartyAddMember_NT, official 2026-11-12)");
 // Party exp: a member's share of a kill is applied on that member's own loop at its next tick (0x8d07 reason 1).
 var daveExpBefore = dave.Experience;
 dave.ShareExperience(50);
@@ -2375,7 +2506,11 @@ dave.Teleport(1000, GamePackets.SpawnPosition, Now + 252);
 await dave.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), Now + 252);
 Check(carol.InstanceKey == 0 && dave.InstanceKey == 0 && dave.MapEventRuns.Count == 0, "back on the shared map");
 var left = await dave.HandleAsync(new PacketWriter().U16(SocialOpcodes.PartyLeaveRq).ToArray(), Now + 250);
-Check(left.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyDisbandNt) && !shared.Social.Parties.ContainsKey(partyKey), "leaving a party of two ends it");
+Check(left.Select(b => b[0] | b[1] << 8).SequenceEqual([SocialOpcodes.PartyDisbandNt, SocialOpcodes.PartyLeaveRs])
+      && shared.Social.Parties.TryGetValue(partyKey, out var leftParty) && leftParty.Members.Count == 1,
+      "leaving a party of two: PartyDisband_NT then PartyLeave_RS to the leaver; the leader keeps a party of one (official 2026-11-12)");
+var leaderLeft = await carol.HandleAsync(new PacketWriter().U16(SocialOpcodes.PartyLeaveRq).ToArray(), Now + 255);
+Check(leaderLeft.Any(b => (b[0] | b[1] << 8) == SocialOpcodes.PartyDisbandNt) && !shared.Social.Parties.ContainsKey(partyKey), "the last member leaving ends the party");
 var challenge = await carol.HandleAsync(SocialRequests.EncodeKey(SocialOpcodes.DuelCallOutRq, dave.PlayerKey), Now + 260);
 var roomKey = shared.Social.Duels.Single().Key;
 Check(challenge.Single()[0] == (SocialOpcodes.DuelCallOutRs & 0xff) && (await dave.TickAsync(Now + 270)).Any(b => (b[0] | b[1] << 8) == SocialOpcodes.DuelCallOutNt), "a duel challenge reaches the other player");
@@ -2458,10 +2593,10 @@ var hildeDown = await hilde.TickAsync(killingCast + SkillTiming.HitLandMs(data.S
 Check(hilde.Dead && hildeDown.Any(b => Op(b) == 0x8d04), "a lethal hit kills the enemy (0x8d04 with the killer)");
 var abyssKillPackets = peace.Concat(killing);
 Check(abyssKillPackets.Any(b => Op(b) == GameSession.AbyssPointUpdateNt) && abyssKillPackets.Any(b => Op(b) == GameSession.RankingPointUpdateNt),
-      "an Abyss kill updates weekly AP acc and ranking points (0x3C06, 0x3B78)");
+      "an Abyss kill updates weekly AP acc and ranking points (0xffab, 0xe273)");
 Check(AbyssTables.Embedded.KillAp(hilde.AbyssRankingGrade) > 0, "kill AP comes from the victim's rank in abyss.json");
-var ranker = await gunnar.HandleAsync([0x17, 0x3a], Now + 80_220);
-Check(ranker.Single().Length >= 4 && Op(ranker[0]) == GameSession.WorldMapAbyssRankerInfoRs, "WorldMapAbyssRankerInfo_RQ gets an empty ranker list (0x3A18)");
+var ranker = await gunnar.HandleAsync([0xdc, 0x8d], Now + 80_220);
+Check(ranker.Single().Length >= 4 && Op(ranker[0]) == GameSession.WorldMapAbyssRankerInfoRs, "WorldMapAbyssRankerInfo_RQ gets an empty ranker list (0x8ddd)");
 var siege = await gunnar.HandleAsync([0x2c, 0x37], Now + 80_225);
 Check(siege.Any(b => Op(b) == GameSession.AirspaceBattleNt) && siege.Any(b => b.Length > 4), "AirspaceBattle_RQ gets the fortress schedule (0x372D)");
 var field = await WorldSession("Ivar", darkCreation);
@@ -2563,7 +2698,7 @@ presence.Enter("Visitor", stored, null);
 Check((await gm.HandleAsync(chatter, "player1", "//help", default)).StartsWith("Builder commands"), "configured development GM");
 Check((await gm.HandleAsync(chatter, "[GM] Player1", "//help", default)).StartsWith("Builder commands"), "chat under the displayed name finds the character");
 Check((await gm.HandleAsync(chatter, "player1", "//admin", default)).StartsWith("GM panel: press F10"), "//admin points a GM to the client's F10 panel");
-Check(await gm.HandleAsync(chatter, "Visitor", "//help", default) == "Commands: //report <text> sends a report to the staff.", "players get the report command as help");
+Check(await gm.HandleAsync(chatter, "Visitor", "//help", default) == GmCommands.PlayerHelp && GmCommands.PlayerHelp.Contains("/bug <text>"), "players get /bug and //report as help");
 Check(await gm.HandleAsync(chatter, "Visitor", "//report the bridge is broken", default) == "Reports are not available on this server.", "no reports without staff tools");
 var reports = new List<string>();
 var reporting = new GmCommands(presence, builder) { Report = (_, name, text, _) => { reports.Add(name + ":" + text); return Task.FromResult("sent"); } };
@@ -2590,10 +2725,8 @@ Check((await Gm(game, "Player1", "//SetInvincible false")).Reply == "Invincible:
 Check((await Gm(game, "Player1", "//NoCool true")).Reply == "Cooldowns off." && game.NoCool, "NoCool");
 Check((await Gm(game, "Player1", "//Teleport 1000 10 20 30")).Packets.Any(b => b[0] == 0x21 && b[1] == 0x36), "Teleport sends the map load (0x3621)");
 var reload = await game.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), clock);
-var unlockAt = reload.FindLastIndex(b => b[0] == 0x58 && b[1] == 0xe2);
-Check(unlockAt > reload.FindIndex(b => b[0] == 0x57 && b[1] == 0xe2) && reload.Any(b => b[0] == 0x33 && b[1] == 0x36),
-      "a teleport's reload re-sends the chat unlock (0xe258) after the unlock list re-locks it");
-Check((await game.HandleAsync(new PacketWriter().U16(0x3622).I32(1).ToArray(), clock)).All(b => !(b[0] == 0x58 && b[1] == 0xe2)), "only once per teleport");
+Check(!reload.Any(b => b[0] == 0x58 && b[1] == 0xe2) && reload.Any(b => b[0] == 0x57 && b[1] == 0xe2 && b.Skip(3).Contains((byte)45)) && reload.Any(b => b[0] == 0x33 && b[1] == 0x36),
+      "a teleport's reload keeps chat (45) in the unlock list, no 0xe258 (OBSERVED: never sent)");
 Check(game.Resource.Hp < game.Resource.HpMax, "a teleport keeps HP (it used to be a full heal)");
 // Death: HP 0 kills (0x8d04 with the player as victim), casts are refused, a revive follows by itself.
 var death = game.NpcHitsPlayer(game.Resource.HpMax * 10, clock, killerKey: 2001);
@@ -2627,8 +2760,8 @@ Check(lootTarget.Dead && lootKill.Any(b => b[0] == 0x1e && b[1] == 0x56) && drop
 var looted = await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500);
 Check(looted.Any(b => b.SequenceEqual(LootPackets.LootReply(0, dropUid, false))) && looted.Any(b => b[0] == 0x1f && b[1] == 0x56) && !game.GroundDrops.Contains(dropUid),
       "looting answers 0x5621 result 0 and removes the drop (0x561f)");
-Check((await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500)).Single().SequenceEqual(LootPackets.LootReply(1, dropUid, false)),
-      "a drop cannot be looted twice");
+Check((await game.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(dropUid).U8(0).ToArray(), clock += 500)).Single().SequenceEqual(LootPackets.LootReply(LootPackets.LootGone, dropUid, false)),
+      "a drop cannot be looted twice (0x2010, gone)");
 var leftovers = game.GroundDrops.Count;
 var expired = await game.TickAsync(clock += GameSession.DropLifetimeMs + 1000);
 Check(game.GroundDrops.Count == 0 && (leftovers == 0 || expired.Any(b => b[0] == 0x1f && b[1] == 0x56)), "unlooted drops vanish after 60 s (0x561f)");
@@ -3039,12 +3172,52 @@ sealed class FakeStore : INativeCharacterStore
     public List<PostRecord> Posts { get; } = [];
     public Task<bool> MoveItemToContainerAsync(Guid character, Guid item, long revision, string location, int slot, CancellationToken ct)
     {
-        var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location is "bag" or "storage");
+        var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location is "bag" or "storage" or "account_storage");
         if (index < 0) return Task.FromResult(false);
         var (oldLocation, oldSlot) = (Items[index].Location, Items[index].Slot);
         for (var i = 0; i < Items.Count; i++)
             if (i != index && Items[i].Location == location && Items[i].Slot == slot) Items[i] = Items[i] with { Location = oldLocation, Slot = oldSlot, Revision = Items[i].Revision + 1 };
         Items[index] = Items[index] with { Location = location, Slot = slot, Revision = revision + 1 };
+        return Task.FromResult(true);
+    }
+    public Task<bool> StoreItemsInContainerAsync(Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct)
+    {
+        if (location is not ("storage" or "account_storage") || items.Count == 0) return Task.FromResult(false);
+        var used = Items.Where(i => i.Location == location && i.Slot is not null).Select(i => i.Slot!.Value).ToHashSet();
+        int Free() { var s = 0; while (used.Contains(s)) s++; used.Add(s); return s; }
+        foreach (var (item, revision, count) in items)
+        {
+            var index = Items.FindIndex(i => i.InstanceId == item && i.Revision == revision && i.Location == "bag");
+            if (index < 0 || count < 1 || count > Items[index].Quantity) return Task.FromResult(false);
+            var source = Items[index];
+            var slot = Free();
+            if (count == source.Quantity) Items[index] = source with { Location = location, Slot = slot, Revision = source.Revision + 1 };
+            else
+            {
+                Items[index] = source with { Quantity = source.Quantity - count, Revision = source.Revision + 1 };
+                Items.Add(source with { InstanceId = Guid.NewGuid(), WireId = Items.Max(i => i.WireId) + 1, Quantity = count, Location = location, Slot = slot, Revision = 0 });
+            }
+        }
+        return Task.FromResult(true);
+    }
+    public Task<bool> TakeItemsFromContainerAsync(Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct)
+    {
+        if (location is not ("storage" or "account_storage") || items.Count == 0) return Task.FromResult(false);
+        var used = Items.Where(i => i.Location == "bag" && i.Slot is not null).Select(i => i.Slot!.Value).ToHashSet();
+        int Free() { var s = 0; while (used.Contains(s)) s++; used.Add(s); return s; }
+        foreach (var (key, count) in items)
+        {
+            var index = Items.FindIndex(i => i.WireId == key && i.Location == location);
+            if (index < 0 || count < 1 || count > Items[index].Quantity) return Task.FromResult(false);
+            var source = Items[index];
+            var slot = Free();
+            if (count == source.Quantity) Items[index] = source with { Location = "bag", Slot = slot, Revision = source.Revision + 1 };
+            else
+            {
+                Items[index] = source with { Quantity = source.Quantity - count, Revision = source.Revision + 1 };
+                Items.Add(source with { InstanceId = Guid.NewGuid(), WireId = Items.Max(i => i.WireId) + 1, Quantity = count, Location = "bag", Slot = slot, Revision = 0 });
+            }
+        }
         return Task.FromResult(true);
     }
     public Task<IReadOnlyList<PostRecord>> PostsAsync(Guid character, CancellationToken ct) => Task.FromResult<IReadOnlyList<PostRecord>>(Posts.OrderByDescending(p => p.Id).ToList());
@@ -3110,13 +3283,16 @@ sealed class FakeStore : INativeCharacterStore
         BossChallenges.Add(record);
         return Task.FromResult(true);
     }
-    public List<(int TicketId, string Period, int Count)> ExpeditionTickets { get; } = [];
-    public Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(Guid character, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<(int, string, int)>>(ExpeditionTickets.ToList());
-    public Task<bool> SaveExpeditionTicketsAsync(Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct)
+    public List<ContentTicketRecord> ContentTickets { get; } = [];
+    public Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(Guid character, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ContentTicketRecord>>(ContentTickets.ToList());
+    public Task<bool> SaveContentTicketsAsync(Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct)
     {
-        ExpeditionTickets.Clear();
-        ExpeditionTickets.AddRange(rows);
+        foreach (var row in rows)
+        {
+            ContentTickets.RemoveAll(r => r.TicketId == row.TicketId);
+            ContentTickets.Add(row);
+        }
         return Task.FromResult(true);
     }
     public AbyssRecord? Abyss { get; set; }
@@ -3172,7 +3348,7 @@ sealed class FakeStore : INativeCharacterStore
     public Task<bool> SortBagAsync(Guid character, CancellationToken ct) => SortContainerAsync(character, "bag", ct);
     public Task<bool> SortContainerAsync(Guid character, string location, CancellationToken ct)
     {
-        var bag = Items.Select((item, index) => (item, index)).Where(x => x.item.Location == location).OrderBy(x => x.item.TemplateId).ThenBy(x => x.item.WireId).ToList();
+        var bag = Items.Select((item, index) => (item, index)).Where(x => x.item.Location == location).OrderBy(x => ItemCurrencies.SortRank(x.item.TemplateId)).ThenBy(x => x.item.TemplateId).ThenBy(x => x.item.WireId).ToList();
         for (var n = 0; n < bag.Count; n++) Items[bag[n].index] = bag[n].item with { Slot = n, Revision = bag[n].item.Revision + 1 };
         return Task.FromResult(true);
     }

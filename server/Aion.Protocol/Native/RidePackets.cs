@@ -105,8 +105,8 @@ public static class RidePackets
     /// <summary>0x901c CreatureBoardFixLevelByOnBoarding_NT: the whole board (sent when its level or slots change; CANDIDATE use).</summary>
     public static byte[] BoardInfo(CreatureBoard board) => WriteBoard(PacketWriter.Opcode(BoardInfoNt), board).ToArray();
 
-    /// <summary>0x3655 PolymorphUpdate_NT (lobby range: live = positional): key | polymorph abnormal uid (0 = none). CANDIDATE.</summary>
-    public static byte[] PolymorphUpdate(int key, int abnormalUid) => PacketWriter.Opcode(0x3655).Varint(key).Varint(abnormalUid).ToArray();
+    /// <summary>0x3655 PolymorphUpdate_NT: key varint | polymorph abnormal uid i32 (0 = none) (OBSERVED `5536 dd08 f2050000`, 2026-11-12).</summary>
+    public static byte[] PolymorphUpdate(int key, int abnormalUid) => PacketWriter.Opcode(0x3655).Varint(key).I32(abnormalUid).ToArray();
 
 
 
@@ -221,12 +221,27 @@ public static class RidePackets
         return w.I32(skillId).ToArray();
     }
 
-    /// <summary>0x5613 ItemUse_RS: result | item uid i64 | item id i32.</summary>
-    public static byte[] ItemUseReply(int result, long uid, int itemId) => PacketWriter.Opcode(ItemUseRs).U16(result).I64(uid).I32(itemId).ToArray();
+    /// <summary>
+    /// 0x3805 mask 0x0a, a damage-over-time tick: key | 0x0a | caster | abnormal uid | effect id i32 | amount varint | skill i32, with no
+    /// remaining total and no opening 0x09 (OBSERVED: 696 player DoT ticks on NPCs on 2026-11-04, 19 on 2026-11-15, no 0x09 on an NPC;
+    /// i=8737 `0538 8fb101 0a b016 01 cbc0be65 9b01 b0770401`, amount 155 of effect 1707000011, skill 17070000). Self heals over time
+    /// keep 0x09 then 0x0b (<see cref="AbnormalEffect"/>).
+    /// </summary>
+    public static byte[] AbnormalDamage(int key, int casterKey, int uid, int effectId, int amount, int skillId) =>
+        PacketWriter.Opcode(0x3805).Varint(key).U8(0x0a).Varint(casterKey).Varint(uid).I32(effectId).Varint(Math.Max(0, amount)).I32(skillId).ToArray();
+
+    /// <summary>EResult kItem_Use_Success: official 0x5613/0x5615 carry 772 (`0403`) on success, not 0 (OBSERVED 2026-11-12).</summary>
+    public const int ItemUseSuccess = 772;
+
+    static int ItemUseResult(int result) => result == 0 ? ItemUseSuccess : result;
+
+    /// <summary>0x5613 ItemUse_RS: result u16 (0 is sent as 772 kItem_Use_Success) | item uid i64 | item id i32.</summary>
+    public static byte[] ItemUseReply(int result, long uid, int itemId) =>
+        PacketWriter.Opcode(ItemUseRs).U16(ItemUseResult(result)).I64(uid).I32(itemId).ToArray();
 
     /// <summary>0x5615 ItemUseByItemID_RS: result (u16, as 0x5613) | item uid i64 | item id i32 | use count i64.</summary>
     public static byte[] ItemUseByIdReply(int result, long uid, int itemId, long useCount) =>
-        PacketWriter.Opcode(ItemUseByIdRs).U16(result).I64(uid).I32(itemId).I64(useCount).ToArray();
+        PacketWriter.Opcode(ItemUseByIdRs).U16(ItemUseResult(result)).I64(uid).I32(itemId).I64(useCount).ToArray();
 
     /// <summary>0x5616 ItemUse_NT: item uid i64 | item id i32 (OBSERVED: Life Potion 530126003).</summary>
     public static byte[] ItemUsed(long uid, int itemId) => PacketWriter.Opcode(ItemUseNt).I64(uid).I32(itemId).ToArray();

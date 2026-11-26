@@ -11,7 +11,7 @@ namespace Aion.World;
 // PotionItemAutoUseList_NT 0x5648 (OBSERVED "01 01 b314991f 00000000": group HP, Life Potion, none), SetAutoUsePotionItem
 // 0x5649/0x564a, ItemAutoUseActivatedList_NT 0x564b, SetAutoUseItem 0x564c/0x564d; ItemRestoreStatusList_NT 0xe343
 // (OBSERVED: 3 types, char db id, count 0, a time); PresetInfo_NT 0xe28c (OBSERVED 904 B), PresetEquipUpdate_NT 0xe28d,
-// PresetListSet 0xe291/0xe292. Request layouts are the usmap's (no request sample): CANDIDATE.
+// PresetListSet 0xe291/0xe292, PresetSkillUpdate_NT 0xe293 (GameSession.SkillPresets.cs). Request layouts are the usmap's (no request sample): CANDIDATE.
 public sealed partial class GameSession
 {
     public const ushort SocialActionAcquireNt = 0x9500,
@@ -59,6 +59,8 @@ public sealed partial class GameSession
         autoUseItems.UnionWith(Read<int[]>("item_auto_use") ?? []);
         presets = Read<PresetSetting>("presets") ?? new([], []);
         restoreCounts = Read<Dictionary<int, RestoreCount>>("item_restores") ?? [];
+        dutyBoard = Read<DutyBoard>(DutyBoardSetting);
+        LoadSlotExtends(Read<int[]>(SlotExtendsSetting));
     }
 
     async Task SaveSettingAsync(string name, object value, CancellationToken ct)
@@ -67,14 +69,13 @@ public sealed partial class GameSession
             await Stored(async () => { await store.SaveCharacterSettingAsync(character, name, JsonSerializer.SerializeToElement(value), ct); return []; });
     }
 
-    /// <summary>The world-entry lists these settings drive (after the skill list, as official).</summary>
+    /// <summary>The emote list after the skill list (OBSERVED: 0x5100, 0x3900, 0x9501, 0x5600). The potion and auto-use lists, the
+    /// presets and the restore counts go with the entry lists (GameSession.EntryConstants.cs).</summary>
     List<byte[]> SettingsAtEntry(long now) =>
     [
         GamePackets.SocialActionInfo(GamePackets.DefaultSocialActions.Concat(earnedEmotes).Distinct().Order().ToList()),
-        PotionAutoUseList(),
-        ItemAutoUseList(),
-        PresetInfo(),
-        ItemRestoreStatus(now),
+        // OBSERVED i1146 (2026-11-06 234912, via the addiboii fork): RegisterSealStoneAutoUse_RS {0, uid} with the registered stack.
+        .. sealStoneItem != 0 ? [PacketWriter.Opcode(SealStoneRegisterRs).U16(0).I64(sealStoneItem).ToArray()] : Array.Empty<byte[]>(),
     ];
 
     // ---------- Emotes ----------
@@ -101,12 +102,17 @@ public sealed partial class GameSession
 
     // ---------- Seal stone ----------
 
+    /// <summary>OBSERVED kToggle_SetAlready: a toggle to the state it has (i27405, 2026-11-06 234912, via the addiboii fork).</summary>
+    const int ToggleSetAlready = 0x1960;
+
     /// <summary>
     /// Activate/DeactivateSealStone_RQ (no body): the toggle (EToggleType SealStone = toggle flag 1, which the official
-    /// appearance carries) -> RS {u16 0}, SealStoneStatusChange_NT {key, on} to the player and those around.
+    /// appearance carries) -> RS {u16 0}, SealStoneStatusChange_NT {key, on} to the player and those around. A toggle to the
+    /// state it already has: RS {u16 0x1960} alone (OBSERVED).
     /// </summary>
     async Task<List<byte[]>> SealStoneToggleAsync(bool on, CancellationToken ct)
     {
+        if (on == sealStoneOn) return [PacketWriter.Opcode(on ? SealStoneActivateRs : SealStoneDeactivateRs).U16(ToggleSetAlready).ToArray()];
         sealStoneOn = on;
         await SaveSettingAsync("seal_stone", new SealStoneSetting(on, sealStoneItem), ct);
         var status = PacketWriter.Opcode(SealStoneStatusNt).Varint(playerKey).Bool(on).ToArray();
@@ -115,27 +121,25 @@ public sealed partial class GameSession
     }
 
     /// <summary>
-    /// RegisterSealStoneAutoUse_RQ {item uid i64}: a bag item (0 clears) -> RS {u16, uid}, BroadcastSealStoneChange_NT {key, item id}.
-    /// INFERRED: slotting a stack also turns the toggle on (SealStoneStatusChange_NT), so a slotted stack is spent without a
-    /// separate ActivateSealStone_RQ.
+    /// RegisterSealStoneAutoUse_RQ {item uid i64}: a bag seal stone (0 clears) -> BroadcastSealStoneChange_NT {key, item id},
+    /// RS {u16 0, uid}, then the stat sheet (0x364a) with the stone's stats. OBSERVED order i24886-24888 (2026-11-06 234912,
+    /// via the addiboii fork); the recorded reply has no SealStoneStatusChange_NT, so registering leaves the toggle as it is.
+    /// OURS: a bag item that is no seal stone (sealstones.json) is refused with RS {u16 1, uid}.
     /// </summary>
     async Task<List<byte[]>> RegisterSealStoneAsync(long uid, CancellationToken ct)
     {
         var itemId = 0;
         if (uid != 0)
         {
-            if (!storedItems.TryGetValue(uid, out var row) || row.Location != "bag") return [PacketWriter.Opcode(SealStoneRegisterRs).U16(1).I64(uid).ToArray()];
+            if (!storedItems.TryGetValue(uid, out var row) || row.Location != "bag" || !SealStones.IsStone(row.TemplateId))
+                return [PacketWriter.Opcode(SealStoneRegisterRs).U16(1).I64(uid).ToArray()];
             itemId = row.TemplateId;
         }
         sealStoneItem = uid;
-        var turnOn = uid != 0 && !sealStoneOn;
-        if (turnOn) sealStoneOn = true;
         await SaveSettingAsync("seal_stone", new SealStoneSetting(sealStoneOn, uid), ct);
-        var change = PacketWriter.Opcode(SealStoneBroadcastNt).Varint(playerKey).I32(itemId).ToArray();
-        List<byte[]> shown = [change];
-        if (turnOn) shown.Add(PacketWriter.Opcode(SealStoneStatusNt).Varint(playerKey).Bool(true).ToArray());
-        worldPlayer?.Map?.Broadcast(worldPlayer, shown);
-        return [PacketWriter.Opcode(SealStoneRegisterRs).U16(0).I64(uid).ToArray(), .. shown];
+        var change = PlayerPackets.SealstoneChange(playerKey, itemId);
+        worldPlayer?.Map?.Broadcast(worldPlayer, [change]);
+        return [change, PacketWriter.Opcode(SealStoneRegisterRs).U16(0).I64(uid).ToArray(), .. RefreshStats()];
     }
 
     int SealStoneItemId => sealStoneItem != 0 && storedItems.TryGetValue(sealStoneItem, out var row) ? row.TemplateId : 0;
@@ -191,7 +195,7 @@ public sealed partial class GameSession
             var cooldown = Boxes.Cooldown(itemId);
             if (cooldown.Group != "None" && now < itemCooldowns.GetValueOrDefault(cooldown.Group)) return [];
             if (storedItems.Values.Where(i => i.TemplateId == itemId && i.Location == "bag").OrderBy(i => i.Quantity).FirstOrDefault() is { } stack)
-                return await UseItemAsync(stack.WireId, now, ct);
+                return await UseItemAsync(stack.WireId, now, ct, autoPotion: true);
         }
         return [];
     }
@@ -206,20 +210,39 @@ public sealed partial class GameSession
             .ToDictionary(g => g.Key, g => g.Last().WireId);
 
     /// <summary>
-    /// PresetInfo_NT in the official order (OBSERVED 904 B): equip no + [{no, [{i64 item, u8 slot}]}], arcana no + presets,
-    /// skill no + [{mask, no, slot, ...}], title no + [], wing no + wing i32 + [], creature board no, housing no + [].
-    /// The current equip preset is what is worn; skill, title and wing presets are not kept yet (empty lists).
+    /// PresetInfo_NT in the official order (OBSERVED, 15 official bodies): equip no + [{no, [{i64 item, u8 slot}]}]; arcana
+    /// `no 01 01 00` (one preset {no 1, no entries}, in all 15, never `no 00`); skill no + 36 records (GameSession.SkillPresets.cs);
+    /// title no + [{preset, slot, title i32}]; wing no + i32 (0 in all 15, also with wing presets) + [{preset, wing i32}]; then
+    /// <see cref="PresetInfoTail"/>. The current equip preset is what is worn, the current skill preset the bar; title and wing
+    /// presets are not kept (OURS: empty lists).
     /// </summary>
-    byte[] PresetInfo()
+    byte[] PresetInfo() =>
+        PresetInfoNotice(PresetNo(PresetEquip), new SortedDictionary<int, Dictionary<int, long>>(presets.Equip) { [PresetNo(PresetEquip)] = EquippedSlots() },
+            PresetNo(1), PresetNo(PresetSkill), EffectiveSkillStacks(), PresetNo(3), PresetNo(4), PresetNo(6));
+
+    /// <summary>
+    /// After the wing presets, OBSERVED byte for byte in R1115 i=188132 (a level-1 character): `01 01 01 01 11` and 17 x {i32 0,
+    /// u8 key 1..17}. Other characters have nonzero values there (R1112 i=96309: key 1 = 43, key 2 = 9, keys 13-17 = 1008, 1023, 1004,
+    /// 1021, 4999) and one more `01` before the 0x11; CANDIDATE: skin, creature board and housing presets. OURS: the first byte is the
+    /// type 6 preset number, the rest always the level-1 form.
+    /// </summary>
+    static void PresetInfoTail(PacketWriter w, int lastNo)
     {
-        var equip = new SortedDictionary<int, Dictionary<int, long>>(presets.Equip) { [PresetNo(PresetEquip)] = EquippedSlots() };
-        var w = PacketWriter.Opcode(PresetInfoNt).U8(PresetNo(PresetEquip));
+        w.U8(lastNo).U8(1).U8(1).U8(1).Varint(17);
+        for (var key = 1; key <= 17; key++) w.I32(0).U8(key);
+    }
+
+    /// <summary>PresetInfo_NT 0xe28c from its parts (the layout of <see cref="PresetInfo"/>).</summary>
+    public static byte[] PresetInfoNotice(int equipNo, IReadOnlyDictionary<int, Dictionary<int, long>> equip, int arcanaNo, int skillNo,
+        IReadOnlyDictionary<int, int[]> skillStacks, int titleNo, int wingNo, int lastNo)
+    {
+        var w = PacketWriter.Opcode(PresetInfoNt).U8(equipNo);
         WriteEquipPresets(w, equip);
-        w.U8(PresetNo(1)).Varint(0);
-        w.U8(PresetNo(2)).Varint(0);
-        w.U8(PresetNo(3)).Varint(0);
-        w.U8(PresetNo(4)).I32(wingId).Varint(0);
-        w.U8(PresetNo(6)).U8(1).Varint(0);
+        w.U8(arcanaNo).Varint(1).U8(1).Varint(0);
+        WriteSkillPresets(w, skillNo, skillStacks);
+        w.U8(titleNo).Varint(0);
+        w.U8(wingNo).I32(0).Varint(0);
+        PresetInfoTail(w, lastNo);
         return w.ToArray();
     }
 

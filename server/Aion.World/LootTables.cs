@@ -40,9 +40,28 @@ public sealed class LootTables
 
     public bool HasEnvLoot(WorldObject obj) => ResolveEnvLootTableNames(obj.Env, obj.Name, obj.EnvName).Length > 0;
 
-    /// <summary>The items one kill drops for a character of a race (1 Light, 2 Dark), merged by item.</summary>
+    /// <summary>
+    /// RewardData tables named *_participant_all (90 field bosses and field elites): the personal reward of every player
+    /// who fought the monster. Their 100% item is the bound chest (e.g. reward_FieldBoss_Named_WH4_2400800_participant_all
+    /// -> 533700375, RewardBox Box_FieldBoss_A_48_b). The name says who gets it; the delivery is CANDIDATE.
+    /// </summary>
+    public const string ParticipantSuffix = "_participant_all";
+
+    static bool IsParticipant(string table) => table.EndsWith(ParticipantSuffix, StringComparison.Ordinal);
+
+    string[] NpcTables(int npcId) => file.Npcs.GetValueOrDefault(npcId.ToString(System.Globalization.CultureInfo.InvariantCulture)) ?? [];
+
+    /// <summary>The items one kill drops for a character of a race (1 Light, 2 Dark), merged by item: every table
+    /// except the participant ones (<see cref="RollParticipant"/>).</summary>
     public List<(int ItemId, long Count)> Roll(int npcId, int race, Random rng) =>
-        RollTables(file.Npcs.GetValueOrDefault(npcId.ToString(System.Globalization.CultureInfo.InvariantCulture)), race, rng);
+        RollTables(NpcTables(npcId).Where(t => !IsParticipant(t)).ToArray(), race, rng);
+
+    /// <summary>Whether a monster has a participant reward table.</summary>
+    public bool HasParticipantLoot(int npcId) => NpcTables(npcId).Any(IsParticipant);
+
+    /// <summary>One participant's roll of the monster's *_participant_all tables (empty when it has none: no fallback).</summary>
+    public List<(int ItemId, long Count)> RollParticipant(int npcId, int race, Random rng) =>
+        RollTables(NpcTables(npcId).Where(IsParticipant).ToArray(), race, rng);
 
     /// <summary>Items granted when an env object interaction completes (reward_manual_* tables).</summary>
     public List<(int ItemId, long Count)> RollEnv(int envId, int race, Random rng) =>

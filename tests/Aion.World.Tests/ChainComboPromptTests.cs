@@ -86,6 +86,9 @@ public sealed class ChainComboPromptTests
     public async Task Spec_variant_cast_emits_3818_with_matching_chain_step()
     {
         var store = new FakeCharacterStore { Progress = (45, 0) };
+        // 14020010 is Snipe's specialisation child: cast only with its part on (SkillSpecializationTests).
+        store.Skills.Add(new Aion.Application.Gameplay.SkillState(14_020_000, 8, null, 8));
+        store.SkillParts.Add(new(14_020_000, 1, 14_020_010));
         var session = new GameSession(GameSessionTestHelpers.LiveGameData,
             new GameSessionOptions { CharacterLevel = 45, WorldId = store.WorldId }, new Random(1)) { Store = store };
         await session.HandleAsync(GameSessionTestHelpers.Login(), Now);

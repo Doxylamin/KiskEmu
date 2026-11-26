@@ -67,7 +67,7 @@ public sealed partial class GameSession
             return false;
         }
         if (!EnvObjInteractAllowed(index)) return false;
-        return MapEventUseEnvObjAllowed(EventName(o));
+        return MapEventUseEnvObjAllowed(o.Name, o.EnvDataName);
     }
 
     /// <summary>CollectItem step open, item not held, and this env's prior UseEnvObj or manual loot table supplies it.</summary>
@@ -171,37 +171,28 @@ public sealed partial class GameSession
     }
 
     /// <summary>
-    /// The name this map's events count the object by: its spawner name when an event names it so, else its EnvObjData
-    /// name when an event names that (110005: UseEnvObj E_D0_Layer_2_PrisonDoorSmall_001 is the spawner
-    /// D_Starter_Layer_2_EnvObj_DoorSmall_1; live 2026-10-30 the door opened on F and the step never counted).
+    /// Instance map events gate UseEnvObj by step (HQ001 firewood before its UseEnvObj step; no bypass while the event is waiting
+    /// to join). Objects count by their spawn entry or their EnvObjData name (110005: UseEnvObj E_D0_Layer_2_PrisonDoorSmall_001
+    /// is the spawner D_Starter_Layer_2_EnvObj_DoorSmall_1; live 2026-10-30 the door opened on F and the step never counted).
     /// </summary>
-    string EventName(WorldObject o)
+    bool MapEventUseEnvObjAllowed(string spawnName, string? dataName)
     {
-        if (o.EnvName is not { Length: > 0 } env) return o.Name;
-        var events = MapEventData.EventsOn(worldMap);
-        if (events.Any(e => MapEventRun.ReferencesUseEnvObj(e, o.Name))) return o.Name;
-        return events.Any(e => MapEventRun.ReferencesUseEnvObj(e, env)) ? env : o.Name;
+        if (mapEventRuns.Any(r => r.WantsObject(spawnName, dataName))) return true;
+        if (mapEventRuns.Any(r => r.ReferencesUseEnvObj(spawnName, dataName))) return false;
+        return !PendingClearMapEventUseEnvObj(spawnName, dataName);
     }
 
-    /// <summary>Instance map events gate UseEnvObj by step (HQ001 firewood before its UseEnvObj step; no bypass while the event is waiting to join).</summary>
-    bool MapEventUseEnvObjAllowed(string spawnName)
-    {
-        if (mapEventRuns.Any(r => r.WantsObject(spawnName))) return true;
-        if (mapEventRuns.Any(r => r.ReferencesUseEnvObj(spawnName))) return false;
-        return !PendingClearMapEventUseEnvObj(spawnName);
-    }
-
-    bool PendingClearMapEventUseEnvObj(string spawnName)
+    bool PendingClearMapEventUseEnvObj(string spawnName, string? dataName)
     {
         if (questLog is null || instanceKey == 0) return false;
-        if (mapEventRuns.Any(r => r.WantsObject(spawnName))) return false;
+        if (mapEventRuns.Any(r => r.WantsObject(spawnName, dataName))) return false;
         var open = questLog.OpenClearMapEventNames().ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (open.Count == 0) return false;
         foreach (var definition in MapEventData.EventsOn(worldMap))
         {
             if (!open.Contains(definition.Name)) continue;
             if (mapEventRuns.Any(r => string.Equals(r.Name, definition.Name, StringComparison.OrdinalIgnoreCase))) continue;
-            if (MapEventRun.ReferencesUseEnvObj(definition, spawnName)) return true;
+            if (MapEventRun.ReferencesUseEnvObj(definition, spawnName, dataName)) return true;
         }
         return false;
     }
@@ -215,9 +206,9 @@ public sealed partial class GameSession
         for (var index = 0; index < objects.Count; index++)
         {
             if (!shownObjects.Contains(index)) continue;
-            var name = EventName(objects[index]);
-            if (!mapEventRuns.Any(r => r.ReferencesUseEnvObj(name)) && !PendingClearMapEventUseEnvObj(name)) continue;
-            var allowed = MapEventUseEnvObjAllowed(name);
+            var (name, dataName) = (objects[index].Name, objects[index].EnvDataName);
+            if (!mapEventRuns.Any(r => r.ReferencesUseEnvObj(name, dataName)) && !PendingClearMapEventUseEnvObj(name, dataName)) continue;
+            var allowed = MapEventUseEnvObjAllowed(name, dataName);
             envObjCanInteract[index] = allowed;
             replies.Add(GamePackets.InteractEnvObjCanInteract(WorldObjects.FirstKey + index, allowed));
         }

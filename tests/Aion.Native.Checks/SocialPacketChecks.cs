@@ -154,6 +154,10 @@ public static class SocialPacketChecks
         Same("PartyCreate_RS", SocialPackets.PartyCreateReply(0), "0592 0000");
         Same("PartyInvite_RS", SocialPackets.PartyInviteReply(0, 1204, "Bo"), "0792 0000 b404 02426f");
         var inviter = new InvitationInfo(29, 5, 1, "Al", 1204);
+        // Official 2026-11-12 (80 B, Chiyu inviting Mininimi).
+        Same("PartyInviteStart_NT", SocialPackets.PartyInviteStart(0x0529, "831E6AA7-891F-4741-AB46-8E23A369AE24", 0x0529000000011f3f, 11945, 26, 45, 0,
+            "Mininimi", 0x1a1d119c49a),
+            "0892 2905 2438333145364141372d383931462d343734312d414234362d384532334133363941453234 3f1f010000002905 a95d 1a000000 2d000000 00000000 084d696e696e696d69 9ac419d1a1010000");
         Same("PartyInvite_NT", SocialPackets.PartyInviteNotice(77, 11, inviter, 1000),
             "0992 4d00000000000000 0b00000000000000 1d000000 05000000 01000000 02416c b404 00000000 0000000000000000 00 e803000000000000");
         Same("PartyInviteResponse_RS", SocialPackets.PartyInviteResponseReply(0), "0b92 0000");

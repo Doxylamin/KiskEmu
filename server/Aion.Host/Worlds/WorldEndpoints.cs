@@ -223,11 +223,50 @@ public static class WorldEndpoints
             var kicked = input.KickAccount is { } account ? serverControl.KickAccount(account, input.Reason is { Length: > 0 } reason ? reason : "Banned") : 0;
             return Results.Ok(new { value = kicked });
         });
+        // The account site's character page (GET /api/characters/{id}/details on the realm, which checked ownership): this
+        // world's stored row and, while the character is here, its live state. The account is checked again in the query.
+        control.MapGet("/character", async (Guid account, Guid character, IServiceProvider services, CancellationToken ct) =>
+            account == Guid.Empty ? Results.NotFound()
+                : await Authentication.CharacterDetailsReader.LocalAsync(services, new VerifiedAccount(account), character, ct) is { } details
+                    ? Results.Ok(details) : Results.NotFound());
         control.MapGet("/blocked", async (Guid from, Guid to, IGameplayStore game, CancellationToken ct) =>
             Results.Ok(new { value = await game.AnyBlockBetweenAsync(from, to, ct) }));
         // The realm's wallet changed (server/DATABASES.md, Quna): the account's sessions here show the new balance.
         control.MapPost("/quna/balance", (QunaBalancePush input, IServiceProvider services) =>
             Results.Ok(new { value = QunaPushed(services.GetService<WorldPresence>(), input) }));
+        // A staff move of a character to another world (CharacterWorldMoves on the realm, which checked the staff member's
+        // permission). The actor and the target account are mirrored from the realm first: audit and ownership name them.
+        control.MapPost("/characters/export", (MoveExport input, IGameplayStore game, IServiceProvider services, CancellationToken ct) => Move(async () =>
+        {
+            if (services.GetService<WorldPresence>()?.FindCharacter(input.CharacterId) is not null) return Results.Conflict(new { error = "character_online" });
+            await Mirror(services, ct, input.Actor);
+            return Results.Ok(await game.ExportCharacterAsync(input.RequestId, input.Actor, input.CharacterId, input.TargetWorld, input.Reason, ct));
+        }));
+        control.MapPost("/characters/import", (CharacterMoveImport input, IGameplayStore game, IServiceProvider services, CancellationToken ct) => Move(async () =>
+        {
+            await Mirror(services, ct, input.Actor, input.TargetAccount);
+            return Results.Ok(await game.ImportCharacterAsync(input, worldId, ct));
+        }));
+        control.MapPost("/characters/finish", (MoveFinish input, IGameplayStore game, IServiceProvider services, CancellationToken ct) => Move(async () =>
+        {
+            await game.FinishCharacterMoveAsync(input.RequestId, input.Actor, input.CharacterId, input.MovedTo, ct);
+            return Results.Ok(new { done = true });
+        }));
+    }
+
+    sealed record MoveExport(Guid RequestId, Guid Actor, Guid CharacterId, int TargetWorld, string? Reason);
+    sealed record MoveFinish(Guid RequestId, Guid Actor, Guid CharacterId, Guid? MovedTo);
+
+    static async Task<IResult> Move(Func<Task<IResult>> step)
+    {
+        try { return await step(); }
+        catch (GameplayException error) { return Results.BadRequest(new { error = error.Code }); }
+    }
+
+    static async Task Mirror(IServiceProvider services, CancellationToken ct, params Guid[] accounts)
+    {
+        if (services.GetService<Realm.AccountMirrorService>() is not { } mirror) return;
+        foreach (var account in accounts.Where(a => a != Guid.Empty).Distinct()) await mirror.RefreshAsync(account, ct);
     }
 
     /// <summary>Hands a pushed Quna balance to every session of the account in this world (on its game loop); the number reached.</summary>
@@ -251,7 +290,7 @@ public static class WorldEndpoints
         foreach (var entry in presence.All)
             if (entry is { AccountId: { } account, Session: { InWorld: true, CharacterId: { } id } session }
                 && Chat.WorldChatDirectory.Describe(id, session) is { } character)
-                entries.Add(new WorldPresenceEntry(id, account, character.Name, character.DisplayName, character.GuildId, character.Race));
+                entries.Add(new WorldPresenceEntry(id, account, character.Name, character.DisplayName, character.GuildId, character.Race, character.PartyId));
         return entries;
     }
 

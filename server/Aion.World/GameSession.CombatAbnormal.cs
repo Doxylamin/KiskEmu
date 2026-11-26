@@ -18,8 +18,12 @@ public sealed partial class GameSession
     /// <summary>A hold or a snare: position reports are refused (CheckMovement) and the client is put back.</summary>
     bool MovementBlocked => buffs.Any(b => b.Combat is { Held: true } or { Rooted: true });
 
-    /// <summary>Apply a debuff abnormal to the player; returns false when immunity blocks it (0x382d).</summary>
-    internal List<byte[]> TryApplyPlayerDebuff(int abnormalId, int durationMs, long now, Vector3d? from = null, int casterKey = 0)
+    /// <summary>
+    /// Apply a debuff abnormal to the player; immunity blocks it (0x382d). <paramref name="npc"/>: a monster's skill put it on (its
+    /// key, skill, level and position on the wire; <paramref name="hitDamage"/> the hit, for its damage over time).
+    /// </summary>
+    internal List<byte[]> TryApplyPlayerDebuff(int abnormalId, int durationMs, long now, Vector3d? from = null, int casterKey = 0,
+        NpcCaster? npc = null, int hitDamage = 0)
     {
         if (AbnormalSpecs.Info(abnormalId) is not { } info || !AbnormalSpecs.Debuff(abnormalId)) return [];
         if (DodgeInvulnerable(now)) return [PlayerPackets.ImmuneAbnormal(playerKey, [info.Effects.Count > 0 ? info.Effects[0].Id : abnormalId])];
@@ -28,12 +32,57 @@ public sealed partial class GameSession
             return [PlayerPackets.ImmuneAbnormal(playerKey, [effectId > 0 ? effectId : abnormalId])];
         var speedBefore = BuffStat("MoveSpeed");
         var replies = new List<byte[]>();
-        AddBuff(abnormalId, durationMs, 0, now, replies, path: SelfAbnormalPath.PlayerDebuff);
+        AddBuff(abnormalId, durationMs, npc?.SkillId ?? 0, now, replies, path: SelfAbnormalPath.PlayerDebuff, caster: npc, hitDamage: hitDamage);
         replies.AddRange(BuffStatsChanged(speedBefore));
+        // KnockdownInstant: 0x3816 Abnormal_Move_Instant_NT {key, caster, effect abnormal x 10 + 1, the player's own position, 04 01 01}
+        // about 50 ms after the 0x382a (OBSERVED 2026-11-15 i=289759, 48 ms).
+        if (npc is { } knocker && info.Effects.Any(e => e.Type == "KnockdownInstant"))
+            pendingKnockdowns.Add((now + KnockdownInstantDelayMs, knocker.Key, abnormalId * 10 + 1));
         // Knockback [distance, ms]: thrown away from the caster (Aerial is a hold: movement is refused while it lasts).
         if (from is { } origin)
             foreach (var move in AbnormalSpecs.Npc(abnormalId).Moves.Where(m => m.Kind == AbnormalSpecs.DisplaceKind.Knockback))
                 replies.AddRange(DisplacedBy(origin, casterKey, abnormalId, move.Amount, pull: false, now));
+        return replies;
+    }
+
+    /// <summary>Delay of a monster's KnockdownInstant 0x3816 after its abnormal's 0x382a (OBSERVED 48 ms; one tick here).</summary>
+    public const int KnockdownInstantDelayMs = 50;
+    /// <summary>EAbnormalMoveType KnockdownInstant (OBSERVED 04 in the official 0x3816).</summary>
+    const byte MoveTypeKnockdownInstant = 4;
+
+    readonly List<(long At, int CasterKey, int EffectId)> pendingKnockdowns = [];
+
+    /// <summary>The due KnockdownInstant moves: 0x3816 to the player and those nearby, the goal where the player stands.</summary>
+    List<byte[]> KnockdownTick(long now)
+    {
+        if (pendingKnockdowns.Count == 0) return [];
+        var sent = new List<byte[]>();
+        pendingKnockdowns.RemoveAll(k =>
+        {
+            if (now < k.At) return false;
+            if (!dead && position is { } at) sent.Add(PlayerPackets.AbnormalMoveInstant(playerKey, k.CasterKey, k.EffectId, at, MoveTypeKnockdownInstant));
+            return true;
+        });
+        if (sent.Count > 0) worldPlayer?.Map?.Broadcast(worldPlayer, sent);
+        return sent;
+    }
+
+    /// <summary>
+    /// A monster skill's hit on the player: the abnormals its SkillEffect rows put on (NpcSkill.Abnormals, each by its chance) at the
+    /// skill's first hit, through the player-debuff path (OBSERVED: 0x382a mask 0x13 with the NPC as caster). Ported from addiboii's
+    /// fork, commit 90af6b0.
+    /// </summary>
+    List<byte[]> NpcSkillAbnormals(int casterKey, int skillId, int hitSeq, Vector3d casterAt, int damage, long now)
+    {
+        if (hitSeq != 1 || casterKey == 0 || data.NpcSkill(skillId)?.Abnormals is not { Length: > 0 } rows) return [];
+        var replies = new List<byte[]>();
+        foreach (var row in rows.Where(r => r.Length >= 5))
+        {
+            if (rng.Next(10_000) >= row[4]) continue;
+            var duration = Math.Max(1, rng.Next(Math.Min(row[1], row[2]), Math.Max(row[1], row[2]) + 1));
+            var npc = new NpcCaster(casterKey, skillId, (byte)Math.Clamp(row[3], 1, 255), casterAt);
+            replies.AddRange(TryApplyPlayerDebuff(row[0], duration, now, casterAt, casterKey, npc, damage));
+        }
         return replies;
     }
 
@@ -205,12 +254,18 @@ public sealed partial class GameSession
             var perTick = (int)Math.Max(1, total / ticks);
             buff.Dots.Add(new NpcDot { EffectId = dot.EffectId, IntervalMs = dot.IntervalMs, PerTick = perTick, Remaining = perTick * ticks, NextAt = now + dot.IntervalMs });
         }
+        // Dot_NormalCalc: a rolled hit every interval from the apply on, while the abnormal lasts.
+        foreach (var dot in model.NormalDots)
+            buff.Dots.Add(new NpcDot
+            {
+                EffectId = dot.EffectId, IntervalMs = dot.IntervalMs, PerTick = 0, Remaining = int.MaxValue, NextAt = now + dot.IntervalMs, Normal = dot,
+            });
         (npcBuffs.TryGetValue(target.Key, out var list) ? list : npcBuffs[target.Key] = []).Add(buff);
         RefreshNpcFlags(target);
-        if (abnormalId == StaggerGaugeCombat.StaggerAbnormalId) target.StaggerUntil = now + durationMs;
+        if (abnormalId == Stagger.GroggyAbnormal) target.StaggerUntil = now + durationMs;
         replies.Add(PlayerPackets.AbnormalAdd(target.Key, [new AbnormalWire(buff.Uid, abnormalId, durationMs, now + durationMs,
             CasterKey: playerKey, Level: 1, SkillId: 0, RangeBase: target.Position)]));
-        foreach (var dot in buff.Dots) replies.Add(RidePackets.AbnormalEffect(target.Key, playerKey, buff.Uid, dot.EffectId, dot.Remaining, null, skillId));
+        // No opening 0x3805 on an NPC: a player's damage over time on NPCs is only its 0x0a ticks (OBSERVED, RidePackets.AbnormalDamage).
         if (model.Taunt && targets is not null) replies.AddRange(ai.Taunt(targets, target, now, playerKey));
         foreach (var move in model.Moves.Where(m => m.Kind == AbnormalSpecs.DisplaceKind.Knockback))
             replies.AddRange(KnockbackNpc(target, move.Amount, abnormalId, now));

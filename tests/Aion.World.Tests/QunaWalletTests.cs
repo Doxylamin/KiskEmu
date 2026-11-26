@@ -105,6 +105,17 @@ public sealed class QunaWalletTests
     }
 
     [Fact]
+    public async Task A_staff_deduction_cannot_be_refunded()
+    {
+        var wallet = new MemoryQunaWallet();
+        var account = Guid.NewGuid();
+        wallet.Seed(account, 2_000);
+        Assert.True((await wallet.SpendAsync(new QunaRequest(account, "staff-take", 500, QunaWalletRules.Staff))).Ok);
+        Assert.Equal(QunaWalletRules.NotFound, (await wallet.RefundAsync(account, "staff-take")).Error);
+        Assert.Equal(1_500, (await wallet.BalanceAsync(account)).Balance);
+    }
+
+    [Fact]
     public async Task Invalid_amounts_and_reasons_are_refused()
     {
         var wallet = new MemoryQunaWallet();

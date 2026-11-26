@@ -7,7 +7,7 @@ own PostgreSQL, and no world can read another world's characters or the accounts
 
 | Database | Name | Holds | Used by |
 | --- | --- | --- | --- |
-| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`), the account Quna wallets and their ledger (`game.quna_wallets`, `game.quna_ledger`); the catalogue (dashboard) | auth host |
+| Realm | `aion` | `auth.*` (accounts, passwords, TOTP, sessions, game tickets, roles), account and staff events in `audit.events`, `game.worlds` (the world registry), sanctions, tickets, bug reports (`game.bug_reports`, migration 106), chat log, scheduled events, server settings, population samples, `game.character_index`, custom shop goods (`game.custom_shop_goods`), the account Quna wallets and their ledger (`game.quna_wallets`, `game.quna_ledger`); the catalogue (dashboard) | auth host |
 | World | `aion_world_<id>` | the catalogue, `game.*` gameplay tables (characters, items, legions, market, mail, rewards, GM requests, shop purchases and limits, the purchase ledger `game.shop_orders`, memberships, field boss timers `game.field_bosses`), its gameplay events in `audit.events`, a **mirror** of `auth.accounts` and `auth.account_roles` | that world server |
 
 ## Migrations
@@ -52,6 +52,15 @@ level, race, times). Each world server sends the changes every 15 s (a full list
 the login port's character counts, the account page and chat find characters without opening a world
 database.
 
+The account site's character page (`GET /api/characters/{id}/details`, `#/characters/<id>`) is the one account
+view that needs more than the index. The realm checks that the signed-in account owns the character in the
+index (another account's character answers 404, like a missing one), then asks the character's world server
+(`GET /internal/world/character?account=&character=`, control token; the world checks ownership again in its
+own query): the stored row (class, experience, last saved map and position, legion) and, while the character
+is in that world, its live level, combat power, map and position. When the world does not answer, the page
+shows the index and the realm's presence report (`source: "index"`). Map names are region names
+(`Aion.World/MapNames.cs`, CANDIDATE, from the maps' teleport point names), not the client's localized names.
+
 ## The realm link
 
 `/internal/realm/*` on the auth host (the account site's port; plain loopback HTTP for managed worlds).
@@ -70,6 +79,7 @@ Every request carries `X-World-Id: <id>` and `Authorization: Bearer <token>`:
 | `POST authenticate`, `GET accounts/{id}` | staff sign-ins on the world's control port (staff sessions only, migration 098); account snapshots for the mirror |
 | `GET state`, `POST maintenance` | maintenance and active sanctions (cached 2 s) |
 | `POST tickets`, `POST chat` | `//report` tickets; announcements and staff chat |
+| `POST bug-reports` | `/bug` reports with their context (docs/BUG_REPORTS.md); the realm sets the world |
 | `POST characters` | the character index sync |
 | `GET shop/goods` | the custom shop goods the world sells (cached 30 s by the world) |
 | `GET quna/{account}`, `POST quna/spend`, `quna/refund` | the account Quna wallet (below); every call repeatable by its request id; no grant (only the realm adds Quna) |
@@ -104,7 +114,7 @@ with another account or amount is `request_conflict`. The ledger cannot be updat
 - **Only the realm adds Quna.** Staff do it on the dashboard: a character's Overview tab shows the account's
   wallet, and admins add or take Quna there (`GET`/`POST /api/admin/accounts/{id}/quna`, reason `staff`, request
   `staff:<id>`, the admin and the note in the ledger's details). The realm link has no grant, so a world server
-  (even a compromised one with a valid token) cannot mint Quna; a refund only gives back a spend of the same amount.
+  (even a compromised one with a valid token) cannot mint Quna; a refund only gives back a purchase (reason `purchase`, not a staff deduction) of the same amount, once.
 - **A world server** has no Quna in its database. It spends and refunds over the realm link
   (`LinkedQunaWallet`, the realm socket while it is open, HTTP otherwise; the realm records the calling world).
   A purchase takes the Quna first, then runs its own transaction (items, limits, `game.shop_orders`); when that

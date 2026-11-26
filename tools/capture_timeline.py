@@ -17,6 +17,18 @@ envelopes and writes, next to the capture (``timeline-<port>/``):
   conflicting retransmission bytes, a gap and the bytes after it, trailing partial frame).
 - ``large/``: bodies above the hex limit, ``<i>-<op>.bin``.
 
+Capture markers (AVION2, https://avion2.app: its marker key: the moment, a picture and a note on what was just done)
+are read from ``--markers <file>``, or from ``<capture stem>-markers.jsonl`` beside the capture
+when there is one (``session-…-markers.jsonl`` for ``session-….pcap``). Each marker,
+{utc_ms, n, note, screenshot}, becomes its own timeline line at its time:
+{t, ms, marker, note, screenshot, text: "== MARKER n: note (screenshot) =="} (no ``i``, ``op``);
+``--grep`` prints the marker lines between the messages it shows. The marker time must come from
+the clock that stamped the packets (AVION2's own recordings do; a pcap from another machine
+needs its clock offset).
+
+Reads PCAPNG and classic PCAP (microsecond or nanosecond), so AVION2's ``session-….pcap``
+needs no conversion.
+
 Names come from tools/data/opcode-names.json (the names the server sources use, from the usmap
 by catalogue position or observed) and tools/protocol_knowledge.py; unnamed opcodes stay bare.
 Wi-Fi link frames (multi-layer captures, linktype 105) are decapsulated when unprotected. The
@@ -24,6 +36,7 @@ raw bodies belong under ignored research/local; this tool prints hex only with -
 """
 import argparse
 from array import array
+import struct
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 import json
@@ -79,11 +92,75 @@ def tcp_segment(frame, linktype):
     return capture.tcp_packet(frame[size + 8:], 101)
 
 
+def packets(path):
+    """capture.pcapng_packets, or the packets of a classic PCAP file (the format AVION2 records)."""
+    path = Path(path)
+    with path.open('rb') as stream:
+        magic = stream.read(4)
+    if magic == b'\x0a\x0d\x0d\x0a':
+        yield from capture.pcapng_packets(path)
+        return
+    formats = {b'\xd4\xc3\xb2\xa1': ('<', 1e-6), b'\xa1\xb2\xc3\xd4': ('>', 1e-6),
+               b'\x4d\x3c\xb2\xa1': ('<', 1e-9), b'\xa1\xb2\x3c\x4d': ('>', 1e-9)}
+    if magic not in formats:
+        raise ValueError(f'{path}: neither PCAPNG nor PCAP')
+    endian, resolution = formats[magic]
+    with path.open('rb') as stream:
+        header = stream.read(24)
+        if len(header) != 24:
+            raise ValueError('Truncated PCAP header')
+        linktype = struct.unpack_from(endian + 'I', header, 20)[0] & 0x0fffffff
+        while True:
+            record = stream.read(16)
+            if not record:
+                return
+            if len(record) != 16:
+                raise ValueError('Truncated PCAP record header')
+            seconds, fraction, captured, original = struct.unpack(endian + 'IIII', record)
+            if captured > 16 * 1024 * 1024:
+                raise ValueError('Invalid or excessively large PCAP record')
+            data = stream.read(captured)
+            if len(data) != captured:
+                raise ValueError('Truncated PCAP record')
+            yield {'timestamp': seconds + fraction * resolution, 'linktype': linktype,
+                   'captured_length': captured, 'original_length': original, 'data': data}
+
+
+def markers_beside(path):
+    """``<capture stem>-markers.jsonl`` next to the capture, or None."""
+    path = Path(path)
+    candidate = path.with_name(f'{path.stem}-markers.jsonl')
+    return candidate if candidate.is_file() else None
+
+
+def read_markers(path):
+    """[{utc_ms, n, note, screenshot}] from a markers file (one JSON object per line), in time order."""
+    markers = []
+    for number, line in enumerate(Path(path).read_text(encoding='utf-8-sig').splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            markers.append({'utc_ms': int(entry['utc_ms']), 'n': int(entry.get('n', len(markers) + 1)),
+                            'note': str(entry.get('note') or ''), 'screenshot': entry.get('screenshot') or None})
+        except (ValueError, KeyError, TypeError) as error:
+            raise ValueError(f'{path}:{number}: not a marker ({error})') from None
+    return sorted(markers, key=lambda m: (m['utc_ms'], m['n']))
+
+
+def marker_text(marker):
+    """== MARKER n: note (screenshot) ==, leaving out what the marker doesn't have."""
+    text = f"MARKER {marker['n']}" + (f": {marker['note']}" if marker['note'] else '')
+    if marker['screenshot']:
+        text += f" ({marker['screenshot']})"
+    return f'== {text} =='
+
+
 def collect_flows(path, port, max_stream_bytes):
     """{(client address, client port): {'s2c': [(position, payload, timestamp)], 'c2s': [...], 'syn': {...}}}"""
     flows = {}
     skipped = Counter()
-    for packet in capture.pcapng_packets(Path(path)):
+    for packet in packets(path):
         segment, reason = tcp_segment(packet['data'], packet['linktype'])
         if reason:
             skipped[reason] += 1
@@ -184,9 +261,14 @@ def expand(body, depth=0):
         raise ValueError(f'{len(decoded) - used} trailing bytes inside an envelope')
 
 
-def decode(path, port=13328, out=None, body_hex=4096, max_stream_bytes=512 * 1024 * 1024):
-    """Write the timeline and the counts; return the counts summary."""
+def decode(path, port=13328, out=None, body_hex=4096, max_stream_bytes=512 * 1024 * 1024, markers=None):
+    """Write the timeline and the counts; return the counts summary.
+
+    markers: a markers file; None = the one beside the capture if there is one; False = none.
+    """
     path = Path(path)
+    if markers is None:
+        markers = markers_beside(path)
     out = Path(out) if out else path.parent / f'timeline-{port}'
     out.mkdir(parents=True, exist_ok=True)
     (out / 'large').mkdir(exist_ok=True)
@@ -221,10 +303,28 @@ def decode(path, port=13328, out=None, body_hex=4096, max_stream_bytes=512 * 102
             diagnostics['opcodes'] = dict(sorted(counts.items()))
             report['directions'][direction] = diagnostics
         summary['flows'].append(report)
+    count = len(messages)
+    first = min((item[0] for item in messages), default=0)
+    last = max((item[0] for item in messages), default=0)
+    marker_list = read_markers(markers) if markers else []
+    outside = 0
+    for marker in marker_list:
+        timestamp = marker['utc_ms'] / 1000
+        outside += count > 0 and not first - 1 <= timestamp <= last + 1
+        # After the messages of the same instant: the key press reacts to what was on screen
+        messages.append((timestamp, len(messages), {'marker': marker['n'], 'note': marker['note'],
+                                                     'screenshot': marker['screenshot'], 'text': marker_text(marker)}))
     messages.sort(key=lambda item: (item[0], item[1]))
-    first = messages[0][0] if messages else 0
+    if marker_list:
+        summary['markers'] = {'file': str(markers), 'count': len(marker_list), 'outside_capture': outside}
+    index = -1
     with (out / 'timeline.jsonl').open('w', encoding='utf-8') as sink:
-        for index, (timestamp, _, record) in enumerate(messages):
+        for timestamp, _, record in messages:
+            if 'marker' in record:
+                record = {'t': iso(timestamp), 'ms': round((timestamp - first) * 1000), **record}
+                sink.write(json.dumps(record, ensure_ascii=False) + '\n')
+                continue
+            index += 1
             raw = record.pop('raw')
             record = {'i': index, 't': iso(timestamp), 'ms': round((timestamp - first) * 1000), **record}
             if len(raw) <= body_hex:
@@ -234,7 +334,7 @@ def decode(path, port=13328, out=None, body_hex=4096, max_stream_bytes=512 * 102
                 file.write_bytes(raw)
                 record['file'] = str(file.relative_to(out))
             sink.write(json.dumps(record) + '\n')
-    summary['messages'] = len(messages)
+    summary['messages'] = count
     (out / 'counts.json').write_text(json.dumps(summary, indent=2) + '\n', encoding='utf-8')
     return summary, out
 
@@ -244,11 +344,14 @@ def iso(timestamp):
 
 
 def grep(out, opcodes, direction=None, limit=200, width=64):
-    """Print matching timeline lines: ms, dir, op, name, len and the first bytes."""
+    """Print matching timeline lines: ms, dir, op, name, len and the first bytes; capture markers always."""
     wanted = {f'0x{int(op, 16):04x}' for op in opcodes} if opcodes else None
     shown = 0
     for line in (Path(out) / 'timeline.jsonl').open(encoding='utf-8'):
         record = json.loads(line)
+        if 'marker' in record:
+            print(f"{record['ms']:>9} {record['text']}")
+            continue
         if wanted and record['op'] not in wanted:
             continue
         if direction and record['dir'] != direction:
@@ -267,6 +370,9 @@ def main(argv=None):
     parser.add_argument('--out', type=Path, help='output directory (default: timeline-<port> next to the capture)')
     parser.add_argument('--body-hex', type=int, default=4096, help='bodies up to this size are inlined as hex')
     parser.add_argument('--max-stream-bytes', type=int, default=512 * 1024 * 1024)
+    parser.add_argument('--markers', type=Path,
+                        help='capture markers (JSONL) to merge in; default: <capture stem>-markers.jsonl beside the capture')
+    parser.add_argument('--no-markers', action='store_true', help='ignore a markers file beside the capture')
     parser.add_argument('--grep', help='comma-separated opcodes to print from the timeline (decodes first unless the directory exists)')
     parser.add_argument('--dir', choices=('s2c', 'c2s'))
     parser.add_argument('--limit', type=int, default=200)
@@ -274,8 +380,15 @@ def main(argv=None):
     if args.capture.is_dir():
         out = args.capture
     else:
-        summary, out = decode(args.capture, args.port, args.out, args.body_hex, args.max_stream_bytes)
+        if args.markers is not None and not args.markers.is_file():
+            parser.error(f'--markers: {args.markers} not found')
+        markers = False if args.no_markers else args.markers
+        summary, out = decode(args.capture, args.port, args.out, args.body_hex, args.max_stream_bytes, markers)
         print(f'{summary["messages"]} messages from {len(summary["flows"])} flow(s) -> {out}')
+        if 'markers' in summary:
+            m = summary['markers']
+            print(f"  {m['count']} marker(s) from {m['file']}"
+                  + (f"; {m['outside_capture']} outside the capture's time span (other clock?)" if m['outside_capture'] else ''))
         for flow in summary['flows']:
             for direction, d in flow['directions'].items():
                 print(f"  {flow['client']} {direction}: {d['messages']} messages, {d['bytes']} bytes, syn={d['syn_observed']}, "

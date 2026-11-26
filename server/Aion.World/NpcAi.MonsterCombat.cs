@@ -4,7 +4,7 @@ namespace Aion.World;
 
 /// <summary>
 /// Monster NPC combat (not player summons): cast-time 0x3809 then 0x3802, multi-hit 0x3804 from tools/data/world-npcs.json
-/// skill_hits, 0x3803/0x380e projectiles, 0x3806 end, 0xe005 groggy on bosses. Timing from official capture notes.
+/// skill_hits, 0x3803/0x380e projectiles, 0x3806 end (groggy guards: Stagger.cs). Timing from official capture notes.
 /// </summary>
 public sealed partial class NpcAi
 {
@@ -12,10 +12,8 @@ public sealed partial class NpcAi
     public const int MonsterEndAfterLastHitMs = 500;
     public const int MonsterNextSkillMinMs = 50;
     public const int MonsterNextSkillMaxMs = 150;
+    /// <summary>The flight of a monster projectile missing from projectiles.json (OURS); the others fly by <see cref="Projectiles.Flight"/>.</summary>
     public const int MonsterProjectileFlightMs = 1000;
-
-    /// <summary>Default groggy guard for bosses without an explicit ratio (OBSERVED 2701401: 50/50).</summary>
-    public const int DefaultGroggyMax = 50;
 
     IReadOnlyList<NpcSkillHitRow> HitsOf(int skillId, NpcSkill skill) =>
         data?.NpcSkillHits(skillId) is { Count: > 0 } rows ? rows : [new NpcSkillHitRow(skill.Effect, 0, 0)];
@@ -45,20 +43,33 @@ public sealed partial class NpcAi
         {
             var row = rows[i];
             var land = release + i * MonsterHitStaggerMs;
+            var flight = MonsterFlight(row.Projectile, target, victim);
             if (row.Projectile > 0)
             {
-                brain.Volley.Add(new(land, ShotKind.Fire, id, seq, victim.Key, i + 1, row.Projectile, MonsterProjectileFlightMs, 0, row.Effect));
-                brain.Volley.Add(new(land, ShotKind.Collision, id, seq, victim.Key, i + 1, row.Projectile, 0, 0, row.Effect));
+                // The fire at the hit time, the collision (destroyed at the victim) when it lands and the hit one tick later
+                // (OBSERVED by the A2Core fork: 616 of 664 projectile-skill hits follow the caster's 0x3803, the collision
+                // ~50 ms before the hit; see Projectiles).
+                brain.Volley.Add(new(land, ShotKind.Fire, id, seq, victim.Key, i + 1, row.Projectile, flight.Announced, 0, row.Effect));
+                brain.Volley.Add(new(land + flight.Announced, ShotKind.Collision, id, seq, victim.Key, i + 1, row.Projectile, 0, 0, row.Effect));
             }
-            brain.Volley.Add(new(land + (row.Projectile > 0 ? MonsterProjectileFlightMs : 0), ShotKind.Hit, id, seq, victim.Key, i + 1,
-                Damage: perHit, Effect: row.Effect, Groggy: row.Groggy));
-            last = Math.Max(last, land + (row.Projectile > 0 ? MonsterProjectileFlightMs : 0));
+            brain.Volley.Add(new(land + flight.Arrival, ShotKind.Hit, id, seq, victim.Key, i + 1,
+                Damage: perHit, Effect: row.Effect));
+            last = Math.Max(last, land + flight.Arrival);
         }
         brain.Volley.Add(new(last + MonsterEndAfterLastHitMs, ShotKind.End, id, seq, victim.Key, 0));
         brain.Volley.Sort((a, b) => a.DueMs.CompareTo(b.DueMs));
         brain.NextAttackMs = last + MonsterEndAfterLastHitMs + MonsterNextSkillMinMs + rng.Next(MonsterNextSkillMaxMs - MonsterNextSkillMinMs + 1);
         return replies;
     }
+
+    /// <summary>
+    /// A monster projectile's flight to <paramref name="victim"/>: by its SkillProjectile.dat type (<see cref="Projectiles.Flight"/>),
+    /// else <see cref="MonsterProjectileFlightMs"/> for both the 0x3803 and the hit; (0, 0) for a row without a projectile.
+    /// </summary>
+    (int Announced, int Arrival) MonsterFlight(int projectile, Target caster, Target victim) =>
+        projectile <= 0 ? (0, 0)
+        : Projectiles.Flight(projectile, Math.Sqrt(caster.Position.DistanceSquared(victim.Position)), rng)
+            ?? (MonsterProjectileFlightMs, MonsterProjectileFlightMs);
 
     List<byte[]> MonsterVolley(Target target, Brain brain, long now, Func<int, List<byte[]>>? hitPlayer)
     {
@@ -104,32 +115,12 @@ public sealed partial class NpcAi
             var defense = brain.VictimIsNpc && current.GetValueOrDefault(victimKey) is { } prey ? prey.Defense : DefenseOf?.Invoke(victimKey) ?? 0;
             var damage = Math.Max(1, (int)Math.Round(shot.Damage * 1000.0 / (1000 + Math.Max(0, defense))));
             LastAttacker = target.Key;
+            LastHitSkill = shot.SkillId;
+            LastHitSeq = shot.Seq;
+            LastAttackerAt = target.Position;
             replies.Add(GamePackets.NpcSkillHit(victimKey, target.Key, shot.SkillId, shot.ActionSeq, shot.Effect, damage, effectSeq: shot.Seq));
             if (hitPlayer is not null) replies.AddRange(hitPlayer(damage));
-            if (shot.Groggy > 0 && target.GroggyMax > 0)
-            {
-                target.GroggyEnergy = Math.Max(0, target.GroggyEnergy - shot.Groggy);
-                replies.Add(GamePackets.UpdateGroggyInfo(target.Key, target.GroggyMax, target.GroggyEnergy, target.GroggyEnergy <= 0));
-            }
         }
         return replies;
-    }
-
-    internal static void InitGroggy(Target target)
-    {
-        if (target.GroggyMax > 0) return;
-        if (target.SubType is "HeroMonster" or "LegendMonster" || target.Grade >= 5)
-        {
-            target.GroggyMax = DefaultGroggyMax;
-            target.GroggyEnergy = DefaultGroggyMax;
-        }
-    }
-
-    internal static byte[]? GroggyAppear(Target target) =>
-        target.GroggyMax > 0 ? GamePackets.UpdateGroggyInfo(target.Key, target.GroggyMax, target.GroggyEnergy) : null;
-
-    internal static void ResetGroggy(Target target)
-    {
-        if (target.GroggyMax > 0) target.GroggyEnergy = target.GroggyMax;
     }
 }

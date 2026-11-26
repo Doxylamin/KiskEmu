@@ -154,7 +154,7 @@ public sealed class SkillChainTests
         await session.HandleAsync(set, Now);
 
         var update = new PacketWriter().U16(0x5607).U8(3).U8(2).I32(11_040_000).ToArray();
-        var rs = (await session.HandleAsync(update, Now)).First();
+        var rs = (await session.HandleAsync(update, Now)).First(p => (p[0] | p[1] << 8) == 0x5608);
         Assert.Equal(0x08, rs[0]);
         Assert.Equal(0x56, rs[1]);
         Assert.Equal(0, BitConverter.ToUInt16(rs, 2));
@@ -171,7 +171,7 @@ public sealed class SkillChainTests
             .U8(4).I32(11_020_000).I32(11_030_000).I32(11_040_000).I32(0).U8(0).I32(0).U8(0).ToArray();
         await session.HandleAsync(set, Now);
         var update = new PacketWriter().U16(0x5607).U8(3).U8(2).I32(11_030_000).ToArray();
-        var rs = (await session.HandleAsync(update, Now)).First();
+        var rs = (await session.HandleAsync(update, Now)).First(p => (p[0] | p[1] << 8) == 0x5608);
         Assert.Equal(1, rs[10]); // is_swap
         Assert.Equal(11_030_000, store.QuickSlots[3].ContextSkills![2]);
         Assert.Equal(11_040_000, store.QuickSlots[3].ContextSkills![1]);

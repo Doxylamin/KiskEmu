@@ -125,7 +125,8 @@ static partial class MapEventScenarioHelpers
         var t = now + 60_000;
         if (run.StepOrder == 1) t = await BreakStarterLayer2TowersAsync(session, t);
         await PlayMapEventScriptAsync(session, run, t, maxSeconds: 300, capture);
-        t += 301_000;
+        // The script's kills can run past t + 300 s: the exit is scheduled from the session's clock, so tick after it.
+        t = HarnessNow(session, t + 301_000);
         // DungeonClear, then the closing PCTeleport to the recovery room (or the instance exit).
         for (var i = 0; i < 20 && session.MapId == layerMap; i++)
         {

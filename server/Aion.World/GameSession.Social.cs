@@ -238,26 +238,45 @@ public sealed partial class GameSession
     async Task<bool> SocialBlockedWithAsync(Guid other, CancellationToken ct) =>
         CharacterId is { } me && Store is { } store && await StoredValue(() => store.SocialBlockedAsync(me, other, ct)) == true;
 
+    /// <summary>PartyInvite_RS result for an invitee already in a party (OBSERVED 2026-11-15 `0792 3419 …`).</summary>
+    public const int PartyInviteeInParty = 0x1934;
+
     async Task<List<byte[]>> PartyInviteAsync(byte[] plain, long now, CancellationToken ct)
     {
         if (SocialRequests.ParsePartyInvite(plain) is not { } target) return [];
         byte[] Fail() => SocialPackets.PartyInviteReply(Failed, ServerId, target.Name);
         if (Social is not { } s || worldPlayer is null || World?.FindOnline(CharacterNames.Stored(target.Name)) is not { } invitee || invitee == worldPlayer) return [Fail()];
         if (invitee.Session.CharacterId is { } other && await SocialBlockedWithAsync(other, ct)) return [Fail()];
-        if (s.PartyOf(invitee) is not null) return [Fail()];
         var replies = new List<byte[]>();
         var party = s.PartyOf(worldPlayer);
+        Party NewParty()
+        {
+            var created = new Party(s.NextId(), worldPlayer);
+            s.Parties[created.Key] = created;
+            return created;
+        }
+        if (s.PartyOf(invitee) is not null)
+        {
+            // OBSERVED 2026-11-15: inviting someone already in a party answers PartyInvite_RS 0x1934 first, and the inviter's
+            // party is created all the same (PartyInfo_NT Create follows).
+            replies.Add(SocialPackets.PartyInviteReply(PartyInviteeInParty, ServerId, invitee.Name));
+            if (party is null) replies.Add(SocialPackets.PartyInfo(Info(NewParty()), PartyUpdateReason.Create));
+            return replies;
+        }
         if (party is null)
         {
-            party = new Party(s.NextId(), worldPlayer);
-            s.Parties[party.Key] = party;
+            party = NewParty();
             replies.Add(SocialPackets.PartyInfo(Info(party), PartyUpdateReason.Create));
         }
         if (party.Leader != worldPlayer || party.Members.Count >= Party.Limit) return [Fail()];
-        var expires = now + 30_000;
+        // OBSERVED official 2026-11-12: PartyInfo_NT (Create) first, then PartyInvite_RS, then PartyInviteStart_NT about the
+        // invitee; the invite runs 20 s.
+        var expires = now + 20_000;
         s.Invites[invitee.Key] = new PartyInvite(party.Key, playerKey, expires);
         invitee.Send(SocialPackets.PartyInviteNotice(party.Key, DbId, Invitation(), expires));
-        replies.Insert(0, SocialPackets.PartyInviteReply(0, ServerId, invitee.Name));
+        var them = invitee.Session;
+        replies.Add(SocialPackets.PartyInviteReply(0, ServerId, invitee.Name));
+        replies.Add(SocialPackets.PartyInviteStart(ServerId, "", them.DbId, invitee.Key, them.Profile()?.PcId ?? 1, them.Level, 0, invitee.Name, expires));
         return replies;
     }
 
@@ -284,7 +303,8 @@ public sealed partial class GameSession
             return [SocialPackets.PartyInviteResponseReply(Failed)];
         var inviter = World!.Online.GetValueOrDefault(invite.InviterKey);
         var accepted = answer.Response == PartyInviteAnswer.Accept && s.PartyOf(worldPlayer) is null && party.Members.Count < Party.Limit;
-        inviter?.Send(SocialPackets.PartyInviteResponseNotice(DbId, ServerId, StoredName, accepted ? PartyInviteAnswer.Accept : answer.Response));
+        // On an accept the inviter gets only PartyAddMember_NT (OBSERVED official 2026-11-12); a refusal is told.
+        if (!accepted) inviter?.Send(SocialPackets.PartyInviteResponseNotice(DbId, ServerId, StoredName, answer.Response));
         if (!accepted)
         {
             // A party of one left by a refusal ends.
@@ -309,16 +329,16 @@ public sealed partial class GameSession
     }
 
     /// <summary>
-    /// Leaving (also on disconnect): the leaver gets PartyDisband_NT (safer than the unconfirmed
-    /// PartyLeave_NT), the others the updated PartyInfo_NT; a new leader if the leader left; a party
-    /// of one ends.
+    /// Leaving (also on disconnect): the leaver gets PartyDisband_NT before PartyLeave_RS, the others the updated PartyInfo_NT;
+    /// a new leader if the leader left. A party of one stays (OBSERVED official 2026-11-12: after the only other member left,
+    /// the leader got PartyInfo_NT reason 3 with one member; leaving it then ended it).
     /// </summary>
     List<byte[]> PartyLeave(PartyUpdateReason reason, List<byte[]> replies)
     {
         if (Social is not { } s || worldPlayer is null || s.PartyOf(worldPlayer) is not { } party) return replies.Count > 0 ? [SocialPackets.PartyLeaveReply(Failed)] : [];
         party.Members.Remove(worldPlayer);
-        replies.Add(SocialPackets.PartyDisband(reason));
-        if (party.Members.Count <= 1)
+        replies.Insert(0, SocialPackets.PartyDisband(reason));
+        if (party.Members.Count == 0)
         {
             DisbandParty(party, reason);
             return replies;

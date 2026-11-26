@@ -108,8 +108,20 @@ public sealed partial class GameSession
         byte[] Reply(int result) => PacketWriter.Opcode(TitleEquipRs).U16(result).U8((byte)category).I32(titleId).ToArray();
         if (category is < 1 or > 3 || titleId != 0 && (!titles.Contains(titleId) || Titles.Of(titleId)?.Category != category)) return [Reply(1)];
         if (!await SaveTitleAsync(category, titleId, ct)) return [Reply(1)];
-        return [Reply(0), PacketWriter.Opcode(TitleEquipChangeNt).U8((byte)category).I32(titleId).ToArray(), .. RefreshStats()];
+        // Official order (OBSERVED 2026-11-15, equip and clear): 0x5681 `03 <title>`, 0xe294 `01 01 03 <title>`, 0x5680
+        // `0000 03 <title>`, then the stats.
+        return [PacketWriter.Opcode(TitleEquipChangeNt).U8((byte)category).I32(titleId).ToArray(), PresetTitleUpdate(category, titleId),
+            Reply(0), .. RefreshStats()];
     }
+
+    /// <summary>
+    /// PresetTitleUpdate_NT 0xe294 (usmap name by the 0xe2 run's offset) after a title equip: OBSERVED 2026-11-15 as
+    /// `01 01 03 <title i32>`. CANDIDATE reading: preset 1 (the one in use; presets are not modelled), a map of one changed
+    /// slot {ETitleEquipCategory u8, title i32}.
+    /// </summary>
+    public const ushort PresetTitleUpdateNt = 0xe294;
+    static byte[] PresetTitleUpdate(int category, int titleId) =>
+        PacketWriter.Opcode(PresetTitleUpdateNt).U8(1).Varint(1).U8((byte)category).I32(titleId).ToArray();
 
     /// <summary>0x567a TitleChange_RQ {title i32}: the shown title (0 none) -> 0x567b {result u16, title}; 0x567c {key, title} to those nearby.</summary>
     async Task<List<byte[]>> TitleChangeAsync(byte[] plain, CancellationToken ct)
@@ -121,7 +133,8 @@ public sealed partial class GameSession
         if (!await SaveTitleAsync(0, titleId, ct)) return [Reply(1)];
         var shown = PacketWriter.Opcode(TitleChangeNt).Varint(playerKey).I32(titleId).ToArray();
         worldPlayer?.Map?.Broadcast(worldPlayer, [shown]);
-        return [Reply(0), shown];
+        // Official order (OBSERVED 2026-11-15): the notice 0x567c `<key> <title>` before the reply 0x567b `0000 <title>`.
+        return [shown, Reply(0)];
     }
 
     async Task<bool> SaveTitleAsync(int category, int titleId, CancellationToken ct)

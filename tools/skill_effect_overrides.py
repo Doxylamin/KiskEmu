@@ -64,9 +64,12 @@ ABNORMALS = {
     170900001: ([['Hot_Ratio', '1000', '1500', '1500', '0']], 'Light of Regeneration (Cleric, 30 s): a heal over time, 15 % of the maximum in total.'),
     181200001: ([['Hot_Ratio', '1000', '2000', '2000', '0']], 'Recuperation (Chanter, 8 s): a heal over time, 20 % of the maximum in total.'),
     153100001: ([['StatChange', 'MPUseDecrease', '3000']], 'Wish of Concentration (Sorcerer, 10 s): 30 % cheaper skills.'),
+    181600011: ([['StatChange', 'MoveSpeed', '1370']], 'Sprint Mantra pulse (Chanter, 2.4 s, refreshed every second while the toggle is on): '
+               'OBSERVED 2026-11-15 i=286222 0x364a stat 205 = 1370 with it alone; the row type is CANDIDATE (SkillAbnormalEffect.dat not exported).'),
     100200001: ([['ImmuneAbnormal', '0', '0', '0', '0', '0', 'Stun,Hold,Sleep,Frozen,Knockdown,Aerial,Silence,Slow,Snare,Taunt', 'None']],
                 'Defiance (every class, 5 s): immune to crowd control.'),
-    100000401: ([['Stagger']], 'Stagger break state (4 s): mastery scattershot/rampage skills require HasAbnormalEffectType Stagger on the target.'),
+    10000002: ([['Stagger']], 'The groggy abnormal of a broken groggy guard (Stagger.cs; OBSERVED id and GroggyTime duration in the fork recordings): '
+              'mastery scattershot/rampage skills require HasAbnormalEffectType Stagger on the target. CANDIDATE type.'),
 }
 
 SKILLS = {

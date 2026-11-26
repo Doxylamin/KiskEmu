@@ -1,7 +1,9 @@
 # CI on forge.msit.systems (Forgejo Actions, Linux runner).
 # - checks: the checks CONTRIBUTING.md asks for before a change (Aion.Native.Checks, the Python tests).
+# - world: the Host and World xUnit suites (Elyos quests, Asmodian quests, everything else).
+# - persistence: tools/check_persistence.py against a throwaway PostgreSQL 18 cluster.
 # - launcher: the launcher checks, then KiskLauncher.exe, cross-built for win-x64 on Linux, as a workflow artifact.
-# Releases stay on GitHub (.github/workflows/kisklauncher.yml, tag launcher-v<version>). Forgejo reads this folder
+# Releases: a tag launcher-v<version> makes one here (launcher-release.yml) and on GitHub (.github/workflows/kisklauncher.yml). Forgejo reads this folder
 # instead of .github/workflows, so the GitHub workflow does not run here.
 name: CI
 
@@ -43,6 +45,109 @@ jobs:
 
       - name: Python tests
         run: python3 -m unittest discover -s tests -q
+
+  # The xUnit suites, in three jobs that run side by side (the runner stops a job after an hour): the Elyos and the
+  # Asmodian quest playthroughs (each plays its race's hero campaign once and runs the campaign tests on copies of it),
+  # and everything else with the Host suite. The cap-quest parity playthrough (All_cap_quests_attempted_by_category,
+  # about 27 minutes per race) has its own job, playthrough-parity, so the rest reports back without waiting for it.
+  # A hang fails the run with a dump after 45 minutes. Category=LongPlaythrough
+  # (every side, region and ascension quest at cap) stays out: xunit.runner.json's trait filter needs xUnit v3, so the
+  # filters here exclude it.
+  world:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: elyos
+            filter: >-
+              (FullyQualifiedName~.CampaignPlaythroughScenarioTests.|FullyQualifiedName~.PlaythroughCampaignTests.|FullyQualifiedName~.CampaignPlaythroughParityTests.|FullyQualifiedName~.PlaythroughSideQuestTests.)&DisplayName~race: 1&Category!=LongPlaythrough&FullyQualifiedName!~.All_cap_quests_attempted_by_category
+          - part: asmodian
+            filter: >-
+              (((FullyQualifiedName~.CampaignPlaythroughScenarioTests.|FullyQualifiedName~.PlaythroughCampaignTests.|FullyQualifiedName~.CampaignPlaythroughParityTests.|FullyQualifiedName~.PlaythroughSideQuestTests.)&DisplayName~race: 2)|FullyQualifiedName~.PlaythroughAsmodianCampaignTests.)&Category!=LongPlaythrough&FullyQualifiedName!~.All_cap_quests_attempted_by_category
+          - part: other
+            host: true
+            filter: >-
+              FullyQualifiedName!~.CampaignPlaythroughScenarioTests.&FullyQualifiedName!~.PlaythroughCampaignTests.&FullyQualifiedName!~.CampaignPlaythroughParityTests.&FullyQualifiedName!~.PlaythroughSideQuestTests.&FullyQualifiedName!~.PlaythroughAsmodianCampaignTests.&Category!=LongPlaythrough
+    name: world (${{ matrix.part }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Host tests
+        if: ${{ matrix.host }}
+        run: dotnet test tests/Aion.Host.Tests --logger "console;verbosity=minimal"
+
+      - name: World tests
+        run: dotnet test tests/Aion.World.Tests --filter "${{ matrix.filter }}" --blame-hang-timeout 45m --logger "console;verbosity=minimal"
+
+  # The cap-quest parity playthrough, one job per race (each about 27 minutes on its own, 40 beside other jobs).
+  playthrough-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        race: [1, 2]
+    name: playthrough parity (race ${{ matrix.race }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cap-quest parity playthrough
+        # A block scalar: the filter's "race: " would otherwise read as a YAML mapping.
+        run: >-
+          dotnet test tests/Aion.World.Tests --filter "FullyQualifiedName~.All_cap_quests_attempted_by_category&DisplayName~race: ${{ matrix.race }}"
+          --blame-hang-timeout 45m --logger "console;verbosity=minimal"
+
+  # tools/check_persistence.py: the repository checks against a disposable PostgreSQL 18 database (the version the
+  # servers run). initdb refuses root, so the cluster belongs to an unprivileged user; it lives only in this job.
+  persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AION_PG_HOME: /var/tmp/aion-pg
+      AION_PG_BIN: /usr/lib/postgresql/18/bin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: PostgreSQL 18
+        run: |
+          set -e
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl
+          install -d /usr/share/postgresql-common/pgdg /etc/postgresql-common
+          curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            > /etc/apt/sources.list.d/pgdg.list
+          # No distribution cluster: tools/postgres_dev.py makes its own.
+          echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.conf
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends postgresql-18
+          useradd --system --create-home aionci
+          install -d -o aionci -m 700 "$AION_PG_HOME"
+
+      - name: Build the checks
+        run: dotnet build tests/Aion.Persistence.Checks
+
+      - name: Persistence checks
+        run: |
+          chmod -R a+rX "$GITHUB_WORKSPACE"
+          runuser -u aionci -- env AION_PG_HOME="$AION_PG_HOME" AION_PG_BIN="$AION_PG_BIN" PATH="$PATH" DOTNET_ROOT="${DOTNET_ROOT:-}" \
+            DOTNET_CLI_HOME=/var/tmp/aionci-dotnet DOTNET_NOLOGO=1 PYTHONDONTWRITEBYTECODE=1 \
+            sh -c 'python3 tools/postgres_dev.py setup && python3 tools/check_persistence.py'
 
   launcher:
     runs-on: ubuntu-latest

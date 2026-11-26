@@ -5,9 +5,19 @@ affiliated with, endorsed by or connected to NCSoft Corporation. AION and AION2 
 they are named only to say which client KiskEmu works with.
 
 KiskEmu started as a fork of A2Core (https://github.com/Addiboii/A2Core) and keeps its history and authorship;
-contributions merged from other A2Core forks keep theirs too. KiskLauncher renames an older launcher's data folder
+contributions merged from other A2Core forks keep theirs too. Code ported from a fork rather than merged is credited
+here: the per-IP connection cap of the native ports (`server/Aion.Host/Native/ConnectionGuard.cs`) is adapted from
+zaraza87's A2Core fork (AGPL-3.0). KiskLauncher renames an older launcher's data folder
 `A2CorePrivate` to `KiskPrivate` at its first start, and removes client patch paks under the old name
 `z_A2Core_Patch-Windows_P` (now `z_KiskEmu_Patch-Windows_P`).
+
+The two-step sign-in hardening (a code is accepted once, constant-time code checks, the password before an
+authenticator is set up, a key of its own for stored secrets, recovery codes accepted in any case and with dashes or
+spaces, the RFC 6238 test vectors) is ported from Addiboii's A2Core (https://github.com/Addiboii/A2Core, commits
+26306c5, add7287, e5e8d2b and a5d4bdc).
+
+Re-sending the Power Shard slot after each map load and finding a room request's dungeon id one byte later are ported
+from Artezianec's A2Core-ChanAge fork (https://github.com/Artezianec/A2Core-ChanAge, commit 9962b83).
 
 The code is original work under the AGPL-3.0 (see LICENSE), with third-party open-source code under its own license:
 CUE4Parse (Apache-2.0, `third_party/CUE4Parse`) and the launcher's NuGet packages SteamKit2 (LGPL-2.1) and QRCoder

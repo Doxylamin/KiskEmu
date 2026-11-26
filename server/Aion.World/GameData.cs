@@ -84,8 +84,14 @@ public sealed record SkillDefinition(
     [property: JsonPropertyName("skill_cond_source")] string? SkillCondSource = null,
     [property: JsonPropertyName("skill_cond_grant")] SkillCondGrant? SkillCondGrant = null,
     [property: JsonPropertyName("skill_cond_grant_source")] string? SkillCondGrantSource = null,
-    [property: JsonPropertyName("stagger_gauge")] int StaggerGauge = 0,
-    [property: JsonPropertyName("stagger_gauge_source")] string? StaggerGaugeSource = null);
+    // Skill.dat ChargeId: the SkillCharge.dat row of a charged skill (GameSession.SkillCharging.cs), 0 for an ordinary cast.
+    [property: JsonPropertyName("charge")] int Charge = 0);
+
+/// <summary>A SkillCharge.dat row (client 3533): ChargeMinTime, bMovableInCharge, steps [ChargeTime ms, ChargeSkillId].</summary>
+public sealed record ChargeRow(
+    [property: JsonPropertyName("min_ms")] int MinMs,
+    [property: JsonPropertyName("movable")] bool Movable,
+    [property: JsonPropertyName("steps")] int[][] Steps);
 
 public sealed record WeaponStats(
     [property: JsonPropertyName("min")] int Min,
@@ -135,7 +141,8 @@ public sealed record NpcSpawn(
     [property: JsonPropertyName("skills")] int[]? Skills = null,
     [property: JsonPropertyName("height")] int Height = 0,
     [property: JsonPropertyName("no_rotation")] bool NoRotation = false,
-    uint UniqueKey = 0, int SocialAction = 0, NpcRoute? Route = null, string SubType = "NormalMonster", int Grade = 3, bool Air = false, int HpMax = 0);
+    uint UniqueKey = 0, int SocialAction = 0, NpcRoute? Route = null, string SubType = "NormalMonster", int Grade = 3, bool Air = false, int HpMax = 0,
+    bool Untouchable = false, bool HitCount = false);
 
 /// <summary>
 /// A MapData waypoint set an NPC walks (tools/world_npcs.py routes): points, Circular / TwoWay / OneWay, walk or run.
@@ -164,7 +171,10 @@ public sealed record NpcSkill(
     [property: JsonPropertyName("cast")] int Cast,
     [property: JsonPropertyName("effect")] int Effect,
     [property: JsonPropertyName("damage_min")] int DamageMin,
-    [property: JsonPropertyName("damage_max")] int DamageMax);
+    [property: JsonPropertyName("damage_max")] int DamageMax,
+    // SkillEffect Abnormal / Abnormal_True rows: [abnormal id, duration min ms, max ms, level, chance of 10000] (tools/world_npcs.py
+    // abnormal_row); put on the player the skill hits.
+    [property: JsonPropertyName("abnormals")] int[][]? Abnormals = null);
 
 /// <summary>One timed damage row of an NPC skill (tools/world_npcs.py skill_hits catalog).</summary>
 public sealed record NpcSkillHitRow(
@@ -189,7 +199,8 @@ public sealed class GameData
         [property: JsonPropertyName("skills")] Dictionary<string, SkillDefinition> Skills,
         [property: JsonPropertyName("skill_customizing")] Dictionary<string, int[][]>? SkillCustomizing = null,
         [property: JsonPropertyName("e_combo_stacks")] Dictionary<string, int[]>? EComboStacks = null,
-        [property: JsonPropertyName("bar_context_by_default_skill")] Dictionary<string, int[]>? BarContextByDefaultSkill = null);
+        [property: JsonPropertyName("bar_context_by_default_skill")] Dictionary<string, int[]>? BarContextByDefaultSkill = null,
+        [property: JsonPropertyName("charges")] Dictionary<string, ChargeRow>? Charges = null);
 
     /// <summary>An NpcData template of the compact world-npcs.json (every field of a spawn but where it stands).</summary>
     sealed record NpcTemplate(
@@ -208,14 +219,34 @@ public sealed class GameData
         [property: JsonPropertyName("sub_type")] string SubType = "NormalMonster",
         [property: JsonPropertyName("grade")] int Grade = 3,
         [property: JsonPropertyName("air")] bool Air = false,
-        [property: JsonPropertyName("hp_max")] int HpMax = 0);
+        [property: JsonPropertyName("hp_max")] int HpMax = 0,
+        // NpcData bCanBeAttacked false or NpcTargetAble not Able (tools/world_npcs.py untouchable).
+        [property: JsonPropertyName("untouchable")] bool Untouchable = false,
+        // NpcData bHitCountBased (tools/world_npcs.py hit_count): every hit takes 1 HP; hp_max is the hit count.
+        [property: JsonPropertyName("hit_count")] bool HitCount = false);
 
     /// <summary>world-npcs.json: templates by NpcData ID and spawns [name, npc_id, x, y, z, yaw] per map (tools/world_npcs.py).</summary>
     sealed record NpcFile([property: JsonPropertyName("maps")] Dictionary<string, JsonElement[][]> Maps,
         [property: JsonPropertyName("templates")] Dictionary<string, NpcTemplate> Templates,
         [property: JsonPropertyName("npc_skills")] Dictionary<string, NpcSkill>? Skills = null,
         [property: JsonPropertyName("skill_hits")] Dictionary<string, NpcSkillHitRow[]>? SkillHits = null,
-        [property: JsonPropertyName("routes")] Dictionary<string, NpcRoute[]>? Routes = null);
+        [property: JsonPropertyName("routes")] Dictionary<string, NpcRoute[]>? Routes = null,
+        [property: JsonPropertyName("npc_abnormals")] Dictionary<string, NpcAbnormalFile>? Abnormals = null);
+
+    /// <summary>world-npcs.json npc_abnormals: SkillAbnormal GroupId and SkillAbnormalEffect rows [id, type, values...] (tools/world_npcs.py).</summary>
+    sealed record NpcAbnormalFile([property: JsonPropertyName("group")] int Group, [property: JsonPropertyName("effects")] JsonElement[][] Effects);
+
+    Dictionary<int, AbnormalInfo>? npcAbnormals;
+
+    /// <summary>An abnormal an NPC skill puts on players (world-npcs.json npc_abnormals), in the shape of the item buffs' rows.</summary>
+    public AbnormalInfo? NpcAbnormal(int abnormalId)
+    {
+        npcAbnormals ??= (npcs.Abnormals ?? []).ToDictionary(
+            a => int.Parse(a.Key, System.Globalization.CultureInfo.InvariantCulture),
+            a => new AbnormalInfo(a.Value.Group, a.Value.Effects.Select(e => (e[0].GetInt32(), e[1].GetString()!,
+                (IReadOnlyList<string>)e.Skip(2).Select(v => v.GetString()!).ToList())).ToList()));
+        return npcAbnormals.GetValueOrDefault(abnormalId);
+    }
 
     readonly Dictionary<string, StarterProfile> profiles;
     readonly ClassFile classes;
@@ -359,16 +390,25 @@ public sealed class GameData
         return points.Select(kv => ((string, Vector3d)?)(kv.Key, new Vector3d(kv.Value[0], kv.Value[1], kv.Value[2]))).FirstOrDefault();
     }
 
-    /// <summary>The map's TeleportData *_Respawn point (death respawn), preferring the race's Light/Dark name when present.</summary>
-    public Vector3d? MapRespawn(int mapId, int race)
+    /// <summary>
+    /// The map's TeleportData *_Respawn point for a death respawn: the race's Light/Dark points when the map names any, and
+    /// of those the one nearest to <paramref name="near"/> (where the character fell). CANDIDATE: the official open-world
+    /// respawn target is not recorded (#31). The field maps' only *_Respawn points are the Daeva Hunter spots, so the
+    /// nearest one beats the old pick, the first by name, which sent every death on a field map to the same far spot.
+    /// </summary>
+    public (string Name, Vector3d Position)? MapRespawn(int mapId, int race, Vector3d? near = null)
     {
-        var points = MapPoints(mapId);
         var raceWord = race == 2 ? "Dark" : "Light";
-        var respawns = points.Where(p => p.Key.EndsWith("_Respawn", StringComparison.OrdinalIgnoreCase)).ToList();
+        var respawns = MapPoints(mapId)
+            .Where(p => p.Key.EndsWith("_Respawn", StringComparison.OrdinalIgnoreCase))
+            .Select(p => (Name: p.Key, Position: new Vector3d(p.Value[0], p.Value[1], p.Value[2])))
+            .ToList();
         if (respawns.Count == 0) return null;
-        foreach (var (name, p) in respawns.OrderByDescending(n => n.Key.Contains(raceWord, StringComparison.OrdinalIgnoreCase)).ThenBy(n => n.Key, StringComparer.Ordinal))
-            return new Vector3d(p[0], p[1], p[2]);
-        return null;
+        var raced = respawns.Where(r => r.Name.Contains(raceWord, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (raced.Count > 0) respawns = raced;
+        return near is { } at
+            ? respawns.OrderBy(r => r.Position.DistanceSquared(at)).ThenBy(r => r.Name, StringComparer.Ordinal).First()
+            : respawns.OrderBy(r => r.Name, StringComparer.Ordinal).First();
     }
 
     /// <summary>Named destinations: MapData teleport points and the dev menu's "teleport map x y z" buttons, as (name, map, position).</summary>
@@ -629,7 +669,58 @@ public sealed class GameData
     List<int> DirectChainNext(int skillId) =>
         Skill(skillId)?.ChainNext is { Length: > 0 } next ? [.. next] : [];
 
-    public SkillDefinition? Skill(int skillId) => classes.Skills.GetValueOrDefault(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    /// <summary>The SkillCharge.dat row of a charge id (Skill.dat ChargeId), else null.</summary>
+    public ChargeRow? Charge(int chargeId) =>
+        classes.Charges?.GetValueOrDefault(chargeId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    public SkillDefinition? Skill(int skillId)
+    {
+        var key = skillId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        // Then a specialisation child class-skills.json does not carry (specialized-skills.json, the same Skill.dat reading).
+        return classes.Skills.GetValueOrDefault(key) ?? stigma.Value.Skills?.GetValueOrDefault(key) ?? SpecializedSkillTables.Embedded.Skill(skillId);
+    }
+
+    /// <summary>tools/data/stigma-skills.json (tools/stigma_data.py): SkillAcquireData Stigma rows, Exp.dat BonusStigmaPoint, SpecializedSkillParts.</summary>
+    sealed record StigmaFile(
+        [property: JsonPropertyName("classes")] Dictionary<string, int[]> Classes,
+        [property: JsonPropertyName("levels")] Dictionary<string, int[][]> Levels,
+        [property: JsonPropertyName("points")] Dictionary<string, int> Points,
+        [property: JsonPropertyName("parts")] Dictionary<string, int[][]> Parts,
+        [property: JsonPropertyName("skills")] Dictionary<string, SkillDefinition>? Skills = null);
+
+    static readonly Lazy<StigmaFile> stigma = new(() => Load<StigmaFile>("stigma-skills.json"));
+
+    static readonly Lazy<Dictionary<int, int>> stigmaPartParents = new(() =>
+        stigma.Value.Parts.SelectMany(p => p.Value.Select(row => (Child: row[0], Parent: int.Parse(p.Key, System.Globalization.CultureInfo.InvariantCulture))))
+            .ToDictionary(x => x.Child, x => x.Parent));
+
+    /// <summary>A stigma skill (SkillAcquireData AcquireType Stigma): its levels are bought with stigma points.</summary>
+    public bool IsStigmaSkill(int skillId) => stigma.Value.Levels.ContainsKey(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>The class's stigma skills (empty for an unknown class).</summary>
+    public IReadOnlyList<int> StigmaSkills(string className) => stigma.Value.Classes.GetValueOrDefault(className) ?? [];
+
+    /// <summary>A stigma level: its stigma point cost, character level and ascension grade (0 = none); null when not buyable.</summary>
+    public (int Cost, int NeedLevel, int NeedAscension)? StigmaLevelCost(int skillId, int level) =>
+        stigma.Value.Levels.GetValueOrDefault(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture))?.FirstOrDefault(r => r.Length >= 4 && r[0] == level) is { } row
+            ? (row[1], row[2], row[3]) : null;
+
+    /// <summary>The stigma points a character of the level has from levelling (Exp.dat BonusStigmaPoint, cumulative; CANDIDATE like the skill points).</summary>
+    public int StigmaPoints(int level)
+    {
+        var table = stigma.Value.Points;
+        if (level < 1 || table.Count == 0) return 0;
+        var top = table.Keys.Max(k => int.Parse(k, System.Globalization.CultureInfo.InvariantCulture));
+        return table.GetValueOrDefault(Math.Min(level, top).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>A stigma skill's specialized parts: (child skill, parent level that unlocks it, ESpecializedSkillSlotType slot).</summary>
+    public IReadOnlyList<(int Child, int ParentLevel, int Slot)> StigmaParts(int skillId) =>
+        stigma.Value.Parts.GetValueOrDefault(skillId.ToString(System.Globalization.CultureInfo.InvariantCulture)) is { } rows
+            ? rows.Select(r => (r[0], r[1], r[2])).ToList() : [];
+
+    /// <summary>The stigma skill a specialized part belongs to (17400010 → 17400000), or null.</summary>
+    public int? StigmaPartParent(int skillId) => stigmaPartParents.Value.TryGetValue(skillId, out var parent) ? parent : null;
 
     sealed record CastRangeFile([property: JsonPropertyName("skills")] Dictionary<string, double>? Skills);
     static readonly Lazy<Dictionary<string, double>> skillCastRanges = new(() => Load<CastRangeFile>("skill-cast-ranges.json").Skills ?? []);
@@ -756,7 +847,7 @@ public sealed class GameData
                 x.t.Skills, x.t.Height, x.t.NoRotation,
                 x.s.Length > 6 ? (uint)x.s[6].GetInt64() : 0, x.s.Length > 7 ? x.s[7].GetInt32() : 0,
                 x.s.Length > 8 && x.s[8].GetInt32() is >= 0 and var route && npcs.Routes?.GetValueOrDefault(id.ToString(System.Globalization.CultureInfo.InvariantCulture)) is { } routes
-                    && route < routes.Length ? routes[route] : null, x.t.SubType, x.t.Grade, x.t.Air, x.t.HpMax)).ToList());
+                    && route < routes.Length ? routes[route] : null, x.t.SubType, x.t.Grade, x.t.Air, x.t.HpMax, x.t.Untouchable, x.t.HitCount)).ToList());
 
     readonly System.Collections.Concurrent.ConcurrentDictionary<int, IReadOnlyList<NpcSpawn>> spawnsByMap = new();
 
@@ -780,7 +871,7 @@ public sealed class GameData
     /// <summary>An NPC the server places itself (no MapData spawn), from its template: null when the template is unknown.</summary>
     public NpcSpawn? NpcFromTemplate(int npcId, string name, double[] position, double yaw) =>
         npcs.Templates.TryGetValue(npcId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var t)
-            ? new NpcSpawn(name, npcId, t.Level, t.Relationship, t.Aggressive, t.WalkSpeed, t.RunSpeed, t.Radius, t.Function, position, yaw, t.AggroType, t.Aggro, t.Skills, t.Height, t.NoRotation, SubType: t.SubType, Grade: t.Grade, Air: t.Air, HpMax: t.HpMax)
+            ? new NpcSpawn(name, npcId, t.Level, t.Relationship, t.Aggressive, t.WalkSpeed, t.RunSpeed, t.Radius, t.Function, position, yaw, t.AggroType, t.Aggro, t.Skills, t.Height, t.NoRotation, SubType: t.SubType, Grade: t.Grade, Air: t.Air, HpMax: t.HpMax, Untouchable: t.Untouchable, HitCount: t.HitCount)
             : null;
 
     /// <summary>A placed spawn of the NPC (its template and name), preferring <paramref name="mapId"/>; null when it is never placed.</summary>

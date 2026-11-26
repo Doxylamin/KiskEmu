@@ -46,3 +46,4 @@ editor/**/bin/
 editor/**/obj/
 tools/**/bin/
 tools/**/obj/
+tests/**/TestResults/

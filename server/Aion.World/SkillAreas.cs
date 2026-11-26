@@ -96,8 +96,18 @@ public static class SkillAreas
             }
         }
 
-        /// <summary>Projectile flight time in ms over <paramref name="distance"/> cm (SkillProjectile Speed cm/s), 0 without one.</summary>
-        public int FlightMs(double distance) => Projectile > 0 && Speed > 0 ? (int)Math.Min(3000, distance * 1000 / Speed) : 0;
+        /// <summary>
+        /// The projectile's flight over <paramref name="distance"/> cm: the time its 0x3803 announces and when its hit lands,
+        /// (0, 0) without one. By its SkillProjectile.dat type (<see cref="Projectiles.Flight"/>); a projectile missing there
+        /// flies distance / Speed (cm/s, CANDIDATE), capped at <see cref="Projectiles.MaxDistanceFlightMs"/>, and lands as announced.
+        /// </summary>
+        public (int Announced, int Arrival) Flight(double distance, Random? rng = null)
+        {
+            if (Projectile <= 0) return (0, 0);
+            if (Aion.World.Projectiles.Flight(Projectile, distance, rng) is { } typed) return typed;
+            var ms = Speed > 0 ? (int)Math.Min(Aion.World.Projectiles.MaxDistanceFlightMs, distance * 1000 / Speed) : 0;
+            return (ms, ms);
+        }
     }
 
     /// <summary>The SkillAbnormalEffect rows of an abnormal: [effect id, EAbnormalEffectType, values...]; source "client" or "override" (improvised).</summary>

@@ -43,6 +43,13 @@ public static class CharacterNames
             || rest.StartsWith("moderator", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// A name with a character the client refuses as kCharCheckName_InvalidCharset (8226): OBSERVED 2026-11-15 for a
+    /// Latin letter with a macron ("o" with a macron in an otherwise plain name). Which characters are allowed is CANDIDATE:
+    /// ASCII letters and digits only.
+    /// </summary>
+    public static bool HasInvalidCharset(string name) => name.Any(c => c is not (>= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'));
+
     /// <summary>The name shown in the world: staff get their role's tag unless the name already reads as staff.</summary>
     public static string Display(string name, string? role) =>
         StaffTag(role) is { } tag && !IsStaffStyle(name) ? tag + name : name;

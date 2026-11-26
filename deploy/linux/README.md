@@ -24,6 +24,15 @@ carry the address as an IPv4 literal.
 Open them in the provider's firewall as well; install.sh opens them in ufw when ufw is active.
 Some providers reserve 443 for their own panel: check that it is free.
 
+The login and game ports each take at most `Aion:Native:MaxConnections` connections (default 16), and one
+source IP address at most `Aion:Native:MaxConnectionsPerIp` of them (default 4), so a single address cannot
+take every slot. The two ports count separately, so a player's login and game connections do not compete.
+Loopback and private (LAN) addresses (10/8, 172.16/12, 192.168/16, link-local, IPv6 unique-local) are never
+limited; behind a NAT or proxy that shows every player from one private address, the cap does nothing. Raise
+it for households or internet cafés sharing one public address, or set 0 to turn it off, e.g.
+`Aion__Native__MaxConnectionsPerIp=8` in `/etc/aion/local.env`, then restart `aion-host`. A refused address
+is logged as a warning, at most once a minute per port.
+
 ## 1. On the development PC: pack the server data
 
 ```powershell
@@ -259,6 +268,23 @@ apps is `Aion__Web__SiteName` (default `KiskEmu`). Put it in `/etc/aion/local.en
 that file) and restart `aion-host`; no new build is needed. Authenticators set up earlier keep the
 name they were set up with.
 
+Two-step sign-in (authenticator codes on the account site and the staff dashboard) stores each account's
+secret encrypted with `Aion__Totp__EncryptionKey`, base64 of 32 random bytes. Make one once and put it in
+`/etc/aion/local.env`, then restart `aion-host`:
+
+```bash
+echo "Aion__Totp__EncryptionKey=$(openssl rand -base64 32)" | sudo tee -a /etc/aion/local.env
+sudo chmod 640 /etc/aion/local.env && sudo chown root:aion /etc/aion/local.env
+```
+
+Keep the key with your backups: without it, no stored authenticator can be read (players then sign in with
+a recovery code, or an admin resets their two-step sign-in). Older versions derived this key from
+`Aion__BridgeSecret`, which world servers also hold. While the dedicated key is not set the host keeps using
+that derived key and logs a warning at startup; once it is set, secrets stored under the old key are still
+read and move to the new key the next time their owner signs in with a code. Leave `Aion__BridgeSecret` in
+place until every account with two-step sign-in has signed in once. A key that is not base64 of 32 bytes
+stops the host at startup.
+
 ## Auth host and world servers
 
 As with an authserver and its worldservers, the `aion-host` service is the **auth host**: login port,
@@ -318,8 +344,10 @@ observed to be kept). The address pairing above covers the case where it does no
 
 KiskLauncher sets itself up from the account site: `GET /api/launcher/config` (public) gives the site's name,
 `Network:PublicAddress`, the bootstrap port and the client versions, each private one naming its build by
-fingerprint; `GET /api/launcher/builds/<fingerprint>` serves that build's file checklist (`launcher/supported-build.json`,
-built into the host). Optional settings: `Aion:Launcher:ClientVersion` (the version's name, default `2.0.6.0`),
+fingerprint; `GET /api/launcher/builds/<fingerprint>` serves that build's file checklist (`launcher/builds/<game version>.json`,
+built into the host). The versions are `Aion:Native:ClientVersions`, the client game versions this server is built for
+(a JSON array such as `[3527]` or `[3533, 3527]`, the first being the default; unset: 3527, and the game port lets any
+version in). When set, the game port also refuses a client that greets with another version. Optional settings:
 `Aion:Launcher:AllowSteam` (offer "Official latest (Steam)", default true), `Aion:Launcher:SavedDirSuffix` (the
 client's private saved folder; unset, each launcher derives one from the account site's address; keep the value the
 server's players already use when there is one). The account page's launcher download is a ZIP of

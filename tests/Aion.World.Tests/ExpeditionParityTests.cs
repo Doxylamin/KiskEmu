@@ -117,33 +117,6 @@ public sealed class ExpeditionParityTests
     }
 
     [Fact]
-    public async Task Expedition_ticket_is_consumed_on_first_entry()
-    {
-        var store = new FakeCharacterStore();
-        FakeCharacterStore.SeedExpeditionItemLevel(store);
-        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, Now, level: 55);
-        await GameSessionTestHelpers.LoadInventoryAsync(session, Now + 10);
-        var before = session.EnterDungeonById(600002, Now + 50);
-        Assert.NotEmpty(before);
-        await session.TickAsync(Now + 60_000);
-        Assert.Contains(store.ExpeditionTickets, t => t.TicketId == 4 && t.Count == 1);
-    }
-
-    [Fact]
-    public async Task Weekly_reset_ignores_previous_period_ticket_usage()
-    {
-        var store = new FakeCharacterStore();
-        FakeCharacterStore.SeedExpeditionItemLevel(store);
-        var oldPeriod = ShopTables.Period(2, DateTimeOffset.FromUnixTimeMilliseconds(Now));
-        store.ExpeditionTickets.Add((4, oldPeriod, 30));
-        var weekLater = Now + 8L * 24 * 60 * 60 * 1000;
-        var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, weekLater, level: 55);
-        await GameSessionTestHelpers.LoadInventoryAsync(session, weekLater + 10);
-        var moved = session.EnterDungeonById(600002, weekLater + 50);
-        Assert.NotEmpty(moved);
-    }
-
-    [Fact]
     public async Task Party_dungeon_ui_create_then_enter_moves_into_instance()
     {
         var store = new FakeCharacterStore();
@@ -152,23 +125,23 @@ public sealed class ExpeditionParityTests
         await GameSessionTestHelpers.LoadInventoryAsync(session, Now + 10);
         var create = await session.HandleAsync(new PacketWriter().U16(GameSession.DungeonRoomCreateRq).I32(600002).U8(0).ToArray(), Now + 20);
         Assert.True(GameSessionTestHelpers.HasOpcode(create, GameSession.DungeonRoomCreateRs));
-        Assert.Equal(0, BitConverter.ToInt32(create.First(b => GameSessionTestHelpers.Op(b) == GameSession.DungeonRoomCreateRs), 2));
+        Assert.Equal(0, BitConverter.ToUInt16(create.First(b => GameSessionTestHelpers.Op(b) == GameSession.DungeonRoomCreateRs), 2));
         var enter = await session.HandleAsync(new PacketWriter().U16(GameSession.PartyDungeonEnterRq).ToArray(), Now + 30);
         Assert.True(GameSessionTestHelpers.HasOpcode(enter, GameSession.PartyDungeonEnterRs));
-        Assert.Equal(0, BitConverter.ToInt32(enter.First(b => GameSessionTestHelpers.Op(b) == GameSession.PartyDungeonEnterRs), 2));
+        Assert.Equal(0, BitConverter.ToUInt16(enter.First(b => GameSessionTestHelpers.Op(b) == GameSession.PartyDungeonEnterRs), 2));
         Assert.NotEqual(0, session.InstanceKey);
     }
 
     [Fact]
-    public async Task Exhausted_tickets_block_new_expedition_entry()
+    public async Task Expedition_entry_does_not_need_odyle_energy()
     {
+        // The energy (ticket 60000001) pays the reward cube, not the entry (ContentTicketTests).
         var store = new FakeCharacterStore();
         FakeCharacterStore.SeedExpeditionItemLevel(store);
-        var period = ShopTables.Period(2, DateTimeOffset.FromUnixTimeMilliseconds(Now));
-        store.ExpeditionTickets.Add((4, period, 30));
+        store.ContentTickets.Add(new Aion.Application.Gameplay.ContentTicketRecord(60000001, 0, Now));
         var session = await GameSessionTestHelpers.EnterSharedWorldAsync(store, Now, level: 55);
         await GameSessionTestHelpers.LoadInventoryAsync(session, Now + 10);
         var moved = session.EnterDungeonById(600002, Now + 50);
-        Assert.Empty(moved);
+        Assert.NotEmpty(moved);
     }
 }

@@ -52,6 +52,13 @@ public static class GamePlatformIni
 /// </summary>
 public static class HostsFile
 {
+    /// <summary>
+    /// NCGuard and telemetry hosts only. NC's account and config hosts (api.g.nc.com,
+    /// mobileappconfig*.g.nc.com) stay off this list on purpose: the hosts file is machine-wide, so
+    /// redirecting them would also send the player's browser and the official launcher's sign-in to
+    /// our server while the game runs. The private client reaches its config through
+    /// GamePlatform.ini, and the firewall rules keep it from reaching NCSoft.
+    /// </summary>
     public static readonly string[] Hostnames =
     [
         "bladnoch.ncsoft.com", "lagavulin.ncsoft.com", "atp-json.ncsoft.com",

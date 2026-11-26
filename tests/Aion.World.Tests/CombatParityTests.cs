@@ -26,11 +26,12 @@ public sealed class CombatParityTests
 
     [Theory]
     [MemberData(nameof(Levels1To45))]
-    public void Kill_experience_is_disabled(int level)
+    public void Kill_experience_follows_the_reward_from_level_10(int level)
     {
         var session = new GameSession(Data, new GameSessionOptions { CharacterLevel = level, LevelCap = Data.MaxLevel }, new Random(level));
-        Assert.Equal(0, session.KillExperience(level));
-        Assert.Equal(0, session.KillExperience(Math.Max(1, level - 11)));
+        Assert.Equal(GameSession.KillReward(level, level, 3, false), session.KillExperience(level));
+        Assert.Equal(level >= GameSession.KillExperienceLevel, session.KillExperience(level) > 0);
+        Assert.True(session.KillExperience(Math.Max(1, level - 11)) <= session.KillExperience(level));
     }
 
     [Theory]
@@ -93,6 +94,8 @@ public sealed class CombatParityTests
         var uid = session.GroundDrops.First();
         var loot = await session.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(uid).U8(0).ToArray(), landAt + 100);
         Assert.Contains(loot, p => p.SequenceEqual(LootPackets.LootReply(0, uid, false)));
+        var again = await session.HandleAsync(new PacketWriter().U16(0x5620).Varint(1).I64(uid).U8(0).ToArray(), landAt + 200);
+        Assert.Equal(LootPackets.LootReply(LootPackets.LootGone, uid, false), again.Single());   // a gone drop: 0x2010 (#70)
         var respawn = await session.TickAsync(landAt + GameSession.RespawnMs + 50);
         Assert.Contains(respawn, p => p.SequenceEqual(GamePackets.Death(target.Key)));
         Assert.Equal(target.HpMax, target.Hp);

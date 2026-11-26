@@ -286,6 +286,13 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.ExceedEnchantItemAsync(identity.Account, character, item, revision, costs, surpassLevel, surpassBonus, ct);
     }
 
+    public async Task<bool> UpgradeItemAsync(Guid character, Guid item, long revision, IReadOnlyList<(Guid Item, long Revision, int Count)> costs,
+        System.Text.Json.JsonElement patch, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.UpgradeItemAsync(identity.Account, character, item, revision, costs, patch, ct);
+    }
+
     public async Task<bool> SocketGodstoneAsync(Guid character, Guid equip, long equipRevision, Guid material, long materialRevision,
         IReadOnlyList<int> godstones, CancellationToken ct)
     {
@@ -637,6 +644,18 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.MoveItemToContainerAsync(identity.Account, character, item, revision, location, slot, ct);
     }
 
+    public async Task<bool> StoreItemsInContainerAsync(Guid character, string location, IReadOnlyList<(Guid Item, long Revision, int Count)> items, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.StoreItemsInContainerAsync(identity.Account, character, location, items, ct);
+    }
+
+    public async Task<bool> TakeItemsFromContainerAsync(Guid character, string location, IReadOnlyList<(long Key, int Count)> items, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.TakeItemsFromContainerAsync(identity.Account, character, location, items, ct);
+    }
+
     public async Task<IReadOnlyList<PostRecord>> PostsAsync(Guid character, CancellationToken ct)
     {
         await ValidateAsync(ct);
@@ -740,16 +759,16 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.SaveBossChallengeAsync(identity.Account, character, record, ct);
     }
 
-    public async Task<IReadOnlyList<(int TicketId, string Period, int Count)>> ExpeditionTicketsAsync(Guid character, CancellationToken ct)
+    public async Task<IReadOnlyList<ContentTicketRecord>> ContentTicketsAsync(Guid character, CancellationToken ct)
     {
         await ValidateAsync(ct);
-        return await game.ExpeditionTicketsAsync(identity.Account, character, ct);
+        return await game.ContentTicketsAsync(identity.Account, character, ct);
     }
 
-    public async Task<bool> SaveExpeditionTicketsAsync(Guid character, IReadOnlyList<(int TicketId, string Period, int Count)> rows, CancellationToken ct)
+    public async Task<bool> SaveContentTicketsAsync(Guid character, IReadOnlyList<ContentTicketRecord> rows, CancellationToken ct)
     {
         await ValidateAsync(ct);
-        return await game.SaveExpeditionTicketsAsync(identity.Account, character, rows, ct);
+        return await game.SaveContentTicketsAsync(identity.Account, character, rows, ct);
     }
 
     public async Task<AbyssRecord?> AbyssAsync(Guid character, CancellationToken ct)
@@ -766,6 +785,9 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
 
     public Task AddPendingSiegeApForGuildAsync(long guildId, int ap, IReadOnlyList<Guid> onlineCharacterIds, CancellationToken ct) =>
         game.AddPendingSiegeApForGuildAsync(guildId, ap, onlineCharacterIds, ct);
+
+    public Task<IReadOnlyList<AbyssRankRow>> AbyssRankingAsync(int race, int minPoint, CancellationToken ct) =>
+        game.AbyssRankingAsync(WorldId, race, minPoint, ct);
 
     public Task<AirspaceWorldRecord> AirspaceWorldAsync(CancellationToken ct) =>
         game.AirspaceWorldAsync(WorldId, ct);
@@ -884,6 +906,18 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
     {
         await ValidateAsync(ct);
         return await game.SaveCharacterSettingAsync(identity.Account, character, name, value, ct);
+    }
+
+    public async Task<IReadOnlyDictionary<string, JsonElement>> AccountSettingsAsync(CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.AccountSettingsAsync(identity.Account, ct) ?? new Dictionary<string, JsonElement>();
+    }
+
+    public async Task<bool> SaveAccountSettingAsync(string name, JsonElement value, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.SaveAccountSettingAsync(identity.Account, name, value, ct);
     }
 
     public async Task<bool> SaveQuickSlotAsync(Guid character, int number, QuickSlotRecord? slot, CancellationToken ct)
@@ -1024,6 +1058,21 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
         return await game.TeleportArtifactsAsync(identity.Account, character, ct) ?? [];
     }
 
+    public async Task<IReadOnlyDictionary<int, int>> MonolithsAsync(Guid character, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.MonolithsAsync(identity.Account, character, ct);
+    }
+
+    public async Task<bool> ResonateMonolithAsync(Guid character, IReadOnlyList<(Guid Item, long Revision, int Count)> costs, int monolith, int previous, int count,
+        IReadOnlyList<(int TemplateId, long Count)> rewards, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        var done = await game.ResonateMonolithAsync(identity.Account, character, costs, monolith, previous, count, rewards, ct);
+        if (done) await RefreshItemCacheAsync(character, ct);
+        return done;
+    }
+
     public async Task<bool> EngraveTeleportArtifactAsync(Guid character, int artifactId, CancellationToken ct)
     {
         await ValidateAsync(ct);
@@ -1080,6 +1129,18 @@ public sealed class ServiceNativeCharacterStore(string token, WorldIdentity iden
     {
         await ValidateAsync(ct);
         return await game.SetSkillLevelAsync(identity.Account, character, skillId, level, purchased, ct);
+    }
+
+    public async Task<IReadOnlyList<SkillPartRecord>> SkillPartsAsync(Guid character, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.SkillPartsAsync(identity.Account, character, ct);
+    }
+
+    public async Task<bool> ReplaceSkillPartsAsync(Guid character, int skillId, IReadOnlyList<SkillPartRecord> expected, IReadOnlyList<SkillPartRecord> parts, CancellationToken ct)
+    {
+        await ValidateAsync(ct);
+        return await game.ReplaceSkillPartsAsync(identity.Account, character, skillId, expected, parts, ct);
     }
 
     public async Task<CharacterExtras> ExtrasAsync(Guid character, CancellationToken ct)

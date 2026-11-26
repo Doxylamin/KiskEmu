@@ -82,7 +82,13 @@ public sealed partial class GameSession
         }
 
         if (questLog is null || !questLog.Book.ById.TryGetValue(questId, out var code) || !questLog.CanAccept(code, level, QuestConditionsHold))
+        {
+            // A refusal is retried every frame as well (live 2026-11-15: HQ1103010, a level-46 quest past the cap, 99,618
+            // refusals in 20 minutes, up to 180 a second). Refuse once, then stay quiet on identical repeats for a while.
+            if (repeatedAcceptAnswered.TryGetValue(questId, out var refusedAt) && lastNow - refusedAt < RepeatedAcceptQuietMs) return [];
+            repeatedAcceptAnswered[questId] = lastNow;
             return [GamePackets.QuestAcceptReply(questId, 0, 1)];
+        }
         return await Stored(async () =>
         {
             var saved = await SaveQuestAsync(QuestLog.New(code, questLog.Book.Find(code)!), ct);
@@ -120,6 +126,10 @@ public sealed partial class GameSession
             var unlockedBefore = QuestUnlockTypes().ToHashSet();
             var rewards = quest.Rewards ?? new QuestRewards();
             var items = (rewards.Items ?? []).Where(i => i.Length == 2).Select(i => ((int)i[0], i[1])).ToList();
+            // QuestClassReward.dat (OBSERVED data): the player's class items after the common ones. OURS order (CANDIDATE: no
+            // class-reward quest in the recordings). Idea from Addiboii/A2Core 4ce900c.
+            if (className is { } cls && rewards.ClassItems?.GetValueOrDefault(cls) is { } classItems)
+                items.AddRange(classItems.Where(i => i.Length == 2).Select(i => ((int)i[0], i[1])));
             if (rewards.Select is { Length: > 0 } choices)
             {
                 var idx = selectIndex >= 0 && selectIndex < choices.Length ? selectIndex : 0;
@@ -142,6 +152,7 @@ public sealed partial class GameSession
                 replies.AddRange(Ascend(2));
             var rewarded = record with { Status = QuestLog.Rewarded };
             questLog.Set(rewarded);
+            NoteQuestEvent("quest_reward", rewarded.Code, rewarded.Step, rewarded.Status, rewarded.Goals);
             replies.Add(GamePackets.QuestTakeRewardReply(uid));
             // HUD episode bar (AionWidget_HUD_IndicatorQuest) counts cleared quests in the active Quest.dat Part from
             // journal EQuestStatus; without a post-reward sync the client can stay at Complete (3) and show 0% part progress.

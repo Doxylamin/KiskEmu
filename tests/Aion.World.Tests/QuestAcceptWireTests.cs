@@ -103,6 +103,20 @@ public sealed class QuestAcceptWireTests
         Assert.Equal(QuestLog.Rewarded, session.Quests!.Get("AQ2602000")!.Status);
     }
 
+    [Fact]
+    public async Task Repeated_refused_accept_is_refused_once_then_quiet()
+    {
+        // Live 2026-11-15: 0x8d0a 00 a2d41000 (HQ1103010, past the level cap) every frame, each refused, 99,618 times.
+        var session = await GameSessionTestHelpers.EnterFreshSharedWorldAsync(new FakeCharacterStore(), Now, race: 1, level: 45);
+        var body = Convert.FromHexString("0A8D00A2D41000");
+        var first = await session.HandleAsync(body, Now + 10);
+        var reply = first.Single(p => GameSessionTestHelpers.Op(p) == 0x8d0b);
+        Assert.Equal(1, BitConverter.ToUInt16(reply, 2));
+        Assert.Empty(await session.HandleAsync(body, Now + 40));
+        Assert.Empty(await session.HandleAsync(body, Now + 1_000));
+        Assert.Contains(await session.HandleAsync(body, Now + 6_000), p => GameSessionTestHelpers.Op(p) == 0x8d0b);
+    }
+
     static (int QuestId, byte Status, int Step, int Uid, int PublisherId) ReadQuestBody(byte[] packet)
     {
         var r = new PacketReader(packet) { Offset = 2 };

@@ -99,13 +99,19 @@ if (!string.IsNullOrWhiteSpace(connectionString))
 var accountsReady = !string.IsNullOrWhiteSpace(connectionString) && (!string.IsNullOrWhiteSpace(authConnectionString) || realmLink is not null);
 if (accountsReady && worldProcess is null)
 {
+    // Two-step sign-in secrets use their own key, Aion:Totp:EncryptionKey (base64 of 32 random bytes). Older servers
+    // derived it from Aion:BridgeSecret: that key still opens secrets stored under it, which move to the dedicated key as
+    // they are used; without a dedicated key it stays the only key, with a warning (deploy/linux/README.md). A malformed
+    // dedicated key stops the host here.
+    var totpKeys = Aion.Core.Security.TotpSecretProtection.FromConfiguration(
+        builder.Configuration["Aion:Totp:EncryptionKey"], builder.Configuration["Aion:BridgeSecret"], out var totpWarning);
     builder.Services.AddSingleton<PostgresAccountAuthentication>(provider =>
     {
         var auth = new PostgresAccountAuthentication(authConnectionString!) { TotpIssuer = SiteName(builder.Configuration) };
-        var totpKey = builder.Configuration["Aion:Totp:EncryptionKey"];
-        if (string.IsNullOrWhiteSpace(totpKey) && builder.Configuration["Aion:BridgeSecret"] is { Length: >= 32 } bridge)
-            totpKey = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(bridge)));
-        if (!string.IsNullOrWhiteSpace(totpKey)) auth.ConfigureTotp(totpKey);
+        auth.ConfigureTotp(totpKeys);
+        var accountLog = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Aion.Accounts");
+        if (totpWarning is not null) accountLog.LogWarning("{Warning}", totpWarning);
+        else if (totpKeys is null) accountLog.LogWarning("Two-step sign-in is unavailable: Aion:Totp:EncryptionKey is not set.");
         return auth;
     });
     builder.Services.AddSingleton<IAccountAuthentication>(provider => provider.GetRequiredService<PostgresAccountAuthentication>());
@@ -123,6 +129,8 @@ if (accountsReady && worldProcess is null)
     builder.Services.AddHostedService<AuthenticationCleanup>();
     // Staff tools: maintenance, sanctions, chat log, tickets, events, population, economy (migration 028).
     builder.Services.AddSingleton<IStaffTools, PostgresStaffTools>();
+    // "/bug" reports from every world (migration 106): the staff dashboard's Bug reports.
+    builder.Services.AddSingleton<IBugReports, PostgresBugReports>();
     // Custom shop goods (migration 094): edited on the dashboard, listed in the shop catalogue, read by the worlds.
     builder.Services.AddSingleton<PostgresCustomShop>();
     builder.Services.AddSingleton<ICustomShopAdmin>(provider => provider.GetRequiredService<PostgresCustomShop>());
@@ -160,6 +168,7 @@ else if (accountsReady)
     builder.Services.AddSingleton<IWorldSessions, Aion.Host.Realm.LinkedWorldSessions>();
     builder.Services.AddSingleton<IStaffTools>(provider => new Aion.Host.Realm.LinkedStaffTools(
         new PostgresStaffTools(provider.GetRequiredService<NpgsqlDataSource>()), provider.GetRequiredService<Aion.Host.Realm.RealmLinkClient>()));
+    builder.Services.AddSingleton<IBugReports, Aion.Host.Realm.LinkedBugReports>();
     builder.Services.AddSingleton<Aion.Host.Authentication.ServerControl>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<Aion.Host.Authentication.ServerControl>());
     builder.Services.AddSingleton<Aion.Host.Realm.RealmLinkService>();
@@ -272,6 +281,10 @@ if (native.LoginPort is not null || native.GamePort is not null)
                 try { return $"Thanks, report #{await staffTools.CreateTicketAsync(account, name, "other", text, ct)} was sent to the staff."; }
                 catch (GameplayException error) { return error.Code == "too_many_tickets" ? "You already have 10 open reports. Please wait for the staff." : "That report could not be sent."; }
             } : null,
+            // "/bug <text>": a bug report with the player's context (accounts only; docs/BUG_REPORTS.md).
+            Bugs = provider.GetService<IBugReports>() is { } bugs
+                ? new Aion.World.BugReporter(bugs, Aion.Host.Debug.BuildInfo.Commit(builder.Configuration), Aion.Host.Debug.BuildInfo.OpcodeName)
+                : null,
         });
     // Staff rights for builder commands and the Login_RS admin flag (one check, from account roles).
     builder.Services.AddSingleton(provider =>
@@ -373,8 +386,9 @@ var platform = worldProcess is null ? builder.Configuration.GetSection(AionConfi
 var platformResponses = platform.Port is not { } bootstrapPort ? null : PlatformResponses.Load(platform, network, bootstrapPort, native.LoginPort, chatPort);
 // Launchers that sign in on this host and start clients without a launch code in the bootstrap URL.
 if (platform.Port is not null && accountsReady) builder.Services.AddSingleton<LaunchPairing>();
-var ncGuard = (worldProcess is null ? builder.Configuration.GetSection(AionConfiguration.NcGuard).Get<NcGuardOptions>() ?? new NcGuardOptions() : new NcGuardOptions())
-    with { BindAddress = network.BindAddress };
+var ncGuard = ((worldProcess is null ? builder.Configuration.GetSection(AionConfiguration.NcGuard).Get<NcGuardOptions>() ?? new NcGuardOptions() : new NcGuardOptions())
+    with { BindAddress = network.BindAddress })
+    .ForBind(network.LoopbackOnly, builder.Configuration[$"{AionConfiguration.NcGuard}:Capture"] is not null);
 if (ncGuard.Port is not null)
 {
     builder.Services.AddSingleton(ncGuard);
@@ -482,7 +496,10 @@ if (ncGuard.Port is { } ncGuardPort)
     var sink = app.Services.GetRequiredService<NcGuardSink>();
     app.Use(async (context, next) =>
     {
-        if (context.Connection.LocalPort == ncGuardPort) await sink.HandleAsync(context);
+        // Official config/API host names (api.g.nc.com, mobileappconfig...) go to the platform bootstrap below instead.
+        if (context.Connection.LocalPort == ncGuardPort
+            && !(platform.Port is not null && PlatformBootstrapEndpoints.ConfigHostOf(context, ncGuardPort) is not null))
+            await sink.HandleAsync(context);
         else await next();
     });
 }
@@ -494,6 +511,21 @@ app.Use(async (context, next) =>
     if (context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/internal")) context.Response.Headers.CacheControl = "no-store";
     await next();
 });
+// The chat port is plain HTTP on the bind address with no rate limiter: it answers the chat's own routes only, never the
+// account site, sign-in, registration or the staff API (those stay on the account port, behind TLS and the limiter).
+// The realm link answers there from loopback only (managed world servers). OURS.
+if (chatPort is { } chatOnly && chatOnly != port && chatOnly != platform.Port)
+{
+    app.Use(async (context, next) =>
+    {
+        if (context.Connection.LocalPort == chatOnly && !Aion.Host.Chat.ChatPortRoutes.Allows(context.Request.Path, context.Connection.RemoteIpAddress))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+        await next();
+    });
+}
 // Player site and staff dashboard on separate ports (Aion:Web:StaffPort): each port answers only its own site.
 if (staffPort is { } siteStaffPort)
     app.UseSiteSplit(port, siteStaffPort, app.Environment.WebRootPath ?? "wwwroot");
@@ -503,7 +535,7 @@ if (platform.Port is { } platformPort)
     var accountPageBase = accountTls
         ? $"https://{network.PublicAddress}" + (https.Proxy ? "" : $":{port}")
         : $"http://{network.PublicAddress}:{port}";
-    app.UsePlatformBootstrap(platformPort, platformResponses!, platform.RequestLog, network, accountPageBase);
+    app.UsePlatformBootstrap(platformPort, platformResponses!, platform.RequestLog, network, accountPageBase, ncGuard.Port);
 }
 app.UseRateLimiter();
 // Auth host: every /api/admin request needs a staff session (before the world proxy below).
@@ -587,6 +619,7 @@ if (accountsReady)
     Aion.Host.Authentication.StaffEndpoints.MapStaffEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapStaffToolsEndpoints(app);
     Aion.Host.Authentication.StaffToolsEndpoints.MapTicketEndpoints(app);
+    Aion.Host.Authentication.StaffToolsEndpoints.MapBugReportEndpoints(app);
     Aion.Host.Diagnostics.DiagnosticsEndpoints.Map(app, "realm").RequireRateLimiting("admin");
     Aion.Host.Worlds.WorldEndpoints.MapWorldEndpoints(app);
     Aion.Host.Realm.RealmLinkEndpoints.Map(app);

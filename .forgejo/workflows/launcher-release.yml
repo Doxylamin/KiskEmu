@@ -1,0 +1,86 @@
+# KiskLauncher releases on this forge (the GitHub workflow .github/workflows/kisklauncher.yml does the same there).
+# A tag launcher-v<version> (equal to <Version> in launcher/AionLauncher/AionLauncher.csproj): the launcher checks, the
+# exe cross-built for win-x64 on Linux (as in ci.yml), then a release on this repository with the exe and SHA256SUMS.
+# A manual run builds the exe as an artifact without releasing. Every push's exe is already a CI artifact (ci.yml).
+# The exe has no server built in and contains no game files.
+name: KiskLauncher release
+
+on:
+  push:
+    tags: ['launcher-v*']
+  workflow_dispatch:
+
+concurrency:
+  group: launcher-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version
+        run: |
+          set -e
+          version=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' launcher/AionLauncher/AionLauncher.csproj | head -1)
+          [ -n "$version" ] || { echo "No <Version> in AionLauncher.csproj"; exit 1; }
+          case "$GITHUB_REF" in
+            refs/tags/launcher-v*) [ "$GITHUB_REF_NAME" = "launcher-v$version" ] || { echo "Tag $GITHUB_REF_NAME does not match the project version $version"; exit 1; } ;;
+          esac
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Launcher checks
+        run: dotnet run --project tests/Aion.Launcher.Checks -c Release
+
+      - name: Publish (win-x64, cross-built)
+        run: |
+          set -e
+          dotnet publish launcher/AionLauncher -c Release -r win-x64 -p:DebugType=none -p:EnableWindowsTargeting=true -o out/launcher
+          mkdir -p release
+          cp out/launcher/KiskLauncher.exe release/KiskLauncher.exe
+          (cd release && sha256sum KiskLauncher.exe | tee SHA256SUMS)
+
+      - uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: KiskLauncher-${{ env.VERSION }}
+          path: release/
+          if-no-files-found: error
+
+      - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/launcher-v')
+        run: |
+          cat > notes.md <<EOF
+          KiskLauncher ${VERSION} for Windows (x64, self-contained single exe, no install of .NET needed).
+
+          Works with any KiskEmu server. At the first start it asks for the server's account-site address (or use
+          the "Add this server" link on the server's account page). A server's own download may come as a ZIP with a
+          \`launcher.json\` next to the exe, which adds that server. The server tells the launcher which client game
+          versions it is built for.
+
+          The launcher contains no game files: it sets up the game from your own Steam install or Steam account.
+          Compare the file's SHA-256 with \`SHA256SUMS\`.
+          EOF
+
+      - name: Forge release
+        if: startsWith(github.ref, 'refs/tags/launcher-v')
+        uses: https://code.forgejo.org/actions/forgejo-release@v2
+        with:
+          direction: upload
+          url: ${{ github.server_url }}
+          repo: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+          sha: ${{ github.sha }}
+          title: KiskLauncher ${{ env.VERSION }}
+          release-dir: release
+          release-notes-file: notes.md

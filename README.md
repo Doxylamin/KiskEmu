@@ -26,6 +26,8 @@ KiskEmu began as a fork of [A2Core](https://github.com/Addiboii/A2Core). Questio
   **world server** per world, each with its own database. Worlds run on the same machine or on others; the realm and
   its worlds talk over one WebSocket per world (the realm socket). Quna is one wallet per account, kept by the realm.
 - **Account site:** players register, sign in, set up two-step verification (QR code) and download the launcher.
+  Each character has a page: class, level, world, in the game or last seen, where it is (live while playing),
+  combat power and legion.
 - **Staff dashboard:** gamemaster, moderator and administrator ranks, sign-in with password and authenticator code
   only. Accounts, characters, moderation (bans, mutes, tickets, chat log), rewards and Quna, the shop, events and
   announcements, a live world map, activity logs, server health, and the Worlds page that adds, starts and stops worlds.
@@ -60,7 +62,7 @@ Not included: the client archive key. You only need it to extract new or updated
 | `data/` | Put the server data bundle from Releases here (`data/aion-server-data.tar.gz`); `install.sh --data` takes it. |
 | `third_party/CUE4Parse/` | CUE4Parse (Apache-2.0, upstream commit cdef687 plus three CriWare export classes), which the extraction tools build against. |
 | `research/local/tooling/` | The opcode ledger (`opcodes.json`) and the client type mappings (`mappings/*.usmap`). |
-| `docs/` | [`CAPTURE.md`](docs/CAPTURE.md) (recording the official server) and the tool guides. |
+| `docs/` | [`CAPTURE.md`](docs/CAPTURE.md) (recording the official server), [`BUG_REPORTS.md`](docs/BUG_REPORTS.md) (`/bug` in game) and the tool guides. |
 
 ## Run a server (Ubuntu 26.04, public IPv4)
 

@@ -1,0 +1,1461 @@
+{
+ "source": "Dungeon.dat, DungeonPoint.dat, WaveData.dat, RewardDungeon.dat, NpcData.dat, DungeonBuff.dat, DungeonBuffGroup.dat (3533 tables; tools/daily_dungeon_data.py). seconds, ready, clear_bonus: OBSERVED in the official captures of 2026-11-12 and 2026-11-15, not in the tables.",
+ "dungeons": {
+  "900001": {
+   "name": "DungeonWave_0001",
+   "subtype": "Wave",
+   "wave": 85,
+   "show_points": true,
+   "resurrection": "Restart",
+   "kill_points": {
+    "2701415": 10,
+    "2701416": 10,
+    "2701417": 40,
+    "2701418": 40,
+    "2701419": 40,
+    "2701420": 40,
+    "2701421": 40,
+    "2701422": 40,
+    "2701423": 50
+   },
+   "subtype_points": {
+    "EliteMonster": 1000
+   },
+   "env_points": {},
+   "reward_light": [
+    {
+     "need": 10000,
+     "items": [
+      [
+       930100023,
+       10000
+      ]
+     ]
+    },
+    {
+     "need": 9500,
+     "items": [
+      [
+       930100023,
+       9500
+      ]
+     ]
+    },
+    {
+     "need": 9000,
+     "items": [
+      [
+       930100023,
+       9000
+      ]
+     ]
+    },
+    {
+     "need": 8500,
+     "items": [
+      [
+       930100023,
+       8500
+      ]
+     ]
+    },
+    {
+     "need": 8000,
+     "items": [
+      [
+       930100023,
+       8200
+      ]
+     ]
+    },
+    {
+     "need": 7500,
+     "items": [
+      [
+       930100023,
+       7900
+      ]
+     ]
+    },
+    {
+     "need": 7000,
+     "items": [
+      [
+       930100023,
+       7600
+      ]
+     ]
+    },
+    {
+     "need": 6500,
+     "items": [
+      [
+       930100023,
+       7300
+      ]
+     ]
+    },
+    {
+     "need": 6000,
+     "items": [
+      [
+       930100023,
+       7000
+      ]
+     ]
+    },
+    {
+     "need": 5500,
+     "items": [
+      [
+       930100023,
+       6700
+      ]
+     ]
+    },
+    {
+     "need": 5000,
+     "items": [
+      [
+       930100023,
+       6400
+      ]
+     ]
+    },
+    {
+     "need": 4500,
+     "items": [
+      [
+       930100023,
+       6100
+      ]
+     ]
+    },
+    {
+     "need": 4000,
+     "items": [
+      [
+       930100023,
+       5800
+      ]
+     ]
+    },
+    {
+     "need": 3500,
+     "items": [
+      [
+       930100023,
+       5500
+      ]
+     ]
+    },
+    {
+     "need": 3000,
+     "items": [
+      [
+       930100023,
+       5200
+      ]
+     ]
+    },
+    {
+     "need": 2500,
+     "items": [
+      [
+       930100023,
+       4900
+      ]
+     ]
+    },
+    {
+     "need": 2000,
+     "items": [
+      [
+       930100023,
+       4600
+      ]
+     ]
+    },
+    {
+     "need": 1500,
+     "items": [
+      [
+       930100023,
+       4300
+      ]
+     ]
+    },
+    {
+     "need": 1000,
+     "items": [
+      [
+       930100023,
+       4000
+      ]
+     ]
+    },
+    {
+     "need": 500,
+     "items": [
+      [
+       930100023,
+       3800
+      ]
+     ]
+    },
+    {
+     "need": 400,
+     "items": [
+      [
+       930100023,
+       3600
+      ]
+     ]
+    },
+    {
+     "need": 300,
+     "items": [
+      [
+       930100023,
+       3400
+      ]
+     ]
+    },
+    {
+     "need": 200,
+     "items": [
+      [
+       930100023,
+       3200
+      ]
+     ]
+    },
+    {
+     "need": 100,
+     "items": [
+      [
+       930100023,
+       3000
+      ]
+     ]
+    }
+   ],
+   "reward_dark": [
+    {
+     "need": 10000,
+     "items": [
+      [
+       930100023,
+       10000
+      ]
+     ]
+    },
+    {
+     "need": 9500,
+     "items": [
+      [
+       930100023,
+       9500
+      ]
+     ]
+    },
+    {
+     "need": 9000,
+     "items": [
+      [
+       930100023,
+       9000
+      ]
+     ]
+    },
+    {
+     "need": 8500,
+     "items": [
+      [
+       930100023,
+       8500
+      ]
+     ]
+    },
+    {
+     "need": 8000,
+     "items": [
+      [
+       930100023,
+       8200
+      ]
+     ]
+    },
+    {
+     "need": 7500,
+     "items": [
+      [
+       930100023,
+       7900
+      ]
+     ]
+    },
+    {
+     "need": 7000,
+     "items": [
+      [
+       930100023,
+       7600
+      ]
+     ]
+    },
+    {
+     "need": 6500,
+     "items": [
+      [
+       930100023,
+       7300
+      ]
+     ]
+    },
+    {
+     "need": 6000,
+     "items": [
+      [
+       930100023,
+       7000
+      ]
+     ]
+    },
+    {
+     "need": 5500,
+     "items": [
+      [
+       930100023,
+       6700
+      ]
+     ]
+    },
+    {
+     "need": 5000,
+     "items": [
+      [
+       930100023,
+       6400
+      ]
+     ]
+    },
+    {
+     "need": 4500,
+     "items": [
+      [
+       930100023,
+       6100
+      ]
+     ]
+    },
+    {
+     "need": 4000,
+     "items": [
+      [
+       930100023,
+       5800
+      ]
+     ]
+    },
+    {
+     "need": 3500,
+     "items": [
+      [
+       930100023,
+       5500
+      ]
+     ]
+    },
+    {
+     "need": 3000,
+     "items": [
+      [
+       930100023,
+       5200
+      ]
+     ]
+    },
+    {
+     "need": 2500,
+     "items": [
+      [
+       930100023,
+       4900
+      ]
+     ]
+    },
+    {
+     "need": 2000,
+     "items": [
+      [
+       930100023,
+       4600
+      ]
+     ]
+    },
+    {
+     "need": 1500,
+     "items": [
+      [
+       930100023,
+       4300
+      ]
+     ]
+    },
+    {
+     "need": 1000,
+     "items": [
+      [
+       930100023,
+       4000
+      ]
+     ]
+    },
+    {
+     "need": 500,
+     "items": [
+      [
+       930100023,
+       3800
+      ]
+     ]
+    },
+    {
+     "need": 400,
+     "items": [
+      [
+       930100023,
+       3600
+      ]
+     ]
+    },
+    {
+     "need": 300,
+     "items": [
+      [
+       930100023,
+       3400
+      ]
+     ]
+    },
+    {
+     "need": 200,
+     "items": [
+      [
+       930100023,
+       3200
+      ]
+     ]
+    },
+    {
+     "need": 100,
+     "items": [
+      [
+       930100023,
+       3000
+      ]
+     ]
+    }
+   ],
+   "min_level": 30,
+   "seconds": 90,
+   "buff_slots": [
+    {
+     "slot": 1,
+     "buffs": [
+      {
+       "id": 1,
+       "name": "Slayer",
+       "grade": "Special",
+       "abnormal": 19003001
+      },
+      {
+       "id": 2,
+       "name": "Guardian",
+       "grade": "Common",
+       "abnormal": 19003011
+      },
+      {
+       "id": 3,
+       "name": "Adrenaline",
+       "grade": "Special",
+       "abnormal": 19003031
+      },
+      {
+       "id": 4,
+       "name": "Footwork",
+       "grade": "Common",
+       "abnormal": 19003041
+      },
+      {
+       "id": 6,
+       "name": "Ignoring the Weak",
+       "grade": "Common",
+       "abnormal": 19003101
+      },
+      {
+       "id": 7,
+       "name": "Worm Carnage",
+       "grade": "Special",
+       "abnormal": 19003111
+      },
+      {
+       "id": 8,
+       "name": "Fire Moth",
+       "grade": "Common",
+       "abnormal": 19003121
+      },
+      {
+       "id": 9,
+       "name": "Ignoring the Elite",
+       "grade": "Common",
+       "abnormal": 19003131
+      },
+      {
+       "id": 10,
+       "name": "Elite Hunter",
+       "grade": "Special",
+       "abnormal": 19003141
+      },
+      {
+       "id": 1004,
+       "name": "Poisoned by Mana",
+       "grade": "Common",
+       "abnormal": 19003051
+      },
+      {
+       "id": 1005,
+       "name": "Predator",
+       "grade": "Common",
+       "abnormal": 19003061
+      },
+      {
+       "id": 1006,
+       "name": "Targeting Weakness",
+       "grade": "Common",
+       "abnormal": 19003021
+      }
+     ]
+    },
+    {
+     "slot": 2,
+     "buffs": [
+      {
+       "id": 1,
+       "name": "Slayer",
+       "grade": "Special",
+       "abnormal": 19003001
+      },
+      {
+       "id": 2,
+       "name": "Guardian",
+       "grade": "Common",
+       "abnormal": 19003011
+      },
+      {
+       "id": 3,
+       "name": "Adrenaline",
+       "grade": "Special",
+       "abnormal": 19003031
+      },
+      {
+       "id": 4,
+       "name": "Footwork",
+       "grade": "Common",
+       "abnormal": 19003041
+      },
+      {
+       "id": 6,
+       "name": "Ignoring the Weak",
+       "grade": "Common",
+       "abnormal": 19003101
+      },
+      {
+       "id": 7,
+       "name": "Worm Carnage",
+       "grade": "Special",
+       "abnormal": 19003111
+      },
+      {
+       "id": 8,
+       "name": "Fire Moth",
+       "grade": "Common",
+       "abnormal": 19003121
+      },
+      {
+       "id": 9,
+       "name": "Ignoring the Elite",
+       "grade": "Common",
+       "abnormal": 19003131
+      },
+      {
+       "id": 10,
+       "name": "Elite Hunter",
+       "grade": "Special",
+       "abnormal": 19003141
+      },
+      {
+       "id": 1004,
+       "name": "Poisoned by Mana",
+       "grade": "Common",
+       "abnormal": 19003051
+      },
+      {
+       "id": 1005,
+       "name": "Predator",
+       "grade": "Common",
+       "abnormal": 19003061
+      },
+      {
+       "id": 1006,
+       "name": "Targeting Weakness",
+       "grade": "Common",
+       "abnormal": 19003021
+      }
+     ]
+    },
+    {
+     "slot": 3,
+     "buffs": [
+      {
+       "id": 1,
+       "name": "Slayer",
+       "grade": "Special",
+       "abnormal": 19003001
+      },
+      {
+       "id": 2,
+       "name": "Guardian",
+       "grade": "Common",
+       "abnormal": 19003011
+      },
+      {
+       "id": 3,
+       "name": "Adrenaline",
+       "grade": "Special",
+       "abnormal": 19003031
+      },
+      {
+       "id": 4,
+       "name": "Footwork",
+       "grade": "Common",
+       "abnormal": 19003041
+      },
+      {
+       "id": 6,
+       "name": "Ignoring the Weak",
+       "grade": "Common",
+       "abnormal": 19003101
+      },
+      {
+       "id": 7,
+       "name": "Worm Carnage",
+       "grade": "Special",
+       "abnormal": 19003111
+      },
+      {
+       "id": 8,
+       "name": "Fire Moth",
+       "grade": "Common",
+       "abnormal": 19003121
+      },
+      {
+       "id": 9,
+       "name": "Ignoring the Elite",
+       "grade": "Common",
+       "abnormal": 19003131
+      },
+      {
+       "id": 10,
+       "name": "Elite Hunter",
+       "grade": "Special",
+       "abnormal": 19003141
+      },
+      {
+       "id": 1004,
+       "name": "Poisoned by Mana",
+       "grade": "Common",
+       "abnormal": 19003051
+      },
+      {
+       "id": 1005,
+       "name": "Predator",
+       "grade": "Common",
+       "abnormal": 19003061
+      },
+      {
+       "id": 1006,
+       "name": "Targeting Weakness",
+       "grade": "Common",
+       "abnormal": 19003021
+      }
+     ]
+    }
+   ]
+  },
+  "900002": {
+   "name": "Dungeon_Daily_0001",
+   "subtype": "Wave",
+   "wave": 7,
+   "show_points": true,
+   "resurrection": "Restart",
+   "kill_points": {
+    "2702174": 3000
+   },
+   "subtype_points": {},
+   "env_points": {
+    "E_Dungeon_Daily_0001_Orb_01": 70,
+    "E_Dungeon_Daily_0001_Orb_02": 150,
+    "E_Dungeon_Daily_0001_Orb_03": 350
+   },
+   "reward_light": [
+    {
+     "need": 10000,
+     "items": [
+      [
+       503700096,
+       50
+      ]
+     ]
+    },
+    {
+     "need": 9500,
+     "items": [
+      [
+       503700096,
+       48
+      ]
+     ]
+    },
+    {
+     "need": 9000,
+     "items": [
+      [
+       503700096,
+       46
+      ]
+     ]
+    },
+    {
+     "need": 8500,
+     "items": [
+      [
+       503700096,
+       44
+      ]
+     ]
+    },
+    {
+     "need": 8000,
+     "items": [
+      [
+       503700096,
+       42
+      ]
+     ]
+    },
+    {
+     "need": 7500,
+     "items": [
+      [
+       503700096,
+       40
+      ]
+     ]
+    },
+    {
+     "need": 7000,
+     "items": [
+      [
+       503700096,
+       38
+      ]
+     ]
+    },
+    {
+     "need": 6500,
+     "items": [
+      [
+       503700096,
+       36
+      ]
+     ]
+    },
+    {
+     "need": 6000,
+     "items": [
+      [
+       503700096,
+       34
+      ]
+     ]
+    },
+    {
+     "need": 5500,
+     "items": [
+      [
+       503700096,
+       32
+      ]
+     ]
+    },
+    {
+     "need": 5000,
+     "items": [
+      [
+       503700096,
+       30
+      ]
+     ]
+    },
+    {
+     "need": 4500,
+     "items": [
+      [
+       503700096,
+       28
+      ]
+     ]
+    },
+    {
+     "need": 4000,
+     "items": [
+      [
+       503700096,
+       26
+      ]
+     ]
+    },
+    {
+     "need": 3500,
+     "items": [
+      [
+       503700096,
+       24
+      ]
+     ]
+    },
+    {
+     "need": 3000,
+     "items": [
+      [
+       503700096,
+       22
+      ]
+     ]
+    },
+    {
+     "need": 2500,
+     "items": [
+      [
+       503700096,
+       20
+      ]
+     ]
+    },
+    {
+     "need": 2000,
+     "items": [
+      [
+       503700096,
+       18
+      ]
+     ]
+    },
+    {
+     "need": 1500,
+     "items": [
+      [
+       503700096,
+       16
+      ]
+     ]
+    },
+    {
+     "need": 1000,
+     "items": [
+      [
+       503700096,
+       14
+      ]
+     ]
+    },
+    {
+     "need": 500,
+     "items": [
+      [
+       503700096,
+       12
+      ]
+     ]
+    }
+   ],
+   "reward_dark": [
+    {
+     "need": 10000,
+     "items": [
+      [
+       503700096,
+       50
+      ]
+     ]
+    },
+    {
+     "need": 9500,
+     "items": [
+      [
+       503700096,
+       48
+      ]
+     ]
+    },
+    {
+     "need": 9000,
+     "items": [
+      [
+       503700096,
+       46
+      ]
+     ]
+    },
+    {
+     "need": 8500,
+     "items": [
+      [
+       503700096,
+       44
+      ]
+     ]
+    },
+    {
+     "need": 8000,
+     "items": [
+      [
+       503700096,
+       42
+      ]
+     ]
+    },
+    {
+     "need": 7500,
+     "items": [
+      [
+       503700096,
+       40
+      ]
+     ]
+    },
+    {
+     "need": 7000,
+     "items": [
+      [
+       503700096,
+       38
+      ]
+     ]
+    },
+    {
+     "need": 6500,
+     "items": [
+      [
+       503700096,
+       36
+      ]
+     ]
+    },
+    {
+     "need": 6000,
+     "items": [
+      [
+       503700096,
+       34
+      ]
+     ]
+    },
+    {
+     "need": 5500,
+     "items": [
+      [
+       503700096,
+       32
+      ]
+     ]
+    },
+    {
+     "need": 5000,
+     "items": [
+      [
+       503700096,
+       30
+      ]
+     ]
+    },
+    {
+     "need": 4500,
+     "items": [
+      [
+       503700096,
+       28
+      ]
+     ]
+    },
+    {
+     "need": 4000,
+     "items": [
+      [
+       503700096,
+       26
+      ]
+     ]
+    },
+    {
+     "need": 3500,
+     "items": [
+      [
+       503700096,
+       24
+      ]
+     ]
+    },
+    {
+     "need": 3000,
+     "items": [
+      [
+       503700096,
+       22
+      ]
+     ]
+    },
+    {
+     "need": 2500,
+     "items": [
+      [
+       503700096,
+       20
+      ]
+     ]
+    },
+    {
+     "need": 2000,
+     "items": [
+      [
+       503700096,
+       18
+      ]
+     ]
+    },
+    {
+     "need": 1500,
+     "items": [
+      [
+       503700096,
+       16
+      ]
+     ]
+    },
+    {
+     "need": 1000,
+     "items": [
+      [
+       503700096,
+       14
+      ]
+     ]
+    },
+    {
+     "need": 500,
+     "items": [
+      [
+       503700096,
+       12
+      ]
+     ]
+    }
+   ],
+   "min_level": 30,
+   "seconds": 60,
+   "ready": 12,
+   "clear_bonus": 100
+  },
+  "900003": {
+   "name": "Dungeon_Daily_0002",
+   "subtype": "Wave",
+   "wave": 8,
+   "show_points": true,
+   "resurrection": "Restart",
+   "kill_points": {},
+   "subtype_points": {},
+   "env_points": {
+    "E_Dungeon_Daily_0002_Coin_03": 120,
+    "E_Dungeon_Daily_0002_Coin_02": 200,
+    "E_Dungeon_Daily_0002_Coin_01": 450
+   },
+   "reward_light": [
+    {
+     "need": 10000,
+     "items": [
+      [
+       930100001,
+       300000
+      ]
+     ]
+    },
+    {
+     "need": 9500,
+     "items": [
+      [
+       930100001,
+       290000
+      ]
+     ]
+    },
+    {
+     "need": 9000,
+     "items": [
+      [
+       930100001,
+       280000
+      ]
+     ]
+    },
+    {
+     "need": 8500,
+     "items": [
+      [
+       930100001,
+       270000
+      ]
+     ]
+    },
+    {
+     "need": 8000,
+     "items": [
+      [
+       930100001,
+       260000
+      ]
+     ]
+    },
+    {
+     "need": 7500,
+     "items": [
+      [
+       930100001,
+       250000
+      ]
+     ]
+    },
+    {
+     "need": 7000,
+     "items": [
+      [
+       930100001,
+       240000
+      ]
+     ]
+    },
+    {
+     "need": 6500,
+     "items": [
+      [
+       930100001,
+       230000
+      ]
+     ]
+    },
+    {
+     "need": 6000,
+     "items": [
+      [
+       930100001,
+       220000
+      ]
+     ]
+    },
+    {
+     "need": 5500,
+     "items": [
+      [
+       930100001,
+       210000
+      ]
+     ]
+    },
+    {
+     "need": 5000,
+     "items": [
+      [
+       930100001,
+       200000
+      ]
+     ]
+    },
+    {
+     "need": 4500,
+     "items": [
+      [
+       930100001,
+       190000
+      ]
+     ]
+    },
+    {
+     "need": 4000,
+     "items": [
+      [
+       930100001,
+       180000
+      ]
+     ]
+    },
+    {
+     "need": 3500,
+     "items": [
+      [
+       930100001,
+       170000
+      ]
+     ]
+    },
+    {
+     "need": 3000,
+     "items": [
+      [
+       930100001,
+       160000
+      ]
+     ]
+    },
+    {
+     "need": 2500,
+     "items": [
+      [
+       930100001,
+       150000
+      ]
+     ]
+    },
+    {
+     "need": 2000,
+     "items": [
+      [
+       930100001,
+       140000
+      ]
+     ]
+    },
+    {
+     "need": 1500,
+     "items": [
+      [
+       930100001,
+       130000
+      ]
+     ]
+    },
+    {
+     "need": 1000,
+     "items": [
+      [
+       930100001,
+       120000
+      ]
+     ]
+    },
+    {
+     "need": 500,
+     "items": [
+      [
+       930100001,
+       110000
+      ]
+     ]
+    }
+   ],
+   "reward_dark": [
+    {
+     "need": 10000,
+     "items": [
+      [
+       930100001,
+       300000
+      ]
+     ]
+    },
+    {
+     "need": 9500,
+     "items": [
+      [
+       930100001,
+       290000
+      ]
+     ]
+    },
+    {
+     "need": 9000,
+     "items": [
+      [
+       930100001,
+       280000
+      ]
+     ]
+    },
+    {
+     "need": 8500,
+     "items": [
+      [
+       930100001,
+       270000
+      ]
+     ]
+    },
+    {
+     "need": 8000,
+     "items": [
+      [
+       930100001,
+       260000
+      ]
+     ]
+    },
+    {
+     "need": 7500,
+     "items": [
+      [
+       930100001,
+       250000
+      ]
+     ]
+    },
+    {
+     "need": 7000,
+     "items": [
+      [
+       930100001,
+       240000
+      ]
+     ]
+    },
+    {
+     "need": 6500,
+     "items": [
+      [
+       930100001,
+       230000
+      ]
+     ]
+    },
+    {
+     "need": 6000,
+     "items": [
+      [
+       930100001,
+       220000
+      ]
+     ]
+    },
+    {
+     "need": 5500,
+     "items": [
+      [
+       930100001,
+       210000
+      ]
+     ]
+    },
+    {
+     "need": 5000,
+     "items": [
+      [
+       930100001,
+       200000
+      ]
+     ]
+    },
+    {
+     "need": 4500,
+     "items": [
+      [
+       930100001,
+       190000
+      ]
+     ]
+    },
+    {
+     "need": 4000,
+     "items": [
+      [
+       930100001,
+       180000
+      ]
+     ]
+    },
+    {
+     "need": 3500,
+     "items": [
+      [
+       930100001,
+       170000
+      ]
+     ]
+    },
+    {
+     "need": 3000,
+     "items": [
+      [
+       930100001,
+       160000
+      ]
+     ]
+    },
+    {
+     "need": 2500,
+     "items": [
+      [
+       930100001,
+       150000
+      ]
+     ]
+    },
+    {
+     "need": 2000,
+     "items": [
+      [
+       930100001,
+       140000
+      ]
+     ]
+    },
+    {
+     "need": 1500,
+     "items": [
+      [
+       930100001,
+       130000
+      ]
+     ]
+    },
+    {
+     "need": 1000,
+     "items": [
+      [
+       930100001,
+       120000
+      ]
+     ]
+    },
+    {
+     "need": 500,
+     "items": [
+      [
+       930100001,
+       110000
+      ]
+     ]
+    }
+   ],
+   "min_level": 30
+  }
+ }
+}

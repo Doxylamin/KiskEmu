@@ -294,10 +294,9 @@ public static class SocialPackets
 
     /// <summary>Common_EquipItemDetail in the layout of the observed Common_Item detail (GamePackets.WriteItem).</summary>
     static void WriteEquipDetail(PacketWriter w, EquipDetail d) =>
-        w.U8(d.EnchantLevel).I32(0).I32(d.EnchantBonusProb).U8(d.SurpassEnchantLevel).I32(d.SurpassEnchantBonusProb).I32(d.ItemLevel).Bool(false).U8(d.EquipSlot)
-            .Varint(1).Zeros(7).I64(d.SoulBindOwner).U8(d.SoulBindCount)
-            .Varint(3).Zeros(12)
-            .Zeros(7).U8(0);
+        GamePackets.DetailTail(EquipDetail.WriteMagicStones(w.U8(d.EnchantLevel).I32(0).I32(d.EnchantBonusProb).U8(d.SurpassEnchantLevel).I32(d.SurpassEnchantBonusProb).I32(d.ItemLevel).Bool(false).U8(d.EquipSlot), d)
+            .I64(d.SoulBindOwner).U8(d.SoulBindCount)
+            .Varint(3).Zeros(12), d with { RolledStats = null }, 0);
 
     // ---------- Friends ----------
 
@@ -384,6 +383,16 @@ public static class SocialPackets
     /// <summary>PartyInvite_RS (0x9207): to the inviter.</summary>
     public static byte[] PartyInviteReply(int result, int serverId, string targetName) =>
         Op(SocialOpcodes.PartyInviteRs).Result(result).ServerId(serverId).String(targetName).ToArray();
+
+    /// <summary>
+    /// PartyInviteStart_NT (0x9208): to the inviter after PartyInvite_RS, describing the invitee (OBSERVED official 2026-11-12, 80 B):
+    /// server id u16 | game account id string | char db id i64 | key varint (unlike the i32 key of PartyMember) | pc id i32 | level i32 | equip item level i32 |
+    /// nickname | invite expire time i64.
+    /// </summary>
+    public static byte[] PartyInviteStart(int serverId, string gameAccountId, long dbId, int key, int pcId, int level, int equipItemLevel,
+        string nickname, long expireTime) =>
+        Op(SocialOpcodes.PartyInviteStartNt).ServerId(serverId).String(gameAccountId).I64(dbId).Varint(key).I32(pcId).I32(level).I32(equipItemLevel)
+            .String(nickname).I64(expireTime).ToArray();
 
     /// <summary>PartyInvite_NT (0x9209): to the invitee; answered with PartyInviteResponse_RQ naming the party key.</summary>
     public static byte[] PartyInviteNotice(long partyKey, long inviterDbId, InvitationInfo inviter, long expireTime)

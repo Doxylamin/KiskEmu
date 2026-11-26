@@ -24,7 +24,7 @@ public sealed class DecomposeTests
         var session = await GameSessionTestHelpers.EnterWorldAsync(store, Now);
         var reply = await session.HandleAsync(new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).ToArray(), Now);
         Assert.Equal(GameSession.ItemDecomposeRs, GameSessionTestHelpers.Op(reply[0]));
-        Assert.Equal(1, BitConverter.ToInt32(reply[0], 2));
+        Assert.Equal(1, BitConverter.ToUInt16(reply[0], 2));   // u16 EResult (#70)
     }
 
     [Fact]
@@ -40,8 +40,8 @@ public sealed class DecomposeTests
         Assert.Equal(12, request.Length);
         var replies = await session.HandleAsync(request, Now);
         var rs = Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == GameSession.ItemDecomposeRs);
-        Assert.Equal(0, BitConverter.ToInt32(rs, 2));
-        Assert.Equal(1, BitConverter.ToInt32(rs, 7));
+        Assert.Equal(GameSession.ItemDecomposed, BitConverter.ToUInt16(rs, 2));
+        Assert.Equal(1, BitConverter.ToInt32(rs, 5));
         var nt = Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == 0x561b);
         var types = ModificationTypes(nt);
         Assert.Contains(types, t => t == 2);
@@ -65,8 +65,8 @@ public sealed class DecomposeTests
         var request = new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(3).I64(0xBC).I64(0xBD).I64(0xBF).ToArray();
         var replies = await session.HandleAsync(request, Now);
         var rs = Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == GameSession.ItemDecomposeRs);
-        Assert.Equal(0, BitConverter.ToInt32(rs, 2));
-        Assert.Equal(3, BitConverter.ToInt32(rs, 7));
+        Assert.Equal(GameSession.ItemDecomposed, BitConverter.ToUInt16(rs, 2));
+        Assert.Equal(3, BitConverter.ToInt32(rs, 5));
 
         var nt = Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == 0x561b);
         var types = ModificationTypes(nt);
@@ -151,11 +151,11 @@ public sealed class DecomposeTests
         var replies = await session.HandleAsync(
             new PacketWriter().U16(GameSession.ItemDecomposeRq).U8(0).Varint(1).I64(960).ToArray(), Now);
         var rs = Assert.Single(replies, p => GameSessionTestHelpers.Op(p) == GameSession.ItemDecomposeRs);
-        Assert.Equal(0, BitConverter.ToInt32(rs, 2));
+        Assert.Equal(GameSession.ItemDecomposed, BitConverter.ToUInt16(rs, 2));
         Assert.True(GameSessionTestHelpers.HasOpcode(replies, GameSession.SkinUpdateNt));
         Assert.Equal(1, session.OwnedSkins.GetValueOrDefault(skinId));
         var reader = new PacketReader(rs) { Offset = 2 };
-        reader.I32();
+        reader.U16();
         reader.Bool();
         reader.I32();
         reader.I32();

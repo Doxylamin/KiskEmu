@@ -174,7 +174,7 @@ public sealed partial class GameSession
 
     /// <summary>Item.dat AutoUseWhenAcquire effects the server applies (GetTitle 532560065, GetWing, AscensionGrade 533900001, ...).</summary>
     static bool AutoUsed(ItemUse use) => use is { AutoUse: true, Effect: "GetVehicle" or "GetVehicleSoul" or "GetVehicleSoulCrystal" or "GetWing" or "GetTitle"
-        or "GetSkin" or "GetSkinSet" or "GetSocialAction" or "AscensionGrade" } or { Effect: "GetDaevanionPoint" };
+        or "GetSkin" or "GetSkinSet" or "GetSocialAction" or "AscensionGrade" or "GetStigmaShard" } or { Effect: "GetDaevanionPoint" };
 
     /// <summary>Pet souls and Daevanion crystals apply on acquire (Item.dat AutoUseWhenAcquire; morph crystals drip points).</summary>
     async Task<List<byte[]>> AutoUseAcquiredItemsAsync(IEnumerable<int> templateIds, long now, CancellationToken ct)
@@ -233,7 +233,7 @@ public sealed partial class GameSession
     /// 0x5612 ItemUse_RQ {i64 uid}. Refused (result 1) for an unknown or cooling item, or an effect
     /// that is not implemented; always answers 0x5613 (never leaves the request unanswered).
     /// </summary>
-    async Task<List<byte[]>> UseItemAsync(long uid, long now, CancellationToken ct, bool reply = true, int count = 1)
+    async Task<List<byte[]>> UseItemAsync(long uid, long now, CancellationToken ct, bool reply = true, int count = 1, bool autoPotion = false)
     {
         usedCountApplied = false;
         storedItems.TryGetValue(uid, out var row);
@@ -245,6 +245,8 @@ public sealed partial class GameSession
             return Fail();
         var questAcquire = await TryQuestAcquireFromItemAsync(store, character, row, use, now, reply, ct);
         if (questAcquire.Count > 0) return questAcquire;
+        if (row.TemplateId == LegionHallReturnScrollId)
+            return itemCast is null && LegionHallDestination() is not null ? StartItemCast(row, LegionHallCast, now) : Fail();
         if (use is null)
         {
             LogItemUseRefused(itemId, null, "missing_use_data");
@@ -258,14 +260,17 @@ public sealed partial class GameSession
             "GetVehicleSoul" => await UseSoulItemAsync(store, character, row, use, reply, ct),
             "GetVehicleSoulCrystal" => await UseCrystalItemAsync(store, character, row, use, reply, ct),
             "Fix_VehicleCreatureLevel" => await UseBoardLevelItemAsync(store, character, row, use, reply, ct),
-            "Skill" => await UseSkillItemAsync(store, character, row, use, reply, now, ct),
-            "Telpo_Home" when itemCast is null => StartItemCast(row, cooldown, reply, now),
+            "Skill" => await UseSkillItemAsync(store, character, row, use, reply && !autoPotion, now, ct, autoPotion),
+            "Telpo_Home" when itemCast is null => StartItemCast(row, cooldown, now),
             "GetKina" or "GetNonBindingKina" when use.Values is [var amount, ..] && long.TryParse(amount, out var kina) && kina > 0 =>
                 await UseKinaItemAsync(store, character, row, kina, Math.Clamp(count, 1, (int)Math.Min(int.MaxValue, row.Quantity)), reply, ct),
             "GetTitle" when use.Values is [var titleText, ..] && int.TryParse(titleText, out var titleId) => await UseTitleItemAsync(store, character, row, titleId, reply, ct),
             "GetSkin" or "GetSkinSet" when use.Values is [{ Length: > 0 }, ..] => await UseSkinItemAsync(store, character, row, use, reply, ct),
             "GetSocialAction" when use.Values is [var emoteText, ..] && int.TryParse(emoteText, out var emote) => await UseSocialActionItemAsync(store, character, row, emote, reply, ct),
             "GetDaevanionPoint" => await UseDaevanionPointItemAsync(store, character, row, use, reply, ct),
+            "MonolithAllClear" => await UseMonolithVoucherAsync(store, character, row, use, reply, now, ct),   // GameSession.EmpyreanTraces.cs
+            "GetSkillPoint" => await UseSkillPointItemAsync(store, character, row, use, SkillPointTypePoint, reply, ct),
+            "GetStigmaShard" => await UseSkillPointItemAsync(store, character, row, use, SkillPointTypeStigma, reply, ct),
             "GetWing" when use.Values is [var wingText, ..] && int.TryParse(wingText, out var wing) && wing > 0 => await UseWingItemAsync(store, character, row, wing, reply, ct),
             "AscensionGrade" when use.Values is [var gradeText, ..] && int.TryParse(gradeText.Split('_')[^1], out var grade) && grade is >= 2 and <= 6 =>
                 await UseAscensionItemAsync(store, character, row, grade, reply, ct),
@@ -451,10 +456,14 @@ public sealed partial class GameSession
 
     /// <summary>
     /// An item skill (potions, food, drinks, scrolls): instant HP/MP/FP heals now; Abnormal_True
-    /// effects (heal over time, stat buffs) go through ApplyItemAbnormals. The official order: skill
-    /// start on the player (0x3802), the item count (0x561b), ItemUse_NT (0x5616), then the effect.
+    /// effects (heal over time, stat buffs) go through ApplyItemAbnormals. OBSERVED official order (2026-11-12 r2, Superior Speed
+    /// Scroll i=19270-19278 and Fruit Salad i=34158-34167): 0x3802 skill start on the player, 0x5613, 0x3806 skill end, the
+    /// skill's 0x3804 effect, the item count (0x561b, reason 14), then the effect (0x382a, 0x364a); no ItemUse_NT 0x5616 (#13).
+    /// The auto-potion (OBSERVED 2026-11-15 i=569962-569970, Life Potion 530126004): 0x3802, 0x3806, the item count (0x561b,
+    /// reason 38), 0x5616, an empty 0x364a, then 0x3804; no 0x5613.
     /// </summary>
-    async Task<List<byte[]>?> UseSkillItemAsync(INativeCharacterStore store, Guid character, ItemState row, ItemUse use, bool reply, long now, CancellationToken ct)
+    async Task<List<byte[]>?> UseSkillItemAsync(INativeCharacterStore store, Guid character, ItemState row, ItemUse use, bool reply, long now, CancellationToken ct,
+        bool autoPotion = false)
     {
         if (use.Values is not [var value, ..] || !int.TryParse(value, out var skillId) || resources is not { } r) return null;
         var effects = Boxes.SkillEffects(skillId);
@@ -475,11 +484,14 @@ public sealed partial class GameSession
         var done = await Stored(async () => await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, 1, ct) ? [[]] : []);
         if (done.Count == 0) return null;
         actionUid = actionUid % 255 + 1;
-        var replies = new List<byte[]>();
+        var replies = new List<byte[]> { GamePackets.ItemSkillStart(playerKey, skillId, actionUid, worldPlayer?.Heading ?? 0) };
         if (reply) replies.Add(RidePackets.ItemUseReply(0, WireKey(row), row.TemplateId));
-        replies.Add(GamePackets.SkillStart(skillId, actionUid, worldPlayer?.Heading ?? 0, position ?? Vector3d.Zero, playerKey, actorKey: playerKey));
-        replies.AddRange(await InventoryChangesAsync(ct, 0, DecreaseItemUse));
-        replies.Add(RidePackets.ItemUsed(WireKey(row), row.TemplateId));
+        replies.Add(GamePackets.SkillEnd(playerKey, skillId, actionUid));
+        if (autoPotion)
+            replies.AddRange([.. await InventoryChangesAsync(ct, 0, DecreaseItemAutoUse), RidePackets.ItemUsed(WireKey(row), row.TemplateId),
+                GamePackets.CharStatsUpdate(playerKey, 0), GamePackets.ItemSkillEffect(playerKey, skillId, actionUid)]);
+        else
+            replies.AddRange([GamePackets.ItemSkillEffect(playerKey, skillId, actionUid), .. await InventoryChangesAsync(ct, 0, DecreaseItemUse)]);
         r.Hp = Math.Min(r.HpMax, r.Hp + hp);
         r.Mp = Math.Min(r.MpMax, r.Mp + mp);
         if (r.FpMax > 0) r.Fp = Math.Min(r.FpMax, r.Fp + fp);
@@ -490,15 +502,28 @@ public sealed partial class GameSession
         return replies;
     }
 
-    /// <summary>A cast item (return scroll): 0x5617 now, completed on the tick after the cast time unless the player moves.</summary>
-    List<byte[]>? StartItemCast(ItemState row, ItemCooldown cooldown, bool reply, long now)
+    /// <summary>
+    /// The legion hall return scroll (OBSERVED official 2026-11-15, item 530559490; not in the exported item data): a 2 s cast
+    /// (0x5617, then 0x5619 2.05 s later) that takes the player to the legion's hall (map 902 at L1_Agit_1_Respawn for an Elyos
+    /// legion in the sample).
+    /// </summary>
+    const int LegionHallReturnScrollId = 530559490;
+    static readonly ItemCooldown LegionHallCast = new(0, "None", 2_000);
+    /// <summary>TeleportEffect of a return item's map move: 98 (0x62), OBSERVED with the legion hall scroll; the Return Scroll (Telpo_Home) CANDIDATE.</summary>
+    const byte ReturnTeleportEffect = 98;
+
+    /// <summary>
+    /// A cast item (return scroll): 0x5617 now, completed on the tick after the cast time unless the player moves. No
+    /// 0x5613 yet: the official server answers the request only after the arrival (OBSERVED 2026-11-15).
+    /// </summary>
+    List<byte[]> StartItemCast(ItemState row, ItemCooldown cooldown, long now)
     {
         var key = WireKey(row);
         itemCast = (key, row.TemplateId, now + Math.Max(0, cooldown.CastMs));
         castFrom = position;
         var started = RidePackets.ItemUseStarted(playerKey, key, row.TemplateId);
         worldPlayer?.Map?.Broadcast(worldPlayer, [started]);
-        return reply ? [RidePackets.ItemUseReply(0, key, row.TemplateId), started] : [started];
+        return [started];
     }
 
     /// <summary>Moving (or casting) cancels a cast item: 0x5618 to the player and those nearby.</summary>
@@ -511,22 +536,39 @@ public sealed partial class GameSession
         return [stopped];
     }
 
-    /// <summary>A finished cast: the scroll is used up, 0x5619, then Telpo_Home - bound Kibelisk if any, else race home map.</summary>
+    /// <summary>
+    /// A finished cast: the scroll is used up and the player moves - the legion hall scroll to the legion's hall, Telpo_Home to
+    /// the bound Kibelisk if any, else the race home map. OBSERVED official order (legion hall scroll 2026-11-15): 0x5619, the
+    /// own 0x3647 `02 62` with 0x3621 effect 98, the load; after the own appearance 0x5613 (772), then 0x561b (decrease 14).
+    /// No 0x5616.
+    /// </summary>
     async Task<List<byte[]>> CompleteItemCastAsync(long now, CancellationToken ct)
     {
         if (itemCast is not { } cast || now < cast.DueMs) return [];
         itemCast = null;
         if (Store is not { } store || CharacterId is not { } character || !storedItems.TryGetValue(cast.Key, out var row) || resources is null || dead) return [];
+        var destination = cast.ItemId == LegionHallReturnScrollId ? LegionHallDestination() : TelpoHomeDestination();
+        if (destination is not { } to) return [RidePackets.ItemUseInterrupted(playerKey, cast.Key, cast.ItemId, 0)];
         var done = await Stored(async () => await store.ConsumeItemAsync(character, row.InstanceId, row.Revision, 1, ct) ? [[]] : []);
         if (done.Count == 0) return [RidePackets.ItemUseInterrupted(playerKey, cast.Key, cast.ItemId, 0)];
         var completed = RidePackets.ItemUseCompleted(playerKey, cast.Key, cast.ItemId);
         worldPlayer?.Map?.Broadcast(worldPlayer, [completed]);
-        var (targetMap, home) = TelpoHomeDestination();
-        return [completed, RidePackets.ItemUsed(cast.Key, cast.ItemId), .. await InventoryChangesAsync(ct, 0, DecreaseItemUse), .. Teleport(targetMap, home, now)];
+        afterAppear.Add(RidePackets.ItemUseReply(0, cast.Key, cast.ItemId));
+        afterAppear.AddRange(await InventoryChangesAsync(ct, 0, DecreaseItemUse));
+        return [completed, .. PcTeleport(to.MapId, to.Position, now, ReturnTeleportEffect)];
+    }
+
+    /// <summary>The legion hall scroll's destination: the hall the legion rents (guilds.json agits: its map's *_Respawn point).</summary>
+    (int MapId, Vector3d Position)? LegionHallDestination()
+    {
+        if (guild is not { AgitId: > 0 } g || Legion.Agit(g.AgitId) is not { } agit) return null;
+        foreach (var (name, p) in data.MapPoints(agit.MapId))
+            if (name.EndsWith("_Respawn", StringComparison.OrdinalIgnoreCase) && p.Length >= 3) return (agit.MapId, new Vector3d(p[0], p[1], p[2]));
+        return data.MapStart(agit.MapId) is { } start ? (agit.MapId, start.Position) : null;
     }
 
     /// <summary>Return scroll destination: latest engraved TeleportArtifact (bind point), else race starter home.</summary>
-    (int MapId, Vector3d Position) TelpoHomeDestination()
+    (int MapId, Vector3d Position)? TelpoHomeDestination()
     {
         for (var i = engraved.Count - 1; i >= 0; i--)
         {
@@ -634,4 +676,7 @@ public sealed partial class GameSession
 
     // EIncreaseReason / EDecreaseReason (usmap).
     const byte IncreaseItemUse = 9, IncreaseOpenRewardBox = 31, DecreaseItemUse = 14, DecreaseOpenRewardBox = 37;
+    /// <summary>An auto-used item's decrease (OBSERVED 2026-11-15, the auto-potion; the battle pass level item uses it too).</summary>
+    const byte DecreaseItemAutoUse = 38;
+    internal const byte DecreaseItemUseReason = DecreaseItemUse, DecreaseItemAutoUseReason = DecreaseItemAutoUse;
 }

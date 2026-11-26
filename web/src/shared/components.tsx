@@ -131,6 +131,7 @@ export function PromptDialog({ request, onClose }: { request: PromptRequest | nu
 /** Inline SVG icons (stroke style, 20px grid). */
 const ICONS: Record<string, string> = {
   overview: 'M3 10.5 10 4l7 6.5V17a1 1 0 0 1-1 1h-4v-5H8v5H4a1 1 0 0 1-1-1z',
+  bug: 'M7 6a3 3 0 0 1 6 0M6 8h8v5a4 4 0 0 1-8 0zM10 8v9M3 10.5h3M14 10.5h3M3.5 15.5l2.8-1.3M16.5 15.5l-2.8-1.3M4.5 5l2.2 2.2M15.5 5l-2.2 2.2',
   map: 'M2 5l5-2 6 2 5-2v12l-5 2-6-2-5 2zM7 3v12M13 5v12',
   players: 'M7 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM1.5 17c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M14 9a2.5 2.5 0 1 0 0-5M15 12c2 .4 3.3 2.2 3.6 5',
   broadcast: 'M3 8v4l9 4V4zM12 7.5a3 3 0 0 1 0 5M15 5a6.5 6.5 0 0 1 0 10M5 12.5 6 17h2l-1-4',

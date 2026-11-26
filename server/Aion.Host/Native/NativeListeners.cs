@@ -44,7 +44,19 @@ public sealed record NativeOptions
     public string? TraceDirectory { get; init; }
     /// <summary>The writable folder the staff dashboard's debug switches use (map-event log, client traces); unset: derived from the two settings above.</summary>
     public string? DebugDirectory { get; init; }
+    /// <summary>
+    /// The client game versions this server is built for (the u32 in the game greeting: 3527 = 2.0.6, 3533, ...). The game
+    /// port refuses another version with a log line instead of letting it stall on the loading screen, and KiskLauncher is
+    /// offered these versions (LauncherEndpoints). Empty: any version is let in and the launcher is offered 3527.
+    /// </summary>
+    public int[] ClientVersions { get; init; } = [];
     public int MaxConnections { get; init; } = 16;
+    /// <summary>
+    /// Most connections one source IP may hold on each native port at once (ConnectionGuard), so one address cannot take
+    /// every MaxConnections slot. Login and game ports count separately; loopback and private (LAN) addresses are never
+    /// limited. 0 turns the cap off.
+    /// </summary>
+    public int MaxConnectionsPerIp { get; init; } = 4;
     /// <summary>
     /// A connection without client data for this long is closed. Dead peers are found by TCP keepalive (ServeAsync) well
     /// before it; the limit only drops a live client that stays silent, as one may on the character screen (live
@@ -70,6 +82,8 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
     protected NativeOptions Options { get; } = options;
     protected ILogger Logger { get; } = logger;
     readonly SemaphoreSlim slots = new(options.MaxConnections, options.MaxConnections);
+    readonly ConnectionGuard guard = new(options.MaxConnectionsPerIp);
+    long lastRefusalLog = -60_000;
 
     protected abstract string Name { get; }
     protected abstract byte[] HandshakeReply(RsaPublicKey key, byte[] sessionKey);
@@ -85,16 +99,27 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
             while (!stoppingToken.IsCancellationRequested)
             {
                 var client = await listener.AcceptTcpClientAsync(stoppingToken);
-                if (client.Client.RemoteEndPoint is not IPEndPoint { Address: var address } || (Options.Network.LoopbackOnly && !IPAddress.IsLoopback(address))
-                    || !await slots.WaitAsync(0, stoppingToken))
+                if (client.Client.RemoteEndPoint is not IPEndPoint { Address: var address } || (Options.Network.LoopbackOnly && !IPAddress.IsLoopback(address)))
                 {
+                    client.Dispose();
+                    continue;
+                }
+                if (!guard.TryAccept(address))
+                {
+                    LogRefusal(address);
+                    client.Dispose();
+                    continue;
+                }
+                if (!await slots.WaitAsync(0, stoppingToken))
+                {
+                    guard.Release(address);
                     client.Dispose();
                     continue;
                 }
                 _ = Task.Run(async () =>
                 {
                     try { await ServeAsync(client, stoppingToken); }
-                    finally { slots.Release(); client.Dispose(); }
+                    finally { slots.Release(); guard.Release(address); client.Dispose(); }
                 }, stoppingToken);
             }
         }
@@ -103,6 +128,16 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
         {
             listener.Stop();
         }
+    }
+
+    /// <summary>A warning when an address hits the per-IP cap, at most once a minute so a flood does not flood the log.</summary>
+    void LogRefusal(IPAddress address)
+    {
+        var now = Environment.TickCount64;
+        if (now - lastRefusalLog < 60_000) return;
+        lastRefusalLog = now;
+        Logger.LogWarning("{Name} refused a connection from {Address}: it already holds {Limit} (Aion:Native:MaxConnectionsPerIp); {Refused} refused since start",
+            Name, address, Options.MaxConnectionsPerIp, guard.Refused);
     }
 
     async Task ServeAsync(TcpClient client, CancellationToken stoppingToken)
@@ -128,7 +163,13 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
                 if (buffer.Length > 65536) throw new ProtocolException("Greeting too large");
                 frames = buffer.Drain();
             } while (frames.Count == 0);
-            var key = NativeHandshake.ReadGreeting(frames[0], greetingTag);
+            var key = NativeHandshake.ReadGreeting(frames[0], greetingTag, out var clientVersion);
+            if (greetingTag == NativeHandshake.GameGreeting && !VersionAccepted(Options.ClientVersions, clientVersion))
+            {
+                Logger.LogWarning("{Name} refused a client of game version {Version}: this server is built for {Versions} (Aion:Native:ClientVersions)",
+                    Name, clientVersion, string.Join(", ", Options.ClientVersions));
+                return;
+            }
             var sessionKey = RandomNumberGenerator.GetBytes(32);
             await stream.WriteAsync(HandshakeReply(key, sessionKey), connection.Token);
             var cipher = new Rc4(sessionKey);
@@ -147,6 +188,9 @@ public abstract class NativeListener(int port, ushort greetingTag, NativeOptions
             Logger.LogWarning(error, "{Name} connection ended by an unexpected error", Name);
         }
     }
+
+    /// <summary>A greeting without a version (0: older tools, the load test) is let in; otherwise it must be listed, when a list is set.</summary>
+    public static bool VersionAccepted(int[] accepted, int version) => accepted.Length == 0 || version == 0 || accepted.Contains(version);
 
     /// <summary>TCP keepalive: a peer that vanished (crash, link down) is detected within about two minutes instead of at the idle limit.</summary>
     internal static void KeepAlive(TcpClient client)
@@ -293,7 +337,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
     : NativeListener(options.GamePort ?? 0, NativeHandshake.GameGreeting, options, logger)
 {
     static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(50);
-    /// <summary>Extra client frames in one TCP read are dropped (logged on the session) instead of starving the tick loop.</summary>
+    /// <summary>Client frames handled per tick; extra ones wait for the next tick (ClientFrameBacklog) instead of starving the loop.</summary>
     const int MaxClientFramesPerTick = 64;
     protected override string Name => "Native game";
 
@@ -311,6 +355,8 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
             ? LoginPackets.PreGeneratedIntro(LoginPackets.DefaultWorlds[0].Id, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) : null;
         // Map event notes (unsupported directives, objectives finished by timeout) go to the host log.
         GameSession.MapEventLog ??= text => Logger.LogInformation("Map event: {Text}", text);
+        // Every revive and refused revive (path, reason, respawn point) goes to the host log too.
+        GameSession.ReviveLog ??= text => Logger.LogInformation("{Text}", text);
         var gameData = services.GetRequiredService<GameData>();
         var session = new GameSession(gameData, new GameSessionOptions
         {
@@ -354,6 +400,7 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
         }
         var authenticated = Options.Development;
         var chunk = new byte[8192];
+        var backlog = new ClientFrameBacklog(cipher);
         Task<int>? pending = null;
         Task? wake = null;
         var lastData = DateTimeOffset.UtcNow;
@@ -399,13 +446,15 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
                     Logger.LogInformation("Native game closed: {Reason}", closing);
                     return;
                 }
-                var incoming = buffer.Drain();
-                if (incoming.Count > MaxClientFramesPerTick) session.RecordPacketFrameBurst(incoming.Count, MaxClientFramesPerTick);
-                for (var frameIndex = 0; frameIndex < incoming.Count; frameIndex++)
+                // Deciphered on arrival, all of them, so the keystream stays in step; past 64 per tick they wait for the next tick.
+                var dropped = backlog.Add(buffer.Drain());
+                if (dropped > 0)
                 {
-                    if (frameIndex >= MaxClientFramesPerTick) break;
-                    var body = incoming[frameIndex];
-                    var plain = cipher.Crypt(body);
+                    session.RecordPacketFrameBurst(backlog.Capacity + dropped, backlog.Capacity);
+                    Logger.LogWarning("Native game dropped {Dropped} client frames: backlog full ({Capacity})", dropped, backlog.Capacity);
+                }
+                foreach (var plain in backlog.Take(MaxClientFramesPerTick))
+                {
                     var header = plain.Length >= 2 ? plain[0] | plain[1] << 8 : -1;
                     if (!Options.Development)
                     {
@@ -481,7 +530,9 @@ public sealed class NativeGameListener(NativeOptions options, IServiceProvider s
                     if (header == 0x362E)
                         Logger.LogInformation("Native game BuilderCmd_RQ ({Length} bytes): {Body}", plain.Length,
                             Convert.ToHexString(plain.AsSpan(0, Math.Min(plain.Length, 1024))));
-                    else if (replies.Count == 0 && header >= 0 && !GameSession.SilentRequests.Contains(header) && GameSession.PositionReport(plain) is null)
+                    // A queued early chain step (0x3800 with a cast waiting) is answered by the tick, not here: not unanswered.
+                    else if (replies.Count == 0 && header >= 0 && !GameSession.SilentRequests.Contains(header) && GameSession.PositionReport(plain) is null
+                        && !(header == 0x3800 && session.CastQueued))
                     {
                         // Every one for the dashboard's diagnostics card; the log line once per connection.
                         unansweredLog?.Record(header, plain);

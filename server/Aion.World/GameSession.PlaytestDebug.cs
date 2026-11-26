@@ -155,6 +155,7 @@ public sealed partial class GameSession
 
     void LogQuestEvent(string kind, string code, int step, int status, int[]? goals = null)
     {
+        NoteQuestEvent(kind, code, step, status, goals);
         PlaytestDebug.Action(kind,
             ("quest", code),
             ("step", step),

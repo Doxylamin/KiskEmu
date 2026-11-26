@@ -23,6 +23,7 @@ export function Dashboard({ session, call, focus }: { session: Session; call: Ca
   const { wardrobe, state: wardrobeState } = useWardrobe(call);
   const [results, setResults] = useState<AdminCharacter[]>([]);
   const [query, setQuery] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [message, setMessage] = useState<StatusMessage | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
@@ -37,11 +38,12 @@ export function Dashboard({ session, call, focus }: { session: Session; call: Ca
     log: text => setEntries(list => [{ at: new Date(), text }, ...list].slice(0, 50)),
   };
 
-  const search = useCallback(async (q: string) => {
-    try { setResults(await call<AdminCharacter[]>('/api/admin/characters?' + new URLSearchParams({ q: q.trim() }))); }
+  // Deleted characters (on the graveyard account) only when asked for.
+  const search = useCallback(async (q: string, deleted = showDeleted) => {
+    try { setResults(await call<AdminCharacter[]>('/api/admin/characters?' + new URLSearchParams({ q: q.trim(), deleted: String(deleted) }))); }
     catch (error) { setMessage({ text: describe(error), kind: 'error' }); }
-  }, [call]);
-  useEffect(() => { search(''); }, [search]);
+  }, [call, showDeleted]);
+  useEffect(() => { search(''); }, [call]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!session.profile.buildId) setMessage({ text: 'No catalogue build is imported; grants are unavailable.', kind: 'error' }); }, [session]);
 
   async function open(characterId: string) {
@@ -67,7 +69,8 @@ export function Dashboard({ session, call, focus }: { session: Session; call: Ca
 
   return (
     <main className="dashboard">
-      <CharacterPanel tools={tools} results={results} query={query} onQuery={setQuery} onSearch={search}
+      <CharacterPanel tools={tools} results={results} query={query} onQuery={setQuery} onSearch={q => search(q)}
+        showDeleted={showDeleted} onShowDeleted={value => { setShowDeleted(value); search(query, value); }}
         detail={detail} onOpen={open} onRefresh={refresh} wardrobe={wardrobe} />
       <Preview wardrobe={wardrobe} state={wardrobeState} character={detail?.character ?? null}
         onViewer={v => { viewer.current = v; showSavedLook(); }} onReset={showSavedLook} onError={text => setMessage({ text, kind: 'error' })} />

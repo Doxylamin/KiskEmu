@@ -8,8 +8,9 @@
   <ItemGroup>
     <EmbeddedResource Include="../../tools/data/opcode-names.json" LogicalName="opcode-names.json" />
     <EmbeddedResource Include="../../tools/data/official_shop.json" LogicalName="official_shop.json" />
-    <!-- The client build this server supports, served to KiskLauncher (LauncherEndpoints): the launcher's own reference. -->
-    <EmbeddedResource Include="../../launcher/supported-build.json" LogicalName="supported-build.json" />
+    <!-- Every client game version's build reference (launcher/builds/<version>.json), served to KiskLauncher (LauncherEndpoints)
+         for the versions this server offers (Aion:Native:ClientVersions). -->
+    <EmbeddedResource Include="../../launcher/builds/*.json" LogicalName="builds/%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Aion.Infrastructure/Aion.Infrastructure.csproj" />

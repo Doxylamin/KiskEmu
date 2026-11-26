@@ -24,7 +24,7 @@ public sealed partial class GameSession
         if (plain.Length < 2) return [];
         var opcode = Opcode(plain);
         LogGamePacket(outbound: false, plain, now);
-        PacketTrace.RecordClient(opcode, plain.Length, now);
+        PacketTrace.RecordClient(plain, now);
         if (!AcceptClientPacket(opcode, now)) return [];
         try
         {
@@ -47,7 +47,7 @@ public sealed partial class GameSession
         {
             if (packet.Length < 2) continue;
             LogGamePacket(outbound: true, packet, nowMs);
-            PacketTrace.RecordServer(Opcode(packet), packet.Length, nowMs);
+            PacketTrace.RecordServer(packet, nowMs);
         }
     }
 

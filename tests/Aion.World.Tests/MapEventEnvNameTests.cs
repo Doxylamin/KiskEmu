@@ -22,6 +22,30 @@ public sealed class MapEventEnvNameTests
         Assert.Equal("E_D0_Layer_2_PrisonDoorSmall_001", door.EnvName);
     }
 
+    static bool Named(string goal, int map, string spawn) => WorldObjects.ObjectsOn(map).Single(o => o.Name == spawn) is var obj
+        && MapEventRun.NamesObject(new MapEventObjective(1, "UseEnvObj", [goal, "1"]), obj.Name, obj.EnvDataName);
+
+    [Fact]
+    public void Use_env_obj_goals_name_objects_exactly()
+    {
+        // Bakron's wind altar by its EnvObjData name; AbyssStone_01 by spawn entry, not its V01 variant (another EnvObjData row).
+        Assert.True(Named("E_PD_Bakron_SpiritAltar_01", 600071, "BakronIsland_Easy_SpiritAltar_Wind"));
+        Assert.True(Named("E_PD_ReforgedAbyss_AbyssStone_01_V01_1", 600082, "E_PD_ReforgedAbyss_AbyssStone_01_V01_1"));
+        Assert.True(Named("E_PD_ReforgedAbyss_AbyssStone_01", 600082, "E_PD_ReforgedAbyss_AbyssStone_01_1"));
+        Assert.False(Named("E_PD_ReforgedAbyss_AbyssStone_01", 600082, "E_PD_ReforgedAbyss_AbyssStone_01_V01_1"));
+    }
+
+    [Fact]
+    public void Munihelle_second_firewood_answers_to_its_own_name()
+    {
+        // E_D0_FireWood_002 is spawned as E_D0_FireWood_001_2: only the second batch's goal counts it.
+        var second = WorldObjects.ObjectsOn(110002).Single(o => o.Name == "E_D0_FireWood_001_2");
+        Assert.Equal("E_D0_FireWood_002", second.EnvDataName);
+        Assert.True(Named("E_D0_FireWood_002", 110002, second.Name));
+        Assert.False(Named("E_D0_FireWood_001", 110002, second.Name));
+        Assert.True(Named("E_D0_FireWood_001", 110002, "E_D0_FireWood_001_1"));
+    }
+
     [Fact]
     public async Task Prison_compound_door_counts_the_step()
     {

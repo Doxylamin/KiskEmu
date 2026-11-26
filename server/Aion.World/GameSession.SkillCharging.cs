@@ -3,6 +3,10 @@ using Aion.Protocol.Native;
 namespace Aion.World;
 
 // Dev SkillCharging* + 0x157 (usmap DevPacketData_GameServer_SkillCharging*). Charging start/end is not the 0x3800 mask wire.
+// Charged skills of every class: Skill.dat ChargeId names a SkillCharge.dat row (class-skills.json `charges`); step n is reached
+// after its ChargeTime / charge rate, and the release casts that step's ChargeSkillId. The step selection is ported from the
+// Addiboii fork (b1d445a, d6ef0ed; its 0x381c/0x381e layouts, OBSERVED in its community recordings, also fit our own capture).
+// The request parse, the 0x381a repeats while held, the stop handling and the charging abnormal stay ours.
 partial class GameSession
 {
     public const ushort SkillChargingStartNt = 0x381c;
@@ -111,31 +115,62 @@ partial class GameSession
         return false;
     }
 
-    /// <summary>Hold-to-charge skills (Deadshot): several damage rows on one timed shot, instant cast in data.</summary>
-    static bool HasHoldChargeStages(SkillDefinition definition)
-    {
-        if (SkillCooldown.IsBasicAutoAttack(definition) || definition.CastingMs > 0 || definition.Damage.Length < 2)
-            return false;
-        var timed = SkillTiming.TimedRows(definition);
-        // Stages of a charge grow stronger (Deadshot 599/18825 -> 809/25414). Equal simultaneous rows are one cast's two hits
-        // (Templar Shield Smite 173/17575 twice): those are ordinary instant skills, cast with 0x3800.
-        return timed[^1] == timed[0] && StageStrength(definition.Damage[^1]) > StageStrength(definition.Damage[0]);
-    }
+    /// <summary>
+    /// Charge rate on 0x381c (OBSERVED in our Deadshot capture: 40359E3F, about 1.236). The Addiboii fork reads the official rate as
+    /// attack speed / 10000 (CANDIDATE; attack speed is not modelled here), so every caster charges at the recorded rate.
+    /// </summary>
+    internal static readonly float SkillChargeRate = BitConverter.ToSingle([0x40, 0x35, 0x9E, 0x3F]);
 
-    static long StageStrength(DamageRow row) => (row.Ratio.Length > 0 ? row.Ratio[0] ?? 0 : 0) * 1000L + (row.Flat.Length > 0 ? row.Flat[0] ?? 0 : 0);
+    /// <summary>Latency allowance on the held time before the step clamp (OURS, from the Addiboii fork).</summary>
+    internal const int ChargeStepToleranceMs = 200;
 
-    static bool UsesHoldChargeFlow(SkillDefinition definition) => HasHoldChargeStages(definition);
+    /// <summary>
+    /// The SkillCharge.dat row of a charged skill (Skill.dat ChargeId; class-skills.json `charges`), else null. Every class's
+    /// charged skills go through the hold-charge flow (Templar 12090000, Ranger Deadshot 14010000, Sorcerer 15060000, ...).
+    /// </summary>
+    ChargeRow? HoldChargeRow(SkillDefinition definition) =>
+        definition.Charge > 0 ? data.Charge(definition.Charge) : null;
+
+    bool UsesHoldChargeFlow(SkillDefinition definition) => HoldChargeRow(definition) is not null;
 
     static bool SameHoldChargeRequest(CastRequest a, CastRequest b) => a.SkillId == b.SkillId;
 
-    static int ChargeStepForElapsed(SkillDefinition definition, long chargeBuildMs)
+    /// <summary>
+    /// The step a hold of <paramref name="heldMs"/> reaches at <paramref name="rate"/> (0: the charged skill itself). Step n needs
+    /// SkillChargeDataList[n-1].ChargeTime / rate ms (Addiboii fork b1d445a: the recorded holds fit 0.59 s step 1, 0.75 s step 2,
+    /// 1.00 s step 3 at rate 1.5786), plus <see cref="ChargeStepToleranceMs"/>.
+    /// </summary>
+    internal static int ChargeStepReached(ChargeRow charge, long heldMs, float rate)
     {
-        var stages = definition.Damage.Length;
-        if (stages <= 1) return 1;
-        var capped = Math.Min(chargeBuildMs, SkillChargeMaxHoldMs);
-        var step = (int)(capped * stages / SkillChargeMaxHoldMs) + 1;
-        return Math.Clamp(step, 1, stages);
+        var scaled = (Math.Max(0, heldMs) + ChargeStepToleranceMs) * (double)rate;
+        var step = 0;
+        while (step < charge.Steps.Length && charge.Steps[step][0] <= scaled) step++;
+        return step;
     }
+
+    /// <summary>
+    /// The released step and the skill it casts: the client's step, at most what the held time reaches; the selected skill is that
+    /// step's ChargeSkillId (OBSERVED in the fork's recordings), the charged skill itself at step 0.
+    /// </summary>
+    (int Step, int Selected) ChargeSelection(int chargedSkill, int askedStep, long heldMs)
+    {
+        if (ResolveSkillDefinition(chargedSkill) is not { } definition || HoldChargeRow(definition) is not { } charge)
+            return (0, chargedSkill);
+        var step = Math.Clamp(Math.Min(askedStep, ChargeStepReached(charge, heldMs, SkillChargeRate)), 0, charge.Steps.Length);
+        var selected = step == 0 ? chargedSkill : charge.Steps[step - 1][1];
+        return data.Skill(selected) is null ? (0, chargedSkill) : (step, selected);
+    }
+
+    /// <summary>Whether <paramref name="selected"/> is the charged skill or one of its steps (0x381d's selected skill).</summary>
+    bool IsChargeSelection(int chargedSkill, int selected) =>
+        selected == chargedSkill
+        || (ResolveSkillDefinition(chargedSkill) is { } definition && HoldChargeRow(definition) is { } charge
+            && charge.Steps.Any(s => s.Length == 2 && s[1] == selected));
+
+    /// <summary>SkillCharge.dat bMovableInCharge of the pending charge: moving does not cancel it (CANDIDATE, from the field name).</summary>
+    bool PendingChargeMovable =>
+        pendingSkillCharge is { } pending && ResolveSkillDefinition(pending.SkillId) is { } definition
+        && HoldChargeRow(definition) is { Movable: true };
 
     long HoldChargeBuildMs(long now) =>
         Math.Min(SkillChargeMaxHoldMs, Math.Max(0, lastChargeRepeatAtMs - skillChargeStartedAtMs));
@@ -185,10 +220,9 @@ partial class GameSession
         skillChargeAbnormalUids.Add(uid);
         var level = (byte)Math.Clamp(SkillLevel(request.SkillId), 1, 255);
         var yaw = (float)request.Yaw;
-        var chargeRate = BitConverter.ToSingle(Convert.FromHexString("40359E3F"));
         var chargingActId = HoldChargeChargingActId(request.SkillId);
         var expireAt = now + SkillChargingAbnormalDurationMs;
-        return HoldChargeStartPackets(request, level, yaw, chargeRate, chargingActId, uid, expireAt);
+        return HoldChargeStartPackets(request, level, yaw, SkillChargeRate, chargingActId, uid, expireAt);
     }
 
     List<byte[]> HoldChargeStartPackets(CastRequest request, byte level, float yaw, float chargeRate,
@@ -224,9 +258,9 @@ partial class GameSession
         var releaseMax = now - skillChargeStartedAtMs >= SkillChargeMaxHoldMs;
         if (!releaseSilence && !releaseMax)
             return [];
-        var definition = ResolveSkillDefinition(pendingSkillCharge.SkillId);
-        var step = definition is not null ? ChargeStepForElapsed(definition, HoldChargeBuildMs(now)) : 1;
-        return await ReleasePendingSkillChargeAsync(step, pendingSkillCharge.SkillId, now, ct);
+        // No 0x381d: the step the held time reached (until the last 0x381a repeat).
+        var (step, selected) = ChargeSelection(pendingSkillCharge.SkillId, int.MaxValue, HoldChargeBuildMs(now));
+        return await ReleasePendingSkillChargeAsync(step, selected, now, ct);
     }
 
     async Task<List<byte[]>> HandleSkillChargingStartAsync(byte[] plain, long now, CancellationToken ct)
@@ -272,11 +306,10 @@ partial class GameSession
             selectedTarget = request.TargetKey;
             var level = (byte)Math.Clamp(SkillLevel(request.SkillId), 1, 255);
             var yaw = (float)request.Yaw;
-            var chargeRate = BitConverter.ToSingle(Convert.FromHexString("40359E3F"));
             var chargingActId = HoldChargeChargingActId(request.SkillId);
             replies.Add(GamePackets.SkillChargingStartReply(0, request.SkillId));
             replies.Add(GamePackets.SkillChargingStartNotify(playerKey, request.SkillId, level, request.TargetKey, yaw, request.Location,
-                chargeRate, chargingActId: chargingActId));
+                SkillChargeRate, chargingActId: chargingActId));
             return replies;
         }
         if (pendingSkillCharge is not null) replies.AddRange(CancelPendingSkillCharge(sendStopReply: true));
@@ -313,7 +346,9 @@ partial class GameSession
         skillChargeStartedAtMs = 0;
         lastChargeRepeatAtMs = 0;
         skillChargeNextTickAtMs = 0;
-        var wire = BuildSkillStartWire(skill, charge.TargetKey, charge.Location, charge.Yaw);
+        // The release casts the selected step's own skill (14010003 for a full Deadshot), with its own damage; the step skills
+        // share the charged skill's GroupCoolTimeId, so the charged skill takes the cooldown.
+        var wire = BuildSkillStartWire(selectedSkill > 0 ? selectedSkill : skill, charge.TargetKey, charge.Location, charge.Yaw);
         releasingSkillCharge = true;
         List<byte[]> cast;
         try { cast = CastReplies(wire, now); }
@@ -337,11 +372,11 @@ partial class GameSession
         var charge = pendingSkillCharge ?? lastSkillChargingStart;
         if (charge is null)
             return [GamePackets.SkillChargingEndReply(1, end.SelectedSkill, end.Step, end.SelectedSkill)];
-        var skill = end.SelectedSkill > 0 ? end.SelectedSkill : charge.SkillId;
-        if (skill != charge.SkillId)
-            return [GamePackets.SkillChargingEndReply(1, skill, end.Step, end.SelectedSkill)];
-        var selected = end.SelectedSkill > 0 ? end.SelectedSkill : skill;
-        return await ReleasePendingSkillChargeAsync(end.Step, selected, now, ct);
+        if (end.SelectedSkill > 0 && !IsChargeSelection(charge.SkillId, end.SelectedSkill))
+            return [GamePackets.SkillChargingEndReply(1, charge.SkillId, end.Step, end.SelectedSkill)];
+        var heldMs = skillChargeStartedAtMs > 0 ? now - skillChargeStartedAtMs : 0;
+        var (step, selected) = ChargeSelection(charge.SkillId, end.Step, heldMs);
+        return await ReleasePendingSkillChargeAsync(step, selected, now, ct);
     }
 
     List<byte[]> HandleSkillChargingStop(byte[] plain)

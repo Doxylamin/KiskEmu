@@ -158,7 +158,11 @@ class QunaWalletSqlTests(unittest.TestCase):
         self.assertEqual(self.apply(f's-{self.account}', -1, 'purchase')[2], 'request_conflict')
         refund = sql(f"SELECT ok, balance FROM game.quna_refund('{self.account}','s-{self.account}',NULL);", role='aion_app').stdout.strip()
         self.assertEqual(refund, 't|1000')
-        self.assertEqual(sql(f"SELECT count(*) FROM game.quna_ledger WHERE account_id='{self.account}';").stdout.strip(), '3')
+        # Only a purchase is refunded, not a staff deduction (105).
+        self.assertEqual(self.apply(f'staff-{self.account}', -100, 'staff')[:2], ['t', '900'])
+        refused = sql(f"SELECT ok, error FROM game.quna_refund('{self.account}','staff-{self.account}',NULL);", role='aion_app').stdout.strip()
+        self.assertEqual(refused, 'f|not_found')
+        self.assertEqual(sql(f"SELECT count(*) FROM game.quna_ledger WHERE account_id='{self.account}';").stdout.strip(), '4')
         self.assertNotEqual(sql(f"DELETE FROM game.quna_ledger WHERE account_id='{self.account}';", check=False).returncode, 0)
         self.assertNotEqual(sql(f"UPDATE game.quna_wallets SET balance=-1 WHERE account_id='{self.account}';", check=False).returncode, 0)
 
